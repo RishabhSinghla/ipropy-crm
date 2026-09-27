@@ -39,7 +39,7 @@ describe('is the phone there', () => {
     expect(before?.app_open_at).toBeNull();
 
     const res = await request(app).post('/api/telephony/devices/app-open')
-      .set('Authorization', `Bearer ${token}`).send({}).expect(200);
+      .set('Authorization', `Bearer ${token}`).send({ deviceId }).expect(200);
     expect(res.body.deviceId).toBe(deviceId);
 
     const after = await db.queryOne<{ app_open_at: string | null; last_seen_at: string | null }>(
@@ -78,6 +78,9 @@ describe('is the phone there', () => {
       .send({ to: '9711533633' })
       .expect(200);
     expect(queued.body.sent).toBe(true);
+    const target = await db.queryOne<{ device_id: string }>(
+      'SELECT device_id FROM ipy_device_command WHERE id = $1', [queued.body.commandId],
+    );
 
     /*
       The whole point of the claim being one statement: two things look for a
@@ -85,8 +88,8 @@ describe('is the phone there', () => {
       must not both be given it, or the customer's phone rings twice.
     */
     const [first, second] = await Promise.all([
-      request(app).get('/api/telephony/dial/pending').set('Authorization', `Bearer ${token}`),
-      request(app).get('/api/telephony/dial/pending').set('Authorization', `Bearer ${token}`),
+      request(app).get('/api/telephony/dial/pending').query({ deviceId: target!.device_id }).set('Authorization', `Bearer ${token}`),
+      request(app).get('/api/telephony/dial/pending').query({ deviceId: target!.device_id }).set('Authorization', `Bearer ${token}`),
     ]);
     const handed = [first.body.command, second.body.command].filter(Boolean);
     expect(handed).toHaveLength(1);
@@ -116,9 +119,12 @@ describe('is the phone there', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ to: '9811533633' })
       .expect(200);
+    const target = await db.queryOne<{ device_id: string }>(
+      'SELECT device_id FROM ipy_device_command WHERE id = $1', [queued.body.commandId],
+    );
 
     await request(app).get('/api/telephony/dial/pending')
-      .set('Authorization', `Bearer ${token}`).expect(200);
+      .query({ deviceId: target!.device_id }).set('Authorization', `Bearer ${token}`).expect(200);
 
     const status = await request(app).get(`/api/telephony/dial/${queued.body.commandId}`)
       .set('Authorization', `Bearer ${token}`).expect(200);

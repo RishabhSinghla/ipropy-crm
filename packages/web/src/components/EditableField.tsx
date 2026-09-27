@@ -786,11 +786,11 @@ function PicklistPopover({
               i === active ? 'bg-slate-50 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800',
             )}
           >
-            {/* The option is shown as the chip it will become, not as a dot
-                beside plain text. Picking then changes nothing about how the
-                value looks — same fill, same type, same box — which is what
-                made the old menu feel like it resized the row on every edit. */}
-            <Badge color={o.color} className="min-w-0 max-w-full"><span className="truncate">{o.label}</span></Badge>
+            {/* Match the presentation configured in Dropdowns. A plain-text
+                option must stay plain in the editor as well as on the record. */}
+            {o.meta?.plainText === true
+              ? <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-200">{o.label}</span>
+              : <Badge color={o.color} className="min-w-0 max-w-full"><span className="truncate">{o.label}</span></Badge>}
             {o.value === value && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-brand-600" />}
           </button>
         ))}

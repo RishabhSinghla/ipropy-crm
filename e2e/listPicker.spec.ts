@@ -70,7 +70,7 @@ test('a list can be acted on from its own row', async ({ page }) => {
   await openPicker(page);
 
   await page.getByRole('button', { name: /^Actions for All Leads$/ }).click();
-  await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Duplicate' })).toBeVisible();
   await expect(page.getByRole('checkbox', { name: /Set as default/ })).toBeVisible();
 

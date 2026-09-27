@@ -22,6 +22,7 @@ import com.ipropy.crm.callsync.Api
 import com.ipropy.crm.callsync.CallLogReader
 import com.ipropy.crm.callsync.Prefs
 import com.ipropy.crm.callsync.SyncWorker
+import java.security.MessageDigest
 
 /**
  * The call sync, as something the CRM's own Settings screen can drive.
@@ -71,6 +72,10 @@ class CallSyncPlugin : Plugin() {
     private fun currentStatus(): JSObject = JSObject().apply {
         put("available", true)
         put("paired", prefs.token != null)
+        prefs.token?.let { token ->
+            val digest = MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
+            put("deviceFingerprint", digest.joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) })
+        }
         put("callLogGranted", getPermissionState(CALL_LOG)?.toString() == "granted")
         put("callPhoneGranted", getPermissionState(PLACE_CALL)?.toString() == "granted")
         put("canEndCall", canEndCall())

@@ -57,6 +57,35 @@ already-filtered list is a second number to read past.
 
 ---
 
+## The split view is the only view
+
+**27 September 2026, the owner:** *"I am fully comfortable with split view only, so those
+other views table and board completely rip it off."* Production had both switched off in
+Admin → List Views already, so nobody's screen changed on the day.
+
+What went: the table (and the phone-width card list it carried), the board, the three
+view buttons, `lib/listMode.ts`, `lib/columnWidths.ts`, and three admin pages —
+**List Views**, **Table View** (it only chose the table's columns; exports have their
+own picker) and **Header Tabs** (production's header was on the default order, which it
+keeps). The `ui.list_views` and `ui.list_columns` settings are no longer read. A saved
+view still keeps its filter and sort, and now always saves `display_mode = 'ipropy'`.
+
+* **The list request names exactly what the queue card reads** —
+  `withQueueCardColumns(withQueueSubtitle(labelFields…))` in `ListView.tsx`. The open
+  record's pane fetches the whole record by id, so nothing else is needed.
+* **A record's own address always opens the split view** (`RecordDetail` hands over to
+  `/<module>?open=<id>`). The full-width record page below it is **parked, not deleted**:
+  it still holds the property photo carousel, the AI panel, the duplicate check, share
+  links and the related list, which the split view does not show. Moving those in or
+  deleting them is the owner's call.
+* **The Layout Designer is not a duplicate of Split View and stays.** It drives the
+  "+ New" form and Capture on site (quick create), the phone app's record screen
+  (detail) and Inventories' full form (edit). Split View only decides what the split
+  view shows, and where it has a list it wins over the Layout Designer.
+* **The phone app is untouched** — it has its own screens in `src/mobile`.
+
+The sections below that describe choosing between views are history.
+
 ## Lists open on the split view
 
 **18 September 2026, the owner's instruction:** it is the default for everybody in both

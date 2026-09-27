@@ -37,7 +37,7 @@ async function provider(page: import('@playwright/test').Page, on: boolean): Pro
 }
 
 test('a campaign cannot be sent before the number has been read', async ({ page }) => {
-  await page.goto('/admin/campaigns');
+  await page.goto('/whatsapp/campaigns');
   await expect(page.getByRole('heading', { name: 'Campaigns' })).toBeVisible({ timeout: 30_000 });
   await provider(page, true);
   await page.reload();
@@ -61,7 +61,7 @@ test('a campaign cannot be sent before the number has been read', async ({ page 
 });
 
 test('with no provider connected it says so rather than offering a button that fails', async ({ page }) => {
-  await page.goto('/admin/campaigns');
+  await page.goto('/whatsapp/campaigns');
   await expect(page.getByRole('heading', { name: 'Campaigns' })).toBeVisible({ timeout: 30_000 });
   await provider(page, false);
   await page.reload();

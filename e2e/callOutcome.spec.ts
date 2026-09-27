@@ -9,18 +9,25 @@
  * a default that is no longer on it, is a console a rep cannot save, and no
  * server test can see it.
  *
- * The call lives in the record's own header now rather than in a dialog over
- * it (24 September 2026, the owner's own design), so these read the deck in
- * the header — the surface changed twice and the promises
+ * The call lives in the record's notes pane rather than in a dialog over
+ * it, so these read the compact in-record deck — the surface changed and the promises
  * are the same ones, deliberately: the list is the admin's, a save reaches the
  * Calls tab, and there is no way to send an outcome the list does not offer.
  */
-import { expect, test } from '@playwright/test';
-import { waitForRecords, searchList } from './helpers';
+import { expect, test, type Locator } from '@playwright/test';
+import { waitForRecords, searchList, openFromListByName } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
 const name = `Call Outcome ${Date.now()}`;
+
+/* The CRM-configured outcomes, rendered as one accessible dropdown. */
+function outcomeSelect(deck: Locator): Locator {
+  return deck.getByRole('combobox', { name: 'Call disposition' });
+}
+async function chooseOutcome(deck: Locator, value: string): Promise<void> {
+  await outcomeSelect(deck).selectOption({ label: value });
+}
 let recordUrl = '';
 
 test('a rep adds the lead they are about to ring', async ({ page }) => {
@@ -31,30 +38,23 @@ test('a rep adds the lead they are about to ring', async ({ page }) => {
   await expect(page.getByText(/created/i).first()).toBeVisible({ timeout: 15_000 });
 });
 
-test('they open it from the list', async ({ page, context }) => {
+test('they open it from the list', async ({ page }) => {
   await page.goto('/leads');
+  // The search box renders before the list does, and typing into it while the
+  // cards are still coming filters nothing.
   await waitForRecords(page);
-  await searchList(page, name);
-  await page.waitForTimeout(1200);
-
-  // The list opens records in a new tab on purpose, so the list is never lost.
-  const opened = context.waitForEvent('page');
-  await page.locator('tr', { hasText: name }).first().click();
-  const detail = await opened;
-  await detail.waitForLoadState('domcontentloaded');
-  await expect(detail.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
-  recordUrl = detail.url();
-  await detail.close();
+  // The record opens beside the queue, in the split view.
+  recordUrl = await openFromListByName(page, 'leads', name);
 });
 
-test('tapping the number opens the deck in the header, not a dialog over the record', async ({ page }) => {
+test('tapping the number opens the deck beside the record, not a dialog over it', async ({ page }) => {
   await page.goto(recordUrl);
   // The number is a button on the record, not a tel: link — tapping it is what
   // starts the call. Matched on its title: the accessible name is the number
   // itself, which changes every run.
   await page.locator('button[title^="Call "]').first().click();
 
-  const deck = page.getByTestId('call-deck');
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
 
   /*
@@ -66,11 +66,10 @@ test('tapping the number opens the deck in the header, not a dialog over the rec
 
   // The real list, not one lonely option: the picklist ships with thirteen and
   // an admin only ever adds to it.
-  const outcomes = deck.getByRole('combobox', { name: /how the call went/i });
-  expect(await outcomes.locator('option').count(), 'the outcome list did not load').toBeGreaterThan(5);
+  expect(await outcomeSelect(deck).locator('option').count(), 'the outcome list did not load').toBeGreaterThan(5);
 
   /*
-    Speaker, mute, hold and End are dead, with the reason, until a phone says
+    Speaker, hold and End are dead, with the reason, until a phone says
     iPropy is its calling app — Android lets nobody else touch a running
     call, and a red End that ends nothing is the failure this repo keeps
     writing down. No handset here has said so.
@@ -78,7 +77,7 @@ test('tapping the number opens the deck in the header, not a dialog over the rec
   const endCall = deck.getByRole('button', { name: /end call/i });
   await expect(endCall).toBeDisabled();
   await expect(endCall).toHaveAttribute('title', /calling app|Control calls from the CRM/i);
-  await expect(deck.getByRole('button', { name: /^mute/i })).toBeDisabled();
+  await expect(deck.getByRole('button', { name: /^hold/i })).toBeDisabled();
   await deck.getByRole('button', { name: /save & exit/i }).click();
   await expect(deck).toBeHidden();
 });
@@ -87,9 +86,9 @@ test('saving the outcome records the call on the lead', async ({ page }) => {
   await page.goto(recordUrl);
   await page.locator('button[title^="Call "]').first().click();
 
-  const deck = page.getByTestId('call-deck');
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
-  await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
+  await chooseOutcome(deck, 'Interested');
   await deck.getByRole('button', { name: /save & exit/i }).click();
 
   await expect(deck).toBeHidden({ timeout: 20_000 });
@@ -106,10 +105,10 @@ test('an outcome the list does not offer cannot be sent', async ({ page }) => {
   // is a list the picklist drew, so there is no free-text path to the endpoint.
   await page.goto(recordUrl);
   await page.locator('button[title^="Call "]').first().click();
-  const deck = page.getByTestId('call-deck');
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
   expect(await deck.locator('input[type="text"]').count()).toBe(0);
-  expect(await deck.locator('option').count()).toBeGreaterThan(5);
+  expect(await outcomeSelect(deck).locator('option').count()).toBeGreaterThan(5);
   await deck.getByRole('button', { name: /save & exit/i }).click();
 });
 
@@ -138,11 +137,11 @@ test('the outcome list follows the admin, not the bundle', async ({ page }) => {
   try {
     await page.goto(recordUrl);
     await page.locator('button[title^="Call "]').first().click();
-    const deck = page.getByTestId('call-deck');
+    const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
     await expect(deck).toBeVisible({ timeout: 15_000 });
     // Reachable, not merely present: an option Settings can add and the deck
     // cannot pick is Settings editing a list nobody can use.
-    await deck.getByRole('combobox', { name: /how the call went/i }).selectOption(value);
+    await chooseOutcome(deck, value);
     await deck.getByRole('button', { name: /save & exit/i }).click();
   } finally {
     await page.evaluate(async (gone) => {
@@ -173,13 +172,13 @@ test('Save & Next carries the call to the next person', async ({ page }) => {
   await page.goto(recordUrl);
   await page.locator('button[title^="Call "]').first().click();
 
-  const deck = page.getByTestId('call-deck');
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
   const next = deck.getByRole('button', { name: /save & next/i });
   const wasOffered = (await next.count()) > 0;
   const save = wasOffered ? next : deck.getByRole('button', { name: /save & exit/i });
 
-  await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
+  await chooseOutcome(deck, 'Interested');
   await save.click();
 
   // Landed on somebody else, still in whichever view this person uses.
@@ -187,7 +186,7 @@ test('Save & Next carries the call to the next person', async ({ page }) => {
 
   if (wasOffered) {
     // A deck on the next person, which is the half that kept breaking.
-    await expect(page.getByTestId('call-deck')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first()).toBeVisible({ timeout: 20_000 });
   }
   // And the flag is gone, or the next refresh rings them again.
   expect(page.url()).not.toContain('dial=1');

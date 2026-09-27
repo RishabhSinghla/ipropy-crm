@@ -211,6 +211,14 @@ async function adoptSession(
   result: { token: string; refreshToken: string; user: AuthUser },
   set: (partial: Partial<AppState>) => void,
 ): Promise<void> {
+  // A shared handset may sign into another agent without a clean sign-out.
+  // Stop its native call-log worker while the previous session can still
+  // revoke that agent's pairing; otherwise calls made by the new user would
+  // keep uploading to the old user's CRM account.
+  if (isNative && cachedUser()?.id && cachedUser()?.id !== result.user.id) {
+    const { disableCallSync } = await import('./callSync');
+    await disableCallSync().catch(() => undefined);
+  }
   tokenStore.set(result.token);
   /*
     The refresh token is not stored. The login response set an httpOnly cookie
@@ -318,6 +326,10 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   logout: async () => {
+    if (isNative) {
+      const { disableCallSync } = await import('./callSync');
+      await disableCallSync().catch(() => undefined);
+    }
     await api.logout().catch(() => undefined);
     // A shared handset on an office desk is normal in this business, so the
     // offline copy must not outlive the session that fetched it.

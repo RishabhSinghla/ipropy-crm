@@ -11,7 +11,6 @@ import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { useCallDispositionOptions } from '../lib/callDispositions';
-import { enabledListModes, loadListMode, resolveListMode } from '../lib/listMode';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
 import { cn, looksLikeHtml, renderMarkdown, restrictionForField, sanitiseRichText } from '../lib/utils';
@@ -32,7 +31,6 @@ import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/
 import ComposeModal from '../components/ComposeModal';
 import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
-import { CALL_DECK_DOCK_ID } from '../components/LiveCallDeck';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
 import { WhatsAppComposerProvider } from '../components/WhatsAppComposer';
 import { WhatsAppButton } from '../components/WhatsAppButton';
@@ -59,15 +57,21 @@ import { downloadFromUrl } from '../lib/nativeActions';
  * that mounts is the fix; the page below never runs when it is only passing
  * through.
  */
+/*
+  27 September 2026, the owner: the table and the board are gone, so the split
+  view is the only way a record is seen and every record address hands over to
+  it. The full-width page below is parked rather than deleted: it still holds
+  the property photo carousel, the AI panel, the duplicate check, share links
+  and the related list, which the split view does not show yet. Whether those
+  move into the split view or go is the owner's call.
+*/
+const FULL_RECORD_PAGE_IS_PARKED = true;
+
 export default function RecordDetail(): JSX.Element | null {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
   const navigate = useNavigate();
   const [detailParams] = useSearchParams();
-  const listViewSetting = useApp((state) => state.user?.ui?.listViews);
-  const opensInSplitView = useMemo(
-    () => resolveListMode(loadListMode(moduleName), null, enabledListModes(listViewSetting)) === 'ipropy',
-    [moduleName, listViewSetting],
-  );
+  const opensInSplitView = FULL_RECORD_PAGE_IS_PARKED;
 
   useEffect(() => {
     if (!opensInSplitView || !moduleName || !id) return;
@@ -402,8 +406,6 @@ function FullRecordPage(): JSX.Element {
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
       <div className="card relative mb-4 overflow-visible">
-        {/* The live call, floating in this card's top-right corner. */}
-        <CallDeckDock />
         {/* Two rows, not three.
 
             The nav row held nothing but a back arrow and a record counter and
@@ -3042,15 +3044,4 @@ function CallEditHistory({ callId }: { callId: string }): JSX.Element {
       })}
     </ol>
   );
-}
-
-/** Where the call deck docks when this record's header is on screen. */
-function CallDeckDock(): JSX.Element {
-  /*
-    Only the spot the deck docks in when this record's header is on screen.
-    The deck itself is drawn once by the app's shell (`components/LiveCallDeck`)
-    so it survives leaving this page mid-call; it sits over this placeholder
-    until somebody drags it elsewhere.
-  */
-  return <div id={CALL_DECK_DOCK_ID} aria-hidden="true" className="pointer-events-none absolute right-3 top-14 h-px w-[23rem]" />;
 }

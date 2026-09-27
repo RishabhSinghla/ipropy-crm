@@ -116,9 +116,8 @@
     --list-line: 1.45;
     --list-row-pad-y: 11px;
     --list-row-pad-x: 12px;
-    /* The checkbox column's width, and therefore where the pinned name column
-       starts. It is SELECT_COL_WIDTH in `lib/columnWidths.ts`; the two have to
-       agree or the frozen name sits a few pixels off its own header. */
+    /* The checkbox column's width, and therefore where a pinned name column
+       starts in a table that has one. */
     --list-select-w: 40px;
     /* Body copy, not headline copy. #111827 is near-black and every cell in a
        wide grid was competing at the same weight; slate-700 keeps a full row
@@ -213,7 +212,15 @@
     to   { transform: translateY(0); }
   }
 
+  @keyframes ipropy-pane-reveal {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-pane-reveal { animation: ipropy-pane-reveal 180ms ease-out both; }
+
   @media (prefers-reduced-motion: reduce) {
+    .animate-pane-reveal { animation: none; }
     @keyframes ipropy-sheet-up {
       from { transform: none; }
       to   { transform: none; }

@@ -13,7 +13,7 @@
  * costs a phone call to explain and some trust to repair.
  */
 import { expect, test } from '@playwright/test';
-import { fieldEditor } from './helpers';
+import { fieldEditor, openFromListByName, waitForRecords } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -43,20 +43,11 @@ test('a rep adds a floor they have just taken on', async ({ page }) => {
   await expect(page.getByText(/inventory created|created/i).first()).toBeVisible({ timeout: 15_000 });
 });
 
-test('it is on the list where the team will look for it', async ({ page, context }) => {
+test('it is on the list where the team will look for it', async ({ page }) => {
   await page.goto('/properties');
-  await page.getByPlaceholder(/search/i).first().fill(name);
-  await page.waitForTimeout(1200);
-
-  const opened = context.waitForEvent('page').catch(() => null);
-  await page.locator('tr', { hasText: name }).first().click();
-
-  const detail = (await opened) ?? page;
-  await detail.waitForLoadState('domcontentloaded');
-  await detail.waitForURL(/\/properties\/[0-9a-f-]{36}/, { timeout: 20_000 });
-  recordUrl = detail.url();
-  await expect(detail.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
-  if (detail !== page) await detail.close();
+  await waitForRecords(page);
+  // The unit opens beside the queue, in the split view.
+  recordUrl = await openFromListByName(page, 'properties', name);
 });
 
 test('putting it on the website is a decision the rep makes on the record', async ({ page }) => {

@@ -4,7 +4,7 @@ import {
 import { useSearchParams } from 'react-router-dom';
 import { Phone } from 'lucide-react';
 import { api } from '../lib/api';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useLiveCall } from '../lib/liveCall';
 import { useChatRecord } from './ChatRecordPane';
@@ -63,16 +63,19 @@ async function phoneTookIt(
 }
 
 export function CallDispositionProvider({
-  recordId, module, followUpField = 'next_followup_at', children,
+  recordId, module, followUpField = 'next_followup_at', queue, children,
 }: {
   recordId: string;
   module: string;
   /** Canonical for Leads; legacy Inventory workspaces still use next_follow_up. */
   followUpField?: string;
+  /** The next row in the current filtered and sorted split queue. */
+  queue?: { nextId: string | null; position: number | null; total: number | null; url: string };
   children: ReactNode;
 }): JSX.Element {
   const [params, setParams] = useSearchParams();
   const live = useLiveCall((state) => state.call);
+  const userId = useApp((state) => state.user?.id ?? null);
   const placingRef = useRef(false);
 
   /*
@@ -85,13 +88,27 @@ export function CallDispositionProvider({
 
   const startCall = async (number: string, from: 'phone' | 'desk' = 'phone'): Promise<void> => {
     if (placingRef.current) return;
-    if (useLiveCall.getState().call) {
+    const existingCall = useLiveCall.getState().call;
+    if (existingCall && existingCall.userId !== userId) useLiveCall.getState().finish();
+    else if (existingCall) {
       toast.info('You are already on a call', 'Save it with Save & Exit or Save & Next, then call again.');
+      return;
+    }
+    if (!userId) {
+      toast.error('Could not place the call', 'Your CRM session is still loading. Please try again.');
       return;
     }
     placingRef.current = true;
     const clean = number.replace(/[^\d+]/g, '');
-    useLiveCall.getState().begin({ number, module, recordId, followUpField });
+    useLiveCall.getState().begin({
+      userId, number, module, recordId, followUpField,
+      ...(queue ? {
+        queueNextId: queue.nextId,
+        queuePosition: queue.position === null ? null : queue.position + 1,
+        queueTotal: queue.total,
+        queueUrl: queue.url,
+      } : {}),
+    });
     try {
       /*
         The rep asked for this one to leave from the computer, by clicking the
@@ -169,7 +186,7 @@ export function CallDispositionProvider({
   );
 }
 
-export function CallButton({ to, iconOnly = false, round = false }: { to: string; iconOnly?: boolean; round?: boolean }): JSX.Element {
+export function CallButton({ to, iconOnly = false, round = false, active = false }: { to: string; iconOnly?: boolean; round?: boolean; active?: boolean }): JSX.Element {
   const calls = useCallDisposition();
   return (
     <button
@@ -182,10 +199,13 @@ export function CallButton({ to, iconOnly = false, round = false }: { to: string
       // line read as four warnings — and filling with its own colour under
       // the cursor, so it says what it is exactly when that matters.
       className={round
-        ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:border-transparent hover:text-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:bg-blue-600'
+        ? cn('inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors', active
+          ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500'
+          : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-transparent hover:bg-blue-600 hover:text-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300')
         : cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
       title={`Call ${to}`}
       aria-label={`Call ${to}`}
+      aria-pressed={round ? active : undefined}
       onClick={() => void calls?.startCall(to)}
     >
       <Phone className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-blue-600'} />

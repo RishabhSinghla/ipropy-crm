@@ -19,7 +19,7 @@
  *    the app keeps working exactly as before and the status simply ages.
  */
 import { api } from './api';
-import { callControlState } from './callSync';
+import { callControlState, callDeviceIdentity } from './callSync';
 import { isNative } from './native';
 
 /** A minute: long enough to cost nothing, short enough that "open" means open. */
@@ -37,7 +37,8 @@ async function announce(): Promise<void> {
       so it is asked every minute rather than remembered.
     */
     const { canEndCall, canControlCall } = await callControlState();
-    await api.appIsOpen({ canEndCall, canControlCall });
+    const identity = await callDeviceIdentity();
+    await api.appIsOpen({ canEndCall, canControlCall, ...identity });
   } catch {
     // A status column is never worth a toast.
   }

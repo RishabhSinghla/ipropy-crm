@@ -1,31 +1,27 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { isFilterGroup, type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
+import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
 import {
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MessageCircle, PanelLeftOpen, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Tag, Trash2, Upload, Users, X,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
+  Pencil, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
-import { cn, restrictionForField } from '../lib/utils';
-import { FieldInput, FieldValue } from '../components/FieldRenderer';
-import { EditableField, isInlineEditable } from '../components/EditableField';
-import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf, withQueueSubtitle } from '../lib/fields';
+import { cn } from '../lib/utils';
+import { FieldInput } from '../components/FieldRenderer';
+import { assignmentField, byLabel, pipelineFieldOf, withQueueSubtitle } from '../lib/fields';
 import { withQueueCardColumns } from '../lib/queueCard';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
-import { enabledListModes, loadListMode, resolveListMode, saveListMode, type ListMode } from '../lib/listMode';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
-  Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
+  ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
-import RecordPeek from '../components/RecordPeek';
 import { ListPicker } from '../components/ListPicker';
-import { StrengthRing } from '../components/StrengthRing';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import { StatusBreakdown } from '../components/StatusBreakdown';
 import {
@@ -33,31 +29,16 @@ import {
 } from '../components/CallDispositionFilter';
 import { toolbarButton } from '../lib/toolbarButton';
 import SiteCapture from './SiteCapture';
-import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
-import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
 import { useOfflineMeta } from '../lib/useOfflineList';
-import { deliverFile, dial, openExternal } from '../lib/nativeActions';
+import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
+import { callQueueUrl } from '../lib/callQueueUrl';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 export default function ListView(): JSX.Element {
   const { module: moduleName } = useParams<{ module: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-  /*
-    Opening a record loses your place in the list otherwise: the filters, the
-    scroll position and which tab you were on all have to be rebuilt by hand when
-    you come back. On by default; Admin → Settings → Your business turns it off.
-
-    `noopener` because a tab opened with window.open can otherwise reach back
-    through window.opener into the page that opened it.
-  */
-  const openInNewTab = useApp((st) => st.user?.ui?.openInNewTab ?? true);
-  const openRecord = (path: string): void => {
-    if (openInNewTab) window.open(path, '_blank', 'noopener,noreferrer');
-    else navigate(path);
-  };
   const queryClient = useQueryClient();
   const { user } = useApp();
 
@@ -90,67 +71,23 @@ export default function ListView(): JSX.Element {
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  /*
-    The desk is what everybody lands on, and anybody may switch. `chooseMode`
-    is the only way the mode changes from a click, so the choice is always
-    remembered — a mode set in one place and forgotten in another is how a
-    preference comes to feel random.
-  */
-  // Which views the admin left on, in Admin → List Views. All three by default.
-  const listViewSetting = useApp((st) => st.user?.ui?.listViews);
-  const allowedModes = useMemo(() => enabledListModes(listViewSetting), [listViewSetting]);
-  const [displayMode, setDisplayMode] = useState<ListMode>(
-    () => resolveListMode(loadListMode(moduleName), null, allowedModes),
-  );
-  /*
-    An admin switching a view off while somebody is looking at it. Without
-    this the button disappears and the view stays, so a rep is left in a view
-    that is no longer offered with no way back to it if they leave.
-  */
-  useEffect(() => {
-    if (!allowedModes.includes(displayMode)) {
-      setDisplayMode(resolveListMode(loadListMode(moduleName), null, allowedModes));
-    }
-  }, [allowedModes, displayMode, moduleName]);
-
-  const chooseMode = (mode: ListMode): void => {
-    setDisplayMode(mode);
-    saveListMode(moduleName, mode);
-  };
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // Gmail's "select all X in this search": when true, bulk actions run against
   // every record the current view/filter matches, not just this page's ids.
   const [selectedAll, setSelectedAll] = useState(false);
-  // Which record a long press is previewing. Null when nothing is peeked.
-  const [peekId, setPeekId] = useState<string | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
-  /*
-    The admin's one column order for this module (Admin → Table View).
-
-    When it is set it is what every table shows, for everybody: a team that
-    each arranged their own columns could not be talked to about "the third
-    column", and a saved list carried a set of its own on top, so the same
-    list looked different to two people. A field the order names but the
-    module no longer has is dropped rather than rendered as an empty column —
-    a renamed or deleted field must not leave a hole in everyone's table.
-  */
-  const masterColumns = useApp((st) => st.user?.ui?.listColumns?.[moduleName ?? ''] ?? null);
   // Admin → Split View's queue line. Requested as columns so the line is not
   // blank on a view whose columns happen not to include those fields.
   const splitQueue = useApp((st) => st.user?.ui?.splitView?.[moduleName ?? '']?.queue ?? null);
   const [showFilters, setShowFilters] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
-  const [showColumns, setShowColumns] = useState(false);
   /** Open when somebody is naming a new view built from what is on screen. */
   const [savingAsView, setSavingAsView] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingView, setEditingView] = useState<SavedView | null>(null);
   const [confirmDeleteView, setConfirmDeleteView] = useState<CustomView | null>(null);
-  const [dragColumn, setDragColumn] = useState<string | null>(null);
-  const [quickFilterColumn, setQuickFilterColumn] = useState<string | null>(null);
-  const colWidths = useColumnWidths(moduleName);
 
   /**
    * Which view the sort/columns effect below has already applied, and whether
@@ -287,22 +224,6 @@ export default function ListView(): JSX.Element {
     setSelected(new Set());
   };
 
-  /** Apply a one-click spreadsheet-style filter without replacing other filters. */
-  const setColumnPicklistFilter = (field: FieldMeta, value: string): void => {
-    setFilter((current) => {
-      const conditions = current.conditions.filter((node) => isFilterGroup(node) || node.field !== field.name);
-      if (value) {
-        conditions.push({
-          field: field.name,
-          operator: field.uitype === 'multipicklist' ? 'has_any' : 'equals',
-          value: field.uitype === 'multipicklist' ? [value] : value,
-        });
-      }
-      return { ...current, conditions };
-    });
-    setPage(1);
-  };
-
   const deleteViewMutation = useMutation({
     mutationFn: (id: string) => api.deleteView(moduleName!, id),
     onSuccess: () => {
@@ -354,11 +275,6 @@ export default function ListView(): JSX.Element {
     // arrived, so a view showing every column resolves to none of them, and
     // this is the render that fixes it.
     setColumns(activeView.columns?.length ? activeView.columns : allColumns(meta));
-    // The person's own choice outranks the view: a saved list that predates the
-    // desk says `table` because nothing else existed, not because anybody
-    // chose it.
-    setDisplayMode(resolveListMode(loadListMode(moduleName), activeView.displayMode, allowedModes));
-
     // Same view, same definition, later render — metadata arriving is not a
     // view change, and must not overwrite a sort the user chose since.
     if (previous === signature) return;
@@ -437,10 +353,6 @@ export default function ListView(): JSX.Element {
   */
   const stageField = meta ? pipelineFieldOf(meta) : undefined;
   const ownerField = meta ? assignmentField(meta.fields) : undefined;
-
-  const groupByField = displayMode === 'kanban'
-    ? (activeView?.groupBy ?? stageField?.name ?? undefined)
-    : undefined;
 
   // Next Follow-up is the CRM's task field. These are deliberately not saved
   // views: every person gets the same obvious work queues without an admin
@@ -526,35 +438,40 @@ export default function ListView(): JSX.Element {
   const query: ListQuery = useMemo(() => ({
     view: activeView?.id,
     page,
-    pageSize: displayMode === 'kanban' ? 200 : pageSize,
+    pageSize,
     search: search || undefined,
     filter: countConditions(effectiveFilter) ? effectiveFilter : undefined,
     sortBy: effectiveSort.sortBy,
     sortDir: effectiveSort.sortDir,
     /*
-      The master order when there is one, so an export and the screen agree.
-
-      The split view's queue prints one line under each name — a contact's
-      Type, a unit's Unit Number — and a list row only carries the values the
-      list asked for. Without this the line is blank on any view whose columns
-      do not happen to include it, which reads as the feature not working.
+      Exactly what the split view's queue reads, and nothing else — the open
+      record's pane fetches the whole record by id. A list row carries only the
+      values the list asked for, so naming these here is what keeps the card's
+      lines from reading blank.
     */
     columns: withQueueCardColumns(
-      withQueueSubtitle(
-        masterColumns?.length ? masterColumns : (columns.length ? columns : undefined),
-        displayMode === 'ipropy' ? meta : undefined,
-        splitQueue ?? undefined,
-      ),
-      displayMode === 'ipropy' ? meta?.fields : undefined,
+      withQueueSubtitle(meta ? [...meta.labelFields] : undefined, meta, splitQueue ?? undefined),
+      meta?.fields,
     ),
-    groupBy: groupByField,
-  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, masterColumns, splitQueue, columns, groupByField, displayMode, meta]);
+  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, splitQueue, meta]);
+
+  // The call deck must resume this *exact* queue after Save & Next. The URL's
+  // ordinary filter omits transient follow-up/status/agent/tag choices, and a
+  // follow-up queue can supply its own sort even when no sort is named in the
+  // URL. Capture the effective list query, not just the address bar.
+  const callQueueSnapshot = useMemo(() => callQueueUrl(moduleName ?? '', query), [moduleName, query]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
     queryFn: () => api.list(moduleName!, query),
     enabled: Boolean(moduleName && meta),
-    placeholderData: (prev) => prev,
+    /*
+      Keep the last page on screen while the next one loads — but only within
+      one module. Across a switch the "last page" is the other module's rows,
+      and the split view would open a contact as if it were a unit (a 404 on
+      every switch between Contacts and Inventories).
+    */
+    placeholderData: (prev, previousQuery) => (previousQuery?.queryKey[1] === moduleName ? prev : undefined),
   });
 
   const commitPageInput = (): void => {
@@ -566,22 +483,6 @@ export default function ListView(): JSX.Element {
     }
   };
 
-  /**
-   * The record detail screen must receive the list as it exists *now*, rather
-   * than wait for React Router's URL-sync effect. This makes the detail
-   * counter and arrows honour ad-hoc filters, search and task queues.
-   */
-  const returnTo = useMemo(() => {
-    const params = new URLSearchParams();
-    if (activeView?.id) params.set('view', activeView.id);
-    if (search) params.set('q', search);
-    if (effectiveSort.sortBy) params.set('sort', effectiveSort.sortBy);
-    if (effectiveSort.sortBy && effectiveSort.sortDir !== 'desc') params.set('dir', effectiveSort.sortDir);
-    if (page > 1) params.set('page', String(page));
-    if (pageSize !== DEFAULT_PAGE_SIZE) params.set('pageSize', String(pageSize));
-    if (countConditions(effectiveFilter)) params.set('filter', JSON.stringify(effectiveFilter));
-    return `/${moduleName}${params.toString() ? `?${params}` : ''}`;
-  }, [activeView?.id, effectiveFilter, effectiveSort, moduleName, page, pageSize, search]);
 
 
   /*
@@ -628,7 +529,7 @@ export default function ListView(): JSX.Element {
       columns: columns.length ? columns : defaultColumns(meta),
       sortBy: sortBy ?? null,
       sortDir,
-      displayMode,
+      displayMode: 'ipropy',
       filter: countConditions(filter) ? filter : { logic: 'AND', conditions: [] },
     }),
     onSuccess: () => {
@@ -664,7 +565,7 @@ export default function ListView(): JSX.Element {
         columns: source.columns ?? [],
         sortBy: source.sortBy ?? null,
         sortDir: source.sortDir ?? 'desc',
-        displayMode: source.displayMode ?? 'table',
+        displayMode: 'ipropy',
         groupBy: source.groupBy ?? null,
         filter: source.filter ?? { logic: 'AND', conditions: [] },
         isPublic: false,
@@ -710,7 +611,7 @@ export default function ListView(): JSX.Element {
       columns: columns.length ? columns : [],
       sortBy: sortBy ?? null,
       sortDir,
-      displayMode,
+      displayMode: 'ipropy',
       filter: countConditions(filter) ? filter : { logic: 'AND', conditions: [] },
       isPublic: false,
       sharedWith: [],
@@ -725,15 +626,6 @@ export default function ListView(): JSX.Element {
       });
     },
     onError: (err: Error) => toast.error('Could not save this view', err.message),
-  });
-
-  const stageMutation = useMutation({
-    mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) =>
-      api.update(moduleName!, id, values),
-    onSuccess: (_res, vars) => {
-      invalidateRecordQueries(queryClient, moduleName, vars.id);
-    },
-    onError: (err: Error) => toast.error('Could not move the record', err.message),
   });
 
   // Record the id order the user is looking at (table or kanban, whichever
@@ -815,50 +707,9 @@ export default function ListView(): JSX.Element {
     expressions cost nothing and cannot get the order wrong.
   */
 
-  /*
-    Fields an admin has marked to appear under the name in a list.
-
-    Flagged per field (`config.listSubtitle`) rather than chosen here, for the
-    same reason the rest of this screen reads from metadata: which two facts
-    identify a record is this business's decision. The order comes from the
-    flag too, so both modules read the same way round.
-  */
-  const subtitleFields = subtitleFieldsOf(meta.fields);
-
-  /*
-    Resolved through `fieldByKey`, so a rename does not silently cost everybody
-    a column: a rename moves a field's name and leaves its column alone, and
-    the saved order holds the name it had when it was set. Anything that
-    answers to neither is dropped — Admin → Table View names those rather than
-    hiding them, so somebody can see why a column went.
-  */
-  const master = masterColumns
-    ?.map((c) => fieldByKey(meta.fields, c))
-    .filter((f): f is FieldMeta => Boolean(f && f.isActive && f.displayType !== 'hidden'))
-    .map((f) => f.name) ?? null;
-  const visibleColumns = master?.length ? master : (columns.length ? columns : defaultColumns(meta));
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
 
-
   const canCreate = meta.permissions.create;
-  // A fixed-layout table still shrinks its columns to fit a narrow container,
-  // which would quietly undo a drag. Declaring the sum as a minimum makes the
-  // body scroll instead.
-  const tableMinWidth = SELECT_COL_WIDTH
-    + visibleColumns.reduce((sum, col) => sum + colWidths.widthOf(col, fieldMap.get(col)), 0);
-  const moveColumn = (from: string, to: string): void => {
-    if (from === to) return;
-    setColumns((previous) => {
-      const next = [...(previous.length ? previous : visibleColumns)];
-      const fromIndex = next.indexOf(from);
-      const toIndex = next.indexOf(to);
-      if (fromIndex < 0 || toIndex < 0) return previous;
-      next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, from);
-      return next;
-    });
-  };
-
   return (
     <div className="flex h-full min-w-0 flex-col">
       {/* Header */}
@@ -1055,70 +906,17 @@ export default function ListView(): JSX.Element {
               )}
             </button>
 
-            {/* Only the views the admin left on, and nothing at all when
-                there is one: a row of one button is not a choice. */}
-            <div className={cn(
-              'inline-flex overflow-hidden rounded-lg border border-[var(--border)]',
-              allowedModes.length < 2 && 'hidden',
-            )}>
-              {allowedModes.includes('table') && <button
-                onClick={() => chooseMode('table')}
-                className={cn('px-2 py-1.5', displayMode === 'table' ? 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-200' : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800')}
-                title="Table"
-              >
-                <List className="h-3.5 w-3.5" />
-              </button>}
-              {allowedModes.includes('kanban') && <button
-                onClick={() => chooseMode('kanban')}
-                disabled={!stageField && !activeView?.groupBy}
-                className={cn(
-                  'px-2 py-1.5 disabled:opacity-30',
-                  displayMode === 'kanban' ? 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-200' : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
-                )}
-                title={stageField ? 'Kanban' : 'This module has no pipeline field'}
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-              </button>}
-              {allowedModes.includes('ipropy') && <button
-                onClick={() => chooseMode('ipropy')}
-                className={cn('px-2 py-1.5', displayMode === 'ipropy' ? 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-200' : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800')}
-                title="Split view"
-                aria-label="Split view"
-              >
-                <PanelLeftOpen className="h-3.5 w-3.5" />
-              </button>}
-            </div>
-
             <Dropdown
               trigger={<button className="btn-secondary btn-sm" aria-label="List options"><Settings2 className="h-3.5 w-3.5" /></button>}
             >
               {(close) => (
                 <>
-                  {/*
-                    Choosing your own columns is gone once an admin has set the
-                    table view (Admin → Table View). Leaving the control there
-                    to be overruled on the next load is worse than not offering
-                    it: it looks like a save that did not save.
-                  */}
-                  {!master?.length && (
-                    <DropdownItem icon={<Columns3 className="h-3.5 w-3.5" />} onClick={() => { setShowColumns(true); close(); }}>
-                      Choose columns
-                    </DropdownItem>
-                  )}
-                  {colWidths.customised && (
-                    <DropdownItem
-                      icon={<Ruler className="h-3.5 w-3.5" />}
-                      onClick={() => { colWidths.resetAll(); close(); }}
-                    >
-                      Reset column widths
-                    </DropdownItem>
-                  )}
-                  {activeView && !master?.length && (
+                  {activeView && (
                     <DropdownItem
                       icon={<Save className="h-3.5 w-3.5" />}
                       onClick={() => { saveViewMutation.mutate(); close(); }}
                     >
-                      Save this layout to “{activeView.name}”
+                      Save this sort and filter to “{activeView.name}”
                     </DropdownItem>
                   )}
                   {/*
@@ -1158,7 +956,7 @@ export default function ListView(): JSX.Element {
               )}
             </Dropdown>
 
-            {displayMode !== 'kanban' && (data?.total ?? 0) > 0 && (
+            {(data?.total ?? 0) > 0 && (
               <div className="hidden items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-muted lg:flex dark:border-slate-700">
                 <button className="btn-ghost p-0.5" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></button>
                 <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-white px-1 text-center text-xs dark:border-slate-700 dark:bg-slate-900" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={pageInput} onFocus={(e) => e.currentTarget.select()} onBlur={commitPageInput} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onChange={(e) => setPageInput(e.target.value)} /><span>/ {data!.totalPages}</span></label>
@@ -1265,17 +1063,15 @@ export default function ListView(): JSX.Element {
                 </button>
               : undefined}
           />
-        ) : displayMode === 'kanban' ? (
-          <KanbanBoard
-            module={meta}
-            rows={rows}
-            groups={data?.groups ?? []}
-            groupBy={groupByField!}
-            attentionIds={unseen}
-            onMove={(id, value) => stageMutation.mutate({ id, values: { [groupByField!]: value } })}
-          />
-        ) : displayMode === 'ipropy' ? (
+        ) : (
           <IpropyWorkspace
+            /*
+              A fresh workspace per module. Without it the record open on
+              Contacts stays "open" for a moment after switching to
+              Inventories, and its id is asked for as a unit — a 404 on every
+              switch between the two.
+            */
+            key={meta.name}
             module={meta}
             rows={rows}
             // `?open=` — a record named in the address, from global search, a
@@ -1308,389 +1104,22 @@ export default function ListView(): JSX.Element {
             */
             sortBy={effectiveSort.sortBy}
             sortDir={effectiveSort.sortDir}
+            neighbourContext={{
+              ...(activeView?.id ? { view: activeView.id } : {}),
+              ...(search ? { search } : {}),
+              ...(countConditions(effectiveFilter) ? { filter: JSON.stringify(effectiveFilter) } : {}),
+            }}
+            callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
               : undefined}
           />
-        ) : (
-          <>
-          {/* Phones get stacked cards instead of the table: a 7-column grid on a
-              375px screen is a horizontal-scroll maze, and the first column
-              (the record's name) scrolls out of view the moment you look at any
-              other field. Same rows, same inline editing — just re-laid out.
-
-              The cut-over is `lg`, not `md`. Seven columns plus a 240px sidebar
-              need about 1100px; at 768–1023 the table appeared and then scrolled
-              in both axes at once, inside a region already scrolling vertically.
-              That band is not a rarity — it is a laptop at a scaled resolution
-              and a window snapped to half a screen. */}
-          {/* The test id is the stable handle. The mobile specs used to select
-              this by its `md:hidden` class, so moving the breakpoint broke
-              three of them — a Tailwind utility is a layout decision, not an
-              identifier. */}
-          <div data-testid="record-card-list" className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">
-            {rows.map((row) => (
-              <MobileRecordCard
-                key={row.id}
-                row={row}
-                module={meta}
-                columns={visibleColumns}
-                fieldMap={fieldMap}
-                selected={selected.has(row.id)}
-                isNew={unseen.has(row.id)}
-                isStarred={Boolean(row.starred)}
-                onToggleSelect={(checked) => {
-                  const next = new Set(selected);
-                  if (checked) next.add(row.id); else next.delete(row.id);
-                  // Unchecking one row narrows "all in this view" back to the page.
-                  setSelectedAll(false);
-                  setSelected(next);
-                }}
-                onOpen={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
-                onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
-              />
-            ))}
-          </div>
-
-          {/* `table-fixed` is what makes the drag-to-resize below real: with an
-              auto layout the browser re-measures every cell on each pointermove
-              and the columns fight the width you just set. The trade is that
-              each column needs a declared width, which the <colgroup> supplies
-              — a stored one if this user has dragged it, otherwise a default
-              derived from the field type. The table can now be wider than the
-              viewport, so the body scrolls horizontally, as it did on Vtiger.
-
-              `border-separate` with zero spacing, **not** `border-collapse`,
-              and that is what keeps the column headers pinned while the rows
-              scroll under them. A collapsed border belongs to the table rather
-              than to the cell it was declared on, so a `position: sticky`
-              header gives up its bottom border the moment it detaches — and in
-              several Chrome and Safari builds gives up the sticking with it.
-              Nothing here declares a border on a body cell (rows are separated
-              by the zebra stripe, not a rule), so separating them costs no
-              doubled lines and changes nothing on screen. */}
-          <table className="hidden w-full table-fixed border-separate border-spacing-0 lg:table" style={{ minWidth: tableMinWidth }}>
-            <colgroup>
-              <col style={{ width: SELECT_COL_WIDTH }} />
-              {visibleColumns.map((col) => (
-                <col key={col} style={{ width: colWidths.widthOf(col, fieldMap.get(col)) }} />
-              ))}
-            </colgroup>
-            <thead>
-              <tr>
-                <th className="list-head list-stick-select w-12 px-0 text-center">
-                  <input
-                    type="checkbox"
-                    aria-label={`Select all ${meta.label.toLowerCase()} on this page`}
-                    className="h-3.5 w-3.5 rounded border-slate-300"
-                    checked={rows.length > 0 && selected.size === rows.length}
-                    onChange={(e) => {
-                      setSelectedAll(false);
-                      setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set());
-                    }}
-                  />
-                </th>
-                {visibleColumns.map((col) => {
-                  const field = fieldMap.get(col);
-                  const canSort = field?.config.sortable !== false;
-                  /*
-                    Dragging a column is off once the admin has set the table
-                    view: the order is the same for everyone, and a drag that
-                    springs back on the next load reads as a bug rather than as
-                    a rule.
-                  */
-                  return (
-                    <th
-                      key={col}
-                      draggable={!master?.length}
-                      onDragStart={(e) => { if (master?.length) return; setDragColumn(col); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', col); }}
-                      onDragEnd={() => setDragColumn(null)}
-                      onDragOver={(e) => { if (!master?.length) e.preventDefault(); }}
-                      onDrop={(e) => { if (master?.length) return; e.preventDefault(); if (dragColumn) moveColumn(dragColumn, col); setDragColumn(null); }}
-                      /*
-                        No `relative` here, deliberately. `.list-head` is what
-                        makes the header row stay put while the rows scroll, and
-                        Tailwind's `relative` is a utility that wins on source
-                        order — so every column header quietly scrolled away with
-                        its rows. A sticky cell is a positioned cell, so the
-                        resize handle inside it still anchors correctly.
-                      */
-                      className={cn(
-                        'list-head',
-                        // The first column is the name; it stays while the rest scroll.
-                        col === visibleColumns[0] && 'list-stick-first',
-                        !master?.length && 'cursor-grab active:cursor-grabbing',
-                        dragColumn === col && 'opacity-50',
-                      )}
-                    >
-                      <button
-                        className="inline-flex max-w-full items-center gap-1 truncate hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-slate-200"
-                        disabled={!canSort}
-                        title={canSort ? `Sort by ${field?.label ?? col}` : 'Sorting is disabled for this field'}
-                        onClick={() => {
-                          // effectiveSort, not sortBy: a queue's default order is a
-                          // real order, so the arrow must show it and a click must
-                          // flip it rather than silently start again from scratch.
-                          if (effectiveSort.sortBy === col) { setSortBy(col); setSortDir(effectiveSort.sortDir === 'asc' ? 'desc' : 'asc'); }
-                          else { setSortBy(col); setSortDir('desc'); }
-                        }}
-                      >
-                        <span className="truncate">{field?.label ?? col}</span>
-                        {canSort && effectiveSort.sortBy === col
-                          ? <ChevronDown className={cn('h-3 w-3 shrink-0', effectiveSort.sortDir === 'asc' && 'rotate-180')} />
-                          : canSort ? <ArrowUpDown className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover:opacity-40" /> : null}
-                      </button>
-                      {field && ['picklist', 'multipicklist'].includes(field.uitype) && field.options?.length ? (
-                        <>
-                        <button
-                          type="button"
-                          className="ml-1 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-800"
-                          aria-label={`Filter ${field.label}`}
-                          title={`Filter ${field.label}`}
-                          onClick={(event) => { event.stopPropagation(); setQuickFilterColumn((current) => current === field.name ? null : field.name); }}
-                        >
-                          <Filter className="h-3 w-3" />
-                        </button>
-                        {quickFilterColumn === field.name && (
-                        <select
-                          aria-label={`Filter ${field.label}`}
-                          className="mt-1 block max-w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-2xs font-normal text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                          value={(() => {
-                            const condition = filter.conditions.find((node) => !isFilterGroup(node) && node.field === field.name);
-                            if (!condition || isFilterGroup(condition)) return '';
-                            return Array.isArray(condition.value) ? String(condition.value[0] ?? '') : String(condition.value ?? '');
-                          })()}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => setColumnPicklistFilter(field, event.target.value)}
-                        >
-                          <option value="">All</option>
-                          {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
-                        )}
-                        </>
-                      ) : null}
-                      {/* Drag to resize, double-click to put it back. `role` and
-                          the arrow keys are here because a column width is a
-                          real setting and a pointer is not the only way in. */}
-                      <span
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={`Resize ${field?.label ?? col}`}
-                        // A *focusable* separator is a widget, and axe rates a
-                        // widget missing its value as critical — the arrow keys
-                        // below are what make it one. The numbers are real
-                        // pixels, so a screen reader announces the width it is
-                        // actually changing rather than a percentage of nothing.
-                        aria-valuenow={colWidths.widthOf(col, field)}
-                        aria-valuemin={MIN_WIDTH}
-                        aria-valuemax={MAX_WIDTH}
-                        tabIndex={0}
-                        className={cn('col-resizer', colWidths.resizing === col && 'col-resizer-active')}
-                        onPointerDown={(e) => colWidths.beginResize(col, colWidths.widthOf(col, field), e)}
-                        onDoubleClick={(e) => { e.stopPropagation(); colWidths.resetColumn(col); }}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-                          e.preventDefault();
-                          colWidths.nudge(col, colWidths.widthOf(col, field), e.key === 'ArrowLeft' ? -16 : 16);
-                        }}
-                      />
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {rows.map((row) => {
-                const isNew = unseen.has(row.id);
-                /*
-                  `display` before `values`, always: a reference's raw value is
-                  a uuid and a picklist's is its stored value, and either one
-                  under a name is how a list ends up showing identifiers to a
-                  salesperson.
-
-                  It used to skip a field the row already showed as a column,
-                  to avoid saying the same thing twice. On production that made
-                  the second line disappear entirely: every saved leads list
-                  carries `contact_type` and `unit_no` among its columns, so
-                  both were skipped and the line was always empty — which reads
-                  as "the feature never shipped". The line is what somebody
-                  asked for; the duplicate column is theirs to remove.
-                */
-                const subtitle = subtitleFields
-                  .map((f) => {
-                    const raw = row.display?.[f.name] ?? row.values[f.name];
-                    if (raw === null || raw === undefined || raw === '') return null;
-                    if (Array.isArray(raw)) return raw.length ? raw.join(', ') : null;
-                    const text = String(raw);
-                    return text === row.label ? null : text;
-                  })
-                  .filter(Boolean)
-                  .join(' — ');
-                return (
-                <tr
-                  key={row.id}
-                  className={cn(
-                    // Striping, hover and selection all live in .list-row
-                    // (styles.css) so they layer in a predictable order.
-                    'list-row group cursor-pointer transition-colors',
-                    selected.has(row.id) && 'list-row-selected',
-                    // A new record is marked by weight, not by a coloured
-                    // sheet: tinting the row fought the zebra stripe, and on a
-                    // list where most rows are new it stopped meaning anything.
-                    // Starred keeps its tint — that one is rare by nature.
-                    row.starred && 'bg-amber-50/80 dark:bg-amber-950/25',
-                  )}
-                  onClick={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
-                >
-                  {/*
-                    The select column is not a text cell.
-
-                    `.list-cell` is 14px of padding each side plus
-                    `text-overflow: ellipsis`; the checkbox is 14px and the
-                    column is 40. Three pixels over, so every row in the CRM
-                    drew a "…" next to its checkbox — reported as mystery dots
-                    at the start of each row, and that is exactly what they
-                    were. It matches its own <th> now: no side padding, centred,
-                    nothing to truncate.
-                  */}
-                  <td className="list-cell-select list-stick-select" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${row.label}`}
-                      className="h-3.5 w-3.5 rounded border-slate-300"
-                      checked={selected.has(row.id)}
-                      onChange={(e) => {
-                        const next = new Set(selected);
-                        if (e.target.checked) next.add(row.id); else next.delete(row.id);
-                        setSelectedAll(false);
-                        setSelected(next);
-                      }}
-                    />
-                  </td>
-                  {visibleColumns.map((col, ci) => {
-                    const field = fieldMap.get(col);
-                    if (!field) {
-                      return <td key={col} className={cn('list-cell text-muted', ci === 0 && 'list-stick-first')}>—</td>;
-                    }
-                    const value = meta.permissions.edit && isInlineEditable(field, 'list') ? (
-                      <EditableField
-                        surface="list"
-                        module={moduleName}
-                        recordId={row.id}
-                        field={field}
-                        value={row.values[col]}
-                        display={row.display?.[col]}
-                        compact
-                        siblings={row.values}
-                        restrictTo={restrictionForField(meta.picklistDependencies, row.values, field.name)}
-                        linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
-                        onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
-                      />
-                    ) : (
-                      <FieldValue
-                        field={field}
-                        value={row.values[col]}
-                        display={row.display?.[col]}
-                        compact
-                        linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
-                      />
-                    );
-                    return (
-                      <td
-                        key={col}
-                        className={cn(
-                          'list-cell',
-                          ci === 0 && 'list-stick-first font-medium text-slate-900 dark:text-slate-100',
-                          // Unread weight, like an inbox — and now the *only*
-                          // marker for it. Applied to the whole row rather than
-                          // the name alone so the row reads as one unit.
-                          isNew && 'font-bold text-slate-900 dark:text-white',
-                        )}
-                      >
-                        {ci === 0 ? (
-                          /*
-                            The identity cell: a face on the left, and two lines
-                            beside it — who they are, then what they are.
-
-                            Laid out as a flex row rather than inline content,
-                            because the second line has to sit under the *name*
-                            and not under the avatar as well. Inline, the
-                            subtitle started at the left edge of the cell and
-                            read as a caption for the picture.
-                          */
-                          <div className="flex items-center gap-2.5">
-                            {/*
-                              A face for the row, with how full the record is
-                              drawn round it and the number tucked into its
-                              corner. Initials on a colour derived from the
-                              name, so the same person is the same colour on
-                              every screen.
-                            */}
-                            <StrengthRing
-                              fields={meta.fields}
-                              values={row.values}
-                              size={26}
-                              cornerBadge
-                            >
-                              <Avatar name={row.label} size={26} className="text-[10px]" />
-                            </StrengthRing>
-
-                            <div className="flex min-w-0 flex-col">
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                {row.starred && (
-                                  <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" aria-label="Favourite" />
-                                )}
-                                {/* `role="img"` on the tag icon because a bare
-                                    <span> may not carry an aria-label — axe
-                                    calls it aria-prohibited-attr and a screen
-                                    reader announces nothing, so the icon was
-                                    silent to anyone not looking at it. */}
-                                {(row.tags?.length ?? 0) > 0 && (
-                                  <span role="img" className="inline-flex shrink-0" title={`Tags: ${row.tags?.join(', ')}`} aria-label={`Tagged: ${row.tags?.join(', ')}`}>
-                                    <Tag className="h-3 w-3 text-blue-700 dark:text-blue-400" />
-                                  </span>
-                                )}
-                                {isNew && (
-                                  <span
-                                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-600 dark:bg-brand-400"
-                                    title="New — you haven’t opened this yet"
-                                  />
-                                )}
-                                {value}
-                              </span>
-                              {subtitle && (
-                                /*
-                                  Who this is, under their name. A rep
-                                  recognises "Prateek Ahuja / Buyer — B-118"
-                                  faster than a name alone, and the alternative
-                                  was two more columns competing for the same
-                                  width. Which fields appear is
-                                  `config.listSubtitle` on the field, so it is
-                                  the admin's choice rather than a list of names
-                                  compiled into this file.
-                                */
-                                <span className="list-subtitle mt-0.5 block truncate text-muted">
-                                  {subtitle}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ) : value}
-                      </td>
-                    );
-                  })}
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </>
         )}
       </div>
 
       {/* Pagination */}
-      {displayMode !== 'kanban' && (data?.total ?? 0) > 0 && (
+      {(data?.total ?? 0) > 0 && (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] bg-white px-4 py-2 lg:hidden dark:bg-slate-900 sm:px-6">
           <p className="text-xs text-muted tnum">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–
@@ -1815,59 +1244,6 @@ export default function ListView(): JSX.Element {
         <FilterBuilder module={meta} value={filter} onChange={setFilter} />
       </Modal>
 
-      <Modal
-        open={showColumns}
-        onClose={() => setShowColumns(false)}
-        title="Choose columns"
-        size="md"
-        footer={
-          <>
-            {activeView && (
-              <button
-                className="btn-secondary"
-                disabled={saveViewMutation.isPending}
-                onClick={() => saveViewMutation.mutate()}
-              >
-                {saveViewMutation.isPending ? <Spinner /> : <Save className="h-3.5 w-3.5" />}
-                Save to “{activeView.name}”
-              </button>
-            )}
-            <button className="btn-primary" onClick={() => setShowColumns(false)}>Done</button>
-          </>
-        }
-      >
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-          {meta.fields
-            .filter((f) => f.isActive && f.displayType !== 'hidden')
-            .map((f) => {
-              const active = visibleColumns.includes(f.name);
-              return (
-                <label
-                  key={f.name}
-                  className={cn(
-                    'flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm transition-colors',
-                    active
-                      ? 'border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950/50'
-                      : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 rounded border-slate-300"
-                    checked={active}
-                    onChange={() => {
-                      setColumns(active
-                        ? visibleColumns.filter((c) => c !== f.name)
-                        : [...visibleColumns, f.name]);
-                    }}
-                  />
-                  <span className="truncate">{f.label}</span>
-                </label>
-              );
-            })}
-        </div>
-      </Modal>
-
       <ExportWizard
         open={showExport}
         onClose={() => setShowExport(false)}
@@ -1907,24 +1283,6 @@ export default function ListView(): JSX.Element {
           />
         </Modal>
       )}
-
-      {/* Press and hold a card to see it without leaving the list — see
-          lib/pressPreview.ts. Rendered here rather than inside the card so one
-          dialog exists at a time regardless of how many rows are on screen. */}
-      <RecordPeek
-        row={rows.find((r) => r.id === peekId) ?? null}
-        module={meta}
-        columns={visibleColumns}
-        fieldMap={fieldMap}
-        isNew={peekId ? unseen.has(peekId) : false}
-        isStarred={Boolean(rows.find((r) => r.id === peekId)?.starred)}
-        onOpen={() => {
-          const id = peekId;
-          setPeekId(null);
-          if (id) openRecord(`/${moduleName}/${id}?return=${encodeURIComponent(returnTo)}`);
-        }}
-        onClose={() => setPeekId(null)}
-      />
 
       <ConfirmDialog
         open={confirmDelete}
@@ -2004,430 +1362,8 @@ function defaultColumns(meta: {
   return allColumns(meta).slice(0, 7);
 }
 
-/**
- * One record as a phone-sized card. The first visible column is the record's
- * identity, so it becomes the heading and is the tap target for opening the
- * record; the rest render as label/value rows and stay inline-editable exactly
- * as they are in the table. Empty values are dropped rather than shown as "—",
- * because a column that is blank for most rows is just noise once it is a
- * stacked row instead of a narrow column.
- */
-function MobileRecordCard({
-  row, module, columns, fieldMap, selected, isNew, isStarred, onToggleSelect, onOpen, onSaved,
-}: {
-  row: RecordEnvelope;
-  module: ModuleMeta & { permissions: { edit: boolean }; picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
-  columns: string[];
-  fieldMap: Map<string, FieldMeta>;
-  selected: boolean;
-  /** needs attention — New pipeline stage for leads, unread-style elsewhere */
-  isNew: boolean;
-  /** explicitly favourited by this user — stays gold until unstarred */
-  isStarred: boolean;
-  onToggleSelect: (checked: boolean) => void;
-  onOpen: () => void;
-  onSaved: () => void;
-}): JSX.Element {
-  /*
-    WhatsApp-shaped, because that is the list a rep already reads all day:
-    name, number under it, the type at the right edge, status and follow-up
-    below. The owner asked for exactly this and for the long-press peek to go —
-    swipe right calls, swipe left opens WhatsApp, Gmail-style, with the action
-    armed only once the card has travelled far enough to be deliberate.
 
-    The fixed layout is for the contact module (leads); anything else keeps the
-    generic card, because a property has no phone to call.
-  */
-  const isContact = module.name === 'leads';
-  const phone = toInternational(
-    String(row.values.country_code ?? 'India'),
-    String(row.values.mobile ?? ''),
-  );
 
-  const swipe = useSwipeActions((side: SwipeSide) => {
-    if (!isContact || !phone) return;
-    if (side === 'right') {
-      dial(phone);
-    } else {
-      void openExternal(`https://wa.me/${phone.replace(/[^\d+]/g, '')}`);
-    }
-  }, isContact && Boolean(phone));
-
-  if (!isContact) {
-    return (
-      <div
-        data-record-card={row.id}
-        className={cn(
-          'px-4 py-3 [-webkit-touch-callout:none]',
-          isStarred
-            ? 'bg-amber-50/80 dark:bg-amber-950/25'
-            : 'bg-white dark:bg-slate-900',
-        )}
-      >
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
-            checked={selected}
-            onChange={(e) => onToggleSelect(e.target.checked)}
-            aria-label="Select record"
-          />
-          <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-            <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-bold' : 'font-medium')}>
-              {isStarred && <Star className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
-              {isNew && (
-                <span
-                  className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
-                  title="New — you haven’t opened this yet"
-                />
-              )}
-              {row.label}
-            </p>
-            {row.recordNumber && (
-              <p className="mt-0.5 font-mono text-2xs text-muted">{row.recordNumber}</p>
-            )}
-          </button>
-          <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
-        </div>
-
-        <ContactDetails
-          row={row}
-          module={module}
-          columns={columns}
-          fieldMap={fieldMap}
-          onSaved={onSaved}
-        />
-      </div>
-    );
-  }
-
-  const statusValue = String(row.values.status ?? '');
-  const statusDisplay = row.display?.status ?? statusValue;
-
-  return (
-    /*
-      The swipe surface is the outer row: the coloured action sits behind the
-      card, the card slides over it with the finger, and touch scrolling still
-      works because the hook locks to whichever axis moved first.
-    */
-    <div
-      data-record-card={row.id}
-      className="relative overflow-hidden [-webkit-touch-callout:none]"
-    >
-      {/* The two action backgrounds. Only the armed one is fully opaque; the
-          other fades with travel so the reveal reads as "where am I going"
-          rather than a flash of colour. */}
-      <div
-        aria-hidden
-        className={cn(
-          'absolute inset-0 flex items-center justify-start bg-emerald-600 pl-6 text-white transition-opacity',
-          swipe.state.armed === 'left' ? 'opacity-100' : 'opacity-0',
-        )}
-      >
-        <MessageCircle className="h-5 w-5" />
-      </div>
-      <div
-        aria-hidden
-        className={cn(
-          'absolute inset-0 flex items-center justify-end bg-blue-600 pr-6 text-white transition-opacity',
-          swipe.state.armed === 'right' ? 'opacity-100' : 'opacity-0',
-        )}
-      >
-        <Phone className="h-5 w-5" />
-      </div>
-
-      <div
-        {...swipe.handlers}
-        style={{ transform: `translateX(${swipe.state.dx}px)` }}
-        className={cn(
-          'relative bg-white py-3 pl-4 pr-3 transition-transform dark:bg-slate-900',
-          swipe.state.dx === 0 && 'transition-transform',
-          isStarred && 'bg-amber-50/80 dark:bg-amber-950/25',
-        )}
-      >
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            className="mt-1.5 h-4 w-4 shrink-0 rounded border-slate-300"
-            checked={selected}
-            onChange={(e) => onToggleSelect(e.target.checked)}
-            aria-label="Select record"
-          />
-          <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-            <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-bold' : 'font-medium')}>
-              {isStarred && <Star className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
-              {isNew && (
-                <span
-                  className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
-                  title="New — you haven’t opened this yet"
-                />
-              )}
-              {row.label}
-            </p>
-            {phone && (
-              <p className="mt-0.5 tnum text-xs text-muted">{phone}</p>
-            )}
-          </button>
-          {/* Contact type at the right edge — the one thing the owner asked
-              to see without opening the record. */}
-          {row.display?.contact_type && (
-            <Badge className="mt-0.5 shrink-0" color="#64748b">{String(row.display.contact_type)}</Badge>
-          )}
-        </div>
-
-        <div className="mt-1.5 flex items-center gap-2 pl-7 text-xs">
-          {statusDisplay && (
-            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-2xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              {String(statusDisplay)}
-            </span>
-          )}
-          {row.values.next_followup_at ? (
-            <span className="truncate text-muted">
-              Follow-up {new Date(String(row.values.next_followup_at)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** The generic detail rows for non-contact modules — the previous card body. */
-function ContactDetails({
-  row, module, columns, fieldMap, onSaved,
-}: {
-  row: RecordEnvelope;
-  module: ModuleMeta & { permissions: { edit: boolean }; picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
-  columns: string[];
-  fieldMap: Map<string, FieldMeta>;
-  onSaved: () => void;
-}): JSX.Element {
-  const titleFields = new Set(module.labelFields ?? []);
-  const detailCols = columns.filter((c) => {
-    if (titleFields.has(c)) return false;
-    const field = fieldMap.get(c);
-    if (!field || field.uitype === 'autonumber') return false;
-    const v = row.values[c];
-    return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length);
-  });
-
-  if (!detailCols.length) return <></>;
-
-  return (
-    <dl className="mt-2.5 space-y-1.5 pl-7">
-      {detailCols.map((col) => {
-        const field = fieldMap.get(col)!;
-        return (
-          <div key={col} className="flex items-start gap-2 text-xs">
-            <dt className="w-28 shrink-0 truncate text-muted">{field.label}</dt>
-            <dd className="min-w-0 flex-1">
-              {module.permissions.edit && isInlineEditable(field, 'list') ? (
-                <EditableField
-                        surface="list"
-                  module={module.name}
-                  recordId={row.id}
-                  field={field}
-                  value={row.values[col]}
-                  display={row.display?.[col]}
-                  compact
-                  siblings={row.values}
-                  restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
-                  linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
-                  onSaved={onSaved}
-                />
-              ) : (
-                <FieldValue
-                  field={field}
-                  value={row.values[col]}
-                  display={row.display?.[col]}
-                  compact
-                  linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
-                />
-              )}
-            </dd>
-          </div>
-        );
-      })}
-    </dl>
-  );
-}
-
-function KanbanBoard({
-  module, rows, groups, groupBy, attentionIds, onMove,
-}: {
-  module: { fields: FieldMeta[]; name: string; singularLabel: string; permissions: { edit: boolean } };
-  rows: RecordEnvelope[];
-  groups: { key: string; label: string; color?: string | null; count: number; sum?: number }[];
-  groupBy: string;
-  attentionIds: Set<string>;
-  onMove: (id: string, value: string) => void;
-}): JSX.Element {
-  const navigate = useNavigate();
-  // Same rule as the table: a kanban card opens where the list stays put.
-  const openInNewTab = useApp((st) => st.user?.ui?.openInNewTab ?? true);
-  const openRecord = (path: string): void => {
-    if (openInNewTab) window.open(path, '_blank', 'noopener,noreferrer');
-    else navigate(path);
-  };
-  const queryClient = useQueryClient();
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [overColumn, setOverColumn] = useState<string | null>(null);
-  const ownerField = assignmentField(module.fields);
-
-  const field = module.fields.find((f) => f.name === groupBy);
-  const columns = groups.length
-    ? groups
-    : (field?.options ?? []).map((o) => ({ key: o.value, label: o.label, color: o.color, count: 0, sum: 0 }));
-
-  const byGroup = new Map<string, RecordEnvelope[]>();
-  for (const row of rows) {
-    const key = String(row.values[groupBy] ?? '');
-    if (!byGroup.has(key)) byGroup.set(key, []);
-    byGroup.get(key)!.push(row);
-  }
-
-  // The first currency field becomes the column total — deal value, unit price.
-  const amountField = module.fields.find((f) => f.uitype === 'currency');
-
-  /**
-   * The number on the card.
-   *
-   * A pipeline card had the budget on it, which on a lead desk is blank far
-   * more often than it is filled — and a blank currency is not blank, it is
-   * "₹0", printed on every card in every column. Zero rupees is not a fact
-   * about the lead; it is the absence of one, and it crowded out the only
-   * thing anybody actually wants from a card they are looking at in order to
-   * decide who to ring next.
-   *
-   * Found by uitype, not by name, because the engine must not know that leads
-   * call it `mobile` — see CLAUDE.md's rule about per-module branching.
-   */
-  const phoneField = module.fields.find((f) => f.uitype === 'phone' && f.isActive);
-  const codeFieldName = phoneField?.config.digitsFrom
-    ? String(phoneField.config.digitsFrom)
-    : null;
-  /** The code to paint in front when there is no country field to read one from. */
-  const codePrefix = String(phoneField?.config.codePrefix ?? '');
-
-  return (
-    <div className="flex h-full gap-3 overflow-x-auto p-4">
-      {columns.map((col) => {
-        const items = byGroup.get(col.key) ?? [];
-        return (
-          <div
-            key={col.key}
-            className={cn(
-              'flex w-64 shrink-0 flex-col rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] transition-colors dark:bg-slate-900/60 sm:w-72',
-              overColumn === col.key
-                ? 'border-brand-400 bg-brand-50 dark:border-brand-700 dark:bg-brand-950/40'
-                : 'border-slate-200 dark:border-slate-800',
-            )}
-            onDragOver={(e) => { e.preventDefault(); setOverColumn(col.key); }}
-            onDragLeave={() => setOverColumn(null)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setOverColumn(null);
-              if (dragging) { onMove(dragging, col.key); setDragging(null); }
-            }}
-          >
-            <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-800">
-              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: col.color ?? '#94a3b8' }} />
-              <span className="truncate text-sm font-medium">{col.label}</span>
-              <span className="ml-auto shrink-0 rounded-full bg-white px-1.5 text-2xs font-semibold tnum dark:bg-slate-800">
-                {col.count}
-              </span>
-            </div>
-
-            {amountField && (col.sum ?? 0) > 0 && (
-              <div className="border-b border-slate-200 px-3 py-1.5 text-2xs font-medium text-muted tnum dark:border-slate-800">
-                {formatIndianPrice(col.sum!)}
-              </div>
-            )}
-
-            <div className="flex-1 space-y-2 overflow-y-auto p-2">
-              {items.map((row) => (
-                <div
-                  key={row.id}
-                  draggable
-                  onDragStart={() => setDragging(row.id)}
-                  onDragEnd={() => setDragging(null)}
-                  onClick={() => openRecord(`/${module.name}/${row.id}`)}
-                  className={cn(
-                    'card cursor-pointer p-2.5 transition-shadow hover:shadow-md dark:bg-slate-800',
-                    row.starred && 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30',
-                    !row.starred && attentionIds.has(row.id) && 'border-brand-300 bg-brand-50/70 dark:border-brand-800 dark:bg-brand-950/30',
-                    dragging === row.id && 'opacity-40',
-                  )}
-                >
-                  <p className={cn('truncate text-sm', attentionIds.has(row.id) ? 'font-semibold' : 'font-medium')}>
-                    {row.starred && <Star className="mr-1 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
-                    {attentionIds.has(row.id) && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-brand-500 align-middle" title="Needs attention" />}
-                    {row.label}
-                  </p>
-                  {phoneField && row.values[phoneField.name] ? (
-                    <a
-                      href={`tel:${[
-                        codeFieldName ? row.values[codeFieldName] ?? codePrefix : codePrefix,
-                        row.values[phoneField.name],
-                      ].join('')}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="mt-1 block text-xs text-slate-600 tnum hover:underline dark:text-slate-400"
-                    >
-                      {formatPhoneWithCode(
-                        codeFieldName ? String(row.values[codeFieldName] ?? codePrefix) : codePrefix,
-                        String(row.values[phoneField.name]),
-                      )}
-                    </a>
-                  ) : null}
-                  {/* Money only when there is some. */}
-                  {amountField && Number(row.values[amountField.name]) > 0 && (
-                    <p className="mt-1 text-xs font-semibold text-slate-700 tnum dark:text-slate-300">
-                      {formatIndianPrice(Number(row.values[amountField.name]))}
-                    </p>
-                  )}
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    {ownerField && (
-                      <span className="truncate text-2xs text-muted" onClick={(e) => e.stopPropagation()}>
-                        {module.permissions.edit && isInlineEditable(ownerField, 'list') ? (
-                          <EditableField
-                            surface="list"
-                            module={module.name}
-                            recordId={row.id}
-                            field={ownerField}
-                            value={row.values.owner_id}
-                            display={row.display?.owner_id}
-                            compact
-                            onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
-                          />
-                        ) : (
-                          <FieldValue field={ownerField} value={row.values.owner_id} display={row.display?.owner_id} compact />
-                        )}
-                      </span>
-                    )}
-                    {/* Coloured from the rating the server already worked out,
-                        not by re-deciding here what Hot means. The two numbers
-                        that used to live in this line are also in the scoring
-                        engine, so an admin raising the Hot threshold moved the
-                        word and left this badge on the old boundary.
-
-                        The colour comes from the dropdown too. It used to be
-                        three literals here, and they did not match the ones the
-                        admin had actually chosen: Hot was red everywhere in the
-                        CRM and green in this one badge. Worse, changing it in
-                        Admin → Dropdowns had no effect here at all. */}
-                  </div>
-                </div>
-              ))}
-              {items.length === 0 && (
-                <p className="py-6 text-center text-2xs text-muted">Drop here</p>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 
 function ExportWizard({ open, onClose, module, fields, filter, selectedIds, allSelected }: {

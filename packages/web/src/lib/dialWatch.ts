@@ -22,7 +22,7 @@
  * cannot both be given the same call.
  */
 import { api } from './api';
-import { callSyncSupported, endCallOnPhone, performCallAction, placeCallFromPhone } from './callSync';
+import { callDeviceIdentity, callSyncSupported, endCallOnPhone, performCallAction, placeCallFromPhone } from './callSync';
 import { isNative } from './native';
 import { dial } from './nativeActions';
 
@@ -42,7 +42,8 @@ export async function takePendingDial(): Promise<void> {
   if (!isNative || busy) return;
   busy = true;
   try {
-    const { command } = await api.pendingDial();
+    const identity = await callDeviceIdentity();
+    const { command } = await api.pendingDial(identity);
     if (!command) return;
 
     /*

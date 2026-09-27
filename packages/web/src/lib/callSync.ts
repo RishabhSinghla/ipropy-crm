@@ -46,6 +46,21 @@ export interface CallSyncStatus {
    * other side picked up. Absent on an older build.
    */
   canControlCall?: boolean;
+  /** SHA-256 of this installation's native pairing token, never the token. */
+  deviceFingerprint?: string;
+}
+
+const PAIRED_DEVICE_ID_KEY = 'ipropy.callSyncDeviceId';
+
+export async function callDeviceIdentity(): Promise<{ deviceId?: string; deviceFingerprint?: string }> {
+  if (!callSyncSupported) return {};
+  const status = await callSyncStatus();
+  if (!status.paired) return {};
+  const deviceId = localStorage.getItem(PAIRED_DEVICE_ID_KEY) ?? undefined;
+  return {
+    ...(deviceId ? { deviceId } : {}),
+    ...(status.deviceFingerprint ? { deviceFingerprint: status.deviceFingerprint } : {}),
+  };
 }
 
 interface CallSyncPlugin {
@@ -147,11 +162,13 @@ export async function enableCallSync(options: {
     tenant, a laptop under test), the calls must follow the CRM the rep is
     actually signed into rather than production.
   */
-  return CallSync.pair({
+  const status = await CallSync.pair({
     baseUrl: apiBase() || window.location.origin,
     token: pairing.token,
     importHistory: options.importHistory ?? false,
   });
+  localStorage.setItem(PAIRED_DEVICE_ID_KEY, pairing.deviceId);
+  return status;
 }
 
 /**
@@ -171,7 +188,11 @@ export async function askForCallPermissions(): Promise<CallSyncStatus> {
 
 export async function disableCallSync(): Promise<CallSyncStatus> {
   if (!callSyncSupported) return UNAVAILABLE;
-  return CallSync.unpair();
+  const status = await CallSync.unpair();
+  const deviceId = localStorage.getItem(PAIRED_DEVICE_ID_KEY);
+  if (deviceId) await api.revokeDevice(deviceId);
+  localStorage.removeItem(PAIRED_DEVICE_ID_KEY);
+  return status;
 }
 
 export async function syncCallsNow(): Promise<void> {

@@ -239,6 +239,8 @@ export default function Layout(): JSX.Element {
           onClose={() => setDrawerOpen(false)}
         />
 
+        <LiveCallDeck />
+
         {/* The bottom tab bar is fixed, so without this the last 64px of every
             page — a form's Save button included — sits behind it. */}
         {/* A wide list belongs to its own grid scroller. `min-w-0` prevents a
@@ -251,8 +253,6 @@ export default function Layout(): JSX.Element {
               header lives outside it and stays usable throughout. */}
           <ErrorBoundary resetKey={location.pathname}>
             <Outlet />
-            {/* The call, if one is running — over every page, until it is saved. */}
-            <LiveCallDeck />
           </ErrorBoundary>
         </main>
 

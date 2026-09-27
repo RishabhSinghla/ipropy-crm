@@ -1,9 +1,24 @@
 import { CRORE, LAKH } from './constants.js';
+import type { PicklistOption } from './uitypes.js';
 
 /**
  * Formatting helpers shared by the server (for AI prompts, emails, WhatsApp
  * templates) and the web client, so a price renders identically everywhere.
  */
+
+/** Resolve either the stable stored key or the user-facing label of a picklist option. */
+export function picklistOptionForValue(
+  options: PicklistOption[] | undefined,
+  value: unknown,
+): PicklistOption | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const needle = String(value).trim();
+  if (!needle) return undefined;
+  const folded = needle.toLocaleLowerCase();
+  return options?.find((option) => option.value === needle)
+    ?? options?.find((option) => option.value.trim().toLocaleLowerCase() === folded)
+    ?? options?.find((option) => option.label.trim().toLocaleLowerCase() === folded);
+}
 
 export function formatCurrency(value: number | null | undefined, currency = 'INR', locale = 'en-IN'): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—';

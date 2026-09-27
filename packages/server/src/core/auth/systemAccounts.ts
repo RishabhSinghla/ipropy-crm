@@ -15,3 +15,15 @@
 export function isSystemAccount(email: string): boolean {
   return !/@[^@\s]+\.[^@\s]+$/.test(email.trim());
 }
+
+/**
+ * The automation account's fixed id. Every unattended write — website and
+ * portal leads, imports, workflows — runs as this row.
+ *
+ * Production's copy is named "System User" with the address
+ * `system@ipropy.com`, which *has* a dot after the `@`, so `isSystemAccount`
+ * cannot recognise it by address. The id is what is certain. Read off
+ * production on 27 September 2026: it created 48,235 records and 48,254 audit
+ * rows and can never log in.
+ */
+export const AUTOMATION_USER_ID = '00000000-0000-0000-0000-000000000000';

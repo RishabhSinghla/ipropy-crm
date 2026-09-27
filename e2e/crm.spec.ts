@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList, openCreateDialog, waitForShell, firstPicklistColumn } from './helpers';
+import { unique, waitForRecords, fillRequiredFields, openRecordTab, searchList, openCreateDialog, waitForShell, openFirstRecord } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -45,82 +45,16 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
   // And it is findable through search, which exercises the list query path.
   await page.goto('/leads');
   await searchList(page, surname);
-  // `visible=true` matters: ListView renders both a mobile card list and a
-  // desktop table, so the name is in the DOM twice and only one is displayed.
   await expect(
     page.getByText(`Playwright ${surname}`, { exact: true }).locator('visible=true').first(),
   ).toBeVisible({ timeout: 30_000 });
 });
 
-test('inline-edits a picklist in the list and the change survives a reload', async ({ page }) => {
+test('inline-edits a text field on the record in the split view', async ({ page }) => {
   await page.goto('/leads');
   await waitForRecords(page);
-
-  /*
-    Whichever picklist is on screen, not one named here.
-
-    Which columns a list shows is an admin's arrangement now (Admin → Table
-    View), so naming "Pipeline Status" made this spec assert on one
-    installation's choices: it broke the day the columns were arranged, and the
-    failure read as a broken inline edit rather than as a column that had moved.
-    What is being tested is that a dropdown in a list edits and persists — any
-    dropdown will prove it.
-  */
-  // Asked first, because with inline editing off there are no editors to find
-  // and "no dropdown column" would be a true statement about the wrong thing.
-  test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
-  const statusIndex = await firstPicklistColumn(page);
-  test.skip(statusIndex < 0, 'no dropdown column in this table');
-  const statusCell = page.locator('tbody tr').first().locator('td').nth(statusIndex);
-  /*
-    On a list the value is not the trigger — the pencil beside it is.
-
-    Clicking a cell opens the record, because that is what clicking a row has
-    always meant and swallowing it into an editor was reported as a bug: people
-    clicked a name to read a lead and got a text box over it. Inline editing is
-    still here, one deliberate click away.
-  */
-  const trigger = statusCell.locator('button[title="Change"]');
-  const before = (await trigger.textContent())?.trim();
-
-  await trigger.click();
-
-  // Pick an option that differs from the current value, so the assertion
-  // cannot pass by the value simply not changing. Scoped by role: the popover
-  // is portalled to the end of <body>, so "a button whose text is New" would
-  // otherwise match another row's cell before it matched an option.
-  const options = page.getByRole('option');
-  const target = options.filter({ hasNotText: before ?? '___' }).first();
-  const chosen = (await target.textContent())?.trim();
-  await target.click();
-
-  await expect(trigger).toHaveText(new RegExp(chosen ?? '', 'i'), { timeout: 15_000 });
-
-  // The real assertion: it persisted server-side, not just in local state.
-  await page.reload();
-  await waitForRecords(page);
-  const after = page.locator('tbody tr').first().locator('td').nth(statusIndex);
-  await expect(after).toContainText(chosen ?? '', { timeout: 30_000 });
-});
-
-test('inline-edits a text field on the record detail page', async ({ page, context }) => {
-  await page.goto('/leads');
-  await waitForRecords(page);
-  // No skip: a record page is always editable, whatever the list setting says.
-  // Any cell opens the record now — the inline editors on a list sit behind
-  // their own pencil and no longer swallow the click — but Record # is picked
-  // deliberately: it is an autonumber, so there is nothing else on it to hit.
-  const popup = context.waitForEvent('page').catch(() => null);
-  await page.locator('tbody tr').first().locator('td').nth(1).click();
-
-  // Records open in a new tab by default, so the page under test may be that
-  // one. Handle both, because a setting decides which.
-  const opened = await Promise.race([
-    popup,
-    page.waitForURL(/\/leads\/[0-9a-f-]{36}/).then(() => null).catch(() => null),
-  ]);
-  if (opened) page = opened;
-  await page.waitForURL(/\/leads\/[0-9a-f-]{36}/, { timeout: 30_000 });
+  // The record opens beside the queue; its fields edit where they stand.
+  await openFirstRecord(page);
 
   // Fields live on Overview, and which tab a record opens on is an admin
   // setting — his own detail layout opens on Timeline. Ask for the tab.
@@ -163,7 +97,9 @@ test('inline-edits a text field on the record detail page', async ({ page, conte
 
   await expect(page.getByText(typed).first()).toBeVisible({ timeout: 15_000 });
 
+  // The edit made this the most recently updated record, so it leads the queue.
   await page.reload();
+  await openFirstRecord(page);
   await openRecordTab(page, 'Overview');
   await expect(page.getByText(typed).first()).toBeVisible({ timeout: 30_000 });
 });

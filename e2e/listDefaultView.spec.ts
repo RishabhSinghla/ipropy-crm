@@ -5,10 +5,9 @@
  * with anybody free to switch. Both halves need a browser: the default lives in
  * the browser's own storage, and "it stuck" means it survived a reload.
  *
- * The rest of this suite signs in with `table` already stored, because those
- * specs are about the table — so this is the only place the real default is
- * checked, and the clearing is done by loading the page, removing the key and
- * reloading. An init script would have cleared it on the *reload* too, which
+ * Since 27 September 2026 the split view is the only view, so the clearing
+ * below is belt and braces: it proves an old stored choice changes nothing.
+ * It is done by loading the page, removing the key and reloading. An init script would have cleared it on the *reload* too, which
  * reads exactly like the preference failing to stick.
  */
 import { expect, test } from '@playwright/test';
@@ -34,21 +33,20 @@ for (const module of ['leads', 'properties']) {
   });
 }
 
-test('choosing the table keeps it chosen, on that module only', async ({ page }) => {
-  await forgetTheChoice(page, '/leads');
-  await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
-
-  await page.locator('button[title="Table"]').click();
-  await expect(page.locator('table').first()).toBeVisible();
-
-  // The point of remembering it: a reload, not a re-render.
+test('the split view is the only view, whatever a browser remembers', async ({ page }) => {
+  /*
+    27 September 2026, the owner: the table and the board are gone. A browser
+    that remembered choosing the table before then must still land on the
+    split view, and nothing offers a way back to a view that no longer exists.
+  */
+  await page.goto('/leads');
+  await page.evaluate(() => {
+    try { localStorage.setItem('ipropy.listmode.leads', 'table'); } catch { /* private window */ }
+  });
   await page.reload();
-  await expect(page.locator('table').first()).toBeVisible({ timeout: 30_000 });
-
-  // And the habit is per module — a choice made on Contacts must not follow
-  // somebody to Inventory, which is a different job on the same screen.
-  await page.goto('/properties');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('table')).toHaveCount(0);
+  await expect(page.locator('button[title="Table"], button[title="Kanban"]')).toHaveCount(0);
 });
 
 test('the record\'s own tabs open inside the desk, not on another page', async ({ page }) => {

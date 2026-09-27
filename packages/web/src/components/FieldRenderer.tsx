@@ -8,8 +8,8 @@ import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
  * immediately works everywhere without touching the UI.
  */
 import {
-  expectedDigits, formatArea, formatDate, formatDateTime, formatIndianPrice, formatPhone,
-  type FieldMeta,
+  expectedDigits, formatArea, formatDate, formatDateTime, formatIndianPrice, formatPhone, picklistOptionForValue,
+  type FieldMeta, type PicklistOption,
   relativeDueDay, type DueDay, type DueTone,
 } from '@ipropy/shared';
 import {
@@ -223,7 +223,7 @@ export function FieldValue({
 
     case 'picklist':
     case 'radio': {
-      const option = field.options?.find((o) => o.value === value);
+      const option = picklistOptionForValue(field.options, value);
       if (option?.meta?.plainText === true) {
         return <span className="font-medium text-slate-700 dark:text-slate-200">{option.label ?? String(value)}</span>;
       }
@@ -237,7 +237,7 @@ export function FieldValue({
       return (
         <span className="inline-flex flex-wrap items-center gap-1">
           {shown.map((v) => {
-            const option = field.options?.find((o) => o.value === v);
+            const option = picklistOptionForValue(field.options, v);
             return option?.meta?.plainText === true
               ? <span key={String(v)} className="font-medium text-slate-700 dark:text-slate-200">{option.label ?? String(v)}</span>
               : <Badge key={String(v)} color={option?.color}>{option?.label ?? String(v)}</Badge>;
@@ -1061,7 +1061,7 @@ function GalleryThumb({ url, onRemove }: { url: string; onRemove?: () => void })
 export function MultiSelect({
   options, value, onChange, disabled,
 }: {
-  options: { value: string; label: string; color: string | null }[];
+  options: PicklistOption[];
   value: string[];
   onChange: (v: string[]) => void;
   disabled?: boolean;
@@ -1092,21 +1092,11 @@ export function MultiSelect({
       >
         {value.length === 0 && <span className="text-muted">— Select —</span>}
         {value.map((v) => {
-          const o = options.find((x) => x.value === v);
-          return (
-            <Badge key={v} color={o?.color}>
-              {o?.label ?? v}
-              {!disabled && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); toggle(v); }}
-                  className="ml-0.5 opacity-60 hover:opacity-100"
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              )}
-            </Badge>
-          );
+          const o = picklistOptionForValue(options, v);
+          const remove = !disabled && <button type="button" onClick={(e) => { e.stopPropagation(); toggle(v); }} className="ml-0.5 opacity-60 hover:opacity-100" aria-label={`Remove ${o?.label ?? v}`}><X className="h-2.5 w-2.5" /></button>;
+          return o?.meta?.plainText === true
+            ? <span key={v} className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-200">{o.label ?? v}{remove}</span>
+            : <Badge key={v} color={o?.color}>{o?.label ?? v}{remove}</Badge>;
         })}
       </div>
 

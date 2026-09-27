@@ -7,6 +7,7 @@ import { blockApiKey, getUser, hashPassword, requireAuth } from '../../middlewar
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, getSubordinateUserIds, invalidatePermissions } from '../../core/permissions/index.js';
 import { registry } from '../../core/metadata/registry.js';
+import { AUTOMATION_USER_ID } from '../../core/auth/systemAccounts.js';
 import {
   getSettings, getOneDriveProviderSettings, listIntegrations, getIntegrationSummary, saveIntegration, recordIntegrationResult,
 } from '../../core/settings/integrations.js';
@@ -59,6 +60,9 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
      LEFT JOIN ipy_role r ON r.id = u.role_id
      LEFT JOIN ipy_profile p ON p.id = u.profile_id
      WHERE u.deleted_at IS NULL ${includeInactive ? '' : 'AND u.is_active = true'}
+       -- Not a person: the automation account never appears in the directory,
+       -- a picker or the Users screen (27 September 2026, the owner).
+       AND u.id <> '${AUTOMATION_USER_ID}'
        ${adminOnly ? 'AND (u.is_admin = true OR r.depth = 0)' : ''}
        ${assignable ? 'AND u.id = ANY($1::uuid[])' : ''}
      ORDER BY u.first_name, u.last_name`,

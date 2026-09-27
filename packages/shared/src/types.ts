@@ -257,13 +257,6 @@ export interface Dashboard {
 // ---------------------------------------------------------------------------
 
 /** How lists behave. Org-wide, set in Admin → Settings, sent with the user. */
-/** The three ways a list can be shown. `ipropy` is the split view's stored name. */
-export interface ListViews {
-  table: boolean;
-  kanban: boolean;
-  ipropy: boolean;
-}
-
 export interface UiSettings {
   /** Click a value in a list and type into it. Off by default: too easy to trigger by accident. */
   inlineEdit: boolean;
@@ -279,19 +272,8 @@ export interface UiSettings {
   /** Where the social icons sit: beside the brand, on the right, or nowhere. */
   socialPosition: 'brand' | 'right' | 'hidden';
   /**
-   * The columns every table shows, per module, in order — the admin's one
-   * arrangement for the whole team.
-   *
-   * A team that each arranged their own columns could not be talked to about
-   * "the third column", and a saved list carried its own set on top, so the
-   * same list looked different to two people. This is the single answer.
-   * `null` for a module, or no entry at all, falls back to the shipped
-   * defaults so a new module is never a blank table.
-   */
-  listColumns: Record<string, string[]> | null;
-  /**
-   * What the split view shows, per module — the same idea as `listColumns`,
-   * for the screen most of the team now works in all day.
+   * What the split view shows, per module — the screen the whole team works
+   * in all day.
    *
    * Three lists, because the split view has three places a field can appear
    * and they answer different questions: the **queue** line under each name in
@@ -303,16 +285,6 @@ export interface UiSettings {
    * it does today.
    */
   splitView: Record<string, SplitViewLayout> | null;
-  /**
-   * Which of the three list views the team may use.
-   *
-   * All three ship on. A team that only works the split view still saw three
-   * buttons, and three ways for two people to be looking at the same list
-   * differently. `null` means "as shipped" — all three — so a missing or
-   * malformed row can never leave a module with no way to show its records.
-   * The last one on cannot be switched off, for the same reason.
-   */
-  listViews: ListViews | null;
 }
 
 /** One module's split-view arrangement. Every list is ordered and may be empty. */

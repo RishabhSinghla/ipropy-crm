@@ -194,9 +194,43 @@ describe('dialling from the CRM', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ to: '9811100003' })
       .expect(200);
+    const queuedDevice = await db.queryOne<{ device_id: string }>(
+      'SELECT device_id FROM ipy_device_command WHERE id = $1', [queued.body.commandId],
+    );
+
+    const wrongPhone = queuedDevice!.device_id === deviceId
+      ? await request(app).post('/api/telephony/devices').set('Authorization', `Bearer ${token}`)
+        .send({ label: 'Spare handset' }).expect(201)
+      : { body: { deviceId } };
+    const notMine = await request(app)
+      .get('/api/telephony/dial/pending')
+      .query({ deviceId: wrongPhone.body.deviceId })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(notMine.body.command).toBeNull();
+
+    const otherUser = await signIn(app, 'priya.sharma@ipropy.com');
+    const anotherAgent = await request(app)
+      .get('/api/telephony/dial/pending')
+      .query({ deviceId: queuedDevice!.device_id })
+      .set('Authorization', `Bearer ${otherUser}`)
+      .expect(200);
+    expect(anotherAgent.body.command).toBeNull();
+
+    const mismatched = await request(app)
+      .get('/api/telephony/dial/pending')
+      .query({ deviceId: queuedDevice!.device_id, deviceFingerprint: '0'.repeat(64) })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(mismatched.body.command).toBeNull();
+
+    const targetFingerprint = await db.queryOne<{ token_hash: string }>(
+      'SELECT token_hash FROM ipy_device WHERE id = $1', [queuedDevice!.device_id],
+    );
 
     const pending = await request(app)
       .get('/api/telephony/dial/pending')
+      .query({ deviceFingerprint: targetFingerprint!.token_hash })
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(pending.body.command.id).toBe(queued.body.commandId);
@@ -209,6 +243,7 @@ describe('dialling from the CRM', () => {
 
     const another = await request(app)
       .get('/api/telephony/dial/pending')
+      .query({ deviceId: queuedDevice!.device_id })
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(another.body.command).toBeNull();

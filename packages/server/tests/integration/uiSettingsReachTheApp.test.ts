@@ -3,9 +3,9 @@
  *
  * This suite exists because of one bug, and the bug is the kind only a real
  * database can show. `uiSettings()` used to fetch a hand-written list of keys
- * and hand each one to its reader. A new setting — `ui.list_views` — got a
- * reader and was never added to that list, so it was read as absent every
- * time: Admin → List Views saved successfully, said so, and changed nothing.
+ * and hand each one to its reader. A new setting got a reader and was never
+ * added to that list, so it was read as absent every time: its admin screen
+ * saved successfully, said so, and changed nothing.
  *
  * Nothing could see it. The reader's own unit tests passed (they call it
  * directly), typecheck passed (the key list is an array of strings), and the
@@ -23,7 +23,7 @@ let before: unknown = null;
 
 async function save(value: unknown): Promise<void> {
   await db.query(
-    `INSERT INTO ipy_setting (key, value, category) VALUES ('ui.list_views', $1::jsonb, 'ui')
+    `INSERT INTO ipy_setting (key, value, category) VALUES ('ui.split_view', $1::jsonb, 'ui')
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
     [JSON.stringify(value)],
   );
@@ -33,37 +33,30 @@ async function save(value: unknown): Promise<void> {
 
 beforeAll(async () => {
   const row = await db.queryOne<{ value: unknown }>(
-    `SELECT value FROM ipy_setting WHERE key = 'ui.list_views'`,
+    `SELECT value FROM ipy_setting WHERE key = 'ui.split_view'`,
   );
   before = row?.value ?? null;
 });
 
 afterAll(async () => {
-  await save(before ?? { table: true, kanban: true, ipropy: true });
+  await save(before ?? {});
 });
 
-describe('a list view switched off in the admin panel', () => {
+describe('the split view arranged in the admin panel', () => {
   it('reaches the app', async () => {
-    await save({ table: true, kanban: false, ipropy: true });
-    expect((await uiSettings()).listViews).toEqual({ table: true, kanban: false, ipropy: true });
+    await save({ leads: { queue: ['mobile'], header: [], form: [] } });
+    expect((await uiSettings()).splitView).toEqual({ leads: { queue: ['mobile'], header: [], form: [] } });
   });
 
-  it('comes back on when it is switched back on', async () => {
-    await save({ table: true, kanban: true, ipropy: true });
-    expect((await uiSettings()).listViews).toEqual({ table: true, kanban: true, ipropy: true });
-  });
-
-  it('is ignored when it would leave a list with no view at all', async () => {
-    await save({ table: false, kanban: false, ipropy: false });
-    expect((await uiSettings()).listViews).toBeNull();
+  it('goes back to the shipped answer when it is cleared', async () => {
+    await save({});
+    expect((await uiSettings()).splitView).toBeNull();
   });
 
   it('does not disturb the settings beside it', async () => {
-    await save({ table: false, kanban: true, ipropy: true });
+    await save({ leads: { queue: ['mobile'], header: [], form: [] } });
     const ui = await uiSettings();
-    // The two that share this row's prefix and were working before the bug.
-    expect(ui).toHaveProperty('splitView');
-    expect(ui).toHaveProperty('listColumns');
     expect(typeof ui.openInNewTab).toBe('boolean');
+    expect(typeof ui.inlineEdit).toBe('boolean');
   });
 });

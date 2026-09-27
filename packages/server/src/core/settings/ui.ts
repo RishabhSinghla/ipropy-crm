@@ -11,58 +11,21 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
-import type { HeaderTab, ListViews, SplitViewLayout, UiSettings } from '@ipropy/shared';
+import type { HeaderTab, SplitViewLayout, UiSettings } from '@ipropy/shared';
 
 const DEFAULTS: UiSettings = {
   inlineEdit: false,
   openInNewTab: true,
   headerTabs: null,
   socialPosition: 'right',
-  listColumns: null,
   splitView: null,
-  listViews: null,
 };
-
-/**
- * `{ module: [field, …] }`, ignoring anything that is not that.
- *
- * Exported for its tests: this is the one place a bad settings row is stopped
- * from reaching every table in the CRM.
- */
-/**
- * Which list views are on, ignoring anything that is not a boolean.
- *
- * Exported for its tests. **The last view on cannot be switched off here**: a
- * row saying every view is off would leave every module with no way to show a
- * record, and a settings row should not be able to cause a blank page. When
- * nothing survives, the answer is null — as shipped, all three.
- */
-export function readListViews(value: unknown): ListViews | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const row = value as Record<string, unknown>;
-  const on = (key: string): boolean => row[key] !== false;
-  const views: ListViews = { table: on('table'), kanban: on('kanban'), ipropy: on('ipropy') };
-  if (!views.table && !views.kanban && !views.ipropy) return null;
-  return views;
-}
-
-export function readColumns(value: unknown): Record<string, string[]> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const out: Record<string, string[]> = {};
-  for (const [module, columns] of Object.entries(value as Record<string, unknown>)) {
-    if (!Array.isArray(columns)) continue;
-    const names = columns.filter((c): c is string => typeof c === 'string' && c.trim().length > 0);
-    if (names.length) out[module] = names;
-  }
-  return Object.keys(out).length ? out : null;
-}
 
 /**
  * `{ module: { queue, header, form } }`, ignoring anything that is not that.
  *
- * Same job as `readColumns` and the same rule: an empty list is dropped rather
- * than stored, so a malformed row can never mean "show no fields". Here that
- * matters more than it does for a table — the split view's three lists each
+ * An empty list is dropped rather than stored, so a malformed row can never
+ * mean "show no fields". The split view's three lists each
  * fall back to something sensible when absent (the flagged subtitle fields,
  * the Layout Designer's header, its blocks), and an empty array would override
  * that fallback with nothing at all.
@@ -102,10 +65,9 @@ export async function uiSettings(): Promise<UiSettings> {
     /*
       Every `ui.` row, rather than a list of names kept in step by hand.
 
-      That list existed and `ui.list_views` was added to the reader below
-      without being added to it, so the setting was fetched by nobody, read as
-      absent, and Admin -> List Views saved perfectly and changed nothing —
-      which is exactly what a switch that does not work looks like. A prefix
+      That list existed, and a setting was once added to the reader below
+      without being added to it: fetched by nobody, read as absent, saved
+      perfectly and changing nothing — exactly what a broken switch looks like. A prefix
       cannot fall behind: a new `ui.` setting needs a reader and nothing else.
     */
     const { rows } = await db.query<{ key: string; value: unknown }>(
@@ -134,15 +96,7 @@ export async function uiSettings(): Promise<UiSettings> {
       socialPosition: position === 'brand' || position === 'right' || position === 'hidden'
         ? position
         : DEFAULTS.socialPosition,
-      /*
-        `{ module: [field, …] }` and nothing else. A malformed row falls back
-        to the shipped defaults rather than to an empty array — an empty array
-        is a *decision* ("show no columns") and a table with no columns is not
-        something a bad settings row should be able to cause.
-      */
-      listColumns: readColumns(map.get('ui.list_columns')),
       splitView: readSplitView(map.get('ui.split_view')),
-      listViews: readListViews(map.get('ui.list_views')),
     };
     return cached;
   } catch (err) {

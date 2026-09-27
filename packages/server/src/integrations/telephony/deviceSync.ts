@@ -90,6 +90,30 @@ export interface AuthedDevice {
   phoneNumber: string | null;
 }
 
+/**
+ * A session identifies the physical handset before taking one of its commands.
+ * The fingerprint is the SHA-256 of the native pairing token, never the token
+ * itself. Old app builds have neither identifier; they may claim work only
+ * when this user has exactly one active phone.
+ */
+export async function callingDeviceFor(userId: string, identity: {
+  deviceId?: string;
+  deviceFingerprint?: string;
+}): Promise<string | null> {
+  const row = await db.queryOne<{ id: string }>(
+    `SELECT id FROM (
+       SELECT id, token_hash, count(*) OVER() AS active_count
+         FROM ipy_device WHERE user_id = $1 AND is_active = true
+     ) own
+     WHERE ($2::uuid IS NOT NULL AND id = $2::uuid AND ($3::text IS NULL OR token_hash = $3))
+        OR ($2::uuid IS NULL AND $3::text IS NOT NULL AND token_hash = $3)
+        OR ($2::uuid IS NULL AND $3::text IS NULL AND active_count = 1)
+     LIMIT 1`,
+    [userId, identity.deviceId ?? null, identity.deviceFingerprint ?? null],
+  );
+  return row?.id ?? null;
+}
+
 export async function authenticateDevice(token: string | undefined): Promise<AuthedDevice> {
   if (!token) throw new UnauthorizedError('Device token required');
 
@@ -439,24 +463,26 @@ export async function listDevices(userId: string, isAdmin: boolean): Promise<Rec
  * installing anything, which is the whole reason it is here rather than in the
  * native half.
  *
- * It stamps **the phone a desk Call would ring** — the same "most recently
- * synced active device" `queueDial` picks — because that is the exact promise
- * the status is used to make. Picking by recency is safe here and nowhere
- * else: every device considered belongs to this same person.
+ * It stamps only the handset that sent the heartbeat. Shared logins may have
+ * more than one paired phone; recency alone cannot identify which one opened.
+ * An older build without device identity is accepted only when this user has
+ * exactly one active phone.
  */
 export async function markAppOpen(
   userId: string, canEndCall?: boolean, canControlCall?: boolean,
+  identity: { deviceId?: string; deviceFingerprint?: string } = {},
 ): Promise<{ deviceId: string | null }> {
+  const deviceId = await callingDeviceFor(userId, identity);
+  if (!deviceId) return { deviceId: null };
   const row = await db.queryOne<{ id: string }>(
     `UPDATE ipy_device
         SET app_open_at = now(),
             last_seen_at = now(),
             can_end_call = COALESCE($2, can_end_call),
             can_control_call = COALESCE($3, can_control_call)
-      WHERE id = (SELECT id FROM ipy_device WHERE user_id = $1 AND is_active = true
-                   ORDER BY last_sync_at DESC NULLS LAST, created_at DESC LIMIT 1)
+      WHERE id = $1 AND user_id = $4 AND is_active = true
       RETURNING id`,
-    [userId, canEndCall ?? null, canControlCall ?? null],
+    [deviceId, canEndCall ?? null, canControlCall ?? null, userId],
   );
   return { deviceId: row?.id ?? null };
 }
@@ -525,7 +551,8 @@ export async function queueDial(input: {
   const device = await db.queryOne<{ id: string; label: string }>(
     `SELECT id, label FROM ipy_device
       WHERE user_id = $1 AND is_active = true
-      ORDER BY last_sync_at DESC NULLS LAST, created_at DESC
+      ORDER BY CASE WHEN app_open_at > now() - interval '2 minutes' THEN 0 ELSE 1 END,
+               app_open_at DESC NULLS LAST, last_sync_at DESC NULLS LAST, created_at DESC
       LIMIT 1`,
     [input.userId],
   );

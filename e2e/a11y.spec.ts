@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { inlineEditOn, waitForRecords, openCreateDialog, waitForShell } from './helpers';
+import { inlineEditOn, waitForRecords, openCreateDialog, waitForShell, openFirstRecord } from './helpers';
 
 /**
  * Automated accessibility checks on the screens people spend their day in.
@@ -148,9 +148,10 @@ test.describe('accessibility', () => {
     const call = page.locator('button[title^="Call "]').first();
     await expect(call).toBeVisible({ timeout: 20_000 });
     await call.click();
-    // The call deck, not a dialog: the console became the header's deck on
-    // 24 September 2026, and this scan was still waiting for a dialog.
-    const deck = page.getByTestId('call-deck');
+    // The record opens in the split view, where the deck takes the notes
+    // box's place (`call-deck-panel`); the floating deck is the same controls
+    // for when the rep leaves the record mid-call.
+    const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
     await expect(deck).toBeVisible({ timeout: 20_000 });
     await expect(deck.locator('button[aria-pressed]').first()).toBeVisible();
     const { violations } = await scan(page);
@@ -218,25 +219,14 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
-  test('record detail has no violations', async ({ page, context }) => {
+  test('record detail has no violations', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
-
-    // A record opens in a new tab by default now, so the page under test may be
-    // the popup rather than this one. Handle both, because the setting decides
-    // and this test is about the record page either way.
-    const popup = context.waitForEvent('page').catch(() => null);
-    await page.locator('tbody tr').first().locator('td').nth(1).click();
-    const opened = await Promise.race([
-      popup,
-      page.waitForURL(/\/leads\/[0-9a-f-]{36}/).then(() => null).catch(() => null),
-    ]);
-
-    const target = opened ?? page;
-    await target.waitForURL(/\/leads\/[0-9a-f-]{36}/, { timeout: 30_000 });
-    const { violations } = await scan(target);
+    // The record opens beside the queue, in the split view — the only place a
+    // record is shown since 27 September 2026.
+    await openFirstRecord(page);
+    const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
-    if (opened) await opened.close();
   });
 
   test('the new-record dialog has no violations', async ({ page }) => {

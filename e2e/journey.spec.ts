@@ -80,18 +80,13 @@ test.describe('lead lifecycle through the UI', () => {
   const mobile = `97${String(Date.now()).slice(-8)}`;
 
   /*
-    The same lifecycle runs against the card list on a phone and the table on a
-    desktop, so the row locator has to branch on the project.
+    A record in the list is a card in the split view's queue, at any width.
 
-    `test.info()` is only valid *inside* a running test — called in the describe
-    body, at collection time, it throws and takes every test in the file with
-    it. So the helper takes a page and reads the project itself, and each test
-    calls it rather than closing over a hoisted constant.
+    A function taking the page, because `test.info()` is only valid inside a
+    running test.
   */
   const rowIn = (page: Page, text: string) =>
-    (test.info().project.name === 'mobile'
-      ? page.getByTestId('record-card-list').getByText(text).first()
-      : page.locator('tr', { hasText: text }).first());
+    page.getByTestId('queue-card').filter({ hasText: text }).first();
 
   test('create a lead from the form', async ({ page }) => {
     await page.goto('/leads/new');
@@ -121,11 +116,10 @@ test.describe('lead lifecycle through the UI', () => {
     await page.waitForTimeout(1200);
     await searchList(page, name);
     await page.waitForTimeout(1200);
-    const rowClick = row(name).click();
-    const detail = await page.context().waitForEvent('page');
-    await detail.waitForLoadState('domcontentloaded');
-    await detail.waitForURL(/\/leads\/[0-9a-f-]{36}/);
-    await rowClick;
+    // The record opens beside the queue, in the split view.
+    await row(name).locator('button').first().click();
+    const detail = page;
+    await expect(detail.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
     /*
       Edited where it is shown. There is no separate edit page any more — the
       owner asked for the one it used to open to go, since every field on the
@@ -151,18 +145,20 @@ test.describe('lead lifecycle through the UI', () => {
     await page.goto('/leads');
     await searchList(page, renamed);
     await expect(row(renamed)).toBeVisible({ timeout: 10_000 });
-    const rowClick = row(renamed).click();
-    const detail = await page.context().waitForEvent('page');
-    await detail.waitForLoadState('domcontentloaded');
-    await rowClick;
+    await row(renamed).locator('button').first().click();
+    const detail = page;
+    await expect(detail.getByRole('heading', { name: renamed })).toBeVisible({ timeout: 15_000 });
     // Delete lives in the More-actions dropdown, and the dialog confirms with
     // a plain "Delete" button.
     await expect(detail.getByRole('button', { name: 'More actions' })).toBeVisible({ timeout: 5_000 });
     await detail.getByRole('button', { name: 'More actions' }).click();
     await expect(detail.getByText('Delete record')).toBeVisible({ timeout: 5_000 });
     await detail.getByText('Delete record').click();
-    await expect(detail.getByRole('button', { name: 'Delete', exact: true })).toBeVisible({ timeout: 5_000 });
-    await detail.getByRole('button', { name: 'Delete', exact: true }).click();
+    // The confirmation's own button: in the split view the selection bar has a
+    // Delete of its own for the same one record.
+    const confirm = detail.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true });
+    await expect(confirm).toBeVisible({ timeout: 5_000 });
+    await confirm.click();
     await page.goto('/leads');
     await searchList(page, renamed);
     await expect(row(renamed)).toHaveCount(0);

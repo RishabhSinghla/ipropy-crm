@@ -7,6 +7,7 @@
  * is broken. It has to say what is missing and who fixes it.
  */
 import { expect, test } from '@playwright/test';
+import { openFirstRecord } from './helpers';
 
 test.use({ viewport: { width: 1512, height: 900 } });
 
@@ -21,12 +22,9 @@ test('Chats says what is missing rather than showing an empty inbox', async ({ p
 
 test('the contact keeps its WhatsApp tab, connected or not', async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
-
-  const opened = page.context().waitForEvent('page').catch(() => null);
-  await page.locator('tbody tr').first().locator('td').nth(1).click();
-  const detail = (await opened) ?? page;
-  await detail.waitForLoadState('domcontentloaded');
+  // The record opens beside the queue, in the split view.
+  await openFirstRecord(page);
+  const detail = page;
 
   /*
     The record's tabs are buttons, not ARIA tabs — `getByRole('tab')` finds

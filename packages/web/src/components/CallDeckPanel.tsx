@@ -5,9 +5,7 @@
  * Create in UI/UX in the replacement of current note section in the right
  * pane, the size should be same as per note section/Box, this box called Call
  * deck … the Existing Functionality and Feature are work Perfect."* So the
- * shape is new and nothing underneath it is: every button here drives the
- * same `useCallDeckState` the floating bar drives, and one call cannot be
- * saved two different ways.
+ * shape is new and the calling and saving actions still use `useCallDeckState`.
  *
  * Top to bottom, as he drew it: where this record sits in the queue and who
  * is next; who is on the call; the clock with the live controls; the note; the
@@ -19,14 +17,17 @@
  */
 import { type JSX, useEffect } from 'react';
 import {
-  CalendarClock, ChevronLeft, ChevronRight, Mic, Pause, PhoneOff, SkipForward, Volume2, VolumeX,
+  CalendarDays, ChevronDown, Mic, Pause, PhoneCall, PhoneOff, SkipForward, Volume2, VolumeX,
 } from 'lucide-react';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDeckState, type CallDeckState } from './LiveCallDeck';
 import { quickFollowUpDates } from '../lib/followUpDates';
-import { outcomeCard, splitOutcomes } from '../lib/callConsole';
-import { Avatar, Spinner } from './ui';
+import { outcomeCard } from '../lib/callConsole';
+import { Spinner } from './ui';
 import { cn } from '../lib/utils';
+import { toast, useApp } from '../lib/store';
+import { useVoiceCapture } from '../lib/useVoiceCapture';
+import { api } from '../lib/api';
 
 /**
  * Nothing at all unless this very record is the one being called.
@@ -50,13 +51,13 @@ export function CallDeckPanel({ module, recordId }: { module: string; recordId: 
  */
 export function useCallIsOn(module: string, recordId: string): boolean {
   const call = useLiveCall((state) => state.call);
-  return Boolean(call && call.module === module && call.recordId === recordId);
+  const userId = useApp((state) => state.user?.id ?? null);
+  return Boolean(call && userId && call.userId === userId && call.module === module && call.recordId === recordId);
 }
 
 function Panel(): JSX.Element {
   const deck = useCallDeckState();
-  // While this pane is up, the floating bar stands down — and comes back the
-  // moment the rep navigates away, which is what unmounting this means.
+  // While this pane is up, the shell hides its return-to-call strip.
   const setInPane = useLiveCall((state) => state.setInPane);
   useEffect(() => {
     setInPane(true);
@@ -65,11 +66,13 @@ function Panel(): JSX.Element {
   return (
     <section className="card h-fit overflow-hidden" data-testid="call-deck-panel">
       <QueueBar deck={deck} />
-      <div className="space-y-3 p-3">
+      <div className="space-y-2 p-3">
         <WhoAndClock deck={deck} />
         <Notes deck={deck} />
-        <Outcomes deck={deck} />
-        <Chase deck={deck} />
+        <div className="flex items-center gap-2">
+          <Outcomes deck={deck} />
+          <Chase deck={deck} />
+        </div>
       </div>
       <WaysOut deck={deck} />
     </section>
@@ -80,13 +83,7 @@ function Panel(): JSX.Element {
 function QueueBar({ deck }: { deck: CallDeckState }): JSX.Element {
   return (
     <header className="flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2">
-      <span className="inline-flex items-center gap-1 rounded border border-[var(--border)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text)] dark:bg-slate-900 dark:text-slate-100">
-        <ChevronLeft className="h-3.5 w-3.5 opacity-40" aria-hidden />
-        <span className="tabular-nums">
-          {deck.position && deck.total ? `${deck.position} of ${deck.total}` : '—'}
-        </span>
-        <ChevronRight className="h-3.5 w-3.5 opacity-40" aria-hidden />
-      </span>
+      <span className="min-w-0 truncate text-sm font-semibold text-[var(--text)]" title={deck.who}>{deck.who}</span>
       {deck.nextLabel && (
         <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-brand-100 px-2.5 py-1 text-xs font-semibold text-brand-800 dark:bg-brand-950/60 dark:text-brand-200">
           <SkipForward className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -102,11 +99,6 @@ function QueueBar({ deck }: { deck: CallDeckState }): JSX.Element {
 function WhoAndClock({ deck }: { deck: CallDeckState }): JSX.Element {
   return (
     <>
-      <div className="flex items-center gap-2.5 rounded-lg border border-[var(--border)] px-3 py-2.5">
-        <Avatar name={deck.who} size={36} />
-        <span className="min-w-0 truncate text-base font-bold text-[var(--text)] dark:text-slate-100">{deck.who}</span>
-      </div>
-
       <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-2 py-1.5">
         <CallBarStrip deck={deck} />
         {/*
@@ -124,15 +116,6 @@ function WhoAndClock({ deck }: { deck: CallDeckState }): JSX.Element {
           onClick={deck.onHangUp}
         >
           <PhoneOff className="h-4 w-4" />
-        </RoundButton>
-        <RoundButton
-          label={deck.muted ? 'Muted' : 'Mute'}
-          on={deck.muted}
-          enabled={deck.canControl}
-          reason={deck.noControlReason}
-          onClick={() => deck.onControl('mute', !deck.muted)}
-        >
-          <Mic className="h-4 w-4" />
         </RoundButton>
         <RoundButton
           label={deck.held ? 'On hold' : 'Hold'}
@@ -220,19 +203,38 @@ function CallBarStrip({ deck }: { deck: CallDeckState }): JSX.Element {
 
 /** What was said, typed while it is being said. */
 function Notes({ deck }: { deck: CallDeckState }): JSX.Element {
+  const voice = useVoiceCapture(async (audio) => {
+    try {
+      const { note } = await api.voiceNote(audio);
+      deck.onNotes(deck.notes.trim() ? `${deck.notes.trim()}\n\n${note}` : note);
+    } catch (error) {
+      toast.error('Could not write that up', (error as Error).message);
+    }
+  }, {
+    onTranscript: (transcript) => deck.onNotes(deck.notes.trim() ? `${deck.notes.trim()} ${transcript}` : transcript),
+    serverTranscription: false,
+  });
   return (
-    <div>
-      <p className="key-label mb-1.5 flex items-center gap-1.5">
-        <Mic className="h-3.5 w-3.5" aria-hidden />
-        Call notes
-      </p>
+    <div className="relative">
       <textarea
         value={deck.notes}
         onChange={(event) => deck.onNotes(event.target.value)}
-        placeholder="Take notes during the call…"
+        placeholder={voice.interim || 'Call notes… type or dictate'}
         aria-label="Call notes"
-        className="input min-h-[4.5rem] resize-none text-sm"
+        className="input min-h-20 resize-y pr-12 text-sm"
       />
+      <button
+        type="button"
+        onClick={voice.toggle}
+        aria-label={voice.recording ? 'Stop dictation' : 'Dictate call notes'}
+        aria-pressed={voice.recording}
+        disabled={voice.busy}
+        title={voice.recording ? 'Stop dictation' : voice.busy ? 'Transcribing…' : 'Dictate notes'}
+        className={cn('absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors', voice.recording ? 'bg-red-100 text-red-700' : 'bg-brand-50 text-brand-700 hover:bg-brand-100')}
+      >
+        {voice.busy ? <Spinner className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+      </button>
+      {voice.recording && <span className="sr-only" role="status">Listening: {voice.interim}</span>}
     </div>
   );
 }
@@ -246,51 +248,15 @@ function Notes({ deck }: { deck: CallDeckState }): JSX.Element {
  * gets a card — a rep who cannot record what happened is the worse failure.
  */
 function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
-  /*
-    Every outcome on screen at once, in smaller type.
-
-    **26 September 2026, the owner:** *"from call deck decrease all deposition
-    font size. so that we can see all call otcome in a screen."* This showed
-    six with the rest a tap behind "N more outcomes", on the reasoning that
-    three rows and a scroll after every call is how a rep stops recording
-    them. He has worked the screen and wants the whole list — and he is right
-    that a hidden option is worse than a small one, because a rep who cannot
-    see what happened picks the nearest thing they can see.
-
-    The order is still `splitOutcomes`' — the six used all day first, in a
-    fixed order, so a renamed option cannot move "Interested" under somebody's
-    thumb. It just no longer hides the tail.
-  */
-  const { first, rest } = splitOutcomes(deck.outcomes.map((o) => o.value), deck.outcome);
-  const shown = [...first, ...rest];
-  const labels = new Map(deck.outcomes.map((o) => [o.value, o.label]));
   return (
-    <div>
-      <p className="key-label mb-1.5">Call disposition</p>
-      <div className="grid grid-cols-3 gap-1">
-        {shown.map((value) => {
-          const chosen = value === deck.outcome;
-          return (
-            <button
-              key={value}
-              type="button"
-              onClick={() => deck.onOutcome(value)}
-              aria-pressed={chosen}
-              aria-label={labels.get(value) ?? value}
-              title={outcomeCard(value).hint}
-              className={cn(
-                'rounded border px-1 py-1.5 text-[11px] font-semibold leading-tight transition-colors',
-                chosen
-                  ? 'border-positive bg-positive-soft text-positive-on-soft'
-                  : 'border-[var(--border)] bg-[var(--surface-subtle)] text-[var(--text)] hover:bg-[var(--surface-muted)] dark:text-slate-100',
-              )}
-            >
-              <span className="line-clamp-2">{chosen ? `✓ ${labels.get(value) ?? value}` : (labels.get(value) ?? value)}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    <label className="relative min-w-0 flex-1">
+      <span className="sr-only">Call disposition</span>
+      <PhoneCall className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-brand-700" aria-hidden />
+      <select value={deck.outcome} onChange={(event) => deck.onOutcome(event.target.value)} aria-label="Call disposition" className="input h-9 appearance-none rounded-full bg-brand-50 py-1 pl-8 pr-8 text-xs font-semibold text-brand-800 dark:bg-brand-950/50 dark:text-brand-100">
+        {deck.outcomes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-4 w-4 text-brand-700" aria-hidden />
+    </label>
   );
 }
 
@@ -318,33 +284,53 @@ function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
 function Chase({ deck }: { deck: CallDeckState }): JSX.Element {
   const choices = quickFollowUpDates();
   const fromOutcome = outcomeCard(deck.outcome).followUpInHours;
-  const autoLabel = fromOutcome ? `Auto — in ${fromOutcome} hours` : 'Auto — no follow-up';
+  // Short, because the control is half a narrow panel wide and a truncated
+  // "Auto — in 2 ho…" says less than the same thing said briefly.
+  const autoLabel = fromOutcome ? `Auto · in ${fromOutcome}h` : 'Auto · none';
   const value = deck.followUp === undefined ? 'auto' : deck.followUp === null ? 'none' : deck.followUp;
+  // A day the rep typed rather than tapped — it belongs in the list, or the
+  // control would read as nothing chosen while a date is plainly set.
+  const custom = typeof deck.followUp === 'string' && !choices.some((c) => c.value === deck.followUp)
+    ? deck.followUp
+    : null;
 
   return (
-    <div>
-      <label className="key-label mb-1.5 flex items-center gap-1.5" htmlFor="call-deck-followup">
-        <CalendarClock className="h-3.5 w-3.5" aria-hidden />
-        Auto follow-up
-      </label>
-      <select
-        id="call-deck-followup"
-        data-testid="call-deck-followup"
-        className="input text-sm font-semibold"
-        value={value}
-        onChange={(event) => {
-          const next = event.target.value;
-          deck.onFollowUp(next === 'auto' ? undefined : next === 'none' ? null : next);
-        }}
-      >
-        <option value="auto">{autoLabel}</option>
-        <option value="none">No follow-up</option>
-        {choices.map((choice) => (
-          <option key={choice.value} value={choice.value}>
-            {choice.label} — {readableDay(choice.value)}
-          </option>
-        ))}
-      </select>
+    <div className="min-w-0 flex-1 space-y-1.5">
+      <label className="sr-only" htmlFor="call-deck-followup">Auto follow-up</label>
+      <span className="flex min-w-0 items-center gap-2">
+        <CalendarDays className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
+        <select
+          id="call-deck-followup"
+          data-testid="call-deck-followup"
+          className="input h-9 min-w-0 flex-1 text-xs font-semibold"
+          value={value}
+          onChange={(event) => {
+            const next = event.target.value;
+            deck.onFollowUp(next === 'auto' ? undefined : next === 'none' ? null : next);
+          }}
+        >
+          <option value="auto">{autoLabel}</option>
+          <option value="none">No follow-up</option>
+          {choices.map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {choice.label} — {readableDay(choice.value)}
+            </option>
+          ))}
+          {/* A day typed below is not one of the four, so it needs a row of its
+              own or the select would read as nothing chosen. */}
+          {custom && <option value={custom}>{readableDay(custom)}</option>}
+        </select>
+      </span>
+      {/* Any other day, in the browser's own date control — native for the same
+          reason as the select: a calendar drawn by this card would be clipped
+          by it. */}
+      <input
+        type="date"
+        aria-label="Chase them on another day"
+        className="input h-8 text-xs"
+        value={typeof deck.followUp === 'string' ? deck.followUp : ''}
+        onChange={(event) => deck.onFollowUp(event.target.value || null)}
+      />
     </div>
   );
 }
@@ -358,7 +344,7 @@ function readableDay(day: string): string {
 /** The three ways out. Two of them keep the call; one says it never happened. */
 function WaysOut({ deck }: { deck: CallDeckState }): JSX.Element {
   return (
-    <footer className="flex items-center gap-2 border-t border-[var(--border)] bg-[var(--surface-subtle)] p-3">
+    <footer className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] bg-[var(--surface-subtle)] p-2">
       <button
         type="button"
         onClick={deck.onDiscard}
@@ -376,7 +362,7 @@ function WaysOut({ deck }: { deck: CallDeckState }): JSX.Element {
         className="btn-secondary btn-sm min-w-0 flex-1"
       >
         {deck.saving && <Spinner className="h-3 w-3" />}
-        <span className="truncate">Call Save &amp; Exit</span>
+        <span className="truncate">Save &amp; Exit</span>
       </button>
       {deck.nextLabel && (
         <button

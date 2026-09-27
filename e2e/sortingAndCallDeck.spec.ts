@@ -117,16 +117,26 @@ for (const module of MODULES) {
 }
 
 test.describe('the call deck', () => {
-  /** Put a call on the record the pane has open, the way a refresh mid-call does. */
+  /**
+   * Put a call on the record the pane has open, the way a refresh mid-call does.
+   *
+   * The call carries the signed-in user's id because a live call belongs to one
+   * person — another rep's call must never appear on this screen — so a staged
+   * one without it is correctly ignored.
+   */
   async function stageCall(page: Page, module: string): Promise<void> {
-    await page.evaluate((name) => {
+    await page.evaluate(async (name) => {
       const fetched = performance.getEntriesByType('resource')
         .map((entry) => entry.name)
         .filter((url) => new RegExp(`/api/records/${name}/[0-9a-f-]{36}$`).test(url));
       const recordId = fetched[0]?.split('/').pop();
       if (!recordId) throw new Error('no record was open to put a call on');
+      const me = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('ipropy.token')}` },
+      }).then((res) => res.json() as Promise<{ user?: { id: string }; id?: string }>);
       localStorage.setItem('ipropy.liveCall', JSON.stringify({
         number: '+919999999999', module: name, recordId,
+        userId: me.user?.id ?? me.id,
         followUpField: 'next_followup_at',
         pressedAt: Date.now() - 95_000, placing: false, outcome: null,
       }));
