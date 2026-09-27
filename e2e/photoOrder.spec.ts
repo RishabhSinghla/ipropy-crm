@@ -20,6 +20,13 @@ import { unique } from './helpers';
  * opens, the download, and the public website.
  */
 
+/*
+  Parked with the full-width record page (RecordDetail's FULL_RECORD_PAGE_IS_PARKED):
+  the photo strip lives only there, and every record address now opens the split
+  view instead. Un-skip when the strip moves into the split view.
+*/
+test.skip(true, 'the photo strip is on the parked full record page, not in the split view yet');
+
 test('drags a photo to the front and the new cover survives a reload', async ({ page }) => {
   const name = unique('Drag Order');
 
