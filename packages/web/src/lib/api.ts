@@ -1057,7 +1057,7 @@ export const api = {
   revokeDevice: (id: string) => del(`/api/telephony/devices/${id}`),
   /** Ring a number from the signed-in user's own paired phone. */
   /** The app saying it is open, so a desk Call knows it can reach this phone. */
-  appIsOpen: (state: { canEndCall?: boolean; canControlCall?: boolean } = {}) =>
+  appIsOpen: (state: { canEndCall?: boolean; canControlCall?: boolean; deviceId?: string; deviceFingerprint?: string } = {}) =>
     post<{ deviceId: string | null }>('/api/telephony/devices/app-open', state),
   dialOnPhone: (data: { to: string; module?: string; recordId?: string }) =>
     post<{ sent: boolean; reason?: string; device?: string; commandId?: string; expiresAt?: string }>('/api/telephony/dial', data),
@@ -1067,14 +1067,14 @@ export const api = {
     up on them. One queue and one claim, so a command is handed over exactly
     once however the phone came to ask.
   */
-  pendingDial: () => get<{
+  pendingDial: (identity: { deviceId?: string; deviceFingerprint?: string } = {}) => get<{
     command: {
       id: string; kind: 'dial' | 'hangup' | 'control'; number: string | null;
       /** For a live-call control: which switch, and which way. */
       action?: 'speaker' | 'mute' | 'hold' | null; on?: boolean | null;
       module: string | null; recordId: string | null; expiresAt: string;
     } | null;
-  }>('/api/telephony/dial/pending'),
+  }>(`/api/telephony/dial/pending${qs(identity)}`),
   /** The call this person's phone is on, as the phone last reported it. */
   liveCall: () => get<LiveCallState>('/api/telephony/live-call'),
   /** Speaker, mute or hold on the phone's live call. Refused with a reason when the phone cannot. */

@@ -747,9 +747,11 @@ telephonyRouter.post('/devices/app-open', asyncHandler(async (req, res) => {
   const input = z.object({
     canEndCall: z.boolean().optional(),
     canControlCall: z.boolean().optional(),
+    deviceId: z.string().uuid().optional(),
+    deviceFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   }).parse(req.body ?? {});
   const { markAppOpen } = await import('../../integrations/telephony/deviceSync.js');
-  res.json(await markAppOpen(user.id, input.canEndCall, input.canControlCall));
+  res.json(await markAppOpen(user.id, input.canEndCall, input.canControlCall, input));
 }));
 
 telephonyRouter.post('/dial', asyncHandler(async (req, res) => {
@@ -885,6 +887,13 @@ telephonyRouter.post('/call-control', asyncHandler(async (req, res) => {
 telephonyRouter.get('/dial/pending', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'telephony.call');
+  const identity = z.object({
+    deviceId: z.string().uuid().optional(),
+    deviceFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  }).parse(req.query);
+  const { callingDeviceFor } = await import('../../integrations/telephony/deviceSync.js');
+  const deviceId = await callingDeviceFor(user.id, identity);
+  if (!deviceId) { res.json({ command: null }); return; }
   const row = await db.queryOne<{
     id: string; kind: string; number: string | null; module: string | null;
     record_id: string | null; expires_at: string; action: string | null; on: boolean | null;
@@ -896,7 +905,7 @@ telephonyRouter.get('/dial/pending', asyncHandler(async (req, res) => {
     */
     `WITH next_command AS (
        SELECT id FROM ipy_device_command
-        WHERE user_id = $1 AND status = 'queued' AND expires_at > now()
+        WHERE user_id = $1 AND device_id = $2 AND status = 'queued' AND expires_at > now()
         ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
      )
      UPDATE ipy_device_command command SET status = 'delivered', delivered_at = now()
@@ -904,7 +913,7 @@ telephonyRouter.get('/dial/pending', asyncHandler(async (req, res) => {
      RETURNING command.id, command.kind, command.payload->>'number' AS number,
                command.payload->>'action' AS action, (command.payload->>'on')::boolean AS "on",
                command.module, command.record_id, command.expires_at`,
-    [user.id],
+    [user.id, deviceId],
   );
   // A dial with no number is a broken row rather than a command; a hang-up
   // carries none by design.

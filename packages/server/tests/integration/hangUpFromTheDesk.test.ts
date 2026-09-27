@@ -48,7 +48,7 @@ describe('hanging up from the desk', () => {
   it('the phone says it can, and then it is asked', async () => {
     await request(app).post('/api/telephony/devices/app-open')
       .set('Authorization', `Bearer ${token}`)
-      .send({ canEndCall: true })
+      .send({ canEndCall: true, deviceId })
       .expect(200);
 
     const res = await request(app).post('/api/telephony/hangup')
@@ -78,10 +78,10 @@ describe('hanging up from the desk', () => {
       hands over the oldest, and this reads as a hang-up that never arrived —
       a test reporting the machine it ran on rather than the feature.
     */
-    let taken = await request(app).get('/api/telephony/dial/pending')
+    let taken = await request(app).get('/api/telephony/dial/pending').query({ deviceId })
       .set('Authorization', `Bearer ${token}`).expect(200);
     for (let i = 0; i < 20 && taken.body.command && taken.body.command.kind !== 'hangup'; i += 1) {
-      taken = await request(app).get('/api/telephony/dial/pending')
+      taken = await request(app).get('/api/telephony/dial/pending').query({ deviceId })
         .set('Authorization', `Bearer ${token}`).expect(200);
     }
     expect(taken.body.command?.kind).toBe('hangup');
@@ -93,7 +93,7 @@ describe('hanging up from the desk', () => {
   it('a phone that loses the permission stops being asked', async () => {
     await request(app).post('/api/telephony/devices/app-open')
       .set('Authorization', `Bearer ${token}`)
-      .send({ canEndCall: false })
+      .send({ canEndCall: false, deviceId })
       .expect(200);
 
     const res = await request(app).post('/api/telephony/hangup')
