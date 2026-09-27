@@ -148,9 +148,10 @@ test.describe('accessibility', () => {
     const call = page.locator('button[title^="Call "]').first();
     await expect(call).toBeVisible({ timeout: 20_000 });
     await call.click();
-    // The call deck, not a dialog: the console became the header's deck on
-    // 24 September 2026, and this scan was still waiting for a dialog.
-    const deck = page.getByTestId('call-deck');
+    // The record opens in the split view, where the deck takes the notes
+    // box's place (`call-deck-panel`); the floating deck is the same controls
+    // for when the rep leaves the record mid-call.
+    const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
     await expect(deck).toBeVisible({ timeout: 20_000 });
     await expect(deck.locator('button[aria-pressed]').first()).toBeVisible();
     const { violations } = await scan(page);
