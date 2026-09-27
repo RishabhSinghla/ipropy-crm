@@ -1,0 +1,51 @@
+# Read-only: what the "System User" account on production is, and what hangs
+# off it — before anybody removes it.
+#
+# 27 September 2026 the owner asked for "System User, system@ipropy.com" to go.
+# The automation account every unattended write runs as is `system@ipropy`
+# (no dot after the @, see core/auth/systemAccounts.ts), and deleting that one
+# orphans everything it owns. This says which one the screen is showing and
+# how much depends on it. Counts and ids only; nothing is written.
+name: Who is the system user
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client >/dev/null
+      - name: Ask production
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          echo "=== every account whose address starts with system@ ==="
+          psql "$PROD_DATABASE_URL" -X -P pager=off -c "
+            SELECT u.id, u.email, u.first_name, u.last_name, u.is_admin, u.is_active,
+                   u.deleted_at IS NOT NULL AS deleted,
+                   u.password_hash IS NOT NULL AS can_log_in,
+                   r.name AS role, to_char(u.created_at, 'YYYY-MM-DD') AS created,
+                   u.last_login_at
+              FROM ipy_user u LEFT JOIN ipy_role r ON r.id = u.role_id
+             WHERE u.email ILIKE 'system@%'
+             ORDER BY u.created_at;"
+          echo "=== what hangs off each (counts only) ==="
+          psql "$PROD_DATABASE_URL" -X -P pager=off -c "
+            SELECT u.email,
+                   (SELECT count(*) FROM ipy_record x WHERE x.owner_id = u.id)   AS records_owned,
+                   (SELECT count(*) FROM ipy_record x WHERE x.created_by = u.id) AS records_created,
+                   (SELECT count(*) FROM ipy_audit x WHERE x.user_id = u.id)     AS audit_rows,
+                   (SELECT max(x.created_at) FROM ipy_audit x WHERE x.user_id = u.id) AS last_audit
+              FROM ipy_user u
+             WHERE u.email ILIKE 'system@%'
+             ORDER BY u.created_at;"
