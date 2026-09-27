@@ -737,6 +737,11 @@ export const api = {
   /** Values whose field is gone — swept by a migration, or archived by a permanent delete. */
   archivedValues: (module: string) =>
     get<{ column: string; count: number; droppedAt: string }[]>(`/api/meta/modules/${module}/archived-values`),
+  /** Throw those values away for good, so the panel can actually be cleared. */
+  discardArchivedValues: (module: string, column: string) =>
+    del<{ ok: true; discarded: number }>(
+      `/api/meta/modules/${module}/archived-values/${encodeURIComponent(column)}`,
+    ),
   recoverArchivedValues: (fieldId: string, column: string, overwrite = false) =>
     post<{ ok: boolean; restored: number }>(`/api/meta/fields/${fieldId}/recover-values`, { column, overwrite }),
   previewFieldConversion: (id: string, data: { targetType: string; invalidStrategy: 'blank' | 'default' | 'keep'; valueMap?: Record<string, string>; defaultValue?: unknown }) =>

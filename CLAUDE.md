@@ -2697,6 +2697,79 @@ from there, which proves the layout, the wiring and the outcome rules but not
 what an Android phone reports mid-call. That half still needs a machine with
 an Android SDK, which this container does not have.
 
+## Three warnings, and two of them were lying
+
+**27 September 2026, the owner**, with three screenshots of amber and red
+panels: *"they warn me with multiple warning and errors, please fix it and
+make the CRM bug free."* Two were faults in the warning itself; the third was
+true and had no way out.
+
+**A switched-off field was reported as deleted.** Admin → Split View and
+Admin → Table View both build their "is this name still real" map from the
+**ordinary describe**, which omits anything inactive or hidden. So a field an
+admin turned off for a week and a field deleted a year ago rendered
+identically — amber, *"no longer on this module"* — and the only control
+offered was **Remove**, which would have thrown away the arrangement for a
+field that comes back the moment it is switched on. Read off production that
+morning: of his three amber rows, `block_tower` **still exists on Contacts**
+and is merely `hidden`. Both screens ask for `includeInactive` now (they hold
+`admin.fields` already) under their own query key — the record screens' cache
+must never see a hidden field — and tell the three states apart: gone, off, or
+fine. A **"Remove N that are gone"** button clears only the genuinely dead
+ones, because there were three of them across two modules and three panes and
+Remove is one at a time.
+
+**Worth knowing about the other two names he saw:** `lead_source` and
+`possession_status` are **picklist** names, not field names — Contacts has
+`source` and `possession`. Something wrote dropdown names into `ui.split_view`
+once. The arrangement is admin-editable data, so the button is the fix rather
+than a migration.
+
+**The dropdown editor sent him to a control that does not exist.** Saving a
+list containing an option deleted earlier answers with `skipped`, and the
+toast said *"Use 'Deleted options' below to restore."* **There has never been
+a "Deleted options" section in that screen.** The server has always taken a
+`restore` list; nothing on screen ever offered it, so the only way out was to
+give up on the option. There is a banner now, where he already is, with
+**Bring it back** and **Leave it deleted**.
+
+**And the trap inside that fix, which would have shipped as "the button does
+nothing":** a save ends with `refresh()`, which reloads the picklist and
+**resets the local option list from the server** — where the skipped option
+does not exist, because the server is what refused to create it. So by the
+time the button is pressed the row is gone from state, and a restore sending
+only the current list would have sent a list without it. The banner keeps the
+**rows**, not the names, and `save(restore, alsoInclude)` puts them back into
+the payload. Proved end to end against a real database: tombstone cleared,
+option created.
+
+**"Values without a field" could never be cleared.** Recovering an archive
+into a live field was the only thing that emptied that panel, so six archives
+from fields deleted long ago — `carpet_area`, `name`, `bathrooms` — warned him
+for ever about something he was never going to do.
+`DELETE /api/meta/modules/:module/archived-values/:column` discards them, the
+screen names the count and asks first, and it is audited under the column's
+own name: *"where did those four values go"* has to have an answer, and
+`ipy_field_change.field_internal_id` is `NOT NULL`, so the column is the only
+identity those values ever had.
+
+**And the spec that broke was measuring an ancestor rather than a thing.**
+`splitViewAdmin.spec.ts` asserted on `getByText('Shown, in this order')
+.locator('..')` — the *parent of the heading*, which happened to be the whole
+panel until the heading gained a row of its own for the new button. The panel
+carries `data-testid="split-view-chosen"` now, which is the rule this repo
+already applies elsewhere: measure the element, never a guess at what encloses
+it.
+
+**Two things the repo's own guards caught on the way in**, both worth keeping:
+`integrationSuiteHygiene` refused the new test for taking *"whichever lead
+comes first"* — and it was right that it did not need to, since
+`ipy_dropped_column` has no foreign key precisely because the record may be
+long gone, so the test invents its ids and depends on nothing. And a
+multi-statement `psql -c` is **one implicit transaction**: an error in the
+last statement rolled back the three restores before it, and the database
+read back unchanged while the output said `UPDATE 1` three times.
+
 ## Every request appears twice in development, and once in production
 
 `main.tsx` wraps the app in `React.StrictMode`, which double-invokes effects in

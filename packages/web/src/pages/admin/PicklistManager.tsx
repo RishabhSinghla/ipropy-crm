@@ -194,7 +194,30 @@ export default function PicklistManager(): JSX.Element {
     setDirty(true);
   };
 
-  const save = async (): Promise<void> => {
+  /*
+    Options a save could not re-create, kept on screen until they are dealt with.
+
+    **27 September 2026, the owner**, against a red toast reading *"Deleted
+    options were not added back — Greenfields Colony … Use 'Deleted options'
+    below to restore."* **There is no "Deleted options" section**, and there
+    never was: the message sent him to a control that does not exist, so the
+    only way out was to give up on the option. The server has always taken a
+    `restore` list; nothing on screen ever offered it.
+  */
+  const [skipped, setSkipped] = useState<Option[]>([]);
+
+  /*
+    `alsoInclude` puts the skipped rows back into the payload, and it is not
+    optional polish.
+
+    A save ends with `refresh()`, which reloads `current` and resets `options`
+    from the server — where the skipped option does not exist, because the
+    server is what refused to create it. So by the time the button below is
+    pressed the row is no longer in local state, and a restore that sent only
+    `options` would send a list without it and bring nothing back: a button
+    that looks like it worked and did nothing.
+  */
+  const save = async (restore: string[] = [], alsoInclude: Option[] = []): Promise<void> => {
     const blank = options.find((o) => !o.label.trim());
     if (blank) {
       toast.error('Every option needs a name');
@@ -202,7 +225,8 @@ export default function PicklistManager(): JSX.Element {
     }
     setSaving(true);
     try {
-      const result = await api.savePicklistValues(selected, options.map((o) => ({
+      const sending = [...options, ...alsoInclude.filter((row) => !options.some((o) => o.value === row.value))];
+      const result = await api.savePicklistValues(selected, sending.map((o) => ({
         value: o.value.trim(),
         label: o.label.trim(),
         color: o.color,
@@ -212,21 +236,21 @@ export default function PicklistManager(): JSX.Element {
         ...(o.previousValue && o.previousValue !== o.value.trim()
           ? { previousValue: o.previousValue }
           : {}),
-      })));
-      if (result.skipped?.length) {
-        // The server refused to re-create something deleted earlier. Saying so
-        // matters: silently doing it is the bug this replaced.
-        toast.error(
-          'Deleted options were not added back',
-          `${result.skipped.join(', ')} — deleted earlier. Use “Deleted options” below to restore.`,
-        );
-      }
+      })), restore);
+      /*
+        The server refused to re-create something deleted earlier. Saying so
+        matters — silently doing it is the bug this replaced — but saying it in
+        a toast that then disappears, and naming a control that does not exist,
+        left nowhere to go. It stays on screen with the button that fixes it.
+      */
+      const refused = new Set(result.skipped ?? []);
+      setSkipped(sending.filter((o) => refused.has(o.value.trim())));
       toast.success(
         'Dropdown saved',
         result.renamedRecords || result.renamedFilters
-          ? `${options.length} options · ${result.renamedRecords} record${result.renamedRecords === 1 ? '' : 's'}`
+          ? `${sending.length} options · ${result.renamedRecords} record${result.renamedRecords === 1 ? '' : 's'}`
             + `${result.renamedFilters ? ` and ${result.renamedFilters} saved view/rule` : ''} updated to match the rename`
-          : `${options.length} options in ${current?.label ?? selected}`,
+          : `${sending.length} options in ${current?.label ?? selected}`,
       );
       setDirty(false);
       refresh();
@@ -375,6 +399,31 @@ export default function PicklistManager(): JSX.Element {
               </button>
             </div>
           </div>
+
+          {/*
+            The way back for an option a save could not re-create. One button,
+            where he already is — the message this replaced named a section
+            that has never existed in this screen.
+          */}
+          {skipped.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-900 dark:bg-amber-950/30">
+              <span className="text-sm">
+                <strong className="font-semibold">{skipped.map((o) => o.label).join(', ')}</strong>
+                {skipped.length === 1 ? ' was' : ' were'} deleted earlier, so
+                {skipped.length === 1 ? ' it was' : ' they were'} not added back.
+              </span>
+              <button
+                className="btn-secondary btn-sm ml-auto"
+                disabled={saving}
+                onClick={() => void save(skipped.map((o) => o.value), skipped)}
+              >
+                Bring {skipped.length === 1 ? 'it' : 'them'} back
+              </button>
+              <button className="btn-ghost btn-sm" onClick={() => setSkipped([])}>
+                Leave {skipped.length === 1 ? 'it' : 'them'} deleted
+              </button>
+            </div>
+          )}
 
           {current && current.usedBy.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-slate-50/60 px-4 py-2 dark:border-slate-800 dark:bg-slate-800/40">

@@ -48,9 +48,17 @@ export default function TableViewAdmin(): JSX.Element {
     setLoaded(true);
   }, [settings, loaded]);
 
+  /*
+    Switched-off fields included — the same fault Split View had, in the same
+    words. The ordinary describe omits anything inactive or hidden, so a field
+    an admin turned off for a week read as *"no longer on this module"* and
+    the only thing offered was Remove, which would have thrown away the column
+    order for a field that comes back the moment it is switched on. The
+    distinct key keeps this out of the cache every record screen reads.
+  */
   const { data: meta } = useQuery({
-    queryKey: ['module', module],
-    queryFn: () => api.module(module),
+    queryKey: ['module', module, 'with-inactive'],
+    queryFn: () => api.module(module, { includeInactive: true }),
     enabled: Boolean(module),
   });
 
@@ -62,11 +70,15 @@ export default function TableViewAdmin(): JSX.Element {
     .sort((a: FieldMeta, b: FieldMeta) => a.sequence - b.sequence || a.label.localeCompare(b.label));
 
   const picked = chosen[module] ?? [];
-  const byName = new Map(offerable.map((f) => [f.name, f]));
+  /* Every field the module has, on or off, so a chosen name can be told apart
+     from a name the module no longer knows at all. */
+  const byName = new Map((meta?.fields ?? []).map((f: FieldMeta) => [f.name, f]));
+  const missing = picked.filter((name) => !byName.has(name));
 
   const setPicked = (next: string[]): void => setChosen((cur) => ({ ...cur, [module]: next }));
   const toggle = (name: string): void =>
     setPicked(picked.includes(name) ? picked.filter((n) => n !== name) : [...picked, name]);
+  const dropMissing = (): void => setPicked(picked.filter((name) => byName.has(name)));
   const move = (index: number, delta: number): void => {
     const next = [...picked];
     const target = index + delta;
@@ -132,7 +144,14 @@ export default function TableViewAdmin(): JSX.Element {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card p-3">
-          <h2 className="mb-2 text-sm font-semibold">Shown, in this order</h2>
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="text-sm font-semibold">Shown, in this order</h2>
+            {missing.length > 0 && (
+              <button className="btn-secondary btn-sm ml-auto" onClick={dropMissing}>
+                Remove {missing.length} that {missing.length === 1 ? 'is' : 'are'} gone
+              </button>
+            )}
+          </div>
           {picked.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-xs text-muted dark:border-slate-700">
               Nothing chosen — every list falls back to the shipped columns.
@@ -141,23 +160,28 @@ export default function TableViewAdmin(): JSX.Element {
             <ol className="space-y-1">
               {picked.map((name, index) => {
                 const field = byName.get(name);
+                // Three states, not two — see the note on the describe above.
+                const off = Boolean(field) && (!field!.isActive || field!.displayType === 'hidden');
+                const gone = !field;
                 return (
                   <li
                     key={name}
                     className={cn(
                       'flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm',
-                      field
-                        ? 'border-slate-200 dark:border-slate-700'
-                        : 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40',
+                      gone && 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40',
+                      off && 'border-slate-200 bg-[var(--surface-muted)] dark:border-slate-700',
+                      !gone && !off && 'border-slate-200 dark:border-slate-700',
                     )}
                   >
                     <span className="w-5 shrink-0 text-center text-xs text-muted tabular-nums">{index + 1}</span>
                     <span className="min-w-0 flex-1 truncate">
                       {field?.label ?? name}
-                      {/* A field that has been renamed or removed is named
-                          rather than hidden: the list skips it silently, and an
-                          admin should be able to see why a column vanished. */}
-                      {!field && <span className="ml-1 text-xs font-medium text-amber-700 dark:text-amber-300">— no longer on this module</span>}
+                      {gone && <span className="ml-1 text-xs font-medium text-amber-700 dark:text-amber-300">— no longer on this module</span>}
+                      {off && (
+                        <span className="ml-1 text-xs font-medium text-muted">
+                          — switched off, so it is not shown. Turn it back on in Modules &amp; Fields.
+                        </span>
+                      )}
                     </span>
                     <button className="btn-ghost p-1" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move ${field?.label ?? name} up`}>
                       <ChevronUp className="h-4 w-4" />

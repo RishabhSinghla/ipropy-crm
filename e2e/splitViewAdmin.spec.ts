@@ -54,7 +54,7 @@ test('a field chosen in Admin shows up under the name in the queue', async ({ pa
   const available = page.getByRole('heading', { name: 'Available' }).locator('..');
   await available.locator('label').filter({ hasText: /^Mobile/ }).first().click();
 
-  await expect(page.getByText('Shown, in this order').locator('..')).toContainText('Mobile');
+  await expect(page.getByTestId('split-view-chosen')).toContainText('Mobile');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('Split view saved')).toBeVisible();
 
@@ -74,7 +74,7 @@ test('clearing it puts back what the CRM ships', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Split view' })).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole('button', { name: 'Use what the CRM shows' }).click();
-  await expect(page.getByText('Shown, in this order').locator('..'))
+  await expect(page.getByTestId('split-view-chosen'))
     .toContainText('falls back to the fields flagged to show under a name');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('Split view saved')).toBeVisible();

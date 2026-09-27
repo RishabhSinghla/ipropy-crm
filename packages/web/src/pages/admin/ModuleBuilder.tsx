@@ -78,6 +78,24 @@ export default function ModuleBuilder(): JSX.Element {
     onError: (err: Error) => toast.error('Could not recover those values', err.message),
   });
 
+  /*
+    The other way the panel can end.
+
+    Recovering was the only one, so an archive from a field deleted months ago
+    warned an admin for ever about something they were never going to do. This
+    is a real delete, so the screen names the count and asks first.
+  */
+  const [discarding, setDiscarding] = useState<{ column: string; count: number } | null>(null);
+  const discardValues = useMutation({
+    mutationFn: (column: string) => api.discardArchivedValues(selectedModule, column),
+    onSuccess: (res) => {
+      toast.success(`Discarded ${res.discarded} value${res.discarded === 1 ? '' : 's'}`, 'They are gone for good.');
+      setDiscarding(null);
+      void queryClient.invalidateQueries({ queryKey: ['archived-values'] });
+    },
+    onError: (err: Error) => toast.error('Could not discard those values', err.message),
+  });
+
   const selectModule = (name: string): void => {
     const next = new URLSearchParams(searchParams);
     next.set('module', name);
@@ -307,6 +325,12 @@ export default function ModuleBuilder(): JSX.Element {
                     onClick={() => setRecovering({ column: a.column, count: a.count })}
                   >
                     Recover values
+                  </button>
+                  <button
+                    className="btn-ghost btn-sm text-negative"
+                    onClick={() => setDiscarding({ column: a.column, count: a.count })}
+                  >
+                    Discard
                   </button>
                 </li>
               ))}
@@ -559,6 +583,28 @@ export default function ModuleBuilder(): JSX.Element {
                 <span className="text-2xs text-muted">{f.uitype}</span>
               </button>
             ))}
+          </div>
+        </Modal>
+      )}
+
+      {/* A real delete, so it names the count and says it cannot be undone. */}
+      {discarding && (
+        <Modal open title="Discard these values?" onClose={() => setDiscarding(null)}>
+          <p className="text-sm text-muted">
+            {discarding.count} value{discarding.count === 1 ? '' : 's'} kept from{' '}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">{discarding.column}</code>,
+            a field this module no longer has. Discarding them cannot be undone.
+            No record loses anything it can show today.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-secondary btn-sm" onClick={() => setDiscarding(null)}>Keep them</button>
+            <button
+              className="btn-danger btn-sm"
+              disabled={discardValues.isPending}
+              onClick={() => discardValues.mutate(discarding.column)}
+            >
+              {discardValues.isPending ? 'Discarding…' : 'Discard for good'}
+            </button>
           </div>
         </Modal>
       )}

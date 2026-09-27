@@ -95,13 +95,27 @@ export default function SplitViewAdmin(): JSX.Element {
     setLoaded(true);
   }, [settings, loaded]);
 
+  /*
+    Switched-off fields included, and that is the whole point.
+
+    **27 September 2026, the owner**, against a screenshot of three amber rows
+    reading *"no longer on this module"*: one of them was `block_tower`, which
+    **still exists on Contacts** — he had simply switched it off. This screen
+    asked for the ordinary describe, which omits anything inactive or hidden,
+    so a field somebody turned off for a week and a field deleted a year ago
+    looked identical, and the only thing offered was Remove. Taking that
+    advice would have thrown away an arrangement the moment the field came
+    back. The distinct query key keeps this out of the cache every record
+    screen reads, which must never see a hidden field.
+  */
   const { data: meta } = useQuery({
-    queryKey: ['module', module],
-    queryFn: () => api.module(module),
+    queryKey: ['module', module, 'with-inactive'],
+    queryFn: () => api.module(module, { includeInactive: true }),
     enabled: Boolean(module),
   });
 
-  /* What the split view can show: everything a person could read, in module order. */
+  /* What the split view can *show*: only what a person could read. A field
+     that is off cannot be added, even though one already chosen is kept. */
   const offerable: FieldMeta[] = useMemo(() => (meta?.fields ?? [])
     .filter((f: FieldMeta) => f.isActive && f.displayType !== 'hidden')
     .sort((a: FieldMeta, b: FieldMeta) => a.sequence - b.sequence || a.label.localeCompare(b.label)),
@@ -109,13 +123,22 @@ export default function SplitViewAdmin(): JSX.Element {
 
   const layout = chosen[module] ?? EMPTY;
   const picked = layout[pane];
-  const byName = new Map(offerable.map((f) => [f.name, f]));
+  /* Every field the module has, on or off, so a chosen name can be told apart
+     from a name the module no longer knows at all. */
+  const byName = useMemo(
+    () => new Map((meta?.fields ?? []).map((f: FieldMeta) => [f.name, f])),
+    [meta?.fields],
+  );
+  const missing = useMemo(() => picked.filter((name) => !byName.has(name)), [picked, byName]);
   const current = PANES.find((p) => p.key === pane)!;
 
   const setPicked = (next: string[]): void =>
     setChosen((cur) => ({ ...cur, [module]: { ...(cur[module] ?? EMPTY), [pane]: next } }));
   const toggle = (name: string): void =>
     setPicked(picked.includes(name) ? picked.filter((n) => n !== name) : [...picked, name]);
+  /* One click for the names the module no longer has — there were three of
+     them across two modules and three panes, and Remove is one at a time. */
+  const dropMissing = (): void => setPicked(picked.filter((name) => byName.has(name)));
   const move = (index: number, delta: number): void => {
     const next = [...picked];
     const target = index + delta;
@@ -216,8 +239,15 @@ export default function SplitViewAdmin(): JSX.Element {
       <p className="text-xs text-muted">{current.blurb}</p>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="card p-3">
-          <h2 className="mb-2 text-sm font-semibold">Shown, in this order</h2>
+        <section className="card p-3" data-testid="split-view-chosen">
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="text-sm font-semibold">Shown, in this order</h2>
+            {missing.length > 0 && (
+              <button className="btn-secondary btn-sm ml-auto" onClick={dropMissing}>
+                Remove {missing.length} that {missing.length === 1 ? 'is' : 'are'} gone
+              </button>
+            )}
+          </div>
           {picked.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-xs text-muted dark:border-slate-700">
               Nothing chosen — this falls back to {current.fallback}.
@@ -226,23 +256,36 @@ export default function SplitViewAdmin(): JSX.Element {
             <ol className="space-y-1">
               {picked.map((name, index) => {
                 const field = byName.get(name);
+                /*
+                  Three states, not two.
+
+                  A field that is merely switched off still exists and comes
+                  back the moment somebody turns it on, so it is *not* an
+                  error and removing it would lose the arrangement for
+                  nothing. Only a name the module no longer knows at all is
+                  worth clearing out.
+                */
+                const off = Boolean(field) && (!field!.isActive || field!.displayType === 'hidden');
+                const gone = !field;
                 return (
                   <li
                     key={name}
                     className={cn(
                       'flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm',
-                      field
-                        ? 'border-slate-200 dark:border-slate-700'
-                        : 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40',
+                      gone && 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40',
+                      off && 'border-slate-200 bg-[var(--surface-muted)] dark:border-slate-700',
+                      !gone && !off && 'border-slate-200 dark:border-slate-700',
                     )}
                   >
                     <span className="w-5 shrink-0 text-center text-xs text-muted tabular-nums">{index + 1}</span>
                     <span className="min-w-0 flex-1 truncate">
                       {field?.label ?? name}
-                      {/* A field that has been renamed or removed is named rather
-                          than hidden: the split view skips it silently, and an
-                          admin should be able to see why something vanished. */}
-                      {!field && <span className="ml-1 text-xs font-medium text-amber-700 dark:text-amber-300">— no longer on this module</span>}
+                      {gone && <span className="ml-1 text-xs font-medium text-amber-700 dark:text-amber-300">— no longer on this module</span>}
+                      {off && (
+                        <span className="ml-1 text-xs font-medium text-muted">
+                          — switched off, so it is not shown. Turn it back on in Modules &amp; Fields.
+                        </span>
+                      )}
                     </span>
                     <button className="btn-ghost p-1" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move ${field?.label ?? name} up`}>
                       <ChevronUp className="h-4 w-4" />

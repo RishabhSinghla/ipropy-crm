@@ -1197,6 +1197,43 @@ metadataRouter.get('/modules/:module/archived-values', asyncHandler(async (req, 
   res.json(rows.rows.map((r) => ({ column: r.column_name, count: Number(r.count), droppedAt: r.droppedAt })));
 }));
 
+/**
+ * Throw away the values of a field that no longer exists.
+ *
+ * **27 September 2026, the owner**, of the amber panel on Modules & Fields:
+ * *"they warn me with multiple warning and errors."* Recovering was the only
+ * thing that could ever empty it, so an archive from a field deleted months
+ * ago — `carpet_area`, `name`, `bathrooms` — sat there warning him for ever
+ * with nothing he would ever do about it.
+ *
+ * It is a real delete and it is the end of those values, so the screen names
+ * the count and asks first. Nothing else is touched: these rows belong to a
+ * column no field owns, so no record loses anything it can currently show.
+ */
+metadataRouter.delete('/modules/:module/archived-values/:column', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.fields');
+  const module = await registry.requireModule(req.params.module);
+  const { rowCount } = await db.query(
+    `DELETE FROM ipy_dropped_column WHERE table_name = $1 AND column_name = $2`,
+    [module.tableName, req.params.column],
+  );
+  const discarded = rowCount ?? 0;
+  /*
+    Audited even though no field owns these rows: "where did those twelve
+    values go" has to have an answer, and this is the only place that can give
+    one. `field_internal_id` is NOT NULL, so it carries the column the archive
+    belonged to — which is the only identity these values ever had.
+  */
+  await db.query(
+    `INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, user_id)
+     VALUES ($1, $2, 'updated', $3, $4)`,
+    [module.id, req.params.column, JSON.stringify({ discardedArchive: req.params.column, rows: discarded }), user.id],
+  );
+  logger.warn({ module: module.name, column: req.params.column, discarded }, 'discarded archived values');
+  res.json({ ok: true, discarded });
+}));
+
 metadataRouter.post('/fields/:id/recover-values', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'admin.fields');
