@@ -31,20 +31,29 @@ test('a rep adds the lead they are about to ring', async ({ page }) => {
   await expect(page.getByText(/created/i).first()).toBeVisible({ timeout: 15_000 });
 });
 
-test('they open it from the list', async ({ page, context }) => {
+test('they open it from the list', async ({ page }) => {
   await page.goto('/leads');
   await waitForRecords(page);
   await searchList(page, name);
   await page.waitForTimeout(1200);
 
-  // The list opens records in a new tab on purpose, so the list is never lost.
-  const opened = context.waitForEvent('page');
-  await page.locator('tr', { hasText: name }).first().click();
-  const detail = await opened;
-  await detail.waitForLoadState('domcontentloaded');
-  await expect(detail.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
-  recordUrl = detail.url();
-  await detail.close();
+  // The record opens beside the queue, in the split view.
+  await page.getByTestId('queue-card').filter({ hasText: name }).first().locator('button').first().click();
+  await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
+
+  // Its own address, which hands over to the split view with it open.
+  const id = await page.evaluate(async (wanted) => {
+    const token = localStorage.getItem('ipropy.token');
+    const res = await fetch('/api/records/leads/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ search: wanted, pageSize: 5 }),
+    });
+    const body = await res.json() as { rows?: { id: string; label: string }[]; records?: { id: string; label: string }[] };
+    return (body.rows ?? body.records ?? []).find((r) => r.label === wanted)?.id ?? '';
+  }, name);
+  expect(id, 'the lead just added could not be found').not.toBe('');
+  recordUrl = `/leads/${id}`;
 });
 
 test('tapping the number opens the deck in the header, not a dialog over the record', async ({ page }) => {
@@ -54,7 +63,7 @@ test('tapping the number opens the deck in the header, not a dialog over the rec
   // itself, which changes every run.
   await page.locator('button[title^="Call "]').first().click();
 
-  const deck = page.getByTestId('call-deck');
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
 
   /*
@@ -87,7 +96,7 @@ test('saving the outcome records the call on the lead', async ({ page }) => {
   await page.goto(recordUrl);
   await page.locator('button[title^="Call "]').first().click();
 
-  const deck = page.getByTestId('call-deck');
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
   await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
   await deck.getByRole('button', { name: /save & exit/i }).click();
@@ -106,7 +115,7 @@ test('an outcome the list does not offer cannot be sent', async ({ page }) => {
   // is a list the picklist drew, so there is no free-text path to the endpoint.
   await page.goto(recordUrl);
   await page.locator('button[title^="Call "]').first().click();
-  const deck = page.getByTestId('call-deck');
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
   expect(await deck.locator('input[type="text"]').count()).toBe(0);
   expect(await deck.locator('option').count()).toBeGreaterThan(5);
@@ -138,7 +147,7 @@ test('the outcome list follows the admin, not the bundle', async ({ page }) => {
   try {
     await page.goto(recordUrl);
     await page.locator('button[title^="Call "]').first().click();
-    const deck = page.getByTestId('call-deck');
+    const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
     await expect(deck).toBeVisible({ timeout: 15_000 });
     // Reachable, not merely present: an option Settings can add and the deck
     // cannot pick is Settings editing a list nobody can use.
@@ -173,7 +182,7 @@ test('Save & Next carries the call to the next person', async ({ page }) => {
   await page.goto(recordUrl);
   await page.locator('button[title^="Call "]').first().click();
 
-  const deck = page.getByTestId('call-deck');
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
   const next = deck.getByRole('button', { name: /save & next/i });
   const wasOffered = (await next.count()) > 0;
@@ -187,7 +196,7 @@ test('Save & Next carries the call to the next person', async ({ page }) => {
 
   if (wasOffered) {
     // A deck on the next person, which is the half that kept breaking.
-    await expect(page.getByTestId('call-deck')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first()).toBeVisible({ timeout: 20_000 });
   }
   // And the flag is gone, or the next refresh rings them again.
   expect(page.url()).not.toContain('dial=1');
