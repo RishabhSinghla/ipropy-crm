@@ -79,7 +79,9 @@ test('a sort the person chose is not taken away by a queue', async ({ page }) =>
 
   await page.goto('/leads');
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
-  await page.locator('thead th').nth(1).getByRole('button').first().click();
+  // The split view's own sorting menu: any choice other than the default.
+  await page.getByRole('button', { name: 'Sort this list' }).click();
+  await page.getByRole('button', { name: /A–Z$/ }).first().click();
   const chosen = (await sorted).postDataJSON().sortBy as string;
 
   const queued = page.waitForRequest((r) =>
