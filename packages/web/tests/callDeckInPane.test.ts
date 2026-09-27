@@ -21,6 +21,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useLiveCall } from '../src/lib/liveCall';
 
 const CALL = {
+  userId: 'agent-a',
   number: '+919999999999',
   module: 'leads',
   recordId: 'rec-1',
@@ -66,5 +67,12 @@ describe('the call deck in the record pane', () => {
     const kept = JSON.parse(localStorage.getItem('ipropy.liveCall') ?? '{}') as Record<string, unknown>;
     expect(kept.recordId).toBe('rec-1');
     expect(kept).not.toHaveProperty('inPane');
+  });
+
+  it('keeps the owning agent with the call so another signed-in user cannot inherit it', () => {
+    useLiveCall.getState().begin(CALL);
+    expect(useLiveCall.getState().call?.userId).toBe('agent-a');
+    const saved = JSON.parse(localStorage.getItem('ipropy.liveCall') ?? '{}') as Record<string, unknown>;
+    expect(saved.userId).toBe('agent-a');
   });
 });

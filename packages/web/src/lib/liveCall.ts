@@ -16,6 +16,8 @@
 import { create } from 'zustand';
 
 export interface CrmCall {
+  /** The authenticated rep who started this call; never share it across CRM users. */
+  userId: string;
   /** The number that was rung, as the record holds it. */
   number: string;
   /** The record the call is about — where it is saved and what Save & Next moves on from. */
@@ -60,8 +62,12 @@ function remembered(): CrmCall | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const call = JSON.parse(raw) as CrmCall;
-    // A call pressed more than six hours ago was not saved and is not live.
-    if (!call?.recordId || Date.now() - call.pressedAt > 6 * 60 * 60 * 1000) return null;
+    // Old pre-isolation entries have no owner and are discarded. Also avoid
+    // reviving a call pressed more than six hours ago.
+    if (!call?.userId || !call.recordId || Date.now() - call.pressedAt > 6 * 60 * 60 * 1000) {
+      localStorage.removeItem(KEY);
+      return null;
+    }
     return { ...call, placing: false };
   } catch {
     return null;

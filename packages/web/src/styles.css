@@ -212,7 +212,15 @@
     to   { transform: translateY(0); }
   }
 
+  @keyframes ipropy-pane-reveal {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-pane-reveal { animation: ipropy-pane-reveal 180ms ease-out both; }
+
   @media (prefers-reduced-motion: reduce) {
+    .animate-pane-reveal { animation: none; }
     @keyframes ipropy-sheet-up {
       from { transform: none; }
       to   { transform: none; }

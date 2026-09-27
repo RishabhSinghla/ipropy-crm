@@ -1,8 +1,9 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { formatDate, recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, FileText, Link2,
+  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Link2,
   MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
@@ -145,7 +146,7 @@ interface SortChoice {
  */
 export function IpropyWorkspace({
   module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
-  openId, sortBy, sortDir, onSort,
+  openId, sortBy, sortDir, neighbourContext, onSort,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -163,11 +164,14 @@ export function IpropyWorkspace({
   openId?: string | null;
   /** The list's own ordering, so the queue's menu drives the same query the table does. */
   sortBy?: string; sortDir?: 'asc' | 'desc';
+  /** The active list's filters, so record navigation follows the queue in view. */
+  neighbourContext?: { view?: string; search?: string; filter?: string };
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey>('overview');
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
+  const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
   /*
@@ -253,6 +257,23 @@ export function IpropyWorkspace({
   // The row stands in while the record loads, so the pane never blanks between
   // two selections. Its values are right, there are simply fewer of them.
   const active = fetched && fetched.id === activeId ? fetched : listRow;
+
+  const { data: neighbours } = useQuery({
+    queryKey: ['record-neighbours', module.name, activeId, neighbourContext, sortBy, sortDir],
+    queryFn: () => api.neighbours(module.name, activeId!, {
+      ...neighbourContext,
+      ...(sortBy ? { sort: sortBy } : {}),
+      ...(sortDir ? { dir: sortDir } : {}),
+    }),
+    enabled: Boolean(activeId),
+    staleTime: 15_000,
+  });
+  const openRecord = useCallback((id: string) => {
+    setActiveId(id);
+    const next = new URLSearchParams(window.location.search);
+    next.set('open', id);
+    setSearchParams(next, { replace: true });
+  }, [setSearchParams]);
 
   const resize = useCallback((delta: number) => {
     const [min, max] = QUEUE_LIMITS;
@@ -431,7 +452,7 @@ export function IpropyWorkspace({
               followUpField={followUpField ?? cardFields.followUp}
               statusField={statusField}
               adminLine={queueChosen ? subtitleFields : null}
-              onSelect={() => setActiveId(row.id)}
+              onSelect={() => openRecord(row.id)}
               onToggle={(checked) => onToggleSelect(row.id, checked)}
             />
           ))}
@@ -474,7 +495,18 @@ export function IpropyWorkspace({
           */}
           <CallDeckDock />
 
-          <div className="flex min-w-0 items-start gap-3">
+          <div className="flex min-w-0 flex-wrap items-start gap-2">
+            <div className="mt-1 inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-800" aria-label="Record navigation">
+              <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openRecord(neighbours.prevId)} className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="min-w-[3.4rem] text-center text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300" aria-live="polite">
+                {neighbours?.position && neighbours.total ? `${neighbours.position} / ${neighbours.total}` : '—'}
+              </span>
+              <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openRecord(neighbours.nextId)} className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
             <Avatar name={active.label} size={42} className="mt-0.5" />
             <div className="min-w-0 flex-1">
               {/*
@@ -492,7 +524,8 @@ export function IpropyWorkspace({
                     name"*. It was a violet pill with a person in it, which
                     made the one editable fact on that line look like a label.
                   */
-                  <span className="inline-flex shrink-0 items-center text-xs font-semibold text-muted" title="Agent">
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-muted" title="Agent">
+                    {active.display?.[assignedField.name] && <Avatar name={active.display[assignedField.name]} size={18} />}
                     {canEdit && isInlineEditable(assignedField) ? (
                       <EditableField
                         module={module.name}
@@ -525,7 +558,7 @@ export function IpropyWorkspace({
 
             </div>
 
-            <span className="mt-1 flex shrink-0 items-center gap-2">
+            <span className="mt-1 ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
               {/* The record's tags, before the icons. They used to trail the
                   name after "Updated …", capped at two — the end of a line of
                   text is where a chip goes unread, and the owner asked for
@@ -568,14 +601,19 @@ export function IpropyWorkspace({
                 <Star className={cn('h-4 w-4', active.starred && 'fill-white')} />
               </button>
               {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
-              {phoneValue && <CallButton to={phoneValue} iconOnly round />}
+              {phoneValue && <CallButton to={phoneValue} iconOnly round active={onCall} />}
               {/* Tagging, the same dialog the record page opens. */}
               <TagButton
                 module={module.name}
                 recordId={active.id}
                 tags={active.tags}
                 canEdit={canEdit}
-                className={cn(ACTION_CIRCLE, 'hover:bg-brand-600')}
+                className={cn(
+                  ACTION_BASE,
+                  active.tags?.length
+                    ? 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-200'
+                    : cn(ACTION_REST, 'hover:bg-brand-600'),
+                )}
               />
               {/*
                 No delete circle. Delete is in the menu beside it, and one
@@ -706,9 +744,11 @@ export function IpropyWorkspace({
                 A deck standing empty says nothing, and a notes box the team
                 can never reach is worse than either.
               */}
-              {onCall
-                ? <CallDeckPanel module={module.name} recordId={active.id} />
-                : <NotesPanel module={module.name} record={active} />}
+              <div key={onCall ? 'call-deck' : 'notes'} className="animate-pane-reveal">
+                {onCall
+                  ? <CallDeckPanel module={module.name} recordId={active.id} />
+                  : <NotesPanel module={module.name} record={active} />}
+              </div>
             </div>
           )}
           {tab === 'timeline' && <TimelineTab module={module.name} id={active.id} />}
@@ -848,7 +888,7 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
             what the price on the card below is printed in.
           */
           active
-            ? 'bg-indigo-50 shadow-[inset_4px_0_0_#4e45d5] dark:bg-indigo-950/40'
+            ? 'bg-gradient-to-r from-[var(--brand-100)] via-[var(--brand-50)] to-white shadow-[inset_4px_0_0_var(--brand-600)] dark:from-brand-950/70 dark:via-slate-900 dark:to-slate-900'
             : 'hover:bg-[var(--surface-subtle)] dark:hover:bg-slate-800',
         )}
       >
@@ -897,12 +937,9 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
         </span>
 
         {/* 3. The money, the size, and when they are due. */}
-        {(price || area || due) && <span className="mt-2 flex items-center gap-2">
+        {(price || area) && <span className={cn('mt-2 flex items-center gap-2', stageLabel && 'pr-24')}>
           {price && <span className="shrink-0 whitespace-nowrap text-lg font-extrabold tabular-nums text-[#3730a3] dark:text-indigo-300">{price}</span>}
           {area && <span className="min-w-0 truncate whitespace-nowrap text-xs text-[#64748b] dark:text-slate-400">{area}</span>}
-          <span className="ml-auto shrink-0">
-            {due && <FollowUpBadge due={due} date={followUp} />}
-          </span>
         </span>}
       </button>
 
@@ -922,19 +959,28 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
             checked ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100',
           )}
         />
-        {stageLabel && (
-          <span
-            style={badgeVars(stageOption?.color)}
-            title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
-            className={cn(
-              'max-w-[6.5rem] truncate rounded-full px-2.5 py-0.5 text-2xs font-bold',
-              stageOption?.color ? 'badge-solid' : 'bg-brand-700 text-white',
-            )}
-          >
-            {stageLabel}
-          </span>
-        )}
+        {due && <FollowUpBadge due={due} date={followUp} />}
       </span>
+      {stageLabel && stageOption?.meta?.plainText !== true && (
+        <span
+          style={badgeVars(stageOption?.color)}
+          title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
+          className={cn(
+            'absolute bottom-2.5 right-2.5 max-w-[7.5rem] truncate rounded-full px-2.5 py-0.5 text-2xs font-bold',
+            stageOption?.color ? 'badge-solid' : 'bg-brand-700 text-white',
+          )}
+        >
+          {stageLabel}
+        </span>
+      )}
+      {stageLabel && stageOption?.meta?.plainText === true && (
+        <span
+          title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
+          className="absolute bottom-2.5 right-2.5 max-w-[7.5rem] truncate text-xs font-semibold text-[var(--text)]"
+        >
+          {stageLabel}
+        </span>
+      )}
     </div>
   );
 }

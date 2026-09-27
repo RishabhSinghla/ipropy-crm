@@ -19,14 +19,15 @@
  */
 import { type JSX, useEffect } from 'react';
 import {
-  ChevronLeft, ChevronRight, Mic, Pause, PhoneOff, SkipForward, Volume2, VolumeX,
+  Mic, Pause, PhoneOff, SkipForward, Volume2, VolumeX,
 } from 'lucide-react';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDeckState, type CallDeckState } from './LiveCallDeck';
 import { quickFollowUpDates } from '../lib/followUpDates';
-import { outcomeCard, splitOutcomes } from '../lib/callConsole';
-import { Avatar, Spinner } from './ui';
+import { outcomeCard } from '../lib/callConsole';
+import { Spinner } from './ui';
 import { cn } from '../lib/utils';
+import { useApp } from '../lib/store';
 
 /**
  * Nothing at all unless this very record is the one being called.
@@ -50,7 +51,8 @@ export function CallDeckPanel({ module, recordId }: { module: string; recordId: 
  */
 export function useCallIsOn(module: string, recordId: string): boolean {
   const call = useLiveCall((state) => state.call);
-  return Boolean(call && call.module === module && call.recordId === recordId);
+  const userId = useApp((state) => state.user?.id ?? null);
+  return Boolean(call && userId && call.userId === userId && call.module === module && call.recordId === recordId);
 }
 
 function Panel(): JSX.Element {
@@ -80,13 +82,7 @@ function Panel(): JSX.Element {
 function QueueBar({ deck }: { deck: CallDeckState }): JSX.Element {
   return (
     <header className="flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2">
-      <span className="inline-flex items-center gap-1 rounded border border-[var(--border)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text)] dark:bg-slate-900 dark:text-slate-100">
-        <ChevronLeft className="h-3.5 w-3.5 opacity-40" aria-hidden />
-        <span className="tabular-nums">
-          {deck.position && deck.total ? `${deck.position} of ${deck.total}` : '—'}
-        </span>
-        <ChevronRight className="h-3.5 w-3.5 opacity-40" aria-hidden />
-      </span>
+      <span className="text-xs font-semibold text-muted">Call in progress</span>
       {deck.nextLabel && (
         <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-brand-100 px-2.5 py-1 text-xs font-semibold text-brand-800 dark:bg-brand-950/60 dark:text-brand-200">
           <SkipForward className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -102,11 +98,6 @@ function QueueBar({ deck }: { deck: CallDeckState }): JSX.Element {
 function WhoAndClock({ deck }: { deck: CallDeckState }): JSX.Element {
   return (
     <>
-      <div className="flex items-center gap-2.5 rounded-lg border border-[var(--border)] px-3 py-2.5">
-        <Avatar name={deck.who} size={36} />
-        <span className="min-w-0 truncate text-base font-bold text-[var(--text)] dark:text-slate-100">{deck.who}</span>
-      </div>
-
       <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-2 py-1.5">
         <span className="inline-flex min-w-0 flex-1 items-center gap-2 rounded bg-[var(--surface-subtle)] px-2 py-1.5">
           {deck.talking && <span className="h-2 w-2 shrink-0 rounded-full bg-positive" aria-hidden />}
@@ -176,7 +167,7 @@ function Notes({ deck }: { deck: CallDeckState }): JSX.Element {
         onChange={(event) => deck.onNotes(event.target.value)}
         placeholder="Take notes during the call…"
         aria-label="Call notes"
-        className="input min-h-[4.5rem] resize-none text-sm"
+        className="input min-h-24 resize-y text-sm"
       />
     </div>
   );
@@ -191,50 +182,17 @@ function Notes({ deck }: { deck: CallDeckState }): JSX.Element {
  * gets a card — a rep who cannot record what happened is the worse failure.
  */
 function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
-  /*
-    Every outcome on screen at once, in smaller type.
-
-    **26 September 2026, the owner:** *"from call deck decrease all deposition
-    font size. so that we can see all call otcome in a screen."* This showed
-    six with the rest a tap behind "N more outcomes", on the reasoning that
-    three rows and a scroll after every call is how a rep stops recording
-    them. He has worked the screen and wants the whole list — and he is right
-    that a hidden option is worse than a small one, because a rep who cannot
-    see what happened picks the nearest thing they can see.
-
-    The order is still `splitOutcomes`' — the six used all day first, in a
-    fixed order, so a renamed option cannot move "Interested" under somebody's
-    thumb. It just no longer hides the tail.
-  */
-  const { first, rest } = splitOutcomes(deck.outcomes.map((o) => o.value), deck.outcome);
-  const shown = [...first, ...rest];
-  const labels = new Map(deck.outcomes.map((o) => [o.value, o.label]));
   return (
     <div>
       <p className="key-label mb-1.5">Call disposition</p>
-      <div className="grid grid-cols-3 gap-1">
-        {shown.map((value) => {
-          const chosen = value === deck.outcome;
-          return (
-            <button
-              key={value}
-              type="button"
-              onClick={() => deck.onOutcome(value)}
-              aria-pressed={chosen}
-              aria-label={labels.get(value) ?? value}
-              title={outcomeCard(value).hint}
-              className={cn(
-                'rounded border px-1 py-1.5 text-[11px] font-semibold leading-tight transition-colors',
-                chosen
-                  ? 'border-positive bg-positive-soft text-positive-on-soft'
-                  : 'border-[var(--border)] bg-[var(--surface-subtle)] text-[var(--text)] hover:bg-[var(--surface-muted)] dark:text-slate-100',
-              )}
-            >
-              <span className="line-clamp-2">{chosen ? `✓ ${labels.get(value) ?? value}` : (labels.get(value) ?? value)}</span>
-            </button>
-          );
-        })}
-      </div>
+      <select
+        value={deck.outcome}
+        onChange={(event) => deck.onOutcome(event.target.value)}
+        aria-label="Call disposition"
+        className="input h-10 text-sm"
+      >
+        {deck.outcomes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
     </div>
   );
 }
@@ -261,6 +219,16 @@ function Chase({ deck }: { deck: CallDeckState }): JSX.Element {
           {chosen ? chosen.label : fromOutcome ? `In ${fromOutcome} hours` : 'No follow-up'}
         </span>
       </span>
+      <label className="block">
+        <span className="sr-only">Choose next follow-up date</span>
+        <input
+          type="date"
+          value={deck.followUp ?? ''}
+          onChange={(event) => deck.onFollowUp(event.target.value || null)}
+          aria-label="Next follow-up date"
+          className="input h-9 text-sm"
+        />
+      </label>
       <div className="grid grid-cols-4 gap-1 rounded-lg border border-[var(--border)] p-1">
         {choices.map((choice) => {
           const on = choice.value === deck.followUp;

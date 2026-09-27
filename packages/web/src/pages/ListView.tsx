@@ -1067,6 +1067,11 @@ export default function ListView(): JSX.Element {
             */
             sortBy={effectiveSort.sortBy}
             sortDir={effectiveSort.sortDir}
+            neighbourContext={{
+              ...(activeView?.id ? { view: activeView.id } : {}),
+              ...(search ? { search } : {}),
+              ...(countConditions(effectiveFilter) ? { filter: JSON.stringify(effectiveFilter) } : {}),
+            }}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }

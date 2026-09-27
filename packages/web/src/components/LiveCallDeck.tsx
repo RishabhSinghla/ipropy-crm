@@ -21,6 +21,7 @@ import { useCallDispositionOptions } from '../lib/callDispositions';
 import { deckStatus, followUpFor, minutesFrom, type PhoneCallReport } from '../lib/callConsole';
 import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
+import { useApp } from '../lib/store';
 import { CallDeck } from './CallDeck';
 
 /** The id a record header gives the spot it wants the deck in. */
@@ -31,10 +32,14 @@ const NOT_THE_CALLING_APP =
 
 export function LiveCallDeck(): JSX.Element | null {
   const call = useLiveCall((state) => state.call);
+  const userId = useApp((state) => state.user?.id ?? null);
+  useEffect(() => {
+    if (call && userId && call.userId !== userId) useLiveCall.getState().finish();
+  }, [call, userId]);
   // The record's own pane draws the whole deck; the bar is for every other
   // screen. Both at once is one call wearing two faces.
   const inPane = useLiveCall((state) => state.inPane);
-  if (!call || inPane) return null;
+  if (!call || !userId || call.userId !== userId || inPane) return null;
   return createPortal(<Deck />, document.body);
 }
 
