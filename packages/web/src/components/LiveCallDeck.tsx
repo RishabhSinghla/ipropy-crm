@@ -4,7 +4,7 @@
  */
 import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api, type LiveCallState } from '../lib/api';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
@@ -73,7 +73,6 @@ export function useCallDeckState(): CallDeckState {
   const call = useLiveCall((state) => state.call)!;
   const { update, finish } = useLiveCall.getState();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const outcomes = useCallDispositionOptions();
   const outcome = call.outcome && outcomes.some((option) => option.value === call.outcome)
     ? call.outcome
@@ -206,7 +205,12 @@ export function useCallDeckState(): CallDeckState {
       // pressed Call. Recompute the destination page from the next row's
       // ordinal in that queue; a record id is not a page number.
       if (goTo) {
-        navigate(saveNextUrl(call.queueUrl, module, goTo, nextPosition));
+        // This destination can be the same /leads route with a *different*
+        // filter, sort and page. React Router reuses ListView in that case;
+        // its local list state would otherwise overwrite the new URL before
+        // adopting it, leaving the selected card several pages away. A fresh
+        // visit hydrates the exact captured queue before the next call starts.
+        window.location.assign(saveNextUrl(call.queueUrl, module, goTo, nextPosition));
       }
     } catch (err) {
       toast.error('Could not log the call', (err as Error).message);

@@ -29,6 +29,7 @@ import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
+import { callQueueUrl } from '../lib/callQueueUrl';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 export default function ListView(): JSX.Element {
@@ -437,6 +438,12 @@ export default function ListView(): JSX.Element {
       meta?.fields,
     ),
   }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, splitQueue, meta]);
+
+  // The call deck must resume this *exact* queue after Save & Next. The URL's
+  // ordinary filter omits transient follow-up/status/agent/tag choices, and a
+  // follow-up queue can supply its own sort even when no sort is named in the
+  // URL. Capture the effective list query, not just the address bar.
+  const callQueueSnapshot = useMemo(() => callQueueUrl(moduleName ?? '', query), [moduleName, query]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
@@ -1072,6 +1079,7 @@ export default function ListView(): JSX.Element {
               ...(search ? { search } : {}),
               ...(countConditions(effectiveFilter) ? { filter: JSON.stringify(effectiveFilter) } : {}),
             }}
+            callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }

@@ -1,3 +1,5 @@
+import { DEFAULT_PAGE_SIZE } from './pageSize';
+
 /** Build the list destination for Save & Next without losing its queue context. */
 export function saveNextUrl(
   listUrl: string | null | undefined,
@@ -20,4 +22,3 @@ export function saveNextUrl(
   target.search = params.toString();
   return `${target.pathname}${target.search}`;
 }
-import { DEFAULT_PAGE_SIZE } from './pageSize';

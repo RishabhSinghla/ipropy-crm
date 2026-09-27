@@ -145,7 +145,7 @@ interface SortChoice {
  */
 export function IpropyWorkspace({
   module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
-  openId, sortBy, sortDir, neighbourContext, onSort,
+  openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -165,6 +165,8 @@ export function IpropyWorkspace({
   sortBy?: string; sortDir?: 'asc' | 'desc';
   /** The active list's filters, so record navigation follows the queue in view. */
   neighbourContext?: { view?: string; search?: string; filter?: string };
+  /** Snapshot of the effective queue, including unsaved quick-filter choices. */
+  callQueueUrl: string;
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
@@ -380,7 +382,7 @@ export function IpropyWorkspace({
     nextId: neighbours?.nextId ?? null,
     position: neighbours?.position ?? null,
     total: neighbours?.total ?? null,
-    url: `${window.location.pathname}?${searchParams.toString()}`,
+    url: callQueueUrl,
   }}>
     <WhatsAppComposerProvider recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
     <section data-testid="ipropy-workspace" className="bg-[#f7f9fc] dark:bg-slate-950">
