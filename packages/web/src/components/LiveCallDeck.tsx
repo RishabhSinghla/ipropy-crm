@@ -12,17 +12,16 @@
  * right person.
  */
 import { type JSX, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api, type LiveCallState } from '../lib/api';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
+import { saveNextUrl } from '../lib/saveNextUrl';
 import { deckStatus, followUpFor, minutesFrom, type PhoneCallReport } from '../lib/callConsole';
 import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
 import { useApp } from '../lib/store';
-import { CallDeck } from './CallDeck';
 
 /** The id a record header gives the spot it wants the deck in. */
 export const CALL_DECK_DOCK_ID = 'call-deck-dock';
@@ -36,26 +35,9 @@ export function LiveCallDeck(): JSX.Element | null {
   useEffect(() => {
     if (call && userId && call.userId !== userId) useLiveCall.getState().finish();
   }, [call, userId]);
-  // The record's own pane draws the whole deck; the bar is for every other
-  // screen. Both at once is one call wearing two faces.
-  const inPane = useLiveCall((state) => state.inPane);
-  if (!call || !userId || call.userId !== userId || inPane) return null;
-  return createPortal(<Deck />, document.body);
-}
-
-function Deck(): JSX.Element {
-  const deck = useCallDeckState();
-  return (
-    <CallDeck
-      status={deck.status} talking={deck.talking}
-      speakerOn={deck.speakerOn} muted={deck.muted} held={deck.held}
-      canControl={deck.canControl} noControlReason={deck.noControlReason} onControl={deck.onControl}
-      canEndCall={deck.canEndCall} onHangUp={deck.onHangUp}
-      position={deck.position} total={deck.total} who={deck.who}
-      outcomes={deck.outcomes} outcome={deck.outcome} onOutcome={deck.onOutcome}
-      saving={deck.saving} nextLabel={deck.nextLabel} onSave={deck.onSave} dock={deck.dock}
-    />
-  );
+  // Calls are worked in the record's in-pane deck only. Keep this shell
+  // component mounted to clear calls left by a different signed-in user.
+  return null;
 }
 
 /** Everything a live call needs to be worked and finished. */
@@ -125,12 +107,13 @@ export function useCallDeckState(): CallDeckState {
     queryKey: ['record', call.module, call.recordId],
     queryFn: () => api.record(call.module, call.recordId),
   });
-  const { data: neighbours } = useQuery({
+  const { data: fallbackNeighbours } = useQuery({
     queryKey: ['call-next', call.module, call.recordId],
     queryFn: () => api.neighbours(call.module, call.recordId),
+    enabled: call.queueNextId === undefined,
     staleTime: 60_000,
   });
-  const nextId = neighbours?.nextId ?? null;
+  const nextId = call.queueNextId !== undefined ? call.queueNextId : fallbackNeighbours?.nextId ?? null;
   const { data: nextRecord } = useQuery({
     queryKey: ['record', call.module, nextId],
     queryFn: () => api.record(call.module, nextId!),
@@ -204,6 +187,28 @@ export function useCallDeckState(): CallDeckState {
         : followUpFor(outcome, (record?.values?.[call.followUpField] as string | null | undefined) ?? null, new Date());
       if (chaseOn) await api.update(call.module, call.recordId, { [call.followUpField]: chaseOn });
 
+      // Logging updates the current record's timestamp, which can move it in
+      // the default Recently Updated sort. Refresh the saved neighbor's ordinal
+      // after that write so the handoff page remains the page containing it.
+      let nextPosition = call.queuePosition;
+      if (goTo && call.queueUrl && call.queuePosition) {
+        try {
+          const source = new URL(call.queueUrl, window.location.origin);
+          const params = source.searchParams;
+          const refreshed = await api.neighbours(call.module, goTo, {
+            ...(params.get('view') ? { view: params.get('view')! } : {}),
+            ...(params.get('q') ? { search: params.get('q')! } : {}),
+            ...(params.get('filter') ? { filter: params.get('filter')! } : {}),
+            ...(params.get('sort') ? { sort: params.get('sort')! } : {}),
+            ...(params.get('dir') ? { dir: params.get('dir')! } : {}),
+          });
+          if (refreshed.position) nextPosition = refreshed.position;
+        } catch {
+          // The captured queue position is a safe fallback during a transient
+          // network error; a failed re-count must not discard a saved call.
+        }
+      }
+
       toast.success('Call logged', chaseOn ? 'Follow-up scheduled.' : 'One conversation moved forward.');
       const { module, recordId } = call;
       finish();
@@ -214,8 +219,12 @@ export function useCallDeckState(): CallDeckState {
         queryClient.invalidateQueries({ queryKey: ['records', module] }),
         queryClient.invalidateQueries({ queryKey: ['calls'] }),
       ]);
-      // Next: open that record and ask it to ring, the way the list works everywhere.
-      if (goTo) navigate(`/${module}/${goTo}?dial=1`);
+      // Keep the exact view/filter/sort/page context captured when the rep
+      // pressed Call. Recompute the destination page from the next row's
+      // ordinal in that queue; a record id is not a page number.
+      if (goTo) {
+        navigate(saveNextUrl(call.queueUrl, module, goTo, nextPosition));
+      }
     } catch (err) {
       toast.error('Could not log the call', (err as Error).message);
     } finally {
@@ -234,8 +243,8 @@ export function useCallDeckState(): CallDeckState {
     onControl: (action, on) => void control(action, on),
     canEndCall: Boolean(report?.canEndCall) && report?.state !== 'ended',
     onHangUp: () => void hangUp(),
-    position: neighbours?.position ?? null,
-    total: neighbours?.total ?? null,
+    position: call.queuePosition ?? fallbackNeighbours?.position ?? null,
+    total: call.queueTotal ?? fallbackNeighbours?.total ?? null,
     who,
     outcomes,
     outcome,

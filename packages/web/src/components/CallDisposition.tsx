@@ -63,12 +63,14 @@ async function phoneTookIt(
 }
 
 export function CallDispositionProvider({
-  recordId, module, followUpField = 'next_followup_at', children,
+  recordId, module, followUpField = 'next_followup_at', queue, children,
 }: {
   recordId: string;
   module: string;
   /** Canonical for Leads; legacy Inventory workspaces still use next_follow_up. */
   followUpField?: string;
+  /** The next row in the current filtered and sorted split queue. */
+  queue?: { nextId: string | null; position: number | null; total: number | null; url: string };
   children: ReactNode;
 }): JSX.Element {
   const [params, setParams] = useSearchParams();
@@ -98,7 +100,15 @@ export function CallDispositionProvider({
     }
     placingRef.current = true;
     const clean = number.replace(/[^\d+]/g, '');
-    useLiveCall.getState().begin({ userId, number, module, recordId, followUpField });
+    useLiveCall.getState().begin({
+      userId, number, module, recordId, followUpField,
+      ...(queue ? {
+        queueNextId: queue.nextId,
+        queuePosition: queue.position === null ? null : queue.position + 1,
+        queueTotal: queue.total,
+        queueUrl: queue.url,
+      } : {}),
+    });
     try {
       /*
         The rep asked for this one to leave from the computer, by clicking the

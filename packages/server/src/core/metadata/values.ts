@@ -6,7 +6,7 @@
  * tools all agree on what a "date" or a "currency" is.
  */
 import {
-  formatIndianPrice, formatArea, parseIndianPrice, collectFieldErrors, evaluateFilter,
+  formatIndianPrice, formatArea, parseIndianPrice, collectFieldErrors, evaluateFilter, picklistOptionForValue,
   type FieldMeta,
 } from '@ipropy/shared';
 import { ValidationError } from '../../utils/errors.js';
@@ -351,7 +351,7 @@ export function formatValue(field: FieldMeta, value: unknown, display?: string):
     }
     case 'picklist':
     case 'radio': {
-      const opt = field.options?.find((o) => o.value === value);
+      const opt = picklistOptionForValue(field.options, value);
       return opt?.label ?? String(value);
     }
     default:

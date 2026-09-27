@@ -743,7 +743,7 @@ export default function ListView(): JSX.Element {
             align="left"
             className="min-w-[18rem]"
             trigger={(
-              <button className="btn-secondary btn-sm max-w-[14rem]" aria-label="Choose or manage list views">
+              <button className="btn-secondary btn-sm max-w-[14rem] border-brand-200 bg-brand-50/60 text-brand-800 hover:bg-brand-100/70 dark:border-brand-800 dark:bg-brand-950/30 dark:text-brand-100" aria-label="Choose or manage list views">
                 {tagPick ? <Tag className="h-3.5 w-3.5 shrink-0" /> : <Filter className="h-3.5 w-3.5 shrink-0" />}
                 <span className="truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
                 <ChevronDown className="h-3.5 w-3.5 shrink-0" />

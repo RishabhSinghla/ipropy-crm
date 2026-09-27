@@ -171,7 +171,7 @@ export function IpropyWorkspace({
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey>('overview');
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
   /*
@@ -293,6 +293,18 @@ export function IpropyWorkspace({
     reasoning is the mistake this repo keeps finding months later.
   */
   const { headerFields, blocks, subtitleFields, queueChosen, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
+  const { data: assignableUsers = [] } = useQuery({
+    queryKey: ['users', 'assignable'],
+    queryFn: () => api.users(false, false, true),
+    enabled: Boolean(assignedField),
+    staleTime: 5 * 60_000,
+  });
+  const assignedUserId = assignedField ? String(active?.values[assignedField.name] ?? '') : '';
+  const assignedName = assignedField
+    ? String(active?.display?.[assignedField.name]
+      || assignableUsers.find((candidate) => candidate.id === assignedUserId)?.fullName
+      || '')
+    : '';
   const cardFields = useMemo(() => queueCardFields(module.fields), [module.fields]);
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
   const { data: matchingCount } = useQuery({
@@ -365,7 +377,12 @@ export function IpropyWorkspace({
     record it was started from through `useLiveCall` now, and the WhatsApp
     composer closes itself when the record changes, so neither needs the key.
   */
-  return <CallDispositionProvider recordId={active?.id ?? ''} module={module.name}>
+  return <CallDispositionProvider recordId={active?.id ?? ''} module={module.name} queue={{
+    nextId: neighbours?.nextId ?? null,
+    position: neighbours?.position ?? null,
+    total: neighbours?.total ?? null,
+    url: `${window.location.pathname}?${searchParams.toString()}`,
+  }}>
     <WhatsAppComposerProvider recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
     <section data-testid="ipropy-workspace" className="bg-[#f7f9fc] dark:bg-slate-950">
     {/*
@@ -525,21 +542,21 @@ export function IpropyWorkspace({
                     made the one editable fact on that line look like a label.
                   */
                   <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-muted" title="Agent">
-                    {active.display?.[assignedField.name] && <Avatar name={active.display[assignedField.name]} size={18} />}
+                    {assignedName && <Avatar name={assignedName} size={18} />}
                     {canEdit && isInlineEditable(assignedField) ? (
                       <EditableField
                         module={module.name}
                         recordId={active.id}
                         field={assignedField}
                         value={active.values[assignedField.name]}
-                        display={active.display?.[assignedField.name]}
+                        display={assignedName}
                         compact
                         siblings={active.values}
                         restrictTo={restrictionForField(module.picklistDependencies, active.values, assignedField.name)}
                         onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
                       />
                     ) : (
-                      <FieldValue field={assignedField} value={active.values[assignedField.name]} display={active.display?.[assignedField.name]} compact />
+                      <FieldValue field={assignedField} value={active.values[assignedField.name]} display={assignedName} compact />
                     )}
                   </span>
                 )}
@@ -849,7 +866,7 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
   const description = unitDescription(card, read);
   // Contact type is already the compact chip beside the name. Repeating it in
   // the detail line wastes the one piece of queue real estate a rep scans.
-  const adminText = adminLine?.filter((field) => field.name !== card.type?.name).map(read).filter(Boolean).join(' — ') ?? '';
+  const adminText = adminLine?.filter((field) => field.name !== card.type?.name).map(read).filter(Boolean).join(', ') ?? '';
   const price = card.price ? cardPrice(row.values[card.price.name]) : '';
   const areaUnitField = card.area?.config.unitField;
   const area = card.area

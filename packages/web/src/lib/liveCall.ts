@@ -25,6 +25,11 @@ export interface CrmCall {
   recordId: string;
   /** Which date field the outcome's chase date is written to on this module. */
   followUpField: string;
+  /** Queue-aware Save & Next snapshot, captured from the active split view. */
+  queueNextId?: string | null;
+  queuePosition?: number | null;
+  queueTotal?: number | null;
+  queueUrl?: string | null;
   /** When Call was pressed, on this computer's clock. */
   pressedAt: number;
   /** True while the CRM is still asking the phone to ring. */
