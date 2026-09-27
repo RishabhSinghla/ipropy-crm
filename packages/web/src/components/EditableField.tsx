@@ -1,4 +1,4 @@
-import { type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type JSX, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 /**
  * Universal inline editing. Click any editable field's displayed value —
  * in a list table cell, a kanban card, or a record detail page — and change
@@ -99,6 +99,17 @@ export interface EditableFieldProps {
   compact?: boolean;
   /** Draw the value with nothing clickable inside it — see `FieldValue.plain`. */
   plain?: boolean;
+  /**
+   * Something else to show in place of the value, while keeping the editor.
+   *
+   * The one caller is the record header's chase date, which reads as the
+   * queue's own Today / Tomorrow / Overdue chip rather than as a date — the
+   * owner asked for the chip *and* for it to stay editable, and those are the
+   * same control rather than two. Anything passed here has to be a plain
+   * display: the click that opens the editor is taken by the box around it,
+   * and a link or a button inside would swallow it.
+   */
+  render?: ReactNode;
   /** dependent-picklist restriction, resolved from the module's picklistDependencies against the record's current values */
   restrictTo?: string[];
   /**
@@ -118,7 +129,7 @@ export interface EditableFieldProps {
 export function EditableField(props: EditableFieldProps): JSX.Element {
   const {
     module, recordId, field, value, display, compact, plain, restrictTo, siblings, linkTo, onSaved,
-    surface = 'record',
+    surface = 'record', render,
   } = props;
 
   const inlineEdit = useApp((st) => st.user?.ui?.inlineEdit ?? false);
@@ -334,7 +345,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     // breaks in browsers.
     <StatusRing key={flashKey} status={status}>
       <span className={cn('group/ef -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5', editing && coversValue && 'invisible')}>
-        <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} />
+        {render ?? <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} />}
         {status === 'saving' ? (
           <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />
         ) : (
@@ -366,7 +377,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     */
     <StatusRing key={flashKey} status={status}>
       <span className={cn('inline-flex items-center gap-1', editing && coversValue && 'invisible')}>
-        <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} />
+        {render ?? <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} />}
         {status === 'saving' && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />}
         {/*
           A real control for anyone not using a mouse.

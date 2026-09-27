@@ -55,10 +55,32 @@ export interface FieldBlockSpec {
  * the header of the split pane on the right side and be moved in the basic
  * information below where they can be inline editable."
  *
- * By field name and not by label, because a label is something an admin
- * renames on a Tuesday and a name is the key everything else in this CRM uses.
+ * **Empty since 27 September 2026**, when he asked for Lost Reason back — as
+ * one of the five coloured chips under the name. The set stays because the
+ * mechanism it feeds is still right: a field taken off the header has to land
+ * in a block or it is simply lost.
  */
-export const DEMOTED_FROM_HEADER = new Set(['lost_reason']);
+export const DEMOTED_FROM_HEADER = new Set<string>([]);
+
+/**
+ * The chips under the record's name, in the owner's own order.
+ *
+ * **27 September 2026:** *"Blow Name Stripe We Need editable Beautiful solid
+ * multi colour rounded chips of Lead/Inventory Status, Lost Reason,
+ * Lead/Inventory Sourse, Next Followup, Contact Type."*
+ *
+ * Found by the **picklist each field is bound to**, not by the field's own
+ * name: a name is something an admin renames on a Tuesday, and production's
+ * stage field has been called `status` with picklist `lead_status` since one
+ * such rename. A module that has no field bound to one of these — Inventories
+ * has no contact type and no source — simply shows one chip fewer, rather than
+ * an empty one.
+ */
+const CHIP_PICKLISTS: ((picklist: string) => boolean)[] = [
+  (picklist) => picklist === 'lost_reason',
+  (picklist) => picklist.endsWith('_source'),
+  (picklist) => picklist === 'contact_type',
+];
 
 export interface RecordPanes {
   /** The strip beside the record's name. */
@@ -100,24 +122,45 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
   );
   const phoneField = useMemo(() => module.fields.find((f) => f.uitype === 'phone'), [module.fields]);
 
+  /*
+    The five the owner named, found through metadata and in his order: the
+    stage, why it was lost, where it came from, when to chase them, and what
+    kind of contact this is.
+  */
+  const chipFields = useMemo(() => {
+    const byPicklist = CHIP_PICKLISTS
+      .map((matches) => module.fields.find((field) => {
+        const picklist = field.config.picklist;
+        return typeof picklist === 'string' && matches(picklist);
+      }))
+      .filter((field): field is FieldMeta => Boolean(field));
+    const [lostReason, source, contactType] = [byPicklist[0], byPicklist[1], byPicklist[2]];
+    return [statusField, lostReason, source, followUpField, contactType]
+      .filter((field): field is FieldMeta => Boolean(field));
+  }, [module.fields, statusField, followUpField]);
+
   const headerFields = useMemo(() => {
     const names: string[] = [...(layout.headerFields ?? [])];
-    for (const field of [phoneField, followUpField, statusField]) {
+    for (const field of [phoneField, ...chipFields]) {
       if (field && !names.includes(field.name)) names.push(field.name);
     }
     const identity = new Set(module.labelFields);
+    const named = new Set(chipFields.map((field) => field.name));
     return names
       .filter((name) => name !== assignedField?.name)
       // The record's own name is the heading above this strip; repeating it
       // two inches below said the same thing twice.
       .filter((name) => !identity.has(name))
       .filter((name) => !DEMOTED_FROM_HEADER.has(name))
-      // Contact Type and Unit Number already read on every queue row, under
-      // the name. Repeating them two inches away said the same thing twice.
-      .filter((name) => !subtitleFields.some((field) => field.name === name))
+      /*
+        A field that already reads on every queue row is not repeated here —
+        **unless the owner named it as a chip**. Contact Type is both, and on
+        27 September 2026 he asked for it in the header by name.
+      */
+      .filter((name) => named.has(name) || !subtitleFields.some((field) => field.name === name))
       .map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
-  }, [layout.headerFields, fieldMap, module.labelFields, assignedField, phoneField, followUpField, statusField, subtitleFields]);
+  }, [layout.headerFields, fieldMap, module.labelFields, assignedField, phoneField, chipFields, subtitleFields]);
 
   const blocks = useMemo<FieldBlockSpec[]>(() => {
     const identity = new Set(module.labelFields);

@@ -11,6 +11,8 @@ import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
 import { appendSnippet, useNoteSnippets } from '../lib/noteSnippets';
+import { followUpChip } from '../lib/followUpDates';
+import { FollowUpBadge } from './FollowUpChip';
 
 /**
  * A record's field card and its notes, shared by every screen that shows a
@@ -69,6 +71,52 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
       </dd>
     </div>)}</dl>
   </section>;
+}
+
+/**
+ * Whether this field already draws itself as a chip.
+ *
+ * A picklist renders through `Badge`, which is solid and carries the admin's
+ * own colour; the chase date wears the queue's four. Wrapping either in a
+ * white bordered box is a chip inside a chip, and the outer one wins.
+ */
+function wearsItsOwnChip(field: FieldMeta, followUpField?: string): boolean {
+  if (field.name === followUpField) return true;
+  return field.uitype === 'picklist' || field.uitype === 'radio' || field.uitype === 'multipicklist' || field.uitype === 'tags';
+}
+
+/**
+ * The chase date, as the chip the queue shows — and still editable.
+ *
+ * The chip is what a rep reads; clicking it opens the ordinary date editor, so
+ * *"editable"* and *"Show Today, tomorrow, pending Overdue"* are the same
+ * control rather than two. A record nobody has promised to chase shows the
+ * field's own empty state, not a chip reading "none".
+ */
+function FollowUpChipCell({ module, row, field, canEdit }: {
+  module: DescribedModule; row: RecordEnvelope; field: FieldMeta; canEdit: boolean;
+}): JSX.Element {
+  const queryClient = useQueryClient();
+  const value = row.values[field.name];
+  const due = followUpChip(value);
+  if (!canEdit || !isInlineEditable(field)) {
+    return due
+      ? <FollowUpBadge due={due} date={value} />
+      : <FieldValue field={field} value={value} display={row.display?.[field.name]} compact />;
+  }
+  return (
+    <EditableField
+      module={module.name}
+      recordId={row.id}
+      field={field}
+      value={value}
+      display={due?.label ?? row.display?.[field.name]}
+      compact
+      siblings={row.values}
+      onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
+      render={due ? <FollowUpBadge due={due} date={value} /> : undefined}
+    />
+  );
 }
 
 /**
@@ -195,7 +243,7 @@ function NoteEntry({ entry, flush = false }: { entry: TimelineEntry; flush?: boo
  * A window listener is not enough: the strip also narrows when a divider is
  * dragged, which moves no window. `ResizeObserver` watches the element.
  */
-export function HeaderFieldStrip({ module, row, fields, canEdit, className, variant = 'columns' }: {
+export function HeaderFieldStrip({ module, row, fields, canEdit, className, variant = 'columns', followUpField }: {
   module: DescribedModule; row: RecordEnvelope; fields: FieldMeta[]; canEdit: boolean; className?: string;
   /**
    * How each field is drawn.
@@ -209,6 +257,17 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
    * and the other would not.
    */
   variant?: 'columns' | 'chips';
+  /**
+   * This module's chase-date field, so the chip variant can wear the queue's
+   * own Today / Tomorrow / Pending / Overdue colours rather than printing a
+   * date — *"Next followup Button Show Today, tomorrow, pending Overdue Day,
+   * month and Year"* (27 September 2026).
+   *
+   * Passed in rather than found here: which field it is is `useRecordPanes`'
+   * decision, and a second answer to that question is how one screen comes to
+   * chase a different date from another.
+   */
+  followUpField?: string;
 }): JSX.Element {
   const queryClient = useQueryClient();
   const strip = useRef<HTMLDivElement>(null);
@@ -300,27 +359,43 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
               'inline-flex shrink-0 justify-center',
               variant === 'columns'
                 ? cn('flex-col py-0.5', index === 0 ? 'pr-3.5' : 'px-3.5')
-                : 'items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs shadow-2xs dark:border-slate-700 dark:bg-slate-800',
+                : cn(
+                  'items-center rounded-full text-xs',
+                  /*
+                    A picklist already draws itself as a solid chip in the
+                    admin's own colour (`Badge`), and the chase date wears the
+                    queue's. Only a plain value — a number, a word — needs a
+                    chip drawn around it, or it would be bare text in a row of
+                    colour. That is the whole of *"editable Beautiful solid
+                    multi colour rounded chips"*: the colours were already
+                    there, inside a white box that hid them.
+                  */
+                  wearsItsOwnChip(field, followUpField)
+                    ? 'py-0'
+                    : 'border border-slate-200 bg-white px-2.5 py-1 shadow-2xs dark:border-slate-700 dark:bg-slate-800',
+                ),
               index >= fits && 'invisible',
             )}
             style={{ borderColor: 'var(--border)' }}
           >
             {variant === 'columns' && <span className="key-label shrink-0">{field.label}</span>}
-            {canEdit && isInlineEditable(field) ? (
-              <EditableField
-                module={module.name}
-                recordId={row.id}
-                field={field}
-                value={row.values[field.name]}
-                display={row.display?.[field.name]}
-                compact
-                siblings={row.values}
-                restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
-                onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
-              />
-            ) : (
-              <FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact />
-            )}
+            {variant === 'chips' && field.name === followUpField
+              ? <FollowUpChipCell module={module} row={row} field={field} canEdit={canEdit} />
+              : canEdit && isInlineEditable(field) ? (
+                <EditableField
+                  module={module.name}
+                  recordId={row.id}
+                  field={field}
+                  value={row.values[field.name]}
+                  display={row.display?.[field.name]}
+                  compact
+                  siblings={row.values}
+                  restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
+                  onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
+                />
+              ) : (
+                <FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact />
+              )}
           </span>
         ))}
       </div>

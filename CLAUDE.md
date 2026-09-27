@@ -1740,6 +1740,75 @@ back is code and not data recovery. What decides a record's fields now is the
 `config.listSubtitle` flag — which is what he means by designing the key fields
 himself.
 
+### Nine more on the middle pane, the same evening
+
+He worked the new record pane and sent a close-up of the ring he wants, with
+nine changes. All of them are on Contacts and Inventories alike.
+
+* **A record has a photo now** (`components/RecordAvatar.tsx`) — *"In the avtar
+  we can add, Edit remove avtar Picture."* It is an **ordinary attachment**
+  under `category = 'avatar'`, not a new column and not a new table, so there
+  is no migration behind it: it lives with the record's other files, inherits
+  the image pipeline's thumbnails, obeys the same permissions and shows on the
+  Files tab where somebody would look for it. Replacing one uploads a second
+  and leaves the first on that tab rather than destroying it behind somebody's
+  back; the newest wins.
+  **The trap, and only a browser could have caught it:**
+  `GET /api/records/:id/files` hands back **no URL** — every byte in this CRM
+  comes through the one permission-checked `/api/files/:id` route, which is
+  also what puts the token in the query string for an `<img>` that cannot send
+  a header. The first build read a `url` that was never there, so it showed
+  *"Photo updated"* and went on drawing initials. `e2e/recordAvatar.spec.ts`
+  puts a real PNG on a record in both modules and asserts the `<img>`, not the
+  toast.
+  Second trap, smaller: `Dropdown` puts its own relatively-positioned box
+  between a caller and its trigger, so a button positioned `absolute` against
+  "its parent" lands against that box. The camera ended up sitting on the face.
+  The wrapper is positioned now, not the button.
+* **The ring is thin, and there are four of them**, outside in: the pale track,
+  the green arc on it, a full hairline, and a dashed one hugging the photo. The
+  percentage rides in a pill at the top — *"Percentage Text move to top of
+  circle"* — and is printed from the same number the arc is drawn from, so a
+  pill and a ring that disagree is not expressible.
+* **Every control is on the right now**, WhatsApp and Call beside Tag, Star and
+  the menu. The hero is a three-column grid rather than `justify-between`, so
+  the face stays in the middle of the panel however many controls sit beside
+  it.
+* **The number moved on to the name line**, divided by a hairline, and is
+  dropped from the chip strip below — saying it twice two inches apart is what
+  the strip was already being trimmed of elsewhere.
+* **The chips are the five he named** — stage, lost reason, source, chase date,
+  contact type — and `useRecordPanes` finds each by **the picklist the field is
+  bound to**, never by the field's own name: a name is what an admin renames on
+  a Tuesday, and production's stage field has been `status` with picklist
+  `lead_status` since one such rename. Inventories has no contact type and no
+  source, so it shows two chips fewer rather than two empty ones.
+  `DEMOTED_FROM_HEADER` is empty again: Lost Reason was taken off this header
+  on 19 September and asked back on 27th.
+* **A picklist already drew itself as a solid coloured chip** (`Badge`) — the
+  white bordered box the chip variant wrapped it in is what was hiding it. Only
+  a plain value still gets a box drawn round it. That is the whole of
+  *"editable Beautiful solid multi colour rounded chips"*: the colours were
+  already there.
+* **The chase date wears the queue's own chip** — Today / Tomorrow / Pending /
+  Overdue with `1D`, `3M`, `1Y` — **and stays editable**, which is one control
+  rather than two: `EditableField` gained a `render` prop so the chip is the
+  read state and clicking it opens the ordinary date editor.
+  `FollowUpBadge` moved out of `IpropyWorkspace` into
+  `components/FollowUpChip.tsx` for that, because the queue row and the header
+  now draw it and four colour strings in two files is two things to keep in
+  step.
+* **The tabs are compact** so six of them fit the middle pane without a
+  scroller, the rule under the name is gone, and the assignment reads as a
+  small face and a name — *"Only Agent name and Avtar show there in Small
+  Font"*; the word "Assigned:" and the pill around it were two-thirds of what
+  that corner said.
+* **The Loss Rule panel left Admin → Dropdowns**, on his instruction. Only the
+  screen is gone: it wrote an ordinary picklist dependency, **any rule already
+  saved keeps working**, nothing was deleted from the database, and a rule can
+  still be removed through the API. Putting the panel back is a revert, not a
+  rebuild.
+
 ### The note chips are a dropdown
 
 The prototype drew three canned phrases under the notes box — *"+ Price

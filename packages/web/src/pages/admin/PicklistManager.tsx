@@ -91,11 +91,6 @@ export default function PicklistManager(): JSX.Element {
   // The stored value is the rare edit; it is off unless asked for. See the
   // note beside the option name input.
   const [showStored, setShowStored] = useState(false);
-  const [dependencyModule, setDependencyModule] = useState('');
-  const [lostStatuses, setLostStatuses] = useState<string[]>([]);
-  const [allowedLostReasons, setAllowedLostReasons] = useState<string[]>([]);
-  const [savingDependency, setSavingDependency] = useState(false);
-
   const { data: catalogue, isLoading } = useQuery({
     queryKey: ['picklist-catalogue'],
     queryFn: () => api.picklistCatalogue(),
@@ -105,40 +100,6 @@ export default function PicklistManager(): JSX.Element {
     () => catalogue?.find((p) => p.name === selected),
     [catalogue, selected],
   );
-
-  // A Loss Rule is just a normal picklist dependency: status is the parent,
-  // Lost Reason is the child. Keeping it here lets an admin change the team’s
-  // wording without asking a developer and applies equally to leads and
-  // inventory when that module carries a Lost Reason field.
-  const statusUses = useMemo(
-    () => (current?.usedBy ?? []).filter((use) => use.field === 'status'),
-    [current],
-  );
-  useEffect(() => {
-    if (!statusUses.length) { setDependencyModule(''); return; }
-    if (!statusUses.some((use) => use.module === dependencyModule)) setDependencyModule(statusUses[0].module);
-  }, [statusUses, dependencyModule]);
-  const { data: dependencyMeta } = useQuery({
-    queryKey: ['module', dependencyModule],
-    queryFn: () => api.module(dependencyModule),
-    enabled: Boolean(dependencyModule),
-  });
-  const { data: lostReasonOptions } = useQuery({
-    queryKey: ['picklist', 'lost_reason'],
-    queryFn: () => api.picklist('lost_reason'),
-    enabled: Boolean(dependencyModule && dependencyMeta?.fields.some((field) => field.name === 'lost_reason')),
-  });
-  const statusField = statusUses.find((use) => use.module === dependencyModule)?.field ?? 'status';
-  const lossDependency = dependencyMeta?.picklistDependencies.find(
-    (dependency) => dependency.sourceField === statusField && dependency.targetField === 'lost_reason',
-  );
-  useEffect(() => {
-    if (!dependencyMeta) return;
-    const configured = lossDependency ? Object.keys(lossDependency.mapping) : [];
-    setLostStatuses(configured.length ? configured : options.filter((option) => /lost/i.test(option.label)).map((option) => option.value));
-    const configuredReasons = lossDependency ? [...new Set(Object.values(lossDependency.mapping).flat())] : [];
-    setAllowedLostReasons(configuredReasons.length ? configuredReasons : (lostReasonOptions ?? []).map((option) => option.value));
-  }, [dependencyMeta, lossDependency, lostReasonOptions, selected]);
 
   useEffect(() => {
     if (!current) return;
@@ -436,67 +397,18 @@ export default function PicklistManager(): JSX.Element {
             </div>
           )}
 
-          {dependencyModule && dependencyMeta?.fields.some((field) => field.name === 'lost_reason') && (
-            <section className="border-b border-amber-100 bg-amber-50/50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Loss Rule</p>
-                  <p className="text-2xs text-muted">Choose which statuses close a record and which Lost Reasons appear. A reason is required before the record can be saved.</p>
-                </div>
-                {statusUses.length > 1 && (
-                  <select className="input w-auto py-1 text-xs" value={dependencyModule} onChange={(event) => setDependencyModule(event.target.value)}>
-                    {statusUses.map((use) => <option key={use.module} value={use.module}>{use.moduleLabel}</option>)}
-                  </select>
-                )}
-              </div>
-              <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                <fieldset>
-                  <legend className="text-2xs font-semibold uppercase tracking-wide text-slate-500">Closing statuses</legend>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                    {options.filter((option) => option.isActive).map((option) => (
-                      <label key={option.value} className="flex cursor-pointer items-center gap-1 text-xs">
-                        <input type="checkbox" checked={lostStatuses.includes(option.value)} onChange={(event) => setLostStatuses((currentStatuses) => event.target.checked
-                          ? [...currentStatuses, option.value]
-                          : currentStatuses.filter((value) => value !== option.value))} />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-                <fieldset>
-                  <legend className="text-2xs font-semibold uppercase tracking-wide text-slate-500">Available Lost Reasons</legend>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                    {(lostReasonOptions ?? []).filter((option) => option.isActive !== false).map((option) => (
-                      <label key={option.value} className="flex cursor-pointer items-center gap-1 text-xs">
-                        <input type="checkbox" checked={allowedLostReasons.includes(option.value)} onChange={(event) => setAllowedLostReasons((currentReasons) => event.target.checked
-                          ? [...currentReasons, option.value]
-                          : currentReasons.filter((value) => value !== option.value))} />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              </div>
-              <div className="mt-2 flex justify-end gap-2">
-                {lossDependency && <button className="btn-secondary btn-sm" onClick={async () => {
-                  try {
-                    await api.deletePicklistDependency(dependencyModule, statusField, 'lost_reason');
-                    toast.success('Loss Rule removed');
-                    void queryClient.invalidateQueries({ queryKey: ['module', dependencyModule] });
-                  } catch (err) { toast.error('Could not remove Loss Rule', (err as Error).message); }
-                }}>Remove rule</button>}
-                <button className="btn-primary btn-sm" disabled={savingDependency || !lostStatuses.length || !allowedLostReasons.length} onClick={async () => {
-                  setSavingDependency(true);
-                  try {
-                    const mapping = Object.fromEntries(lostStatuses.map((status) => [status, allowedLostReasons]));
-                    await api.savePicklistDependency(dependencyModule, { sourceField: statusField, targetField: 'lost_reason', mapping });
-                    toast.success('Loss Rule saved', 'Lost Reason now opens only for the selected closing statuses.');
-                    void queryClient.invalidateQueries({ queryKey: ['module', dependencyModule] });
-                  } catch (err) { toast.error('Could not save Loss Rule', (err as Error).message); } finally { setSavingDependency(false); }
-                }}>{savingDependency ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save Loss Rule</button>
-              </div>
-            </section>
-          )}
+          {/*
+            **The Loss Rule panel was removed on 27 September 2026**, on the
+            owner's instruction: *"Loss Rule remove from Admin Master."* It let
+            an admin say which statuses close a record and which Lost Reasons
+            open with them, and it wrote an ordinary picklist dependency.
+
+            Only the screen is gone. **Any rule already saved keeps working** —
+            the dependency engine reads `picklistDependencies` exactly as
+            before, nothing was deleted from the database, and a rule can still
+            be removed through the API if one ever needs to be. Putting the
+            panel back is a revert, not a rebuild.
+          */}
 
           {/* Only for a list long enough that ticking one at a time is a chore,
               and only over options that already exist — a row you have just

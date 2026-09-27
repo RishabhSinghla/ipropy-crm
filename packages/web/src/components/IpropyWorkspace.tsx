@@ -1,7 +1,7 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { formatDate, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
+import { recordStrength, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Link2,
   MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
@@ -21,13 +21,14 @@ import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
 import { badgeVars } from '../lib/color';
-import { followUpChip, type FollowUpChip as FollowUpChipValue, type FollowUpTone } from '../lib/followUpDates';
+import { followUpChip } from '../lib/followUpDates';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
-import { StrengthRing } from './StrengthRing';
+import { RecordAvatar } from './RecordAvatar';
 import { api } from '../lib/api';
+import { FollowUpBadge } from './FollowUpChip';
 import { activeSortOption, sortOptions } from '../lib/listSort';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
@@ -547,9 +548,14 @@ export function IpropyWorkspace({
             <span className="flex min-w-0 items-center gap-2">
               <TagChips module={module.name} tags={active.tags} className="max-w-[10rem]" />
               {assignedField && (
-                <span className="inline-flex min-w-0 shrink-0 items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-0.5 shadow-2xs transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/90" title="Agent">
+                /*
+                  27 September 2026, the owner: *"in the Assigned to and Name n
+                  Only Agent name and Avtar show there in Small Font."* The word
+                  "Assigned:" and the pill around it were two-thirds of what
+                  that corner said; the face and the name are the fact.
+                */
+                <span className="inline-flex min-w-0 shrink-0 items-center gap-1.5 text-[11px]" title="Assigned to">
                   {assignedName && <Avatar name={assignedName} size={16} />}
-                  <span className="shrink-0 text-[11px] font-medium text-slate-500 dark:text-slate-400">Assigned:</span>
                   {canEdit && isInlineEditable(assignedField) ? (
                     <EditableField
                       module={module.name}
@@ -570,28 +576,63 @@ export function IpropyWorkspace({
             </span>
           </div>
 
-          <div className="relative mb-2 flex w-full items-center justify-between gap-2 px-2">
-            {/* Left: the two things a rep does to a person. */}
-            <span className="z-10 flex shrink-0 items-center gap-2">
+          {/*
+            The face in the middle, everything you do to the record on the
+            right — 27 September 2026: *"The Call and whatsapp icon move to
+            adjoining of Tag and Star icon."* A three-column grid rather than
+            `justify-between`, so the face stays in the middle of the panel
+            however many controls sit beside it.
+          */}
+          <div className="relative mb-1.5 grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2 px-2">
+            <span aria-hidden />
+
+            {/* The face, ringed by how complete the record is. */}
+            <span className="flex min-w-0 flex-col items-center justify-center text-center">
+              <RecordAvatar
+                module={module.name}
+                recordId={active.id}
+                name={active.label}
+                percent={recordStrength(module.fields, active.values).percent}
+                canEdit={canEdit}
+                size={112}
+              />
+              {/*
+                The name, then the number, divided by a hairline — *"Move
+                Mobile Number after Name with line seprator."* The number is
+                dropped from the chip strip below so it is not said twice.
+              */}
+              <span className="mt-2 flex min-w-0 max-w-full items-center justify-center gap-2.5">
+                <h2 className="min-w-0 truncate text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+                  {active.label}
+                </h2>
+                {phoneField && phoneValue && (
+                  <>
+                    <span className="h-4 w-px shrink-0 bg-slate-300 dark:bg-slate-600" aria-hidden />
+                    <span className="shrink-0 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                      {canEdit && isInlineEditable(phoneField) ? (
+                        <EditableField
+                          module={module.name}
+                          recordId={active.id}
+                          field={phoneField}
+                          value={active.values[phoneField.name]}
+                          display={active.display?.[phoneField.name]}
+                          compact
+                          siblings={active.values}
+                          onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                        />
+                      ) : (
+                        <FieldValue field={phoneField} value={active.values[phoneField.name]} display={active.display?.[phoneField.name]} compact />
+                      )}
+                    </span>
+                  </>
+                )}
+              </span>
+            </span>
+
+            {/* Right: everything you do to the record, in one group. */}
+            <span className="z-10 flex shrink-0 items-center justify-end gap-2">
               {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
               {phoneValue && <CallButton to={phoneValue} iconOnly round active={onCall} />}
-            </span>
-
-            {/* Centre: the face, ringed by how complete the record is. */}
-            <span className="flex min-w-0 flex-col items-center justify-center text-center">
-              {/* The face inside its own completeness ring, with the number in
-                  the ring's corner — the prototype's hero, and the component
-                  the record page already uses for it. */}
-              <StrengthRing fields={module.fields} values={active.values} size={62} cornerBadge>
-                <Avatar name={active.label} size={62} />
-              </StrengthRing>
-              <h2 className="mt-1 min-w-0 max-w-full truncate text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-                {active.label}
-              </h2>
-            </span>
-
-            {/* Right: tag, star, and everything else. */}
-            <span className="z-10 flex shrink-0 items-center gap-2">
               <TagButton
                 module={module.name}
                 recordId={active.id}
@@ -668,23 +709,46 @@ export function IpropyWorkspace({
             each typed in where it stands. One measuring rule with the ledger
             strip the WhatsApp header shows; only the clothes differ.
           */}
-          <div className="mt-1 flex items-center gap-2 border-t border-slate-200/70 pt-2.5">
+          {/*
+            The facts a call changes, as chips — *"editable Beautiful solid
+            multi colour rounded chips"*. Which fields those are stays the
+            Layout Designer's decision; what this file decides is that they are
+            chips and that the chase date wears the queue's own Today /
+            Tomorrow / Pending / Overdue colours.
+
+            No rule above it: *"A separator line below Name not necessary and
+            the Status etc Button space should be compact."*
+          */}
+          <div className="flex items-center gap-2">
             <HeaderFieldStrip
               module={module}
               row={active}
-              fields={headerFields}
+              /*
+                Without the number: it moved on to the name line above, and
+                saying it twice two inches apart is what the strip was already
+                being trimmed of elsewhere.
+              */
+              fields={headerFields.filter((field) => field.name !== phoneField?.name)}
               canEdit={canEdit}
               variant="chips"
+              followUpField={followUpField?.name}
               className="min-w-0 flex-1"
             />
             <HeaderPills module={module} row={active} canEdit={canEdit} />
           </div>
         </header>
 
-        <nav className="flex shrink-0 items-center gap-6 overflow-x-auto border-b border-slate-200 bg-white px-5 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900" aria-label="Record workspace sections">
+        {/*
+          27 September 2026: *"Overview and Timeline Menu should be Compact,
+          so the Left to right scroller now Showing."* Tighter type and less
+          air between them, so six tabs fit the middle pane at the width it
+          actually gets — the scroller stays as the honest answer on a phone
+          rather than as the everyday state.
+        */}
+        <nav className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900" aria-label="Record workspace sections">
           <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
           <DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab>
-          <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'} {matchingCount ? <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-2xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{matchingCount}</span> : null}</DeskTab>
+          <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'} {matchingCount ? <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{matchingCount}</span> : null}</DeskTab>
           <DeskTab active={tab === 'files'} onClick={() => setTab('files')}><FileText className="h-3.5 w-3.5" />Files</DeskTab>
           <DeskTab active={tab === 'calls'} onClick={() => setTab('calls')}><Phone className="h-3.5 w-3.5" />Calls</DeskTab>
           <DeskTab active={tab === 'whatsapp'} onClick={() => setTab('whatsapp')}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab>
@@ -991,38 +1055,6 @@ function TypeFlag({ label, strong }: { label: string; strong: boolean }): JSX.El
   );
 }
 
-/*
-  The owner's colours for the task chip, one per state. Each text colour
-  clears WCAG AA against its tint; Pending uses the darker of his two slates,
-  because #64748b on #f1f5f9 falls just short.
-*/
-const FOLLOW_UP_STYLE: Record<FollowUpTone, string> = {
-  today: 'bg-[#fffbeb] text-[#b45309] dark:bg-amber-950/50 dark:text-amber-300',
-  tomorrow: 'bg-[#eff6ff] text-[#1d4ed8] dark:bg-blue-950/50 dark:text-blue-300',
-  overdue: 'bg-[#fef2f2] text-[#b91c1c] dark:bg-red-950/50 dark:text-red-300',
-  pending: 'bg-[#f1f5f9] text-[#475569] dark:bg-slate-800 dark:text-slate-300',
-};
-
-/**
- * When they are due, as a chip and nothing else.
- *
- * **27 September 2026, the owner:** *"The followup Button Should be Rounded
- * and Lighter colour and also remove icon from followup button."* The icon
- * said the same word the chip already says, and an alarm bell on every row of
- * a queue reads as a queue full of alarms.
- */
-function FollowUpBadge({ due, date }: { due: FollowUpChipValue; date: unknown }): JSX.Element {
-  return (
-    <span
-      className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-2xs font-semibold uppercase tracking-wide', FOLLOW_UP_STYLE[due.tone])}
-      title={date ? `Follow-up ${formatDate(String(date))}` : undefined}
-    >
-      {due.label}
-    </span>
-  );
-}
-
-
 /**
  * One block of the record's fields, editable where they stand.
  *
@@ -1034,5 +1066,5 @@ function FollowUpBadge({ due, date }: { due: FollowUpChipValue; date: unknown })
  * than on its own page. Gating it on that setting is what put an Edit button
  * here, which is the thing the owner asked to be rid of.
  */
-function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200')}>{children}</button>; }
+function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1 border-b-2 px-2 py-2 text-xs font-semibold transition-colors', active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200')}>{children}</button>; }
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
