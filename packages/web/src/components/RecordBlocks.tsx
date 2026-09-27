@@ -10,6 +10,7 @@ import type { DescribedModule } from '../lib/recordPanes';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
+import { appendSnippet, useNoteSnippets } from '../lib/noteSnippets';
 
 /**
  * A record's field card and its notes, shared by every screen that shows a
@@ -91,6 +92,7 @@ export function NotesPanel({ module, record, flush = false }: {
 }): JSX.Element {
   const queryClient = useQueryClient();
   const [note, setNote] = useState('');
+  const snippets = useNoteSnippets();
   const { data: entries, isLoading } = useQuery({ queryKey: ['timeline', module, record.id, 'comment'], queryFn: () => api.timeline(module, record.id, ['comment']) });
   const add = useMutation({
     mutationFn: () => api.addComment(module, record.id, note.trim()),
@@ -111,6 +113,27 @@ export function NotesPanel({ module, record, flush = false }: {
         className={cn('w-full resize-none text-xs text-slate-800 placeholder-slate-400 dark:text-slate-100', flush ? 'border-none bg-transparent p-0 focus:ring-0' : 'input min-h-24 p-3')}
         rows={flush ? 3 : undefined}
       />
+      {/*
+        The phrases a rep types all day, one tap each — and **not a list
+        written here**. `note_snippet` is an ordinary dropdown in
+        Admin → Dropdowns, so the business owns the words. No chips at all
+        when nobody has set any, rather than a row of invented ones.
+      */}
+      {snippets.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1 border-t border-slate-100 pt-2 dark:border-slate-700">
+          {snippets.map((phrase) => (
+            <button
+              key={phrase}
+              type="button"
+              title={`Add "${phrase}" to the note`}
+              onClick={() => setNote((current) => appendSnippet(current, phrase))}
+              className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-brand-950/60 dark:hover:text-brand-200"
+            >
+              + {phrase}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="mt-2 flex items-center justify-between">
         <span className="text-2xs text-muted">⌘↵ to post</span>
         <button disabled={!note.trim() || add.isPending} onClick={() => add.mutate()} className="btn-primary btn-sm">

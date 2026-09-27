@@ -1740,12 +1740,35 @@ back is code and not data recovery. What decides a record's fields now is the
 `config.listSubtitle` flag — which is what he means by designing the key fields
 himself.
 
-**Deliberately not built: the prototype's three canned note chips** (*"+ Price
-negotiable"*, *"+ Wants 3BHK park facing"*, *"+ Follow-up tomorrow 4 PM"*).
-They are business vocabulary, and writing three phrases into a component is the
-one thing this CRM is built to avoid — the next reader cannot tell whether they
-are a decision or a placeholder, and no admin can change them. They belong on a
-picklist, which is a change worth asking for rather than guessing at.
+### The note chips are a dropdown
+
+The prototype drew three canned phrases under the notes box — *"+ Price
+negotiable"*, *"+ Wants 3BHK park facing"*, *"+ Follow-up tomorrow 4 PM"*. The
+first build left them out and said why: they are business vocabulary, and
+writing three phrases into a component is the one thing this CRM is built to
+avoid. The owner's answer, the same evening: *"yes make those chips editable
+from a dropdown."*
+
+So `note_snippet` is an ordinary picklist — Admin → Dropdowns, beside Lead
+Source and Call Disposition — and `lib/noteSnippets.ts` reads it. Eight
+starting phrases are seeded; seeding is create-only, so **editing that list in
+`db/seed/picklists.ts` does not reach a database that already has the row**.
+Change it in the UI.
+
+* **No compiled-in fallback, deliberately**, and this is the one place it
+  differs from `useCallDispositions`. That one keeps the constant because a rep
+  must never be stopped from recording what happened on a call by a dropdown
+  that has not loaded. These are a convenience, and inventing phrases when the
+  list is unreachable would put words this business never chose in front of a
+  customer's record. An empty list shows no chips at all.
+* **`appendSnippet` is pure and node-tested**, because each of its three rules
+  is something a rep would otherwise undo by hand: a phrase goes on its own
+  line, an empty note starts with the phrase rather than a blank line, and
+  **tapping the same phrase twice adds nothing** — a note repeating itself is
+  slower than not using the chips at all.
+* `e2e/noteSnippets.spec.ts` adds a phrase through the API the admin screen
+  posts to and then looks for it on the record: an option Settings can add and
+  the record does not offer is Settings editing a list nobody can use.
 
 ## Lists open on the split view
 

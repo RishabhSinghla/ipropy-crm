@@ -98,6 +98,25 @@ export const PICKLISTS: PicklistDef[] = [
   ] },
   { name: 'junk_reason', label: 'Junk Reason', values: ['Wrong Number', 'Duplicate', 'Test Entry', 'Broker Enquiry', 'Job Seeker', 'Out of Service Area', 'Spam'] },
   /*
+    The one-tap phrases under the notes box.
+
+    **27 September 2026**: the owner's prototype drew three of them — *"+ Price
+    negotiable"*, *"+ Wants 3BHK park facing"*, *"+ Follow-up tomorrow 4 PM"* —
+    and they were left out of the first build on purpose, because three
+    business phrases written into a component are three phrases no admin can
+    change. He asked for them editable, so they are a dropdown like every other
+    piece of vocabulary in this CRM: these values are a starting point, and
+    Admin → Dropdowns owns them from the first time anybody edits one.
+
+    Seeding is create-only, so editing this list here does **not** reach a
+    database that already has the row — change it in the UI.
+  */
+  { name: 'note_snippet', ordered: true, label: 'Note Shortcuts', values: [
+    'Price negotiable', 'Wants park facing', 'Follow-up tomorrow',
+    'Site visit planned', 'Budget confirmed', 'Loan required',
+    'Asked for brochure', 'Not reachable today',
+  ] },
+  /*
     Buyer is the default, and it has to be one. `contact_type` is mandatory, and
     with no default not one automated source could create a lead — the website
     form, Facebook, Google, the portals and inbound email all failed validation
