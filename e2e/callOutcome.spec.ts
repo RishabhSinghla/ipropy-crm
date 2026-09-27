@@ -9,9 +9,8 @@
  * a default that is no longer on it, is a console a rep cannot save, and no
  * server test can see it.
  *
- * The call lives in the record's own header now rather than in a dialog over
- * it (24 September 2026, the owner's own design), so these read the deck in
- * the header — the surface changed twice and the promises
+ * The call lives in the record's notes pane rather than in a dialog over
+ * it, so these read the compact in-record deck — the surface changed and the promises
  * are the same ones, deliberately: the list is the admin's, a save reaches the
  * Calls tab, and there is no way to send an outcome the list does not offer.
  */
@@ -48,7 +47,7 @@ test('they open it from the list', async ({ page }) => {
   recordUrl = await openFromListByName(page, 'leads', name);
 });
 
-test('tapping the number opens the deck in the header, not a dialog over the record', async ({ page }) => {
+test('tapping the number opens the deck beside the record, not a dialog over it', async ({ page }) => {
   await page.goto(recordUrl);
   // The number is a button on the record, not a tel: link — tapping it is what
   // starts the call. Matched on its title: the accessible name is the number
@@ -70,7 +69,7 @@ test('tapping the number opens the deck in the header, not a dialog over the rec
   expect(await outcomeSelect(deck).locator('option').count(), 'the outcome list did not load').toBeGreaterThan(5);
 
   /*
-    Speaker, mute, hold and End are dead, with the reason, until a phone says
+    Speaker, hold and End are dead, with the reason, until a phone says
     iPropy is its calling app — Android lets nobody else touch a running
     call, and a red End that ends nothing is the failure this repo keeps
     writing down. No handset here has said so.
@@ -78,7 +77,7 @@ test('tapping the number opens the deck in the header, not a dialog over the rec
   const endCall = deck.getByRole('button', { name: /end call/i });
   await expect(endCall).toBeDisabled();
   await expect(endCall).toHaveAttribute('title', /calling app|Control calls from the CRM/i);
-  await expect(deck.getByRole('button', { name: /^mute/i })).toBeDisabled();
+  await expect(deck.getByRole('button', { name: /^hold/i })).toBeDisabled();
   await deck.getByRole('button', { name: /save & exit/i }).click();
   await expect(deck).toBeHidden();
 });
