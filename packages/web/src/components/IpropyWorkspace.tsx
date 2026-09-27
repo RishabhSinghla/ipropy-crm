@@ -869,7 +869,7 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
             {row.label}
           </span>
           {type && (
-            <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-brand-700 dark:bg-brand-950/40 dark:text-brand-200">
+            <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-brand-700 dark:bg-slate-800 dark:text-fuchsia-200">
               {type}
             </span>
           )}
@@ -1006,7 +1006,7 @@ function StrengthBar({ module, row, className, slim = false }: { module: ModuleM
  * than on its own page. Gating it on that setting is what put an Edit button
  * here, which is the thing the owner asked to be rid of.
  */
-function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{children}</button>; }
+function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200')}>{children}</button>; }
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
 
 /** Where the call deck docks when this record's header is on screen. */
