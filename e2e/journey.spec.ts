@@ -154,8 +154,11 @@ test.describe('lead lifecycle through the UI', () => {
     await detail.getByRole('button', { name: 'More actions' }).click();
     await expect(detail.getByText('Delete record')).toBeVisible({ timeout: 5_000 });
     await detail.getByText('Delete record').click();
-    await expect(detail.getByRole('button', { name: 'Delete', exact: true })).toBeVisible({ timeout: 5_000 });
-    await detail.getByRole('button', { name: 'Delete', exact: true }).click();
+    // The confirmation's own button: in the split view the selection bar has a
+    // Delete of its own for the same one record.
+    const confirm = detail.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true });
+    await expect(confirm).toBeVisible({ timeout: 5_000 });
+    await confirm.click();
     await page.goto('/leads');
     await searchList(page, renamed);
     await expect(row(renamed)).toHaveCount(0);
