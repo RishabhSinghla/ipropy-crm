@@ -972,6 +972,11 @@ on their own admin tab. Nobody thinks *"I need the campaigns admin page"*; they
 think *"I want to do WhatsApp"*. `/whatsapp` is one destination with four tabs in
 the order a day runs — **Chats · Campaigns · Templates · Health**.
 
+**Admin no longer carries them (27 September 2026, the owner).** Admin → WhatsApp,
+WhatsApp Templates and Campaigns were the same components a second time; they are gone
+from the admin menu, and the old addresses redirect to `/whatsapp/health`,
+`/whatsapp/templates` and `/whatsapp/campaigns` (`MOVED` in `pages/admin/Admin.tsx`).
+
 **Nothing there is a new screen.** Each tab renders the component that already
 existed and every old address still works: `/chats` in particular, because that
 is what the WhatsApp icon beside a phone number opens. This moved the door, not

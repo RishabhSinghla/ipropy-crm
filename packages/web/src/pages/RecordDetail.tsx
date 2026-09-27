@@ -11,7 +11,6 @@ import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { useCallDispositionOptions } from '../lib/callDispositions';
-import { enabledListModes, loadListMode, resolveListMode } from '../lib/listMode';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
 import { cn, looksLikeHtml, renderMarkdown, restrictionForField, sanitiseRichText } from '../lib/utils';
@@ -59,15 +58,21 @@ import { downloadFromUrl } from '../lib/nativeActions';
  * that mounts is the fix; the page below never runs when it is only passing
  * through.
  */
+/*
+  27 September 2026, the owner: the table and the board are gone, so the split
+  view is the only way a record is seen and every record address hands over to
+  it. The full-width page below is parked rather than deleted: it still holds
+  the property photo carousel, the AI panel, the duplicate check, share links
+  and the related list, which the split view does not show yet. Whether those
+  move into the split view or go is the owner's call.
+*/
+const FULL_RECORD_PAGE_IS_PARKED = true;
+
 export default function RecordDetail(): JSX.Element | null {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
   const navigate = useNavigate();
   const [detailParams] = useSearchParams();
-  const listViewSetting = useApp((state) => state.user?.ui?.listViews);
-  const opensInSplitView = useMemo(
-    () => resolveListMode(loadListMode(moduleName), null, enabledListModes(listViewSetting)) === 'ipropy',
-    [moduleName, listViewSetting],
-  );
+  const opensInSplitView = FULL_RECORD_PAGE_IS_PARKED;
 
   useEffect(() => {
     if (!opensInSplitView || !moduleName || !id) return;

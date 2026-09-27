@@ -186,7 +186,7 @@ export default function WhatsAppAdmin(): JSX.Element {
               {data.templates.unmapped > 0 && ` ${data.templates.unmapped} still need their blanks set.`}
             </p>
           </div>
-          <Link className="btn-secondary btn-sm" to="/admin/whatsapp-templates">
+          <Link className="btn-secondary btn-sm" to="/whatsapp/templates">
             <MessageCircle className="h-3.5 w-3.5" /> Templates
           </Link>
         </div>

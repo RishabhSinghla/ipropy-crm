@@ -2,8 +2,8 @@ import SettingsAdmin from './SettingsAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, AppWindow, Blocks, Columns2, Columns3, Eye, Megaphone, Database, KeyRound, LayoutTemplate, Link2, MapPin,
-  ListTree, MessageCircle, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
+  Activity, Blocks, Columns2, Database, KeyRound, LayoutTemplate, Link2, MapPin,
+  ListTree, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
@@ -23,16 +23,10 @@ const SystemAdmin = lazy(() => import('./SystemAdmin'));
 const TeamMap = lazy(() => import('./TeamMap'));
 const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
-const HeaderTabsAdmin = lazy(() => import('./HeaderTabsAdmin'));
-const TableViewAdmin = lazy(() => import('./TableViewAdmin'));
 const SplitViewAdmin = lazy(() => import('./SplitViewAdmin'));
-const ListViewsAdmin = lazy(() => import('./ListViewsAdmin'));
 const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
-const WhatsAppTemplatesAdmin = lazy(() => import('./WhatsAppTemplatesAdmin'));
-const CampaignsAdmin = lazy(() => import('./CampaignsAdmin'));
-const WhatsAppAdmin = lazy(() => import('./WhatsAppAdmin'));
 const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 
 /*
@@ -49,6 +43,19 @@ const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
   and Import Data lives in here — one blanket check would have taken away the one
   screen they are meant to use.
 */
+/*
+  Screens that moved out of Admin, and where they went. 27 September 2026, the
+  owner: WhatsApp, WhatsApp Templates and Campaigns were each here *and* a tab
+  on the WhatsApp page — the same component twice. They live on the WhatsApp
+  page only now; an old bookmark lands on the right tab rather than on the
+  first admin screen.
+*/
+const MOVED: Record<string, string> = {
+  whatsapp: '/whatsapp/health',
+  'whatsapp-templates': '/whatsapp/templates',
+  campaigns: '/whatsapp/campaigns',
+};
+
 const SECTIONS = [
   {
     group: 'Customisation',
@@ -56,10 +63,7 @@ const SECTIONS = [
       { path: 'modules', capability: 'admin.modules', label: 'Enable / Disable', icon: ToggleLeft, element: <ModuleManager /> },
       { path: 'fields', capability: 'admin.fields', label: 'Modules & Fields', icon: Blocks, element: <ModuleBuilder /> },
       { path: 'layouts', capability: 'admin.layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
-      { path: 'header', capability: 'admin.layouts', label: 'Header Tabs', icon: AppWindow, element: <HeaderTabsAdmin /> },
-      { path: 'table-view', capability: 'admin.layouts', label: 'Table View', icon: Columns3, element: <TableViewAdmin /> },
       { path: 'split-view', capability: 'admin.layouts', label: 'Split View', icon: Columns2, element: <SplitViewAdmin /> },
-      { path: 'list-views', capability: 'admin.layouts', label: 'List Views', icon: Eye, element: <ListViewsAdmin /> },
       { path: 'picklists', capability: 'admin.picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
       { path: 'tags', capability: 'admin.picklists', label: 'Tags', icon: Tag, element: <TagsAdmin /> },
     ],
@@ -87,15 +91,6 @@ const SECTIONS = [
     items: [
       { path: 'integrations', capability: 'admin.integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
       { path: 'templates', capability: 'whatsapp.templates', label: 'Email Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
-      // Its own page rather than a tab on the one above: an email template is
-      // wording the business writes, and a WhatsApp template is wording Meta
-      // approved — the only thing editable here is what fills its blanks.
-      // Before the templates and the campaigns, because it answers the
-      // question somebody has *before* either of those: is this thing working
-      // at all, and is anybody writing to us.
-      { path: 'whatsapp', capability: 'admin.integrations', label: 'WhatsApp', icon: MessageCircle, element: <WhatsAppAdmin /> },
-      { path: 'whatsapp-templates', capability: 'whatsapp.templates', label: 'WhatsApp Templates', icon: MessageCircle, element: <WhatsAppTemplatesAdmin /> },
-      { path: 'campaigns', capability: 'whatsapp.templates', label: 'Campaigns', icon: Megaphone, element: <CampaignsAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', capability: 'admin.audit', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },
@@ -198,6 +193,9 @@ export default function AdminPage(): JSX.Element {
             <Route index element={<Navigate to="modules" replace />} />
             {sections.flatMap((s) => s.items).map((item) => (
               <Route key={item.path} path={item.path} element={item.element} />
+            ))}
+            {Object.entries(MOVED).map(([from, to]) => (
+              <Route key={from} path={from} element={<Navigate to={to} replace />} />
             ))}
             <Route path="*" element={<Navigate to="modules" replace />} />
           </Routes>

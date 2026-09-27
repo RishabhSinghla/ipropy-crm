@@ -10,7 +10,7 @@ import { expect, test } from '@playwright/test';
 test.use({ viewport: { width: 1512, height: 900 } });
 
 test('the templates screen is reachable and honest about the provider', async ({ page }) => {
-  await page.goto('/admin/whatsapp-templates');
+  await page.goto('/whatsapp/templates');
   await expect(page.getByRole('heading', { name: 'WhatsApp Templates' })).toBeVisible({ timeout: 30_000 });
 
   // No provider on this database, so it says so — and still offers the page,

@@ -46,10 +46,10 @@ interface Group { id: string; title: string; blurb: string; rows: Setting[] }
   Categories whose rows belong to a screen of their own, so this page does not
   also offer them as raw values.
 
-  `ui` holds `ui.list_columns`, `ui.split_view` and `ui.list_views` — three
-  arrangements with their own admin screens, each stored as a JSON object. Shown
-  here they are a text box full of JSON sitting among the company's address, and
-  a slip in one of them breaks every list in the CRM for the whole team. Two
+  `ui` holds `ui.split_view` and the header's arrangement — stored as JSON
+  objects. Shown here they are a text box full of JSON sitting among the
+  company's address, and a slip in one of them breaks every list in the CRM for
+  the whole team. Two
   screens that can write the same row is also two answers to "what is saved",
   and the one somebody remembers editing is not always the one that wrote last.
 */

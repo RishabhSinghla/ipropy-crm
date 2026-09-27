@@ -1647,6 +1647,10 @@ already-filtered list is a second number to read past.
 
 ## Lists open on the split view
 
+> **27 September 2026: the split view is the only view.** The table, the board, and
+> Admin → List Views / Table View / Header Tabs are gone — see `SCREENS.md`, *The split
+> view is the only view*. What follows is the history of choosing between them.
+
 **18 September 2026, the owner's instruction:** it is the default for everybody in both
 modules, and anybody may switch for themselves. `lib/listMode.ts` ranks the three sources
 in one place — **this person's own choice on this module, then a saved view that
