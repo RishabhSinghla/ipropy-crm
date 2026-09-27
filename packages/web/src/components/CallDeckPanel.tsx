@@ -19,7 +19,7 @@
  */
 import { type JSX, useEffect } from 'react';
 import {
-  ChevronLeft, ChevronRight, Mic, Pause, PhoneOff, SkipForward, Volume2, VolumeX,
+  CalendarClock, ChevronLeft, ChevronRight, Mic, Pause, PhoneOff, SkipForward, Volume2, VolumeX,
 } from 'lucide-react';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDeckState, type CallDeckState } from './LiveCallDeck';
@@ -108,13 +108,7 @@ function WhoAndClock({ deck }: { deck: CallDeckState }): JSX.Element {
       </div>
 
       <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-2 py-1.5">
-        <span className="inline-flex min-w-0 flex-1 items-center gap-2 rounded bg-[var(--surface-subtle)] px-2 py-1.5">
-          {deck.talking && <span className="h-2 w-2 shrink-0 rounded-full bg-positive" aria-hidden />}
-          {deck.talking && <Equaliser />}
-          <span className="truncate text-sm font-bold tabular-nums text-[var(--text)] dark:text-slate-100" data-testid="call-panel-status">
-            {deck.status}
-          </span>
-        </span>
+        <CallBarStrip deck={deck} />
         {/*
           End is red and apart, the way a phone draws it. The other three are
           plain circles: Android lets only a phone's *calling app* touch a
@@ -160,6 +154,67 @@ function WhoAndClock({ deck }: { deck: CallDeckState }): JSX.Element {
         </RoundButton>
       </div>
     </>
+  );
+}
+
+/**
+ * The bar and the clock, in place of nine words that never changed.
+ *
+ * **27 September 2026, the owner:** *"We need a call Bar and Call timer in
+ * replacement of 'calling on your phone' in the call deck."* Every handset in
+ * this business runs a build that predates the plugin which reports a call's
+ * state, so "Calling on your phone" is what the deck said for the whole of
+ * every call — the same sentence whether the phone was ringing, connected or
+ * long since hung up.
+ *
+ * The clock is always there and always honest: time since Call was pressed,
+ * which is the one thing this computer knows. The phase word and the talk time
+ * appear only when the phone has actually said something.
+ */
+function CallBarStrip({ deck }: { deck: CallDeckState }): JSX.Element {
+  const { phase, elapsed, talkTime, moving, connected } = deck.bar;
+  return (
+    <span className="min-w-0 flex-1 rounded bg-[var(--surface-subtle)] px-2 py-1" data-testid="call-panel-status">
+      <span className="flex items-center gap-2">
+        <span
+          className={cn(
+            'h-2 w-2 shrink-0 rounded-full',
+            connected ? 'bg-positive' : moving ? 'animate-pulse bg-brand-600' : 'bg-slate-300',
+          )}
+          aria-hidden
+        />
+        {connected && <Equaliser />}
+        {/*
+          A word only when the phone has actually said one. With nothing known
+          the bar and the clock say everything there is to say — which is the
+          whole of *"in replacement of 'calling on your phone'"* — and the row
+          has four controls on it, so a placeholder would be squeezed to "Call…"
+          and say less than nothing.
+        */}
+        {phase && <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted">{phase}</span>}
+        <span
+          className={cn(
+            'text-sm font-extrabold tabular-nums text-[var(--text)] dark:text-slate-100',
+            phase ? 'shrink-0' : 'flex-1',
+          )}
+          title={talkTime ? `Talking for ${talkTime}` : 'Since Call was pressed'}
+        >
+          {talkTime ?? elapsed}
+        </span>
+      </span>
+      {/*
+        The bar itself. It sweeps while the call is going and holds still once
+        it is over, so a glance says "this is live" without reading a word.
+      */}
+      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-[var(--border)]" aria-hidden>
+        <span
+          className={cn(
+            'block h-full rounded-full',
+            connected ? 'w-full bg-positive' : moving ? 'w-1/3 animate-call-sweep bg-brand-600' : 'w-full bg-slate-300',
+          )}
+        />
+      </span>
+    </span>
   );
 }
 
@@ -240,51 +295,64 @@ function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
 }
 
 /**
- * When to chase them, in one tap.
+ * When to chase them — one dropdown, and it can be read.
  *
- * The chip above says what will happen, and it is printed from the same value
- * the save reads — so a chip promising tomorrow and a date landing next week
- * is not expressible. Untouched, the outcome decides, which is the behaviour
- * that was already there.
+ * **27 September 2026, the owner, with a screenshot:** *"in the call deck auto
+ * follow up dropdown not visible property."* It was a four-column grid of
+ * buttons at the very bottom of the panel — Today, Tomorrow, Next Week, Next
+ * Month — inside a `card` that is `overflow-hidden`, so at the widths a right
+ * pane actually gets the last two were cut through the middle of a word and the
+ * row sat on the panel's own edge.
+ *
+ * A native `<select>` is the fix rather than a prettier popover: the browser
+ * draws its list outside the panel entirely, so nothing this card does to its
+ * own overflow can ever clip it again — on a laptop or inside the phone app.
+ *
+ * **Three states, and the first is the one that was unsayable.** "Let the
+ * outcome decide" is what the CRM has always done and is still the default;
+ * "No follow-up" is a rep saying on purpose that nobody should be chased; and a
+ * day is a day. The label prints what will actually happen, from the same value
+ * the save reads — so a dropdown promising tomorrow and a date landing next
+ * week is not expressible.
  */
 function Chase({ deck }: { deck: CallDeckState }): JSX.Element {
   const choices = quickFollowUpDates();
-  const chosen = choices.find((c) => c.value === deck.followUp);
   const fromOutcome = outcomeCard(deck.outcome).followUpInHours;
+  const autoLabel = fromOutcome ? `Auto — in ${fromOutcome} hours` : 'Auto — no follow-up';
+  const value = deck.followUp === undefined ? 'auto' : deck.followUp === null ? 'none' : deck.followUp;
+
   return (
-    <div className="space-y-1.5">
-      <span className="flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-sm font-bold text-brand-800 dark:bg-brand-950/50 dark:text-brand-200">
-        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 dark:bg-brand-900">
-          <Mic className="h-3.5 w-3.5" aria-hidden />
-        </span>
-        <span className="truncate">
-          {chosen ? chosen.label : fromOutcome ? `In ${fromOutcome} hours` : 'No follow-up'}
-        </span>
-      </span>
-      <div className="grid grid-cols-4 gap-1 rounded-lg border border-[var(--border)] p-1">
-        {choices.map((choice) => {
-          const on = choice.value === deck.followUp;
-          return (
-            <button
-              key={choice.label}
-              type="button"
-              // Tapping the chosen one again clears it and hands the decision
-              // back to the outcome, so there is a way out of a mis-tap.
-              onClick={() => deck.onFollowUp(on ? null : choice.value)}
-              aria-pressed={on}
-              className={cn(
-                'rounded px-1 py-1.5 text-xs font-semibold transition-colors',
-                on ? 'bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-100'
-                  : 'text-muted hover:bg-[var(--surface-muted)]',
-              )}
-            >
-              {choice.label}
-            </button>
-          );
-        })}
-      </div>
+    <div>
+      <label className="key-label mb-1.5 flex items-center gap-1.5" htmlFor="call-deck-followup">
+        <CalendarClock className="h-3.5 w-3.5" aria-hidden />
+        Auto follow-up
+      </label>
+      <select
+        id="call-deck-followup"
+        data-testid="call-deck-followup"
+        className="input text-sm font-semibold"
+        value={value}
+        onChange={(event) => {
+          const next = event.target.value;
+          deck.onFollowUp(next === 'auto' ? undefined : next === 'none' ? null : next);
+        }}
+      >
+        <option value="auto">{autoLabel}</option>
+        <option value="none">No follow-up</option>
+        {choices.map((choice) => (
+          <option key={choice.value} value={choice.value}>
+            {choice.label} — {readableDay(choice.value)}
+          </option>
+        ))}
+      </select>
     </div>
   );
+}
+
+/** "28 Sep" — the day itself, so a choice is not taken on trust. */
+function readableDay(day: string): string {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(year!, month! - 1, date!).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 /** The three ways out. Two of them keep the call; one says it never happened. */

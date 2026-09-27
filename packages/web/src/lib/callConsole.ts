@@ -227,3 +227,73 @@ export function deckStatus(
       return { label: 'Calling on your phone', ticking: false };
   }
 }
+
+/** A call bar: what stage the call is at, how long it has been, and whether it moves. */
+export interface CallBar {
+  /**
+   * The stage in one word, or null when the phone has told us nothing.
+   *
+   * Null is the ordinary case, not an edge: the instruction reaches the phone
+   * over the app's own socket and only a build that reports back says more. A
+   * word there would have to be a guess, and "Calling on your phone" is the
+   * guess the owner asked to be rid of.
+   */
+  phase: string | null;
+  /** How long since Call was pressed, as `m:ss`. Always honest, always there. */
+  elapsed: string;
+  /** How long they have actually been talking, once the phone says so. */
+  talkTime: string | null;
+  /** The bar sweeps while the call is going and holds still once it is over. */
+  moving: boolean;
+  /** They are on the call right now, so the bar is filled rather than sweeping. */
+  connected: boolean;
+}
+
+/**
+ * The bar and the clock that replaced the words "Calling on your phone".
+ *
+ * **27 September 2026, the owner:** *"We need a call Bar and Call timer in
+ * replacement of 'calling on your phone' in the call deck."* That sentence was
+ * on screen for every call this business makes, because it is what shows when
+ * the handset has not reported — every installed copy of the app predates the
+ * plugin that reports. So it said the same nine words for two minutes and the
+ * rep could not tell a call that had been going a while from one just pressed.
+ *
+ * **The timer counts from when Call was pressed**, which is the one thing this
+ * computer knows for certain. How long the two people have actually been
+ * talking is `talkTime`, and it exists only once the phone says so — the two
+ * are kept apart rather than one standing in for the other, because a duration
+ * this CRM invented would end up in a report.
+ */
+export function callBar(
+  report: PhoneCallReport | null,
+  call: { pressedAt: number; placing: boolean },
+  now: number,
+): CallBar {
+  const elapsed = elapsedLabel(Math.max(0, now - call.pressedAt));
+  const aboutThisCall = report?.state && report.reportedAt !== null && report.reportedAt >= call.pressedAt - 5_000;
+  const talked = (): string | null =>
+    report?.connectedAt ? elapsedLabel(now - report.connectedAt) : null;
+
+  if (call.placing) return { phase: 'Placing', elapsed, talkTime: null, moving: true, connected: false };
+  if (!report || !aboutThisCall) return { phase: null, elapsed, talkTime: null, moving: true, connected: false };
+  switch (report.state) {
+    case 'dialling':
+    case 'ringing':
+      return { phase: 'Ringing', elapsed, talkTime: null, moving: true, connected: false };
+    case 'active':
+      return { phase: 'On the call', elapsed, talkTime: talked(), moving: true, connected: true };
+    case 'held':
+      return { phase: 'On hold', elapsed, talkTime: talked(), moving: false, connected: true };
+    case 'ended':
+      return {
+        phase: report.talkedSeconds ? 'Call ended' : 'Not answered',
+        elapsed,
+        talkTime: report.talkedSeconds ? elapsedLabel(report.talkedSeconds * 1000) : null,
+        moving: false,
+        connected: false,
+      };
+    default:
+      return { phase: null, elapsed, talkTime: null, moving: true, connected: false };
+  }
+}

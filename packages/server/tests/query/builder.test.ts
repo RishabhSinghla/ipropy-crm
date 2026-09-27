@@ -330,8 +330,14 @@ describe('buildSearchClause', () => {
 });
 
 describe('buildOrderBy', () => {
-  it('defaults to record updated_at descending', async () => {
-    expect(await buildOrderBy(leads(), null, 'desc', new Map())).toBe('r.updated_at DESC, r.id DESC');
+  /*
+    27 September 2026, the owner: *"the filter data are static records, these
+    are not Dynamically sorting Changes."* It was `updated_at DESC`, so touching
+    a record sent it to the top of the list somebody was working down. When a
+    record was added never changes, so the unsorted list holds still.
+  */
+  it('holds still when nobody has chosen an order', async () => {
+    expect(await buildOrderBy(leads(), null, 'desc', new Map())).toBe('r.created_at DESC, r.id DESC');
   });
 
   it('resolves system and module fields', async () => {
@@ -340,6 +346,47 @@ describe('buildOrderBy', () => {
   });
 
   it('falls back to the default for an unknown field', async () => {
-    expect(await buildOrderBy(leads(), 'not_a_field', 'asc', new Map())).toBe('r.updated_at DESC, r.id DESC');
+    expect(await buildOrderBy(leads(), 'not_a_field', 'asc', new Map())).toBe('r.created_at DESC, r.id DESC');
+  });
+
+  /*
+    "Agent wise, A–Z" plainly means the person's name, and `owner_id` is a
+    uuid — so sorting by it read as random to anybody looking at the screen. A
+    *filter* on the same field still matches the id, which is what every saved
+    view in the database holds; the two are deliberately not the same
+    expression.
+  */
+  it('sorts the people fields by name, not by id', async () => {
+    const byAgent = await buildOrderBy(leads(), 'owner_id', 'asc', new Map());
+    expect(byAgent).toContain('ipy_user');
+    expect(byAgent).toContain('r.owner_id');
+    expect(byAgent).toContain('ASC NULLS LAST');
+  });
+
+  /*
+    Which fields count towards a record's strength is `isAnswerable` in
+    `@ipropy/shared` — the same function the bar on screen asks — so the queue
+    and the record cannot disagree about what 60% means.
+  */
+  it('sorts by how much of a record is filled in', async () => {
+    const byStrength = await buildOrderBy(leads(), 'profile_strength', 'desc', new Map());
+    expect(byStrength).toContain('CASE WHEN');
+    expect(byStrength).toContain('DESC NULLS LAST');
+    // Never a bound parameter: this expression is reused by lists, widgets and
+    // saved views, and cannot know where in the parameter list it has landed.
+    expect(byStrength).not.toContain('$');
+  });
+
+  /*
+    A call lives on `ipy_call`, so "who have I not rung for a month" had no way
+    to be asked at all. One expression, so the list, a saved view, a widget and
+    the queue's sorting all ask it the same way.
+  */
+  it('knows about the last call, which is not a field on any module', async () => {
+    expect(isSystemField('last_call_at')).toBe(true);
+    expect(isSystemField('last_call_disposition')).toBe(true);
+    const byCall = await buildOrderBy(leads(), 'last_call_at', 'desc', new Map());
+    expect(byCall).toContain('MAX(lc.started_at)');
+    expect(byCall).not.toContain('$');
   });
 });

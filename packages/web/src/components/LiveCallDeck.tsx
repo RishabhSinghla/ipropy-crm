@@ -18,7 +18,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api, type LiveCallState } from '../lib/api';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
-import { deckStatus, followUpFor, minutesFrom, type PhoneCallReport } from '../lib/callConsole';
+import { callBar, deckStatus, followUpFor, minutesFrom, type CallBar, type PhoneCallReport } from '../lib/callConsole';
 import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
 import { CallDeck } from './CallDeck';
@@ -56,6 +56,13 @@ function Deck(): JSX.Element {
 /** Everything a live call needs to be worked and finished. */
 export interface CallDeckState {
   status: string;
+  /**
+   * The bar and the clock the panel draws in place of the status words.
+   *
+   * The floating bar keeps `status`: one line has room for a phrase and not
+   * for a bar. Both come from the same report, so they cannot disagree.
+   */
+  bar: CallBar;
   talking: boolean;
   speakerOn: boolean; muted: boolean; held: boolean;
   canControl: boolean; noControlReason: string;
@@ -70,8 +77,15 @@ export interface CallDeckState {
   onOutcome: (value: string) => void;
   /** What the rep typed while they talked, kept until the call is saved. */
   notes: string; onNotes: (value: string) => void;
-  /** The chase date this call leaves behind, as a local day. */
-  followUp: string | null; onFollowUp: (day: string | null) => void;
+  /**
+   * The chase date this call leaves behind, as a local day.
+   *
+   * Three states, not two: `undefined` is "let the outcome decide", which is
+   * what the CRM has always done, `null` is "chase nobody" said on purpose, and
+   * a day is a day. Collapsing the first two made "No follow-up" unsayable.
+   */
+  followUp: string | null | undefined;
+  onFollowUp: (day: string | null | undefined) => void;
   saving: boolean;
   nextLabel: string | null;
   onSave: (andDialNext: boolean) => void;
@@ -113,6 +127,7 @@ export function useCallDeckState(): CallDeckState {
   const report = usePhoneReport();
   const now = useTick(1000);
   const status = deckStatus(report, call, now);
+  const bar = callBar(report, call, now);
   const dock = useDock();
 
   // Who the call is with, and who is next in the list it was started from.
@@ -220,6 +235,7 @@ export function useCallDeckState(): CallDeckState {
 
   return {
     status: status.label,
+    bar,
     talking: status.ticking && report?.state === 'active',
     speakerOn,
     muted,
@@ -237,7 +253,7 @@ export function useCallDeckState(): CallDeckState {
     onOutcome: (value) => update({ outcome: value }),
     notes,
     onNotes: setNotes,
-    followUp: chaseOverride ?? null,
+    followUp: chaseOverride,
     onFollowUp: (day) => setChaseOverride(day),
     saving,
     nextLabel,

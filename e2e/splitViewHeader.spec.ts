@@ -171,10 +171,20 @@ test('the open record is obvious in the queue', async ({ page }) => {
   */
   const chosen = rows.nth(2).locator('button').first();
   await chosen.click();
-  // Cards are white either way; the open one is outlined and lifted.
-  const look = (el: Element): string => `${getComputedStyle(el).boxShadow} ${getComputedStyle(el).borderColor}`;
+  /*
+    The open card is a tint plus a marker down its left edge. It used to carry
+    a 4px inset shadow as well, and the owner asked for that on 27 September
+    2026 — *"its dark colour are irritating to my eyes"* — so the measurement
+    moved to the properties the treatment actually uses rather than staying on
+    one it no longer has.
+  */
+  const look = (el: Element): string =>
+    `${getComputedStyle(el).backgroundColor} ${getComputedStyle(el).boxShadow} ${getComputedStyle(el).borderColor}`;
   const open = await chosen.evaluate(look);
   const plain = await rows.nth(4).locator('button').first().evaluate(look);
   expect(open, 'the open record looks like every other row').not.toBe(plain);
+  // And a marker that is an element, which cannot lose a stylesheet-order
+  // lottery to the row's own bottom border.
+  await expect(chosen.locator('span[aria-hidden]').first()).toBeVisible();
   await expect(chosen).toHaveAttribute('aria-current', 'true');
 });

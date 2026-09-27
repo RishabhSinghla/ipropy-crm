@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Clock, ChevronDown, ChevronRight, Phone, Sparkles } from 'lucide-react';
 import type { FieldMeta, FilterGroup, ListQuery, RecordEnvelope } from '@ipropy/shared';
 import { api } from '../lib/api';
+import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
 import { dial } from '../lib/nativeActions';
 import { phoneOf } from '../mobile/rows';
@@ -103,32 +104,19 @@ export function FollowUpQueue({
           <button
             type="button"
             title="The follow-ups waiting on you"
-            /* The same shape and the same brand tint as the stage breakdown
-               beside it. These two are one row of tabs; two different idioms
-               for "this one is on" is the toolbar reading as two toolbars. */
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold shadow-xs transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1',
-              active
-                ? 'border-brand-200 bg-brand-50 text-brand-700 ring-2 ring-brand-500/20 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200'
-                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800',
-            )}
+            /* One shape for every filter button on this row — see
+               `lib/toolbarButton.ts`. Two idioms for "this one is on" is the
+               toolbar reading as two toolbars. */
+            className={toolbarButton(Boolean(active))}
           >
-            <Clock className={cn('h-3.5 w-3.5', active ? 'text-brand-600 dark:text-brand-300' : 'text-slate-500')} />
+            <Clock className="h-3.5 w-3.5 shrink-0" />
             Follow-ups
-            <span
-              className={cn(
-                'rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums',
-                counts.pending > 0
-                  ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200'
-                  : active
-                    ? 'bg-brand-200/80 text-brand-800 dark:bg-brand-900 dark:text-brand-100'
-                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
-              )}
-            >
+            {/* Something overdue stays red on the purple: it is the one count
+                in this row that is a warning rather than a size. */}
+            <span className={toolbarCount(counts.pending > 0 ? 'bg-red-600' : undefined)}>
               {total.toLocaleString('en-IN')}
             </span>
-            <ChevronDown className={cn('h-3 w-3', active ? 'text-brand-600 dark:text-brand-300' : 'text-slate-400')} />
+            <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
           </button>
         }
       >

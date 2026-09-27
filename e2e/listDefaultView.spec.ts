@@ -227,11 +227,23 @@ test('the queue can be ticked in bulk and sorted from its own header', async ({ 
     section choosing which follow-ups to show, and the toolbar above already
     has that control — two ways to ask one question is how they end up
     disagreeing.
+
+    **27 September 2026:** the menu used to be one row per field — the name
+    A–Z, each subtitle field A–Z, the stage — and the owner asked for those to
+    go. It is eight named questions with **one** A–Z / Z–A control for the
+    whole menu now, and nothing chosen until somebody chooses.
   */
   await page.getByRole('button', { name: 'Sort this list' }).click();
   await expect(page.getByRole('button', { name: 'Everyone' })).toHaveCount(0);
-  await page.getByRole('button', { name: /A–Z/ }).first().click();
-  await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('A–Z');
+  await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('No sorting');
+
+  await page.getByTestId('queue-sort-menu').getByText('Recently updated', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('Recently updated');
+
+  // The direction is its own control, and it is dead until an order is chosen.
+  await page.getByRole('button', { name: 'Sort this list' }).click();
+  await page.getByRole('button', { name: 'A–Z', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('Recently updated');
 });
 
 test('the notes sit beside the record rather than in a third column', async ({ page }) => {

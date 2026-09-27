@@ -2697,6 +2697,125 @@ from there, which proves the layout, the wiring and the outcome rules but not
 what an Android phone reports mid-call. That half still needs a machine with
 an Android SDK, which this container does not have.
 
+### Six more that afternoon, and one of them needed the server
+
+**27 September 2026, the owner**, with a screenshot of the call deck and five
+more asks, prefaced *"Keep in Mind All Following or below work for Both Module
+Leads & Inventory Module"*. Everything below is on Contacts and Inventories
+alike, and `e2e/sortingAndCallDeck.spec.ts` runs every promise twice for that
+reason — "it works on leads" is exactly how a module gets left behind.
+
+* **The Auto follow-up control was cut in half.** It was a four-column grid of
+  buttons — Today, Tomorrow, Next Week, Next Month — at the very bottom of a
+  panel that is `overflow-hidden`, so at the width a right pane actually gets,
+  the last two were clipped through the middle of a word. It is a native
+  `<select>` now, and that is the fix rather than a prettier popover: **the
+  browser draws a select's list outside the panel entirely**, so nothing this
+  card ever does to its own overflow can clip it again, on a laptop or inside
+  the phone app. It also made a third state sayable. "Let the outcome decide"
+  is what the CRM has always done and is still the default; **"No follow-up"
+  could not be expressed at all**, because the deck collapsed *undefined* and
+  *null* into one value. `CallDeckState.followUp` carries all three now.
+* **"Calling on your phone" is a bar and a clock.** That sentence was on screen
+  for the whole of every call this business makes — it is what `deckStatus`
+  says when the handset has reported nothing, and **every installed copy of the
+  app predates the plugin that reports**. So a rep could not tell a call just
+  pressed from one two minutes old. `callBar` in `lib/callConsole.ts` is the
+  decision, pure and tested: **the clock always counts from when Call was
+  pressed**, which this computer knows for certain, and `talkTime` — how long
+  the two people have actually been talking — appears *only* when the phone has
+  said so. Keeping them apart is the point: a duration the CRM invented would
+  end up in a report. A phase word is drawn only when there is one, so with
+  nothing known the row is the bar and the clock and no placeholder; a
+  placeholder was squeezed to "Call…" beside four controls and said less than
+  nothing.
+* **The four filter buttons are dark purple**, and they are one button now
+  (`lib/toolbarButton.ts`). All Leads was `btn-secondary`, the stage breakdown
+  and Follow-ups each wrote the same eight utilities out by hand, and a fourth
+  copy was about to join them. One of them lit is `brand-600` with a ring,
+  the rest are `brand-800` — one row of purple, so the one that is *on* reads.
+  **"All Leads" is deliberately not lit by default**: the module's own system
+  view narrows nothing, and a button that is on from the moment the page opens
+  teaches a rep to ignore the state.
+* **A Call Disposition filter, after Follow-ups** — and **this is the one that
+  needed the server**. A disposition lives on `ipy_call`, one row per call, and
+  is a field on neither module, so the filter grammar had no name for it and
+  the question could not be asked at all. `last_call_at` and
+  `last_call_disposition` are **system fields in the query builder** now, which
+  is what makes the list, a saved view, a dashboard widget and the queue's own
+  sorting ask it one way rather than four. `SYSTEM_FIELDS` gained an optional
+  `expr` for them; both are correlated subqueries over `idx_call_record`
+  (`record_id, started_at DESC`), and **neither carries a bound parameter, ever**
+  — rule 8, and an expression reused by four callers cannot know where in the
+  parameter list it has landed. "Never called" is `is_empty`, because the
+  absence of a call is not something a call said.
+* **The open card in the queue is a lighter wash.** *"its dark colour are
+  irritating to my eyes."* It carried three markings — `indigo-50` at full
+  strength, a 4px inset shadow in the darkest indigo there is, and the marker
+  span — two of them the same edge. The shadow is gone, the wash is `/70` and
+  the span is `indigo-300`. The span stays: a marker that is an element rather
+  than a border is the one thing on that row that cannot lose a
+  stylesheet-order lottery.
+
+### Sorting: nothing by default, and eight questions when you want one
+
+*"I need Nothing by default … when we Filter the data, The data have no sorting
+option by Default (Means The filter data are static records, these are not
+Dynamically sorting Changes)"*, then the eight, *"all sorting feature works
+well with A-Z and Z-A functionality else should be delete i.e Name, House,
+Portion, category, Locality, Lead/Property Status."*
+
+**The default was `updated_at DESC`, which is the bug he was describing.**
+Touching a record sent it to the top of the list somebody was working down, so
+the queue reshuffled under their thumb. `buildOrderBy`'s no-sort answer is
+`created_at DESC, id DESC` now — when a record was *added* never changes, so
+an unsorted list holds still. A list must still come back in *some* order and
+it has to be the same one every time, or page two would repeat page one; the
+record id is the final tie breaker for exactly that.
+
+**The menu used to be built out of the module's own fields** — the name A–Z,
+one row per subtitle field, then the stage — which is a list that grows every
+time an admin flags a field and asks a rep to guess what "Locality A–Z" is for.
+`lib/listSort.ts` is the eight he named, as data, pure and node-tested, and
+**no screen names a field**: the task row takes whatever `useRecordPanes` says
+this module's follow-up field is, and a module with none is not offered the row
+rather than offered a dead one. One A–Z / Z–A control for the whole menu, not a
+direction per row — *"Minimal Drop down"*.
+
+Three of the eight needed more than a column name, and the reason is worth
+keeping:
+
+* **Agent wise, Created by, Updated by.** `owner_id` is a uuid, so "A–Z" on it
+  read as random to anybody looking at the screen. These three are **sort-only
+  expressions** over `ipy_user`, deliberately kept apart from the *filter* on
+  the same field — which still matches an id, because that is what every saved
+  view in the database holds. Keeping them separate lets each be right rather
+  than making one of them wrong.
+* **Profile strength wise.** Which fields count is `isAnswerable` in
+  `@ipropy/shared` — **the same function the bar on screen asks** — so the
+  queue and the record can never disagree about what 60% means. The server
+  renders that list as one CASE per field and sorts on the count, not the
+  percentage: every row in a module is out of the same total, so the count
+  sorts identically and costs no division.
+* **Last call wise** is the `last_call_at` system field above, and `NULLS LAST`
+  matters: somebody nobody has ever rung is not "rung a long time ago", and
+  putting them at the head of a chase list is how the people who *have* been
+  waiting get missed.
+
+**What is proved, and what is not.** Both modules were driven in a real browser
+— the four buttons, the menu, that choosing an order reaches the server both
+ways round, that the disposition filter sends what it says (169 contacts down
+to the 14 whose last call was Interested), and the deck's bar, clock and
+follow-up select. `tests/integration/lastCallSortAndFilter.test.ts` makes its
+own calls and pins the effect against a real database — the SQL is a string, so
+typecheck sees nothing and a mocked `db.query` accepts any statement at all,
+which is how the WhatsApp overview once shipped a column name that had never
+existed. **Not proved:** a call deck against a real handset, as ever — the live
+call was staged by writing `ipropy.liveCall`. And **Inventories has no
+Follow-ups button and no "Task wise" row on a development database**, because
+that module has no follow-up field there; both appear on any database where it
+does, which is the fallback working rather than the feature missing.
+
 ## Three warnings, and two of them were lying
 
 **27 September 2026, the owner**, with three screenshots of amber and red

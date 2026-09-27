@@ -233,10 +233,26 @@
     animation: ipropy-equalise 900ms ease-in-out infinite;
   }
 
+  /*
+   * A call that is going somewhere, without claiming to know where.
+   *
+   * The deck's bar sweeps while a call is live and holds still once it is over
+   * — an indeterminate bar rather than a progress one, because nothing here
+   * knows how long a conversation will last.
+   */
+  @keyframes ipropy-call-sweep {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+  }
+
+  .animate-call-sweep { animation: ipropy-call-sweep 1400ms ease-in-out infinite; }
+
   /* Somebody who has asked their machine to stop moving things means it. The
-     bars stay, at a readable height, and simply do not dance. */
+     bars stay, at a readable height, and simply do not dance; the call bar
+     fills instead of sweeping, so it still says the call is live. */
   @media (prefers-reduced-motion: reduce) {
     .animate-equalise { animation: none; height: 8px; }
+    .animate-call-sweep { animation: none; width: 100%; }
   }
 
   /*

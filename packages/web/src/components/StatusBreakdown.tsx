@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import { api } from '../lib/api';
+import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
 import { badgeVars } from '../lib/color';
 import { pipelineFieldOf } from '../lib/fields';
@@ -50,27 +51,14 @@ export function StatusBreakdown({
         <button
           type="button"
           title={`Filter by ${field.label}`}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold shadow-xs transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1',
-            on
-              ? 'border-brand-200 bg-brand-50 text-brand-700 ring-2 ring-brand-500/20 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200'
-              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800',
-          )}
+          className={toolbarButton(on)}
         >
-          <BarChart3 className={cn('h-3.5 w-3.5', on ? 'text-brand-600 dark:text-brand-300' : 'text-slate-500')} />
+          <BarChart3 className="h-3.5 w-3.5 shrink-0" />
           {field.label}
-          <span
-            className={cn(
-              'rounded-full px-1.5 py-px text-[10px] font-bold',
-              on
-                ? 'bg-brand-200/80 text-brand-800 dark:bg-brand-900 dark:text-brand-100'
-                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
-            )}
-          >
+          <span className={toolbarCount()}>
             {selected.length ? `${selected.length} picked` : `${field.options?.length ?? 0} stages`}
           </span>
-          <ChevronDown className={cn('h-3 w-3', on ? 'text-brand-600 dark:text-brand-300' : 'text-slate-400')} />
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
         </button>
       }
     >

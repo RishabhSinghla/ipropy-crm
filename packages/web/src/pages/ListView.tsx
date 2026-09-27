@@ -28,6 +28,10 @@ import { ListPicker } from '../components/ListPicker';
 import { StrengthRing } from '../components/StrengthRing';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import { StatusBreakdown } from '../components/StatusBreakdown';
+import {
+  CallDispositionFilter, LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
+} from '../components/CallDispositionFilter';
+import { toolbarButton } from '../lib/toolbarButton';
 import SiteCapture from './SiteCapture';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
@@ -81,6 +85,7 @@ export default function ListView(): JSX.Element {
   const [stagePick, setStagePick] = useState<string[]>([]);
   const [agentPick, setAgentPick] = useState<string | null>(null);
   const [tagPick, setTagPick] = useState<string | null>(null);
+  const [dispositionPick, setDispositionPick] = useState<DispositionPick>(NO_DISPOSITION_PICK);
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
@@ -466,10 +471,21 @@ export default function ListView(): JSX.Element {
       // `record_tags` is the builder's own name for the tags on a record; a tag
       // is not a field on the module, so it cannot be resolved as one.
       ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
+      /*
+        How the last call went. `last_call_disposition` is a system field in the
+        query builder, not a column on either module — a disposition lives on
+        `ipy_call`. "Never called" is the absence of one, so it is `is_empty`
+        rather than a value in the list.
+      */
+      ...(dispositionPick.never
+        ? [{ field: LAST_CALL_DISPOSITION, operator: 'is_empty' as const }]
+        : dispositionPick.outcomes.length
+          ? [{ field: LAST_CALL_DISPOSITION, operator: 'in' as const, value: dispositionPick.outcomes }]
+          : []),
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, dispositionPick]);
 
   /*
     What the breakdown counts is the view and the ad-hoc filter, but never the
@@ -899,10 +915,16 @@ export default function ListView(): JSX.Element {
             align="left"
             className="min-w-[18rem]"
             trigger={(
-              <button className="btn-secondary btn-sm max-w-[14rem]" aria-label="Choose or manage list views">
+              <button
+                /* "On" means this button is narrowing the list. The module's
+                   own All-Leads view is a system view and narrows nothing, so
+                   it must not sit lit from the moment the page opens. */
+                className={toolbarButton(Boolean(tagPick || (activeView && !activeView.isSystem)), 'max-w-[14rem]')}
+                aria-label="Choose or manage list views"
+              >
                 {tagPick ? <Tag className="h-3.5 w-3.5 shrink-0" /> : <Filter className="h-3.5 w-3.5 shrink-0" />}
                 <span className="truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-80" />
               </button>
             )}
           >
@@ -961,6 +983,14 @@ export default function ListView(): JSX.Element {
               onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
             />
           )}
+
+          {/* After Follow-ups, on the owner's instruction — the row reads left
+              to right the way a day does: which list, which stage, what is due,
+              then how the last call went. */}
+          <CallDispositionFilter
+            pick={dispositionPick}
+            onPick={(next) => { setDispositionPick(next); setPage(1); }}
+          />
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {/* The number, not a footnote. It was the same muted 11px as the

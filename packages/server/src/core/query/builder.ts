@@ -7,7 +7,9 @@
  * name a column that isn't a declared field, which is what keeps this safe
  * despite building SQL text.
  */
-import { type FieldMeta, type FilterCondition, type FilterGroup, isFilterGroup, type ModuleMeta } from '@ipropy/shared';
+import {
+  type FieldMeta, type FilterCondition, type FilterGroup, isAnswerable, isFilterGroup, type ModuleMeta,
+} from '@ipropy/shared';
 import { BadRequestError } from '../../utils/errors.js';
 import { registry } from '../metadata/registry.js';
 
@@ -104,7 +106,7 @@ const RECORD_FIELD_MAP: Record<string, string> = {
 };
 
 /** Pseudo-fields that always exist on every entity module. */
-export const SYSTEM_FIELDS: Record<string, { uitype: FieldMeta['uitype']; label: string; column: string }> = {
+export const SYSTEM_FIELDS: Record<string, SystemField> = {
   id: { uitype: 'reference', label: 'Record ID', column: 'id' },
   // "Owner" is the old word for this; the module's own field calls it
   // Assigned To and so does every screen. One name for one idea.
@@ -121,14 +123,57 @@ export const SYSTEM_FIELDS: Record<string, { uitype: FieldMeta['uitype']; label:
   record_tags: { uitype: 'tags', label: 'Tags', column: 'record_tags' },
   favourite: { uitype: 'boolean', label: 'Favourite', column: 'favourite' },
   unread: { uitype: 'boolean', label: 'Unread', column: 'unread' },
+  /*
+    The last call, read from the calls themselves.
+
+    A call lives on `ipy_call`, never on the record — so "who have I not rung
+    for a month" and "show me everybody I marked Not Interested" had no way to
+    be asked at all. These two make them ordinary filter grammar, which means
+    one definition serves the list, a saved view, a dashboard widget and the
+    queue's own sorting rather than four.
+
+    `idx_call_record` is `(record_id, started_at DESC)`, so each row's answer is
+    one index lookup.
+  */
+  last_call_at: {
+    uitype: 'datetime',
+    label: 'Last Call',
+    column: 'last_call_at',
+    expr: `(SELECT MAX(lc.started_at) FROM ipy_call lc WHERE lc.record_id = ${RECORD_ALIAS}.id)`,
+  },
+  last_call_disposition: {
+    uitype: 'picklist',
+    label: 'Call Disposition',
+    column: 'last_call_disposition',
+    expr: `(SELECT lc.disposition FROM ipy_call lc
+              WHERE lc.record_id = ${RECORD_ALIAS}.id AND lc.disposition IS NOT NULL
+              ORDER BY lc.started_at DESC LIMIT 1)`,
+  },
 };
+
+interface SystemField {
+  uitype: FieldMeta['uitype'];
+  label: string;
+  /** The `ipy_record` column, or the name the grammar knows an expression by. */
+  column: string;
+  /**
+   * SQL to read it, when it is not a column on `ipy_record`.
+   *
+   * Never carries a bound parameter, and never will: rule 8 in `CLAUDE.md` is
+   * that Postgres refuses a statement whose parameters do not line up, and an
+   * expression reused by filters, sorting and widgets alike cannot know where
+   * in the parameter list it has landed.
+   */
+  expr?: string;
+}
 
 export function isSystemField(name: string): boolean {
   return name in SYSTEM_FIELDS;
 }
 
 export function systemFieldExpr(name: string): string {
-  return `${RECORD_ALIAS}.${SYSTEM_FIELDS[name].column}`;
+  const system = SYSTEM_FIELDS[name]!;
+  return system.expr ?? `${RECORD_ALIAS}.${system.column}`;
 }
 
 /** Resolve `field` (possibly "reference_field.target_field") to a SQL expression. */
@@ -515,6 +560,66 @@ export function buildSearchClause(term: string, params: SqlParams): string {
 // ORDER BY
 // ---------------------------------------------------------------------------
 
+/**
+ * The order a list comes back in when nobody has chosen one.
+ *
+ * **27 September 2026, the owner:** *"I need Nothing by default … the filter
+ * data are static records, these are not Dynamically sorting Changes."* It
+ * used to be `updated_at DESC`, so touching a record sent it to the top of the
+ * list the rep was working down — the queue reshuffling under their thumb.
+ * When a record was *added* never changes, so this order holds still.
+ *
+ * A list must still come back in *some* order, and it has to be the same one
+ * every time or page two would repeat page one's rows: the record id is the
+ * final tie breaker for exactly that reason.
+ */
+const UNSORTED = `${RECORD_ALIAS}.created_at DESC, ${RECORD_ALIAS}.id DESC`;
+
+/**
+ * Orderings that are about a record without being a field on it.
+ *
+ * Sort-only, and deliberately: a *filter* on Assigned To matches a user id,
+ * which is what every saved view in the database holds, while "Agent wise,
+ * A–Z" plainly means the person's name. Keeping the two apart lets each be
+ * right rather than making one of them wrong.
+ *
+ * Profile strength is the one that reads the module: which fields count is
+ * `isAnswerable` in `@ipropy/shared`, the same function the bar on screen
+ * asks, so the queue and the record can never disagree about what 60% means.
+ */
+const SORT_EXPRESSIONS: Record<string, (module: ModuleMeta) => string> = {
+  owner_id: () => userNameExpr('owner_id'),
+  created_by: () => userNameExpr('created_by'),
+  modified_by: () => userNameExpr('modified_by'),
+  profile_strength: (module) => strengthExpr(module),
+};
+
+/** The person's own name, so A–Z means what a reader expects it to. */
+function userNameExpr(column: string): string {
+  return `(SELECT lower(btrim(su.first_name || ' ' || su.last_name))
+            FROM ipy_user su WHERE su.id = ${RECORD_ALIAS}.${column})`;
+}
+
+/**
+ * How many of the fields a person could answer this record has an answer for.
+ *
+ * Not a percentage: every row in one module is out of the same total, so the
+ * count sorts identically and costs no division. A module with nothing
+ * answerable sorts as a single value rather than dividing by zero.
+ *
+ * `isAnswered` in `@ipropy/shared` is the rule this mirrors — 0 and false are
+ * answers, an empty string, an empty list and an empty object are not.
+ */
+function strengthExpr(module: ModuleMeta): string {
+  const answerable = module.fields.filter(isAnswerable);
+  if (!answerable.length) return '0';
+  const filled = answerable.map((field) => {
+    const expr = fieldExpr(field);
+    return `(CASE WHEN ${expr} IS NULL OR ${expr}::text IN ('', '[]', '{}') THEN 0 ELSE 1 END)`;
+  });
+  return `(${filled.join(' + ')})`;
+}
+
 export async function buildOrderBy(
   module: ModuleMeta,
   sortBy: string | null | undefined,
@@ -522,15 +627,13 @@ export async function buildOrderBy(
   joins: Map<string, string>,
 ): Promise<string> {
   const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
-  // Every list consumer (including detail-page next/previous) needs one
-  // deterministic order.  Timestamps and picklist values legitimately tie,
-  // so make the record id the final tie breaker instead of leaving PostgreSQL
-  // free to return tied rows in a different order on each request.
-  if (!sortBy) return `${RECORD_ALIAS}.updated_at DESC, ${RECORD_ALIAS}.id DESC`;
+  if (!sortBy) return UNSORTED;
+  const expression = SORT_EXPRESSIONS[sortBy];
+  if (expression) return `${expression(module)} ${dir} NULLS LAST, ${RECORD_ALIAS}.id ${dir}`;
   try {
     const resolved = await resolveFieldPath(module, sortBy, joins);
     return `${resolved.expr} ${dir} NULLS LAST, ${RECORD_ALIAS}.id ${dir}`;
   } catch {
-    return `${RECORD_ALIAS}.updated_at DESC, ${RECORD_ALIAS}.id DESC`;
+    return UNSORTED;
   }
 }

@@ -1,6 +1,6 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatDate, recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
+import { formatDate, recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, FileText, Link2,
   MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
@@ -27,6 +27,7 @@ import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_BASE, ACTION_CIRCLE, ACTION_REST } from '../lib/actionCircle';
 import { api } from '../lib/api';
+import { activeSortOption, sortOptions } from '../lib/listSort';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
 
@@ -107,14 +108,6 @@ function SplitHandle({ label, onDrag }: { label: string; onDrag: (deltaX: number
   );
 }
 
-
-/** One choice in the queue's sorting menu: a column to order by, and which way. */
-interface SortChoice {
-  key: string;
-  label: string;
-  /** Absent on the first choice, which is the list's own default order. */
-  sort?: { by: string; dir: 'asc' | 'desc' };
-}
 
 /**
  * The split view: the queue on the left, the whole record beside it — and
@@ -281,21 +274,19 @@ export function IpropyWorkspace({
   });
 
   /*
-    What the queue's one menu can do. Ordering and the follow-up windows are
-    two different questions and they stay two sections, but they are one
-    control: "sort this queue" is a single thought to a rep working it.
-  */
-  const sortChoices = useMemo<SortChoice[]>(() => {
-    const out: SortChoice[] = [{ key: 'recent', label: 'Recently updated' }];
-    const nameField = module.labelFields.map((name) => module.fields.find((f) => f.name === name)).find(Boolean);
-    if (nameField) out.push({ key: 'name', label: `${nameField.label} A–Z`, sort: { by: nameField.name, dir: 'asc' } });
-    for (const field of subtitleFields) out.push({ key: `subtitle:${field.name}`, label: `${field.label} A–Z`, sort: { by: field.name, dir: 'asc' } });
-    if (statusField) out.push({ key: 'status', label: `${statusField.label} A–Z`, sort: { by: statusField.name, dir: 'asc' } });
-    if (followUpField) out.push({ key: 'task', label: 'Task, soonest first', sort: { by: followUpField.name, dir: 'asc' } });
-    return out;
-  }, [module.labelFields, module.fields, subtitleFields, statusField, followUpField]);
+    What the queue's one menu can do — eight questions and a direction, the
+    same eight in both modules, none of them named in this file.
 
-  const activeSort = sortChoices.find((choice) => choice.sort && choice.sort.by === sortBy) ?? sortChoices[0]!;
+    It used to be built out of the module's own fields: the name A–Z, then one
+    row per subtitle field, then the stage. The owner asked for those to go on
+    27 September 2026 and for these in their place, with *nothing* chosen by
+    default so that a filtered list holds still while it is worked.
+  */
+  const choices = useMemo(() => sortOptions(followUpField?.name), [followUpField?.name]);
+  const chosen = activeSortOption(choices, sortBy);
+  // A column heading clicked in the table view is not one of the eight, so the
+  // button says which field it is rather than claiming one of them.
+  const sortedByColumn = chosen ? null : module.fields.find((field) => field.name === sortBy);
 
   /*
     The three dots, brought across from the record page on the owner's ask.
@@ -392,20 +383,48 @@ export function IpropyWorkspace({
                     aria-label="Sort this list"
                   >
                     <ArrowUpDown className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{activeSort.label}</span>
+                    <span className="truncate">
+                      {chosen?.label ?? `Sorted by ${sortedByColumn?.label ?? 'a column'}`}
+                    </span>
                   </button>
                 )}
               >
                 {(close) => (
-                  <div className="py-1">
-                    <p className="px-3 pb-1 pt-1.5 text-2xs font-bold uppercase tracking-wide text-slate-400">Sort by</p>
-                    {sortChoices.map((choice) => (
+                  <div className="py-1" data-testid="queue-sort-menu">
+                    {/*
+                      One direction control for the whole menu rather than a
+                      second row per option — "Minimal Drop down, Specially
+                      Sorting by Z-A / A-Z" (27 September 2026). It is dead
+                      while nothing is sorted, because there is no direction
+                      for an order nobody has asked for.
+                    */}
+                    <div className="flex items-center gap-1 px-3 pb-1.5 pt-1.5">
+                      <p className="mr-auto text-2xs font-bold uppercase tracking-wide text-slate-400">Sort by</p>
+                      {(['asc', 'desc'] as const).map((dir) => (
+                        <button
+                          key={dir}
+                          type="button"
+                          disabled={!chosen?.by && !sortBy}
+                          title={dir === 'asc' ? (chosen?.ascHint ?? 'A–Z') : (chosen?.descHint ?? 'Z–A')}
+                          onClick={() => onSort(sortBy, dir)}
+                          className={cn(
+                            'rounded px-1.5 py-0.5 text-2xs font-bold transition-colors',
+                            sortDir === dir && (chosen?.by || sortBy)
+                              ? 'bg-brand-700 text-white'
+                              : 'text-slate-500 hover:bg-[var(--surface-muted)] disabled:opacity-40 dark:text-slate-400',
+                          )}
+                        >
+                          {dir === 'asc' ? 'A–Z' : 'Z–A'}
+                        </button>
+                      ))}
+                    </div>
+                    {choices.map((option) => (
                       <DropdownItem
-                        key={choice.key}
-                        icon={<Check className={cn('h-3.5 w-3.5', activeSort.key === choice.key ? 'text-brand-600' : 'invisible')} />}
-                        onClick={() => { onSort(choice.sort?.by, choice.sort?.dir ?? 'desc'); close(); }}
+                        key={option.key}
+                        icon={<Check className={cn('h-3.5 w-3.5', chosen?.key === option.key ? 'text-brand-600' : 'invisible')} />}
+                        onClick={() => { onSort(option.by, sortDir ?? 'desc'); close(); }}
                       >
-                        {choice.label}
+                        {option.label}
                       </DropdownItem>
                     ))}
                   </div>
@@ -841,13 +860,22 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
             its own colour. Indigo rather than the brand's plum, which at this
             size reads pink against a white queue — and the accent is already
             what the price on the card below is printed in.
+
+            **Lighter, later the same day:** *"we Need to change these gradiant
+            some lighter shade, its dark colour are irritating to my eyes."* It
+            was `indigo-50` at full strength *and* a 4px inset shadow in the
+            accent *and* the marker span — three markings on one row, two of
+            them the same edge in the darkest indigo there is. The wash is half
+            strength and the shadow is gone; the span stays, because a marker
+            that is an element rather than a border is the one thing on this row
+            that cannot lose a stylesheet-order lottery.
           */
           active
-            ? 'bg-indigo-50 shadow-[inset_4px_0_0_#4e45d5] dark:bg-indigo-950/40'
+            ? 'bg-indigo-50/70 dark:bg-indigo-950/30'
             : 'hover:bg-[var(--surface-subtle)] dark:hover:bg-slate-800',
         )}
       >
-        {active && <span className="absolute inset-y-0 left-0 w-1 bg-accent" aria-hidden />}
+        {active && <span className="absolute inset-y-0 left-0 w-1 bg-indigo-300 dark:bg-indigo-700" aria-hidden />}
 
         {/*
           1. Who, and what kind of contact.
@@ -965,30 +993,6 @@ function FollowUpBadge({ due, date }: { due: FollowUpChipValue; date: unknown })
   );
 }
 
-/**
- * How complete a record is, as a straight line with the number beside it.
- *
- * It used to be a ring around the avatar. The owner asked for the two to be
- * separated — the face identifies the person, the bar answers a different
- * question — and a bar reads as a proportion at a glance where a ring has to
- * be decoded.
- */
-function StrengthBar({ module, row, className, slim = false }: { module: ModuleMeta; row: RecordEnvelope; className?: string; slim?: boolean }): JSX.Element {
-  const percent = recordStrength(module.fields, row.values).percent;
-  const color = percent >= 80 ? '#14b86a' : percent >= 55 ? '#f59e0b' : '#ee3458';
-  return (
-    <span className={cn('flex items-center gap-2', className)}>
-      <span
-        className={cn('min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700', slim ? 'h-1' : 'h-1.5')}
-        role="img"
-        aria-label={`Record ${percent}% complete`}
-      >
-        <span className="block h-full rounded-full" style={{ width: `${percent}%`, backgroundColor: color }} />
-      </span>
-      <span className="shrink-0 text-2xs font-bold tabular-nums text-slate-500 dark:text-slate-400">{percent}%</span>
-    </span>
-  );
-}
 
 /**
  * One block of the record's fields, editable where they stand.
