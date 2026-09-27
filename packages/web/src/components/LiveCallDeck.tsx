@@ -1,19 +1,10 @@
 /**
- * The call deck, drawn once for the whole CRM.
- *
- * Mounted by the app's shell, so it stays on screen whatever page the rep
- * moves to until the call is saved (26 September 2026, the owner). Everything
- * a call needs to be finished lives here: the outcome, Save & Exit and
- * Save & Next, and the live controls — which follow what the phone reports,
- * so a tap on the handset shows here within a second.
- *
- * The record the call is about comes from `useLiveCall`, not from whichever
- * page is open, so saving from the Calls page or the dashboard writes to the
- * right person.
+ * The shell keeps a compact route back to the active call. The working deck
+ * lives in that record's notes pane; leaving it never loses an unsaved draft.
  */
 import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, type LiveCallState } from '../lib/api';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
@@ -23,21 +14,32 @@ import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
 import { useApp } from '../lib/store';
 
-/** The id a record header gives the spot it wants the deck in. */
-export const CALL_DECK_DOCK_ID = 'call-deck-dock';
-
 const NOT_THE_CALLING_APP =
   'On the phone, open iPropy → This phone → "Control calls from the CRM" to switch these from here.';
 
+function returnToCallUrl(call: { queueUrl?: string | null; module: string; recordId: string }): string {
+  const target = new URL(call.queueUrl || `/${encodeURIComponent(call.module)}`, 'https://crm.local');
+  target.searchParams.set('open', call.recordId);
+  target.searchParams.delete('dial');
+  return `${target.pathname}${target.search}`;
+}
+
 export function LiveCallDeck(): JSX.Element | null {
   const call = useLiveCall((state) => state.call);
+  const inPane = useLiveCall((state) => state.inPane);
   const userId = useApp((state) => state.user?.id ?? null);
   useEffect(() => {
     if (call && userId && call.userId !== userId) useLiveCall.getState().finish();
   }, [call, userId]);
-  // Calls are worked in the record's in-pane deck only. Keep this shell
-  // component mounted to clear calls left by a different signed-in user.
-  return null;
+  if (!call || !userId || call.userId !== userId || inPane) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-brand-200 bg-brand-50 px-4 py-2 text-sm text-brand-900 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-100" role="status">
+      <span className="truncate">Call in progress · {call.number}{call.notes?.trim() ? ' · Notes saved as draft' : ''}</span>
+      <Link className="shrink-0 rounded-full bg-brand-600 px-3 py-1.5 font-semibold text-white hover:bg-brand-700" to={returnToCallUrl(call)}>
+        Return to call
+      </Link>
+    </div>
+  );
 }
 
 /** Everything a live call needs to be worked and finished. */
@@ -64,27 +66,9 @@ export interface CallDeckState {
   onSave: (andDialNext: boolean) => void;
   /** The one way out that forgets the call — nobody was spoken to. */
   onDiscard: () => void;
-  dock: { top: number; left: number } | null;
 }
 
-/**
- * Everything a live call needs, computed once.
- *
- * **26 September 2026, the owner** asked for the call to be a full panel in
- * the record's right pane, where the notes box is, rather than only the small
- * bar that floats over every screen. Both are real: the bar is what makes a
- * call follow a rep from the dashboard to the Calls page, and the panel is
- * where the call is actually *worked*. So there are two renderings and one
- * state — a second copy of this reasoning would drift, and the way it drifts
- * is that one of them learns a new rule about the chase date and the other
- * does not, so the same call saves differently depending on which control the
- * rep happened to press.
- *
- * **Only call it where a live call is known to exist.** Both callers check
- * first and render nothing without one; this hook would have to return a
- * different shape on every field otherwise, which is how a panel comes to
- * render half a call.
- */
+/** The state and actions for the in-record call panel. Only call with a live call. */
 export function useCallDeckState(): CallDeckState {
   const call = useLiveCall((state) => state.call)!;
   const { update, finish } = useLiveCall.getState();
@@ -95,12 +79,11 @@ export function useCallDeckState(): CallDeckState {
     ? call.outcome
     : (outcomes.some((option) => option.value === 'Call Back Later') ? 'Call Back Later' : outcomes[0]?.value ?? 'Call Back Later');
   const [saving, setSaving] = useState(false);
-  const [notes, setNotes] = useState('');
-  const [chaseOverride, setChaseOverride] = useState<string | null | undefined>(undefined);
+  const notes = call.notes ?? '';
+  const chaseOverride = call.chaseOverride;
   const report = usePhoneReport();
   const now = useTick(1000);
   const status = deckStatus(report, call, now);
-  const dock = useDock();
 
   // Who the call is with, and who is next in the list it was started from.
   const { data: record } = useQuery({
@@ -250,16 +233,15 @@ export function useCallDeckState(): CallDeckState {
     outcome,
     onOutcome: (value) => update({ outcome: value }),
     notes,
-    onNotes: setNotes,
+    onNotes: (value) => update({ notes: value }),
     followUp: chaseOverride ?? null,
-    onFollowUp: (day) => setChaseOverride(day),
+    onFollowUp: (day) => update({ chaseOverride: day }),
     saving,
     nextLabel,
     onSave: (andNext) => void save(andNext),
     // Nobody was spoken to, so nothing is written — the one way out that
     // forgets, and the reason Save & Exit is not the only button.
     onDiscard: () => finish(),
-    dock,
   };
 }
 
@@ -304,42 +286,4 @@ function useTick(every: number): number {
     return () => window.clearInterval(timer);
   }, [every]);
   return now;
-}
-
-/**
- * Where the open record's header wants the deck, if one is on screen.
- *
- * The header draws an empty placeholder; the deck sits over it, pinned to the
- * window, and follows it as the page scrolls or the window resizes. On a page
- * with no header to dock in, the deck keeps to the top-right corner.
- */
-function useDock(): { top: number; left: number } | null {
-  const location = useLocation();
-  const [dock, setDock] = useState<{ top: number; left: number } | null>(null);
-  useEffect(() => {
-    let frame = 0;
-    const measure = (): void => {
-      const slot = document.getElementById(CALL_DECK_DOCK_ID);
-      const rect = slot?.getBoundingClientRect();
-      setDock((current) => {
-        const next = rect ? { top: Math.round(rect.top), left: Math.round(rect.right - 368) } : null;
-        if (current?.top === next?.top && current?.left === next?.left) return current;
-        return next;
-      });
-    };
-    const soon = (): void => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
-    measure();
-    // The header mounts after navigation and moves with scrolling; both re-measure.
-    const watcher = new MutationObserver(soon);
-    watcher.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener('resize', soon);
-    window.addEventListener('scroll', soon, true);
-    return () => {
-      cancelAnimationFrame(frame);
-      watcher.disconnect();
-      window.removeEventListener('resize', soon);
-      window.removeEventListener('scroll', soon, true);
-    };
-  }, [location.pathname, location.search]);
-  return dock;
 }

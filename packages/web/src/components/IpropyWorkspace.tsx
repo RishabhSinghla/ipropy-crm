@@ -7,7 +7,6 @@ import {
   MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
-import { CALL_DECK_DOCK_ID } from './LiveCallDeck';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { MatchingTab } from './MatchingTab';
@@ -510,7 +509,6 @@ export function IpropyWorkspace({
             the owner drew it, and out of the layout so nothing moves when it
             appears.
           */}
-          <CallDeckDock />
 
           <div className="flex min-w-0 flex-wrap items-start gap-2">
             <div className="mt-1 inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-800" aria-label="Record navigation">
@@ -1071,14 +1069,3 @@ function StrengthBar({ module, row, className, slim = false }: { module: ModuleM
  */
 function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200')}>{children}</button>; }
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
-
-/** Where the call deck docks when this record's header is on screen. */
-function CallDeckDock(): JSX.Element {
-  /*
-    Only the spot the deck docks in when this record's header is on screen.
-    The deck itself is drawn once by the app's shell (`components/LiveCallDeck`)
-    so it survives leaving this page mid-call; it sits over this placeholder
-    until somebody drags it elsewhere.
-  */
-  return <div id={CALL_DECK_DOCK_ID} aria-hidden="true" className="pointer-events-none absolute right-3 top-12 h-px w-[23rem]" />;
-}

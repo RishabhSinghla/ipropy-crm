@@ -5,9 +5,7 @@
  * Create in UI/UX in the replacement of current note section in the right
  * pane, the size should be same as per note section/Box, this box called Call
  * deck … the Existing Functionality and Feature are work Perfect."* So the
- * shape is new and nothing underneath it is: every button here drives the
- * same `useCallDeckState` the floating bar drives, and one call cannot be
- * saved two different ways.
+ * shape is new and the calling and saving actions still use `useCallDeckState`.
  *
  * Top to bottom, as he drew it: where this record sits in the queue and who
  * is next; who is on the call; the clock with the live controls; the note; the
@@ -60,8 +58,7 @@ export function useCallIsOn(module: string, recordId: string): boolean {
 
 function Panel(): JSX.Element {
   const deck = useCallDeckState();
-  // While this pane is up, the floating bar stands down — and comes back the
-  // moment the rep navigates away, which is what unmounting this means.
+  // While this pane is up, the shell hides its return-to-call strip.
   const setInPane = useLiveCall((state) => state.setInPane);
   useEffect(() => {
     setInPane(true);

@@ -31,7 +31,6 @@ import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/
 import ComposeModal from '../components/ComposeModal';
 import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
-import { CALL_DECK_DOCK_ID } from '../components/LiveCallDeck';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
 import { WhatsAppComposerProvider } from '../components/WhatsAppComposer';
 import { WhatsAppButton } from '../components/WhatsAppButton';
@@ -407,8 +406,6 @@ function FullRecordPage(): JSX.Element {
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
       <div className="card relative mb-4 overflow-visible">
-        {/* The live call, floating in this card's top-right corner. */}
-        <CallDeckDock />
         {/* Two rows, not three.
 
             The nav row held nothing but a back arrow and a record counter and
@@ -3047,15 +3044,4 @@ function CallEditHistory({ callId }: { callId: string }): JSX.Element {
       })}
     </ol>
   );
-}
-
-/** Where the call deck docks when this record's header is on screen. */
-function CallDeckDock(): JSX.Element {
-  /*
-    Only the spot the deck docks in when this record's header is on screen.
-    The deck itself is drawn once by the app's shell (`components/LiveCallDeck`)
-    so it survives leaving this page mid-call; it sits over this placeholder
-    until somebody drags it elsewhere.
-  */
-  return <div id={CALL_DECK_DOCK_ID} aria-hidden="true" className="pointer-events-none absolute right-3 top-14 h-px w-[23rem]" />;
 }

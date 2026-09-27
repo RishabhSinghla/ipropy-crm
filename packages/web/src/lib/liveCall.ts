@@ -5,9 +5,8 @@
  * around the CRM whenever and wherever I drag it … and it should not get
  * disappeared like right now."* It used to belong to the record page that
  * placed the call, so leaving that page threw the call away mid-sentence —
- * notes, outcome and clock. The call lives here now, and the deck is drawn
- * once by the app's shell, so it follows the rep to any screen until they
- * save it.
+ * notes, outcome and clock. The call and its drafts live here; the shell
+ * offers a route back to its record until the rep saves it.
  *
  * What the phone itself is doing (ringing, answered, speaker, mute, hold)
  * is not kept here: that is the phone's to say, and it arrives from the
@@ -35,6 +34,9 @@ export interface CrmCall {
   /** True while the CRM is still asking the phone to ring. */
   placing: boolean;
   outcome: string | null;
+  /** Drafts survive moving between records or refreshing during a call. */
+  notes?: string;
+  chaseOverride?: string | null;
 }
 
 interface LiveCallStore {
@@ -45,11 +47,8 @@ interface LiveCallStore {
   /*
     Whether the record's own pane is showing the call in full.
 
-    The floating bar exists so a call follows a rep to the dashboard or the
-    Calls page; on the record it *is* on, the pane shows the whole deck, and
-    both at once is one call wearing two faces — the bar also sits over the
-    header it docks beside. The pane says so while it is mounted, and this is
-    deliberately not remembered: it is true of a screen, not of the call.
+    The shell's return link appears only away from the record's call pane.
+    This flag is deliberately not remembered: it describes a screen, not a call.
   */
   inPane: boolean;
   setInPane: (on: boolean) => void;
@@ -89,7 +88,7 @@ function remember(call: CrmCall | null): void {
 export const useLiveCall = create<LiveCallStore>((set, get) => ({
   call: remembered(),
   begin: (call) => {
-    set({ call: { ...call, pressedAt: Date.now(), placing: true, outcome: null } });
+    set({ call: { ...call, pressedAt: Date.now(), placing: true, outcome: null, notes: '', chaseOverride: undefined } });
     remember(get().call);
   },
   update: (changes) => {
