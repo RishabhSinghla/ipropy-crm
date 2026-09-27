@@ -1,5 +1,5 @@
 /*
-  The two typefaces of the Sovereign Financial design, self-hosted.
+  The typeface of the owner's prototype, self-hosted.
 
   Not Google's CDN on purpose: `securityPolicy` in `app.ts` says
   `style-src 'self'` and names no font host, so a `<link>` to
@@ -9,8 +9,7 @@
   is nothing to allow, nothing to be blocked, and no third party between a rep
   and their screen.
 */
-@import '@fontsource-variable/space-grotesk';
-@import '@fontsource-variable/geist';
+@import '@fontsource-variable/plus-jakarta-sans';
 
 @tailwind base;
 @tailwind components;
@@ -49,10 +48,12 @@
     */
     --surface-subtle: #fafbfe;
     --surface-raised: #ffffff;
-    --border: #e2e7ff;
+    --border: #e2e8f0;
     --text: #131b2e;
-    /* The canvas behind every card. */
-    --app-bg: #f5f6fa;
+    /* The canvas behind every card — the prototype's own `#f2f4f2`, a warm
+       near-white that makes a white pane read as a raised card rather than as
+       more of the same page. */
+    --app-bg: #f2f4f2;
     /*
       Secondary copy. The design names `#50434e`, which is 7.6:1 on white and
       6.5:1 on the recessed tone — both clear AA, and `tests/color.test.ts`
@@ -85,17 +86,33 @@
       the eleven shades from a single chosen hex). Tailwind's `brand-*` tokens
       resolve here, so buttons, links, chips and focus rings all follow.
     */
-    --brand-50: #fdf4ff;
-    --brand-100: #ffd6f9;
-    --brand-200: #ffa9fb;
-    --brand-300: #ed8ceb;
-    --brand-400: #b5559b;
-    --brand-500: #913b94;
-    --brand-600: #701a75;
-    --brand-700: #5e1563;
-    --brand-800: #520058;
-    --brand-900: #400046;
-    --brand-950: #37003b;
+    --brand-50: #f5f3ff;
+    --brand-100: #ede9fe;
+    --brand-200: #ddd6fe;
+    --brand-300: #c4b5fd;
+    --brand-400: #a78bfa;
+    --brand-500: #7c3aed;
+    --brand-600: #6d28d9;
+    --brand-700: #5b21b6;
+    --brand-800: #4c1d95;
+    --brand-900: #3b0764;
+    --brand-950: #2e1065;
+
+    /*
+      The prototype's two soft voices. Sage carries the record hero's gradient
+      and cream the comment cards — a warm paper tone under the violet, which
+      is what stops a screen of purple chrome reading as cold.
+    */
+    --sage-50: #f6f8f5;
+    --sage-100: #edf2ea;
+    --sage-200: #dce5d7;
+    --sage-300: #c3d3bb;
+    --sage-600: #58734f;
+    --sage-700: #43583c;
+    --sage-800: #354630;
+    --cream-50: #faf9f6;
+    --cream-100: #f4f1ea;
+    --cream-200: #e8e2d5;
 
     /*
       List typography and row shading, in one place.
@@ -146,15 +163,28 @@
     /*
       The brand's light end, lifted for a dark ground.
 
-      The scale below is a *plum*, and where indigo's mid-steps happened to be
-      bright enough to read on slate, plum's are not: `dark:text-brand-400`
-      came out at 3.3:1 on a panel — every brand-coloured link in dark mode,
-      failed by the contrast scan on /settings. Only the steps used as **text**
-      move; 500 and 600 stay where they are because they are fills, and white
-      on brand-600 is 10:1 and has to stay that way.
+      The scale is a *violet* now (the owner's prototype, 27 September 2026),
+      and violet's mid-steps are no brighter on slate than plum's were:
+      `dark:text-brand-400` is a link colour across the CRM, and it has to
+      clear AA on a dark panel. Only the steps used as **text** move; 500 and
+      600 stay where they are because they are fills, and white on brand-600
+      has to keep its ratio.
     */
-    --brand-300: #ffa9fb;
-    --brand-400: #ed8ceb;
+    --brand-300: #d6cbff;
+    --brand-400: #c4b5fd;
+
+    /* Sage and cream are paper tones; on a dark ground they become the
+       faintest lift off the panel rather than a wash of colour. */
+    --sage-50: #17211a;
+    --sage-100: #1b2620;
+    --sage-200: #24332a;
+    --sage-300: #3a4f41;
+    --sage-600: #9ec292;
+    --sage-700: #b6d3ac;
+    --sage-800: #cee3c7;
+    --cream-50: #1a1b18;
+    --cream-100: #22231f;
+    --cream-200: #2e2f29;
 
     --app-bg: #0b1220;
     --surface: #0f172a;
@@ -357,8 +387,14 @@
     shadow goes and the corner tightens. `border` is the token, so an admin's
     dark mode and the light sheet stay one decision.
   */
+  /*
+    27 September 2026, the owner's prototype: a softer, larger radius and a
+    faint lift, so a panel reads as a card resting on the canvas rather than as
+    a box ruled onto it. Every screen in the CRM is built from this class, so
+    the whole product moved with one line.
+  */
   .card {
-    @apply rounded-lg bg-white dark:bg-slate-900;
+    @apply rounded-2xl bg-white shadow-xs dark:bg-slate-900;
     border: 1px solid var(--border);
   }
 
@@ -403,12 +439,13 @@
     tracking is what makes a row of them read as a ledger rather than as
     shouting.
   */
+  /* The prototype's structural flag above a fact: 11px, bold, wide-tracked. */
   .key-label {
-    @apply block font-semibold uppercase;
+    @apply block font-bold uppercase;
     color: var(--text-muted);
-    font-size: 10px;
-    line-height: 14px;
-    letter-spacing: 0.06em;
+    font-size: 11px;
+    line-height: 15px;
+    letter-spacing: 0.08em;
   }
 
   /* The value under it: the fact itself, in the display face. */
@@ -434,9 +471,16 @@
   }
 
   /* A field tile — the recessed square a value sits in on a dossier panel. */
+  /*
+    The recessed box a value sits in. The prototype gives it a real height and
+    a hairline of its own, so a form of them reads as a row of fields rather
+    than as text on a wash — and an empty one still looks like somewhere a
+    value goes.
+  */
   .key-tile {
-    @apply rounded p-2;
+    @apply flex min-h-10 items-center rounded-lg px-3.5 py-2 shadow-2xs;
     background-color: var(--surface-muted);
+    border: 1px solid var(--border);
   }
 
   /*
@@ -448,12 +492,15 @@
     the same heading. One class, on the same two tokens as the table header, so
     they cannot drift again.
   */
+  /*
+    The prototype's section heading sits *inside* the card on white, under a
+    hairline, rather than in a tinted strip across the top of it — which is
+    what lets a card of fields read as one page instead of two.
+  */
   .panel-head {
-    @apply flex items-center gap-2 px-4 py-2.5 text-sm font-semibold;
-    background-color: var(--surface-muted);
+    @apply flex items-center gap-2 px-5 pb-3 pt-4 text-sm font-bold;
     color: var(--text);
     border-bottom: 1px solid var(--border);
-    font-family: theme('fontFamily.display');
   }
 
   /*

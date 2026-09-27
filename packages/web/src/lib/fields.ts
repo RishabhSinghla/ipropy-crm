@@ -97,22 +97,17 @@ export function byLabel<T extends { label: string }>(fields: readonly T[]): T[] 
  * Undefined is left alone: that means "the server's defaults", and narrowing
  * it to a handful of fields would empty the table.
  *
- * Two things go in. The line under the name — Admin → Split View's list for
- * this module when it has one, `subtitleFieldsOf`'s otherwise, so the queue
- * shows whatever an admin chose rather than a pair named in this file. And the
- * **pipeline field**, whose chip sits under the follow-up date: Lead Status on
- * a contact, Property Status on a unit.
+ * Two things go in. The line under the name — the fields the module itself
+ * flags `config.listSubtitle`, so the queue shows what the Field Manager says
+ * rather than a pair named in this file. And the **pipeline field**, whose
+ * chip sits beside it: Lead Status on a contact, Property Status on a unit.
  */
 export function withQueueSubtitle(
   columns: string[] | undefined,
   module: { fields: FieldMeta[]; pipelineField: string | null } | undefined,
-  /** Admin → Split View's own list for this module, which wins when it is set. */
-  chosen?: string[],
 ): string[] | undefined {
   if (!columns || !module) return columns;
-  const subtitle = chosen?.length
-    ? chosen
-    : subtitleFieldsOf(module.fields).map((field) => field.name);
+  const subtitle = subtitleFieldsOf(module.fields).map((field) => field.name);
   const status = pipelineFieldOf(module)?.name;
   const wanted = status ? [...subtitle, status] : subtitle;
   const extra = wanted.filter((name) => !columns.includes(name));

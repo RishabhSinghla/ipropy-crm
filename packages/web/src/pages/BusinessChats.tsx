@@ -349,7 +349,7 @@ export default function BusinessChats(): JSX.Element {
               Mark unread and the three dots are gone, and what is left is the
               split view's header drawn from the same fields: the name, who the
               record is assigned to, when it was last touched, and the strip an
-              admin arranges in Admin → Split View.
+              admin arranges in the Layout Designer.
 
               A thread nobody has linked to a record has no header fields to
               show, so it gets the name and the number and nothing pretending

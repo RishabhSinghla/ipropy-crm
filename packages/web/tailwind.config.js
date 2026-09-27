@@ -34,6 +34,16 @@ export default {
           soft: 'var(--accent-soft)',
           'on-soft': 'var(--accent-on-soft)',
         },
+        /*
+          The prototype's two soft voices, used by the record hero's gradient
+          and the comment cards. Variables like everything else, so a recolour
+          stays one place.
+        */
+        sage: {
+          50: 'var(--sage-50)', 100: 'var(--sage-100)', 200: 'var(--sage-200)',
+          300: 'var(--sage-300)', 600: 'var(--sage-600)', 700: 'var(--sage-700)', 800: 'var(--sage-800)',
+        },
+        cream: { 50: 'var(--cream-50)', 100: 'var(--cream-100)', 200: 'var(--cream-200)' },
         'positive-soft': 'var(--positive-soft)',
         'positive-on-soft': 'var(--positive-on-soft)',
         'negative-soft': 'var(--negative-soft)',
@@ -41,19 +51,31 @@ export default {
       },
       fontFamily: {
         /*
-          Two typefaces with a job each, which is the whole point of the
-          pairing: Geist carries dense record text, and Space Grotesk carries
-          names, figures and section headings. `sans` is the body face because
-          it is what every unstyled element inherits.
+          One typeface, on the owner's prototype of 27 September 2026.
+
+          It was a pairing — Geist for dense record text, Space Grotesk for
+          names and headings — and the prototype sets `font-sans` to Plus
+          Jakarta Sans for everything. `display` stays as a *name* rather than
+          being deleted, because `h1..h3` and `.font-display` are written
+          across the CRM and pointing them at the same family keeps every one
+          of them working while the two faces are one.
         */
-        sans: ['Geist Variable', 'Geist', 'Inter var', 'Inter', 'system-ui', 'sans-serif'],
-        display: ['Space Grotesk Variable', 'Space Grotesk', 'Geist Variable', 'system-ui', 'sans-serif'],
+        sans: ['Plus Jakarta Sans Variable', 'Plus Jakarta Sans', 'Inter var', 'system-ui', 'sans-serif'],
+        display: ['Plus Jakarta Sans Variable', 'Plus Jakarta Sans', 'Inter var', 'system-ui', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       fontSize: {
         '2xs': ['0.6875rem', { lineHeight: '1rem' }],
       },
       boxShadow: {
+        /*
+          The two faintest lifts, which Tailwind 3 does not ship and the
+          prototype uses everywhere. Without them `shadow-xs` and `shadow-2xs`
+          are quietly nothing in JSX and an outright build error inside
+          `@apply` — so they are real here rather than half-real.
+        */
+        '2xs': '0 1px 1px 0 rgb(15 23 42 / 0.04)',
+        xs: '0 1px 2px 0 rgb(15 23 42 / 0.06)',
         card: '0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06)',
         float: '0 10px 30px -10px rgb(0 0 0 / 0.2)',
       },

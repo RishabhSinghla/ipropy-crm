@@ -1645,6 +1645,108 @@ filled and ringed rather than half-tinted — `CHOSEN`, exported from
 gone on the owner's instruction**: the count is the fact, and a share of an
 already-filtered list is a second number to read past.
 
+## Three panes, and the prototype that set them
+
+**27 September 2026, the owner**, with a screenshot and a `code.html`:
+*"currently we have to split window, now we are going to split it in three
+Split window and call deck merge in to Note/Comment pane/Box and the Recored
+View of Middle Pane completely change … we want exactly same as prototype,
+Also reset All key Fields, and Keys Name as per given files, and Resigns all
+padding, colour code, Font size, font name, Hover style, Box Style, Chip
+style, card style."*
+
+**It is a token swap plus one layout, not a repaint of every screen** — the
+same way the Sovereign Financial design landed, and the only way it could be
+done at all. Colour, type and shape resolve through `styles.css` variables →
+`tailwind.config.js` tokens → the `.card` / `.key-tile` / `.key-label` /
+`.panel-head` classes every module is built from, so changing that layer moved
+the whole product at once.
+
+* **The typeface is Plus Jakarta Sans**, self-hosted from npm. Not Google's
+  CDN, for the reason already written down here: `securityPolicy` in `app.ts`
+  says `style-src 'self'` and names no font host, so a `<link>` to
+  fonts.googleapis.com is refused and the CRM silently falls back to the
+  system face. It replaces the Geist/Space Grotesk pairing; `fontFamily.display`
+  still *exists* and points at the same family, because `h1..h3` and
+  `.font-display` are written across the CRM and deleting the name would have
+  been a hundred-file change for no visible gain.
+* **The brand scale is the prototype's violet** (`#7c3aed` at 500). It is
+  still the admin's to overwrite from Brand settings — these are defaults, not
+  constants. Dark mode needed its own correction again, exactly as plum did:
+  only the steps used as *text* (300, 400) are lifted, because 500 and 600 are
+  fills and white has to keep its ratio on them. `tests/color.test.ts` reads
+  the stylesheet rather than holding hexes, so it moved with the palette and
+  still proves every pair.
+* **`--app-bg` is `#f2f4f2`** and the two new soft voices are `sage` and
+  `cream` — the record hero's gradient and the comment cards. Variables like
+  everything else.
+* **`shadow-xs` and `shadow-2xs` are real now.** The prototype uses them
+  everywhere and Tailwind 3 ships neither, so in JSX they were quietly nothing
+  and inside `@apply` they were an outright build error. Defining them was the
+  only way to have them mean the same thing in both places.
+
+### The three panes
+
+`IpropyWorkspace` is the queue, the record and **the call-and-comments pane**,
+each a white card on the canvas with its own scroll. Below `xl` they stack, and
+only the queue's divider drags — the third pane is a fixed `w-96`, as drawn.
+
+* **Left — the queue.** A card per record: the name with the module's own type
+  flag beside it (a notched clip-path, so it reads as a tag rather than as the
+  round stage chip at the other end of the row), the subtitle line, then price
+  and size under a hairline. The open one is a ringed violet card with a bar
+  down its left edge — **an element, not a border**, which is the rule this
+  repo keeps re-learning: two `border-*` utilities on one row let Tailwind's
+  own stylesheet order pick the colour, and the marker came out slate on slate
+  once. The stage chip keeps the corner it was given that morning, in the slot
+  the prototype leaves open at the end of the bottom row.
+* **Middle — the record.** A hero on a sage-to-cream gradient: where this
+  record sits in the queue and who owns it on one line, the face inside its own
+  completeness ring in the middle, the controls either side, and the facts a
+  call changes along the bottom. Then the tabs, then the Layout Designer's own
+  blocks as cards of labelled tiles.
+* **Right — the call and what was said.** *"call deck merge in to
+  Note/Comment pane/Box."* The deck renders **only while a call is up on this
+  very record**; the notes composer and the activity stream are always there.
+  That is the half that used to be taken away every time somebody pressed Call
+  — the deck stood in the notes box's place and the team's comments went with
+  it.
+
+**Two note boxes, and they are not the same box.** The deck's is saved *with
+the call*; the pane's posts a comment on the record. They had one placeholder
+between them for an hour and that is how a rep types the wrong thing into the
+wrong one, so they say different things now.
+
+**One measuring rule, two looks.** `HeaderFieldStrip` gained
+`variant="chips"` for the hero's bottom row and keeps `variant="columns"` for
+the WhatsApp chat header. A second copy of the count-what-fits logic is how one
+header learns about a new field and the other does not. In the chip variant an
+empty field is **skipped**: a chip carries the fact and not its name, so an
+empty one is a bordered dash saying nothing, and two of them are the row.
+
+### Admin → Split View is gone
+
+*"You can completely remove master of Split view, bcoz we need to design i.
+future by my self of all key fields."* It was a third source that outranked
+the Layout Designer and the module's own flags, and with the new middle pane it
+had nothing left to arrange. Removed: the admin screen, its route, the
+`ui.split_view` reader on the server, `SplitViewLayout` in shared, the
+`chosen` argument to `withQueueSubtitle`, and `e2e/splitViewAdmin.spec.ts`.
+
+**No migration drops the row.** `ui.split_view` is still in the database with
+whatever was arranged before today; it is simply no longer read, so bringing it
+back is code and not data recovery. What decides a record's fields now is the
+**Layout Designer** (blocks and header) and the Field Manager's
+`config.listSubtitle` flag — which is what he means by designing the key fields
+himself.
+
+**Deliberately not built: the prototype's three canned note chips** (*"+ Price
+negotiable"*, *"+ Wants 3BHK park facing"*, *"+ Follow-up tomorrow 4 PM"*).
+They are business vocabulary, and writing three phrases into a component is the
+one thing this CRM is built to avoid — the next reader cannot tell whether they
+are a decision or a placeholder, and no admin can change them. They belong on a
+picklist, which is a change worth asking for rather than guessing at.
+
 ## Lists open on the split view
 
 > **27 September 2026: the split view is the only view.** The table, the board, and

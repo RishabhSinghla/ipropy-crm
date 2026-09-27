@@ -24,7 +24,7 @@ import { Skeleton } from './ui';
  * stands.
  *
  * **Nothing here names a field.** The cards come from `useRecordPanes`, which
- * reads Admin → Split View first and the Layout Designer second, so an admin
+ * reads the Layout Designer's arrangement, so an admin
  * who rearranges a module rearranges this pane too and nobody has to deploy.
  * A screen that named `budget` or `unit_number` itself would freeze those
  * into a release, which is the one rule this CRM is built around.

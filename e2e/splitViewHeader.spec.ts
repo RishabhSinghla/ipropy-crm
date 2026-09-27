@@ -11,6 +11,20 @@ import { expect, test } from '@playwright/test';
 
 test.use({ viewport: { width: 1500, height: 900 } });
 
+/**
+ * The middle pane — the record itself.
+ *
+ * A `<section>` since the three-pane rebuild of 27 September 2026, and
+ * `page.locator('main')` also matches the app shell's own `<main>`. Named by
+ * the tab strip it contains, which only this pane has.
+ */
+function recordPane(page: import('@playwright/test').Page) {
+  return page.getByTestId('ipropy-workspace')
+    .locator('section')
+    .filter({ has: page.getByRole('navigation', { name: 'Record workspace sections' }) })
+    .first();
+}
+
 async function splitView(page: import('@playwright/test').Page): Promise<void> {
   await page.addInitScript(() => {
     try { localStorage.setItem('ipropy.listmode.leads', 'ipropy'); } catch { /* see listMode.ts */ }
@@ -21,7 +35,7 @@ async function splitView(page: import('@playwright/test').Page): Promise<void> {
 
 test('every header field sits on the same line', async ({ page }) => {
   await splitView(page);
-  const header = page.getByTestId('ipropy-workspace').locator('main > header');
+  const header = recordPane(page).locator('header').first();
 
   /*
     Measured, not read off a class: `flex-nowrap` present while the row still
@@ -44,7 +58,7 @@ test('every header field sits on the same line', async ({ page }) => {
 test('a narrow pane says there are more fields rather than cutting one in half', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 900 });
   await splitView(page);
-  const header = page.getByTestId('ipropy-workspace').locator('main > header');
+  const header = recordPane(page).locator('header').first();
   const strip = header.getByTestId('header-fields');
   const more = header.getByTitle(/More fields than fit/);
 
@@ -75,7 +89,7 @@ test('a narrow pane says there are more fields rather than cutting one in half',
     The strip clips, and clipping alone cut the last field through the middle
     of a word — "Budg…" — which reads as a broken screen. Anything that does
     not fit whole is made invisible and the line ends with a `…`, which is the
-    cue to shorten the list in Admin → Split View.
+    cue to arrange fewer of them in the Layout Designer's header.
   */
   await expect(more).toBeVisible();
 
@@ -90,7 +104,7 @@ test('a narrow pane says there are more fields rather than cutting one in half',
 
 test('the actions are star, WhatsApp, call, tag and the menu — and Delete is only in the menu', async ({ page }) => {
   await splitView(page);
-  const header = page.getByTestId('ipropy-workspace').locator('main > header');
+  const header = recordPane(page).locator('header').first();
 
   await expect(header.getByRole('button', { name: 'Edit tags' })).toBeVisible();
 
@@ -121,7 +135,7 @@ test('the tag icon actually tags the record', async ({ page }) => {
   }, marker);
 
   try {
-    const header = page.getByTestId('ipropy-workspace').locator('main > header');
+    const header = recordPane(page).locator('header').first();
     await header.getByRole('button', { name: 'Edit tags' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByText('Tags').first()).toBeVisible();
@@ -140,7 +154,7 @@ test('the tag icon actually tags the record', async ({ page }) => {
 
 test('the star turns the record into a favourite and says so', async ({ page }) => {
   await splitView(page);
-  const header = page.getByTestId('ipropy-workspace').locator('main > header');
+  const header = recordPane(page).locator('header').first();
 
   /*
     It saved and the button did not move: `invalidateRecordQueries` was called

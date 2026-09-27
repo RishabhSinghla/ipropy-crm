@@ -179,9 +179,14 @@ describe('withQueueSubtitle', () => {
       .toEqual(['full_name', 'lead_status', 'contact_type']);
   });
 
-  it("takes the admin's own list over the flagged fields", () => {
-    expect(withQueueSubtitle(['full_name'], leads, ['kyc_status']))
-      .toEqual(['full_name', 'kyc_status', 'lead_status']);
+  /*
+    Admin → Split View used to override the flagged fields here, and it was
+    removed on 27 September 2026 on the owner's instruction — the Field
+    Manager's `listSubtitle` flag is the one answer now. The rule left to pin
+    is that a field nobody flagged is not asked for.
+  */
+  it('asks only for what the module itself flags', () => {
+    expect(withQueueSubtitle(['full_name'], leads)).not.toContain('kyc_status');
   });
 
   it('leaves the server defaults alone', () => {

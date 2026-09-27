@@ -20,17 +20,19 @@ import { cn } from './utils';
 /** The button itself. `on` means this filter is narrowing the list right now. */
 export function toolbarButton(on: boolean, extra?: string): string {
   return cn(
-    'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold text-white shadow-xs transition-colors',
+    // Fully round, on the owner's prototype of 27 September 2026 — a row of
+    // pills rather than a row of tabs.
+    'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-white shadow-xs transition-colors',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1',
     // A filter that is on is lighter and ringed, not a different colour: the
-    // row has to stay one row of purple buttons for the "on" one to stand out
+    // row has to stay one row of purple pills for the "on" one to stand out
     // at all.
-    on ? 'bg-brand-600 ring-2 ring-brand-300 dark:ring-brand-700' : 'bg-brand-800 hover:bg-brand-900',
+    on ? 'bg-brand-700 ring-2 ring-brand-300 dark:ring-brand-700' : 'bg-brand-900 hover:bg-brand-800',
     extra,
   );
 }
 
 /** The number beside the label, on the same fill. */
 export function toolbarCount(extra?: string): string {
-  return cn('rounded-full bg-white/20 px-1.5 py-px text-[10px] font-bold tabular-nums text-white', extra);
+  return cn('rounded-full bg-brand-700 px-1.5 py-px text-[10px] font-semibold tabular-nums text-white', extra);
 }

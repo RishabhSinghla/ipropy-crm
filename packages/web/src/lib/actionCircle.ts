@@ -27,6 +27,12 @@ export const ACTION_BASE = 'inline-flex h-8 w-8 items-center justify-center roun
   in the CRM scroll away once. So a state swaps this string out rather than
   trying to beat it.
 */
-export const ACTION_REST = 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+/*
+  **27 September 2026, the prototype:** white with a hairline and the faintest
+  shadow, rather than a grey fill. On the record hero's soft gradient a grey
+  disc reads as a hole punched in the banner; a white one reads as a control
+  sitting on it. The hover behaviour above is unchanged.
+*/
+export const ACTION_REST = 'border-slate-200 bg-white text-slate-600 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 
 export const ACTION_CIRCLE = `${ACTION_BASE} ${ACTION_REST}`;

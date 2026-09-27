@@ -87,7 +87,11 @@ function QueueBar({ deck }: { deck: CallDeckState }): JSX.Element {
       {deck.nextLabel && (
         <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-brand-100 px-2.5 py-1 text-xs font-semibold text-brand-800 dark:bg-brand-950/60 dark:text-brand-200">
           <SkipForward className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          <span className="shrink-0 opacity-70">Next:</span>
+          {/* Not `opacity-70`: at 70% over the chip's own tint this word came
+              out at 4.43:1 under the violet palette — a serious contrast
+              violation the scan catches. Weight says "secondary" without
+              touching the colour. */}
+          <span className="shrink-0 font-medium">Next:</span>
           <span className="truncate font-bold">{deck.nextLabel}</span>
         </span>
       )}

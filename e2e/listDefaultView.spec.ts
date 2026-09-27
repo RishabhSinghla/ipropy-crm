@@ -26,6 +26,18 @@ async function forgetTheChoice(page: import('@playwright/test').Page, path: stri
   await page.reload();
 }
 
+/**
+ * The middle pane — the record itself.
+ *
+ * Since the three-pane rebuild of 27 September 2026 it is a `<section>` rather
+ * than a `<main>`, and `page.locator('main')` also matches the app shell's own
+ * `<main>`, whose first heading is not the record's name. One helper, so a
+ * spec cannot accidentally measure the shell.
+ */
+function recordPane(page: import('@playwright/test').Page) {
+  return page.getByTestId('ipropy-workspace').locator('section').filter({ has: page.getByRole('navigation', { name: 'Record workspace sections' }) }).first();
+}
+
 for (const module of ['leads', 'properties']) {
   test(`a fresh person lands on the split view — /${module}`, async ({ page }) => {
     await forgetTheChoice(page, `/${module}`);
@@ -172,7 +184,13 @@ test('the queue is faces and facts, with the completeness bar off it', async ({ 
     only that it left.
   */
   await expect(queue.getByRole('img', { name: /Record \d+% complete/ })).toHaveCount(0);
-  await expect(page.locator('main').getByRole('img', { name: /Record \d+% complete/ })).toBeVisible();
+  /*
+    27 September 2026: it is the ring around the face in the record hero now,
+    which is where the prototype puts it. Still a `role="img"` with the same
+    spoken label, so this assertion says where it went rather than only that it
+    left the queue.
+  */
+  await expect(recordPane(page).getByRole('img', { name: /Form strength \d+%/ })).toBeVisible();
 
   /*
     The chevron that used to sit at the end of every row is gone. It pointed
@@ -182,28 +200,27 @@ test('the queue is faces and facts, with the completeness bar off it', async ({ 
   await expect(queue.locator('svg.lucide-chevron-right')).toHaveCount(0);
 });
 
-test('the record\'s actions sit on the name\'s own line', async ({ page }) => {
+test('the record\'s controls sit either side of the name, not above it', async ({ page }) => {
   await forgetTheChoice(page, '/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
 
   /*
-    They had a row of their own above the name and the owner sent the
-    screenshot back. Measured rather than read off a class: the star's middle
-    has to fall inside the name's own line, which is the only thing that says
-    they are on it.
+    The prototype of 27 September 2026 centres the face and the name and puts
+    the controls in two groups either side of it. Measured rather than read off
+    a class: the star has to fall on the same band as the name and to the
+    *right* of it, which is the only thing that says it is beside the name
+    rather than stacked above it.
   */
-  // The record pane's own header. `main` alone matches the app shell's too,
-  // whose first heading is not this record's name.
-  const header = page.getByTestId('ipropy-workspace').locator('main > header');
+  const header = recordPane(page).locator('header').first();
   const name = header.getByRole('heading').first();
   const star = header.locator('button[title$="starred"], button[title^="Star "]').first();
   const nameBox = (await name.boundingBox())!;
   const starBox = (await star.boundingBox())!;
   const middle = starBox.y + starBox.height / 2;
-  expect(middle, 'the actions are above the name').toBeGreaterThan(nameBox.y - 8);
-  expect(middle, 'the actions are below the name').toBeLessThan(nameBox.y + nameBox.height + 8);
-  // And at the end of that line rather than in front of the name.
-  expect(starBox.x).toBeGreaterThan(nameBox.x);
+
+  expect(starBox.x, 'the star is to the left of the name').toBeGreaterThan(nameBox.x);
+  expect(middle, 'the star sits above the name block').toBeGreaterThan(nameBox.y - 90);
+  expect(middle, 'the star sits below the name block').toBeLessThan(nameBox.y + nameBox.height + 20);
 });
 
 test('the queue can be ticked in bulk and sorted from its own header', async ({ page }) => {
@@ -244,27 +261,31 @@ test('the queue can be ticked in bulk and sorted from its own header', async ({ 
   await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('Recently updated');
 });
 
-test('the notes sit beside the record rather than in a third column', async ({ page }) => {
+test('the notes are the third pane, beside the record', async ({ page }) => {
   await forgetTheChoice(page, '/leads');
   const desk = page.getByTestId('ipropy-workspace');
   await expect(desk).toBeVisible({ timeout: 30_000 });
 
   /*
-    Two panes, as the owner asked: the notes moved out of their own column and
-    in beside the fields. Measured rather than read off a class name, because
-    a class that is present while the card still sits underneath is exactly
-    the bug.
+    **27 September 2026, the owner:** three panes, with *"call deck merge in to
+    Note/Comment pane/Box"*. The notes moved out from under the fields and into
+    a pane of their own on the right, which is the half that used to be taken
+    away whenever a call started.
+
+    Measured rather than read off a class name, because a class that is present
+    while the pane still sits underneath is exactly the bug.
   */
-  const fields = desk.getByText('Basic Information').first();
-  const notes = desk.getByRole('heading', { name: 'Notes' });
+  const fields = desk.getByText(/Information$/).first();
+  const notes = desk.getByTestId('notes-panel');
   await expect(notes).toBeVisible();
   const fieldsBox = (await fields.boundingBox())!;
   const notesBox = (await notes.boundingBox())!;
-  expect(notesBox.x, 'the notes are below the fields, not beside them').toBeGreaterThan(fieldsBox.x);
-  expect(Math.abs(notesBox.y - fieldsBox.y), 'the notes start well below the fields').toBeLessThan(40);
+  expect(notesBox.x, 'the notes are not to the right of the fields').toBeGreaterThan(fieldsBox.x);
+  expect(notesBox.y, 'the notes start below the fields rather than beside them').toBeLessThan(fieldsBox.y + 200);
 
-  // And the third divider went with it.
+  // Three panes, so the queue's divider is still the only one that drags.
   await expect(page.getByRole('separator', { name: 'Resize the notes panel' })).toHaveCount(0);
+  await expect(page.getByRole('separator', { name: 'Resize the list' })).toHaveCount(1);
 });
 
 test('a record\'s tags read as chips, before the icons', async ({ page }) => {
@@ -281,7 +302,7 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
   const desk = page.getByTestId('ipropy-workspace');
   await expect(desk).toBeVisible({ timeout: 30_000 });
 
-  const header = desk.locator('main > header');
+  const header = recordPane(page).locator('header').first();
   const dialog = page.getByRole('dialog');
   /*
     Retried, because the "Tags updated" toast lands over this corner of the

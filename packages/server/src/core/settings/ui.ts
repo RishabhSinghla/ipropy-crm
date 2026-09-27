@@ -11,47 +11,14 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
-import type { HeaderTab, SplitViewLayout, UiSettings } from '@ipropy/shared';
+import type { HeaderTab, UiSettings } from '@ipropy/shared';
 
 const DEFAULTS: UiSettings = {
   inlineEdit: false,
   openInNewTab: true,
   headerTabs: null,
   socialPosition: 'right',
-  splitView: null,
 };
-
-/**
- * `{ module: { queue, header, form } }`, ignoring anything that is not that.
- *
- * An empty list is dropped rather than stored, so a malformed row can never
- * mean "show no fields". The split view's three lists each
- * fall back to something sensible when absent (the flagged subtitle fields,
- * the Layout Designer's header, its blocks), and an empty array would override
- * that fallback with nothing at all.
- *
- * Exported for its tests, which are the only place this shape is proved.
- */
-export function readSplitView(value: unknown): Record<string, SplitViewLayout> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const names = (list: unknown): string[] => (Array.isArray(list)
-    ? list.filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
-    : []);
-
-  const out: Record<string, SplitViewLayout> = {};
-  for (const [module, panes] of Object.entries(value as Record<string, unknown>)) {
-    if (!panes || typeof panes !== 'object' || Array.isArray(panes)) continue;
-    const row = panes as Record<string, unknown>;
-    const layout: SplitViewLayout = {
-      queue: names(row.queue),
-      header: names(row.header),
-      form: names(row.form),
-    };
-    // A module with nothing chosen anywhere is the same as no entry at all.
-    if (layout.queue.length || layout.header.length || layout.form.length) out[module] = layout;
-  }
-  return Object.keys(out).length ? out : null;
-}
 
 let cached: UiSettings | null = null;
 
@@ -96,7 +63,6 @@ export async function uiSettings(): Promise<UiSettings> {
       socialPosition: position === 'brand' || position === 'right' || position === 'hidden'
         ? position
         : DEFAULTS.socialPosition,
-      splitView: readSplitView(map.get('ui.split_view')),
     };
     return cached;
   } catch (err) {

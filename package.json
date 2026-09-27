@@ -2,7 +2,7 @@
   "name": "ipropy-crm",
   "version": "1.0.0",
   "private": true,
-  "description": "iPropy \u2014 AI-native, metadata-driven CRM for real estate",
+  "description": "iPropy — AI-native, metadata-driven CRM for real estate",
   "license": "UNLICENSED",
   "workspaces": [
     "packages/shared",
@@ -61,5 +61,8 @@
   "overrides": {
     "qs": "^6.16.0",
     "fast-uri": "^3.1.7"
+  },
+  "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0"
   }
 }

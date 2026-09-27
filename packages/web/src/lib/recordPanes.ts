@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
 import { assignmentField, pipelineFieldOf, subtitleFieldsOf } from './fields';
-import { useApp } from './store';
 
 /**
  * Which fields a record's panes show, decided once for every screen that
@@ -17,10 +16,18 @@ import { useApp } from './store';
  * differently depending on which screen you arrived from.
  *
  * Everything here is **metadata, never a field name written into code**: the
- * admin's Split View arrangement first, then the Layout Designer's, then the
- * module's own flags. A screen that named `budget` or `unit_number` itself
- * would freeze those into a deploy, which is the one rule this CRM is built
- * around.
+ * Layout Designer's arrangement first, then the module's own flags. A screen
+ * that named `budget` or `unit_number` itself would freeze those into a
+ * deploy, which is the one rule this CRM is built around.
+ *
+ * **Admin → Split View was removed on 27 September 2026, on the owner's
+ * instruction** — *"You can completely remove master of Split view, bcoz we
+ * need to design i. future by my self of all key fields"*. It was a third
+ * source that outranked the other two, and with the new three-pane record it
+ * had nothing left to arrange: the middle pane shows the Layout Designer's
+ * own blocks. The `ui.split_view` row is simply no longer read; no migration
+ * drops it, so an arrangement made before today is still in the database if
+ * it is ever wanted back.
  */
 export type DescribedModule = ModuleMeta & {
   permissions: { view: boolean; create: boolean; edit: boolean; delete: boolean };
@@ -60,8 +67,6 @@ export interface RecordPanes {
   blocks: FieldBlockSpec[];
   /** The line under a name in a queue — `Buyer — 304`. */
   subtitleFields: FieldMeta[];
-  /** True when Admin → Split View chose that line, rather than the CRM. */
-  queueChosen: boolean;
   assignedField?: FieldMeta;
   statusField?: FieldMeta;
   followUpField?: FieldMeta;
@@ -75,26 +80,9 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
   );
   const fieldMap = useMemo(() => new Map(module.fields.map((field) => [field.name, field])), [module.fields]);
 
-  /*
-    What Admin → Split View says this module shows, if anything.
-
-    Three ordered lists, each of which **wins over the shipped answer only when
-    it is not empty**. That is the whole safety of the setting: a module nobody
-    has arranged behaves exactly as it did before the screen existed, and an
-    admin who clears a list gets the fallback back rather than a blank pane.
-  */
-  const panes = useApp((st) => st.user?.ui?.splitView?.[module.name]) ?? null;
-  const pickFields = useMemo(() => (names: string[] | undefined): FieldMeta[] => (names ?? [])
-    .map((name) => fieldMap.get(name))
-    .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden')),
-  [fieldMap]);
-
   const assignedField = useMemo(() => assignmentField(module.fields), [module.fields]);
 
-  const subtitleFields = useMemo(() => {
-    const chosen = pickFields(panes?.queue);
-    return chosen.length ? chosen : subtitleFieldsOf(module.fields);
-  }, [panes?.queue, pickFields, module.fields]);
+  const subtitleFields = useMemo(() => subtitleFieldsOf(module.fields), [module.fields]);
 
   /*
     The module's own pipeline field — Lead Status on a contact, Property Status
@@ -113,35 +101,28 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
   const phoneField = useMemo(() => module.fields.find((f) => f.uitype === 'phone'), [module.fields]);
 
   const headerFields = useMemo(() => {
-    const chosen = pickFields(panes?.header);
-    if (chosen.length) return chosen.filter((field) => field.name !== assignedField?.name);
-
     const names: string[] = [...(layout.headerFields ?? [])];
     for (const field of [phoneField, followUpField, statusField]) {
       if (field && !names.includes(field.name)) names.push(field.name);
     }
+    const identity = new Set(module.labelFields);
     return names
       .filter((name) => name !== assignedField?.name)
+      // The record's own name is the heading above this strip; repeating it
+      // two inches below said the same thing twice.
+      .filter((name) => !identity.has(name))
       .filter((name) => !DEMOTED_FROM_HEADER.has(name))
       // Contact Type and Unit Number already read on every queue row, under
       // the name. Repeating them two inches away said the same thing twice.
       .filter((name) => !subtitleFields.some((field) => field.name === name))
       .map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
-  }, [panes?.header, pickFields, layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleFields]);
+  }, [layout.headerFields, fieldMap, module.labelFields, assignedField, phoneField, followUpField, statusField, subtitleFields]);
 
   const blocks = useMemo<FieldBlockSpec[]>(() => {
     const identity = new Set(module.labelFields);
     const usable = (field: FieldMeta | undefined): field is FieldMeta =>
       Boolean(field && field.isActive && field.displayType !== 'hidden' && field.uitype !== 'autonumber');
-
-    /*
-      An admin's own list is one card in their order. Deliberately flat: the
-      blocks are the Layout Designer's grouping, and a second screen inventing
-      groups of its own would be two answers to "which section is this in".
-    */
-    const chosen = pickFields(panes?.form).filter(usable);
-    if (chosen.length) return [{ key: 'chosen', label: 'Details', columns: 2, fields: chosen }];
 
     const arranged = (layout.blocks ?? [])
       .map((block) => ({
@@ -179,8 +160,7 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
         .filter((field) => !identity.has(field.name))
         .sort((a, b) => a.sequence - b.sequence),
     }];
-  }, [panes?.form, pickFields, layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
+  }, [layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
 
-  const queueChosen = pickFields(panes?.queue).length > 0;
-  return { headerFields, blocks, subtitleFields, queueChosen, assignedField, statusField, followUpField, phoneField };
+  return { headerFields, blocks, subtitleFields, assignedField, statusField, followUpField, phoneField };
 }

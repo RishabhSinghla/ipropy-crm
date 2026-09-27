@@ -76,9 +76,6 @@ export default function ListView(): JSX.Element {
   // every record the current view/filter matches, not just this page's ids.
   const [selectedAll, setSelectedAll] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
-  // Admin → Split View's queue line. Requested as columns so the line is not
-  // blank on a view whose columns happen not to include those fields.
-  const splitQueue = useApp((st) => st.user?.ui?.splitView?.[moduleName ?? '']?.queue ?? null);
   const [showFilters, setShowFilters] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -450,10 +447,10 @@ export default function ListView(): JSX.Element {
       lines from reading blank.
     */
     columns: withQueueCardColumns(
-      withQueueSubtitle(meta ? [...meta.labelFields] : undefined, meta, splitQueue ?? undefined),
+      withQueueSubtitle(meta ? [...meta.labelFields] : undefined, meta),
       meta?.fields,
     ),
-  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, splitQueue, meta]);
+  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta]);
 
   // The call deck must resume this *exact* queue after Save & Next. The URL's
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a

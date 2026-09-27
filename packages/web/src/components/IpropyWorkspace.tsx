@@ -1,7 +1,7 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { formatDate, recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
+import { formatDate, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Link2,
   MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
@@ -25,7 +25,8 @@ import { followUpChip, type FollowUpChip as FollowUpChipValue, type FollowUpTone
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
-import { ACTION_BASE, ACTION_CIRCLE, ACTION_REST } from '../lib/actionCircle';
+import { ACTION_CIRCLE } from '../lib/actionCircle';
+import { StrengthRing } from './StrengthRing';
 import { api } from '../lib/api';
 import { activeSortOption, sortOptions } from '../lib/listSort';
 import { cn, restrictionForField } from '../lib/utils';
@@ -166,7 +167,7 @@ export function IpropyWorkspace({
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey>('overview');
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
   /*
@@ -189,7 +190,7 @@ export function IpropyWorkspace({
     Wrapping was the old behaviour, and a header that grows to two or three
     rows eats the screen the work happens on. Clipping alone would hide fields
     silently, so the row is measured and a `…` appears when something is out of
-    sight — the cue to go and shorten the list in Admin → Split View. That
+    sight — the cue to arrange fewer of them in the Layout Designer. That
     measuring lives in `HeaderFieldStrip` now, shared with the Chats header.
   */
   const [paneTop, setPaneTop] = useState(0);
@@ -298,14 +299,14 @@ export function IpropyWorkspace({
   }, []);
 
   /*
-    Which fields this module's panes show — the admin's Split View
+    Which fields this module's panes show — the Layout Designer's
     arrangement, then the Layout Designer's, then the module's own flags.
 
     One hook, because the WhatsApp Chats screen shows the same record beside a
     conversation and must reach the same answer. A second copy of this
     reasoning is the mistake this repo keeps finding months later.
   */
-  const { headerFields, blocks, subtitleFields, queueChosen, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
+  const { headerFields, blocks, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
   const { data: assignableUsers = [] } = useQuery({
     queryKey: ['users', 'assignable'],
     queryFn: () => api.users(false, false, true),
@@ -395,7 +396,7 @@ export function IpropyWorkspace({
     url: callQueueUrl,
   }}>
     <WhatsAppComposerProvider recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
-    <section data-testid="ipropy-workspace" className="bg-[#f7f9fc] dark:bg-slate-950">
+    <section data-testid="ipropy-workspace" className="bg-[var(--app-bg)] dark:bg-slate-950">
     {/*
       A fixed-height row with one draggable divider, not a min-height one.
 
@@ -411,92 +412,96 @@ export function IpropyWorkspace({
     */}
     <div
       ref={shell}
-      className="flex min-h-[calc(100vh-13rem)] flex-col xl:h-[var(--pane-h)] xl:min-h-0 xl:flex-row"
+      className="flex min-h-[calc(100vh-13rem)] flex-col gap-2 p-2 xl:h-[var(--pane-h)] xl:min-h-0 xl:flex-row"
       style={{
         ['--queue-w' as string]: `${queueWidth}px`,
         ['--pane-h' as string]: paneTop ? `calc(100vh - ${paneTop}px)` : 'calc(100vh - 13rem)',
       }}
     >
-      <aside className="flex w-full shrink-0 flex-col border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)] xl:border-b-0">
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-200 px-3 dark:border-slate-800">
-          {/* Beside the module's own name, because that is what it selects:
-              everything on this page, for the bulk-edit bar the list already
-              carries. */}
-          {onToggleAll && (
-            <input
-              type="checkbox"
-              aria-label={`Select all ${module.label.toLowerCase()} shown`}
-              checked={allChecked}
-              onChange={(event) => onToggleAll(event.target.checked)}
-              className="h-4 w-4 shrink-0 rounded border-slate-300"
-            />
-          )}
-          <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-            <ModuleIcon name={module.icon} className="h-4 w-4 shrink-0 text-brand-600" />{module.label}
-          </p>
-          <span className="shrink-0 text-2xs font-semibold text-muted">{rows.length}</span>
+      {/* ---------------------------------------------------------------- */}
+      {/* Pane 1 — the queue.                                              */}
+      {/* ---------------------------------------------------------------- */}
+      <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)]">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
+          <span className="flex min-w-0 items-center gap-1.5">
+            {/* Beside the module's own name, because that is what it selects:
+                everything on this page, for the bulk-edit bar the list already
+                carries. */}
+            {onToggleAll && (
+              <input
+                type="checkbox"
+                aria-label={`Select all ${module.label.toLowerCase()} shown`}
+                checked={allChecked}
+                onChange={(event) => onToggleAll(event.target.checked)}
+                className="h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-slate-300"
+              />
+            )}
+            <span className="flex min-w-0 items-center gap-1 truncate text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              <ModuleIcon name={module.icon} className="h-3 w-3 shrink-0 text-slate-400" />
+              <span className="truncate">{module.label}</span>
+              <span className="shrink-0 font-normal text-muted">({rows.length})</span>
+            </span>
+          </span>
           {onSort && (
-            <div className="ml-auto shrink-0">
-              <Dropdown
-                align="right"
-                trigger={(
-                  <button
-                    type="button"
-                    className="inline-flex max-w-[11rem] items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-2xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:text-slate-300"
-                    aria-label="Sort this list"
-                  >
-                    <ArrowUpDown className="h-3 w-3 shrink-0" />
-                    <span className="truncate">
-                      {chosen?.label ?? `Sorted by ${sortedByColumn?.label ?? 'a column'}`}
-                    </span>
-                  </button>
-                )}
-              >
-                {(close) => (
-                  <div className="py-1" data-testid="queue-sort-menu">
-                    {/*
-                      One direction control for the whole menu rather than a
-                      second row per option — "Minimal Drop down, Specially
-                      Sorting by Z-A / A-Z" (27 September 2026). It is dead
-                      while nothing is sorted, because there is no direction
-                      for an order nobody has asked for.
-                    */}
-                    <div className="flex items-center gap-1 px-3 pb-1.5 pt-1.5">
-                      <p className="mr-auto text-2xs font-bold uppercase tracking-wide text-slate-400">Sort by</p>
-                      {(['asc', 'desc'] as const).map((dir) => (
-                        <button
-                          key={dir}
-                          type="button"
-                          disabled={!chosen?.by && !sortBy}
-                          title={dir === 'asc' ? (chosen?.ascHint ?? 'A–Z') : (chosen?.descHint ?? 'Z–A')}
-                          onClick={() => onSort(sortBy, dir)}
-                          className={cn(
-                            'rounded px-1.5 py-0.5 text-2xs font-bold transition-colors',
-                            sortDir === dir && (chosen?.by || sortBy)
-                              ? 'bg-brand-700 text-white'
-                              : 'text-slate-500 hover:bg-[var(--surface-muted)] disabled:opacity-40 dark:text-slate-400',
-                          )}
-                        >
-                          {dir === 'asc' ? 'A–Z' : 'Z–A'}
-                        </button>
-                      ))}
-                    </div>
-                    {choices.map((option) => (
-                      <DropdownItem
-                        key={option.key}
-                        icon={<Check className={cn('h-3.5 w-3.5', chosen?.key === option.key ? 'text-brand-600' : 'invisible')} />}
-                        onClick={() => { onSort(option.by, sortDir ?? 'desc'); close(); }}
+            <Dropdown
+              align="right"
+              trigger={(
+                <button
+                  type="button"
+                  className="flex max-w-[10rem] shrink-0 items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300"
+                  aria-label="Sort this list"
+                >
+                  <ArrowUpDown className="h-3 w-3 shrink-0 text-slate-400" />
+                  <span className="truncate">
+                    {chosen?.label ?? `Sorted by ${sortedByColumn?.label ?? 'a column'}`}
+                  </span>
+                </button>
+              )}
+            >
+              {(close) => (
+                <div className="py-1" data-testid="queue-sort-menu">
+                  {/*
+                    One direction control for the whole menu rather than a
+                    second row per option — "Minimal Drop down, Specially
+                    Sorting by Z-A / A-Z" (27 September 2026). It is dead
+                    while nothing is sorted, because there is no direction
+                    for an order nobody has asked for.
+                  */}
+                  <div className="flex items-center gap-1 px-3 pb-1.5 pt-1.5">
+                    <p className="mr-auto text-2xs font-bold uppercase tracking-wide text-muted">Sort by</p>
+                    {(['asc', 'desc'] as const).map((dir) => (
+                      <button
+                        key={dir}
+                        type="button"
+                        disabled={!chosen?.by && !sortBy}
+                        title={dir === 'asc' ? (chosen?.ascHint ?? 'A–Z') : (chosen?.descHint ?? 'Z–A')}
+                        onClick={() => onSort(sortBy, dir)}
+                        className={cn(
+                          'rounded px-1.5 py-0.5 text-2xs font-bold transition-colors',
+                          sortDir === dir && (chosen?.by || sortBy)
+                            ? 'bg-brand-700 text-white'
+                            : 'text-slate-500 hover:bg-[var(--surface-muted)] disabled:opacity-40 dark:text-slate-400',
+                        )}
                       >
-                        {option.label}
-                      </DropdownItem>
+                        {dir === 'asc' ? 'A–Z' : 'Z–A'}
+                      </button>
                     ))}
                   </div>
-                )}
-              </Dropdown>
-            </div>
+                  {choices.map((option) => (
+                    <DropdownItem
+                      key={option.key}
+                      icon={<Check className={cn('h-3.5 w-3.5', chosen?.key === option.key ? 'text-brand-600' : 'invisible')} />}
+                      onClick={() => { onSort(option.by, sortDir ?? 'desc'); close(); }}
+                    >
+                      {option.label}
+                    </DropdownItem>
+                  ))}
+                </div>
+              )}
+            </Dropdown>
           )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto bg-white dark:bg-slate-950">
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
           {rows.map((row) => (
             <QueueCard
               key={row.id}
@@ -507,7 +512,6 @@ export function IpropyWorkspace({
               card={cardFields}
               followUpField={followUpField ?? cardFields.followUp}
               statusField={statusField}
-              adminLine={queueChosen ? subtitleFields : null}
               onSelect={() => openRecord(row.id)}
               onToggle={(checked) => onToggleSelect(row.id, checked)}
             />
@@ -517,176 +521,104 @@ export function IpropyWorkspace({
 
       <SplitHandle label="Resize the list" width={queueWidth} onDrag={resize} />
 
-      {/*
-        **One scroll area, never two stacked.** The WhatsApp tab has its own
-        scrolling message list; with this pane scrolling too, the wheel went to
-        whichever happened to be under the mouse, so the chat scrolled only when
-        the pointer sat over the bubbles and the whole pane lurched everywhere
-        else — 25 September 2026, the owner: *"only bringing mouse to a certain
-        place scroll is working."* On that tab the pane holds still and the list
-        does all the scrolling.
-      */}
-      {active && <main className={cn(
-        'flex min-h-0 min-w-0 flex-1 flex-col',
-        tab === 'whatsapp' ? 'overflow-hidden' : 'overflow-y-auto',
-      )}>
-        {/* Sticky, so the name, the assignment and the tabs stay on screen
-            while the fields below them scroll. */}
-        <header className="relative sticky top-0 z-10 border-b border-slate-200 bg-white px-4 pt-2 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
-          {/*
-            The actions live on the name's own line, at the end of it.
-
-            They had a row of their own above the name, which is what the
-            owner's words asked for and not what his screenshot showed — and
-            when he saw it he sent the screenshot back: *"Move icons ... with
-            an alignment of Full Name ... should be same as per screenshot"*.
-            So they are on that line now, and the screenshot decides the rest:
-            plain light circles, one weight of grey, no colour per button. The
-            colours made four ordinary controls look like four warnings.
-          */}
-          {/*
-            The live call, floating in the header's top-right corner — where
-            the owner drew it, and out of the layout so nothing moves when it
-            appears.
-          */}
-
-          <div className="flex min-w-0 flex-wrap items-start gap-2">
-            <div className="mt-1 inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-800" aria-label="Record navigation">
-              <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700">
-                <ChevronLeft className="h-4 w-4" />
+      {/* ---------------------------------------------------------------- */}
+      {/* Pane 2 — the record.                                             */}
+      {/* ---------------------------------------------------------------- */}
+      {active && <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        {/*
+          The hero, as the owner drew it on 27 September 2026: where this
+          record sits in the queue and who owns it on one line, the face in the
+          middle of its own completeness ring, the controls either side of it,
+          and the facts a rep changes on a call along the bottom.
+        */}
+        <header className="shrink-0 border-b border-slate-200/80 bg-gradient-to-b from-sage-50/70 via-cream-50 to-white p-3.5 dark:border-slate-800 dark:from-slate-800/60 dark:via-slate-900 dark:to-slate-900">
+          <div className="mb-2 flex w-full items-center justify-between gap-2">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200/60 bg-white/80 px-2 py-0.5 text-xs font-medium text-slate-500 shadow-2xs dark:border-slate-700 dark:bg-slate-800/80" aria-label="Record navigation">
+              <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
+                <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="min-w-[3.4rem] text-center text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300" aria-live="polite">
-                {neighbours?.position && neighbours.total ? `${neighbours.position} / ${neighbours.total}` : '—'}
+              <span className="px-1 text-[11px] font-semibold tabular-nums text-slate-700 dark:text-slate-200" aria-live="polite">
+                {neighbours?.position && neighbours.total ? `${neighbours.position} / ${neighbours.total.toLocaleString('en-IN')}` : '—'}
               </span>
-              <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700">
-                <ChevronRight className="h-4 w-4" />
+              <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
+                <ChevronRight className="h-3.5 w-3.5" />
               </button>
-            </div>
-            <Avatar name={active.label} size={42} className="mt-0.5" />
-            <div className="min-w-0 flex-1">
-              {/*
-                One line here too. It used to wrap, so a long name pushed
-                "Updated …" onto a second row and the header grew by a line for
-                nothing — the opposite of the ask. The name gives way first
-                (`truncate`) and everything beside it holds its width.
-              */}
-              <div className="flex min-w-0 items-center gap-x-2 whitespace-nowrap">
-                <h2 className="min-w-0 truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
-                {assignedField && (
-                  /*
-                    The agent's name, plainly — 27 September 2026, the owner:
-                    *"remove chip and icon from Assign to before … Agent
-                    name"*. It was a violet pill with a person in it, which
-                    made the one editable fact on that line look like a label.
-                  */
-                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-muted" title="Agent">
-                    {assignedName && <Avatar name={assignedName} size={18} />}
-                    {canEdit && isInlineEditable(assignedField) ? (
-                      <EditableField
-                        module={module.name}
-                        recordId={active.id}
-                        field={assignedField}
-                        value={active.values[assignedField.name]}
-                        display={assignedName}
-                        compact
-                        siblings={active.values}
-                        restrictTo={restrictionForField(module.picklistDependencies, active.values, assignedField.name)}
-                        onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                      />
-                    ) : (
-                      <FieldValue field={assignedField} value={active.values[assignedField.name]} display={assignedName} compact />
-                    )}
-                  </span>
-                )}
-              </div>
-              <div className="mt-0.5 flex items-center gap-2 text-xs">
-                <span className="text-muted">Updated {relativeTime(active.updatedAt)}</span>
-                <span className="text-slate-300">•</span>
-                <span
-                  className="font-semibold text-blue-600 dark:text-blue-300"
-                  role="img"
-                  aria-label={`Record ${recordStrength(module.fields, active.values).percent}% complete`}
-                >
-                  {recordStrength(module.fields, active.values).percent}% Profile Complete
+            </span>
+            <span className="flex min-w-0 items-center gap-2">
+              <TagChips module={module.name} tags={active.tags} className="max-w-[10rem]" />
+              {assignedField && (
+                <span className="inline-flex min-w-0 shrink-0 items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-0.5 shadow-2xs transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/90" title="Agent">
+                  {assignedName && <Avatar name={assignedName} size={16} />}
+                  <span className="shrink-0 text-[11px] font-medium text-slate-500 dark:text-slate-400">Assigned:</span>
+                  {canEdit && isInlineEditable(assignedField) ? (
+                    <EditableField
+                      module={module.name}
+                      recordId={active.id}
+                      field={assignedField}
+                      value={active.values[assignedField.name]}
+                      display={assignedName}
+                      compact
+                      siblings={active.values}
+                      restrictTo={restrictionForField(module.picklistDependencies, active.values, assignedField.name)}
+                      onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                    />
+                  ) : (
+                    <FieldValue field={assignedField} value={active.values[assignedField.name]} display={assignedName} compact />
+                  )}
                 </span>
-              </div>
+              )}
+            </span>
+          </div>
 
-            </div>
-
-            <span className="mt-1 ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
-              {/* The record's tags, before the icons. They used to trail the
-                  name after "Updated …", capped at two — the end of a line of
-                  text is where a chip goes unread, and the owner asked for
-                  them beside the icons in every view. */}
-              <TagChips module={module.name} tags={active.tags} className="mr-0.5 max-w-[11rem]" />
-              {/*
-                Where the record stands and how the last call went, immediately
-                left of the star — 26 September 2026, the owner, for both
-                modules. Which field each reads is metadata, never named here.
-
-                These replaced two read-only chips that landed here the same
-                afternoon from a parallel session. Two reasons, both from his
-                own message: he asked for *"a Drop-down Hint arrow also"* on
-                each, and the chips were read-only; and the second read a
-                record field called `call_disposition`, which neither module
-                has on production — an outcome lives on `ipy_call`, so the
-                chip would have been invisible there whatever was typed into
-                it. The status colour comes off the picklist option the admin
-                chose, which is the other half of what he asked for.
-              */}
-              <HeaderPills module={module} row={active} canEdit={canEdit} />
-              {/*
-                The line the owner asked for twice: everything to its left is
-                the record, everything to its right is what you *do* with it —
-                the controls and, under them, the call. One hairline, because a
-                heavier rule in a header this tight reads as a border somebody
-                forgot to remove.
-              */}
-              <span className="mx-1.5 h-8 w-px shrink-0 rounded bg-slate-300 dark:bg-slate-600" aria-hidden />
-              <button
-                aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
-                title={active.starred ? 'Remove from starred' : 'Star this record'}
-                onClick={() => star.mutate(active)}
-                className={cn(
-                  ACTION_BASE,
-                  'hover:bg-amber-500',
-                  active.starred ? 'border-transparent bg-amber-500 text-white' : ACTION_REST,
-                )}
-              >
-                <Star className={cn('h-4 w-4', active.starred && 'fill-white')} />
-              </button>
+          <div className="relative mb-2 flex w-full items-center justify-between gap-2 px-2">
+            {/* Left: the two things a rep does to a person. */}
+            <span className="z-10 flex shrink-0 items-center gap-2">
               {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
               {phoneValue && <CallButton to={phoneValue} iconOnly round active={onCall} />}
-              {/* Tagging, the same dialog the record page opens. */}
+            </span>
+
+            {/* Centre: the face, ringed by how complete the record is. */}
+            <span className="flex min-w-0 flex-col items-center justify-center text-center">
+              {/* The face inside its own completeness ring, with the number in
+                  the ring's corner — the prototype's hero, and the component
+                  the record page already uses for it. */}
+              <StrengthRing fields={module.fields} values={active.values} size={62} cornerBadge>
+                <Avatar name={active.label} size={62} />
+              </StrengthRing>
+              <h2 className="mt-1 min-w-0 max-w-full truncate text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+                {active.label}
+              </h2>
+            </span>
+
+            {/* Right: tag, star, and everything else. */}
+            <span className="z-10 flex shrink-0 items-center gap-2">
               <TagButton
                 module={module.name}
                 recordId={active.id}
                 tags={active.tags}
                 canEdit={canEdit}
                 className={cn(
-                  ACTION_BASE,
-                  active.tags?.length
-                    ? 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-200'
-                    : cn(ACTION_REST, 'hover:bg-brand-600'),
+                  ACTION_CIRCLE,
+                  active.tags?.length && 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-200',
                 )}
               />
-              {/*
-                No delete circle. Delete is in the menu beside it, and one
-                destructive action offered twice, a thumb's width from Call, is
-                one more chance to hit it by accident than it is worth.
-              */}
-
-              {/*
-                The record page's own menu, here. The owner asked for it by
-                name: the three dots he gets on a record and did not get here.
-                Same four actions, done against whatever the queue has open,
-                without leaving the split view for a page.
-              */}
+              <button
+                aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
+                title={active.starred ? 'Remove from starred' : 'Star this record'}
+                onClick={() => star.mutate(active)}
+                className={cn(
+                  ACTION_CIRCLE,
+                  'hover:bg-amber-500',
+                  active.starred && 'border-amber-300 bg-amber-50 text-amber-500',
+                )}
+              >
+                <Star className={cn('h-4 w-4', active.starred && 'fill-amber-500')} />
+              </button>
               <Dropdown
                 align="right"
                 className="min-w-[15rem]"
                 trigger={(
-                  <button className={cn(ACTION_CIRCLE, 'hover:bg-slate-600')} aria-label="More actions" title="More actions">
+                  <button className={ACTION_CIRCLE} aria-label="More actions" title="More actions">
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
                 )}
@@ -707,30 +639,20 @@ export function IpropyWorkspace({
                       {summarising ? 'Summarising…' : 'Summarise with AI'}
                     </DropdownItem>
                     {canEdit && (
-                      <DropdownItem
-                        icon={<Users className="h-3.5 w-3.5" />}
-                        onClick={() => { setSharingWithTeam(true); close(); }}
-                      >
+                      <DropdownItem icon={<Users className="h-3.5 w-3.5" />} onClick={() => { setSharingWithTeam(true); close(); }}>
                         Share with team
                       </DropdownItem>
                     )}
                     {canEdit && onDelete && (
                       <DropdownItem
                         icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
-                        onClick={() => {
-                          close();
-                          setMoveTarget(module.name === 'leads' ? 'properties' : 'leads');
-                        }}
+                        onClick={() => { close(); setMoveTarget(module.name === 'leads' ? 'properties' : 'leads'); }}
                       >
                         Move to {module.name === 'leads' ? 'Inventories' : 'Leads'}
                       </DropdownItem>
                     )}
                     {onDelete && (
-                      <DropdownItem
-                        icon={<Trash2 className="h-3.5 w-3.5" />}
-                        danger
-                        onClick={() => { close(); onDelete(active); }}
-                      >
+                      <DropdownItem icon={<Trash2 className="h-3.5 w-3.5" />} danger onClick={() => { close(); onDelete(active); }}>
                         Delete record
                       </DropdownItem>
                     )}
@@ -740,79 +662,82 @@ export function IpropyWorkspace({
             </span>
           </div>
 
-            {/*
-              Every header value the record page carries, each one typed in
-              where it stands. The owner's instruction: "Full of the header
-              things phone number, next follow-up all other things be in
-              line editable." The same strip the WhatsApp chat header shows.
-            */}
-            {/*
-              Edge to edge, which is why it pulls back out of the header's own
-              padding: the band is a rule across the panel, and a band with
-              white either side of it is a box. Its own `px` puts the first
-              field back where the name above it starts.
-            */}
+          {/*
+            The facts a call changes, as chips — the stage, the chase date and
+            whatever else the Layout Designer puts in this module's header,
+            each typed in where it stands. One measuring rule with the ledger
+            strip the WhatsApp header shows; only the clothes differ.
+          */}
+          <div className="mt-1 flex items-center gap-2 border-t border-slate-200/70 pt-2.5">
             <HeaderFieldStrip
               module={module}
               row={active}
               fields={headerFields}
               canEdit={canEdit}
-              className="-mx-4 mt-2 border-y border-[var(--border)] sm:-mx-5"
+              variant="chips"
+              className="min-w-0 flex-1"
             />
-
-          <nav className="mt-1.5 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
-            <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
-            <DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab>
-            <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'} {matchingCount ? <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-2xs font-bold text-violet-700">{matchingCount}</span> : null}</DeskTab>
-            <DeskTab active={tab === 'files'} onClick={() => setTab('files')}><FileText className="h-3.5 w-3.5" />Files</DeskTab>
-            <DeskTab active={tab === 'calls'} onClick={() => setTab('calls')}><Phone className="h-3.5 w-3.5" />Calls</DeskTab>
-            <DeskTab active={tab === 'whatsapp'} onClick={() => setTab('whatsapp')}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab>
-          </nav>
+            <HeaderPills module={module} row={active} canEdit={canEdit} />
+          </div>
         </header>
+
+        <nav className="flex shrink-0 items-center gap-6 overflow-x-auto border-b border-slate-200 bg-white px-5 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900" aria-label="Record workspace sections">
+          <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
+          <DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab>
+          <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'} {matchingCount ? <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-2xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{matchingCount}</span> : null}</DeskTab>
+          <DeskTab active={tab === 'files'} onClick={() => setTab('files')}><FileText className="h-3.5 w-3.5" />Files</DeskTab>
+          <DeskTab active={tab === 'calls'} onClick={() => setTab('calls')}><Phone className="h-3.5 w-3.5" />Calls</DeskTab>
+          <DeskTab active={tab === 'whatsapp'} onClick={() => setTab('whatsapp')}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab>
+        </nav>
+
+        {/*
+          **One scroll area, never two stacked.** The WhatsApp tab has its own
+          scrolling message list; with this pane scrolling too, the wheel went
+          to whichever happened to be under the mouse — 25 September 2026, the
+          owner: *"only bringing mouse to a certain place scroll is working."*
+        */}
         <div className={cn(
-          'min-w-0 flex-1 bg-[#f7f9fc] dark:bg-slate-950/50',
-          tab === 'whatsapp' ? 'flex min-h-0 flex-col' : 'p-4 sm:p-6',
+          'min-w-0 flex-1 bg-[#fafbfa] dark:bg-slate-950/40',
+          tab === 'whatsapp' ? 'flex min-h-0 flex-col overflow-hidden' : 'space-y-5 overflow-y-auto p-5',
         )}>
-          {/*
-            Notes beside Basic Information rather than in a third column. Two
-            panes, as the owner asked — and a note is written about what is on
-            screen, so it belongs next to it.
-          */}
-          {tab === 'overview' && (
-            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
-              <div className="min-w-0 space-y-4">
-                {blocks.map((block) => (
-                  <FieldBlock
-                    key={block.key}
-                    module={module}
-                    title={block.label}
-                    columns={block.columns}
-                    fields={block.fields}
-                    row={active}
-                    canEdit={canEdit}
-                  />
-                ))}
-              </div>
-              {/*
-                The call takes the notes box's place while it is up, and gives
-                it back the moment it is saved — 26 September 2026, the owner.
-                A deck standing empty says nothing, and a notes box the team
-                can never reach is worse than either.
-              */}
-              <div key={onCall ? 'call-deck' : 'notes'} className="animate-pane-reveal">
-                {onCall
-                  ? <CallDeckPanel module={module.name} recordId={active.id} />
-                  : <NotesPanel module={module.name} record={active} />}
-              </div>
-            </div>
-          )}
+          {tab === 'overview' && blocks.map((block) => (
+            <FieldBlock
+              key={block.key}
+              module={module}
+              title={block.label}
+              columns={block.columns}
+              fields={block.fields}
+              row={active}
+              canEdit={canEdit}
+            />
+          ))}
           {tab === 'timeline' && <TimelineTab module={module.name} id={active.id} />}
           {tab === 'matching' && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
           {tab === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {tab === 'calls' && <CallsTab recordId={active.id} />}
           {tab === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
         </div>
-      </main>}
+      </section>}
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Pane 3 — the call, and what was said.                            */}
+      {/* ---------------------------------------------------------------- */}
+      {active && (
+        <aside
+          data-testid="activity-pane"
+          className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900 xl:w-96"
+        >
+          {/*
+            The deck and the notes are one pane now — 27 September 2026, the
+            owner: *"call deck merge in to Note/Comment pane/Box"*. The deck
+            only exists while a call is up on this very record; the notes and
+            the activity below it are always there, which is the half that was
+            being taken away every time somebody pressed Call.
+          */}
+          {onCall && <CallDeckPanel module={module.name} recordId={active.id} />}
+          <NotesPanel module={module.name} record={active} flush />
+        </aside>
+      )}
     </div>
 
     {/*
@@ -868,12 +793,13 @@ export function IpropyWorkspace({
  *   Single, 4 BHK Builder Floor, Greenfields Colony
  *   ₹1.85 Cr  2,100 sq.ft                                     [TODAY]
  *
- * The open record carries a plum bar down its left edge and a lifted shadow,
+ * The open record carries a violet bar down its left edge and a lifted ring,
  * so which one is open reads at a glance. The middle line is cut short with
  * "…" rather than wrapping, so every card is the same height.
  *
- * When Admin → Split View has chosen the line under the name, that choice
- * replaces the middle line: an admin's arrangement outranks this default.
+ * Which fields that line shows is the Field Manager's `config.listSubtitle`
+ * flag and nothing else — Admin → Split View used to outrank it and was
+ * removed on 27 September 2026.
  *
  * **27 September 2026, the owner:** *"Replace the Star icon with Lead/Inventory
  * Status."* So the corner that carried a favourite now carries the stage the
@@ -884,7 +810,7 @@ export function IpropyWorkspace({
  * than one button holding another. A button inside a button is not allowed in
  * HTML, and a screen reader cannot reach the inner one.
  */
-function QueueCard({ row, active, checked, attention, card, followUpField, statusField, adminLine, onSelect, onToggle }: {
+function QueueCard({ row, active, checked, attention, card, followUpField, statusField, onSelect, onToggle }: {
   row: RecordEnvelope;
   active: boolean;
   checked: boolean;
@@ -893,8 +819,6 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
   followUpField?: FieldMeta;
   /** The module's own stage field, whatever it is called here. */
   statusField?: FieldMeta;
-  /** Admin → Split View's chosen line, when there is one. */
-  adminLine: FieldMeta[] | null;
   onSelect: () => void;
   onToggle: (checked: boolean) => void;
 }): JSX.Element {
@@ -902,9 +826,6 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
   const type = card.type ? read(card.type) : '';
   const unit = card.unit ? read(card.unit) : '';
   const description = unitDescription(card, read);
-  // Contact type is already the compact chip beside the name. Repeating it in
-  // the detail line wastes the one piece of queue real estate a rep scans.
-  const adminText = adminLine?.filter((field) => field.name !== card.type?.name).map(read).filter(Boolean).join(', ') ?? '';
   const price = card.price ? cardPrice(row.values[card.price.name]) : '';
   const areaUnitField = card.area?.config.unitField;
   const area = card.area
@@ -935,82 +856,101 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
         onClick={onSelect}
         aria-current={active ? 'true' : undefined}
         className={cn(
-          'relative block w-full overflow-hidden border-b-2 border-slate-200 bg-white py-2.5 pl-4 pr-3 text-left transition-colors dark:border-slate-800 dark:bg-slate-900',
+          'relative block w-full cursor-pointer rounded-lg p-2.5 text-left transition',
           /*
-            27 September 2026, the owner: the open card's background should be
-            its own colour. Indigo rather than the brand's plum, which at this
-            size reads pink against a white queue — and the accent is already
-            what the price on the card below is printed in.
-
-            **Lighter, later the same day:** *"we Need to change these gradiant
-            some lighter shade, its dark colour are irritating to my eyes."* It
-            was `indigo-50` at full strength *and* a 4px inset shadow in the
-            accent *and* the marker span — three markings on one row, two of
-            them the same edge in the darkest indigo there is. The wash is half
-            strength and the shadow is gone; the span stays, because a marker
-            that is an element rather than a border is the one thing on this row
-            that cannot lose a stylesheet-order lottery.
+            The open card, as the owner drew it on 27 September 2026: a ringed
+            violet card with a bar running down its left edge, rather than the
+            tinted row it was. The bar is an element and not a border, which is
+            the rule this repo keeps: two `border-*` utilities on one element
+            let Tailwind's own stylesheet order pick the colour, and the marker
+            came out slate on slate once.
           */
           active
-            ? 'bg-indigo-50/70 dark:bg-indigo-950/30'
-            : 'hover:bg-[var(--surface-subtle)] dark:hover:bg-slate-800',
+            ? 'border-2 border-brand-600 bg-brand-50/80 shadow-md ring-2 ring-brand-500/20 dark:border-brand-500 dark:bg-brand-950/40'
+            : 'border border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:border-slate-700 dark:hover:bg-slate-800',
         )}
       >
-        {active && <span className="absolute inset-y-0 left-0 w-1 bg-indigo-300 dark:bg-indigo-700" aria-hidden />}
+        {active && (
+          <span
+            className="absolute -left-1 bottom-2 top-2 w-1.5 rounded-r-md bg-brand-700 shadow-xs dark:bg-brand-400"
+            aria-hidden
+          />
+        )}
 
-        {/*
-          1. Who, and what kind of contact.
-
-          The room kept on the right is for the stage chip in the corner, which
-          is wider than the star it replaced — at `pr-12` a long stage sat on
-          top of the contact-type chip and cut it in half.
-        */}
-        <span className="flex min-w-0 items-center gap-2 pr-[7.5rem]">
+        {/* 1. Who, and what kind of contact. */}
+        <span className={cn('flex min-w-0 items-center gap-1.5 pr-16', active && 'pl-1.5')}>
           <span className={cn(
-            'truncate text-base font-bold',
-            active ? 'text-brand-600 dark:text-brand-300' : 'text-[var(--text)] dark:text-slate-100',
+            'truncate text-xs',
+            active ? 'font-extrabold tracking-tight text-brand-900 dark:text-brand-100' : 'font-bold text-slate-900 dark:text-slate-100',
           )}>
             {row.label}
           </span>
-          {type && (
-            <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-brand-700 dark:bg-slate-800 dark:text-fuchsia-200">
-              {type}
-            </span>
-          )}
+          {type && <TypeFlag label={type} strong={active} />}
           {attention && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Needs attention" />}
         </span>
 
         {/* 2. Which unit, cut short with "…" rather than wrapped. */}
-        {/*
-          The facts about the place, with nothing in front of them — 27
-          September 2026: *"Remove House icon / H. No. from Left pane middle
-          raw."* The unit number still leads the line; it simply no longer
-          announces itself, and the icon was the same word drawn twice.
-        */}
-        <span className="mt-1.5 block min-w-0 text-sm text-[#475569] dark:text-slate-400">
-          {adminLine ? (
-            <span className="block truncate">{adminText || '—'}</span>
-          ) : (
-            <span className="block truncate">
-              {unit && <span className="font-semibold text-[#0f172a] dark:text-slate-100">{unit}</span>}
-              {unit && description && ' • '}
-              {description}
-              {!unit && !description && '—'}
-            </span>
-          )}
+        <span className={cn(
+          'mt-1 block min-w-0 truncate text-[11px]',
+          active ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400',
+          active && 'pl-1.5',
+        )}>
+          {[unit, description].filter(Boolean).join(', ') || '—'}
         </span>
 
-        {/* 3. The money, the size, and when they are due. */}
-        {(price || area) && <span className={cn('mt-2 flex items-center gap-2', stageLabel && 'pr-24')}>
-          {price && <span className="shrink-0 whitespace-nowrap text-lg font-extrabold tabular-nums text-[#3730a3] dark:text-indigo-300">{price}</span>}
-          {area && <span className="min-w-0 truncate whitespace-nowrap text-xs text-[#64748b] dark:text-slate-400">{area}</span>}
-        </span>}
+        {/* 3. The money and the size, under a hairline. */}
+        <span className={cn(
+          'mt-2 flex items-center justify-between gap-2 border-t pt-1 text-xs',
+          active ? 'border-brand-200 pl-1.5 dark:border-brand-800' : 'border-slate-100/60 dark:border-slate-800',
+        )}>
+          <span className="flex min-w-0 items-center gap-1.5">
+            {price && (
+              <span className={cn(
+                'shrink-0 whitespace-nowrap font-extrabold tabular-nums',
+                active ? 'text-brand-900 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100',
+              )}>
+                {price}
+              </span>
+            )}
+            {/* `text-muted` and not a slate step: this is 11px copy on white,
+                and slate-400 there is 2.56:1 — the scan catches it, which is
+                what the token exists for. */}
+            {area && <span className="truncate text-[11px] font-normal text-muted">• {area}</span>}
+          </span>
+          {/*
+            The stage keeps the corner it was given on 27 September 2026 —
+            *"Replace the Star icon with Lead/Inventory Status"* — in the slot
+            the prototype leaves open at the end of this row. Its colour is the
+            admin's own, off the picklist option, never a hue written here.
+          */}
+          {stageLabel && (
+            stageOption?.meta?.plainText === true ? (
+              <span
+                title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
+                className="max-w-[7rem] shrink-0 truncate text-[11px] font-semibold text-slate-600 dark:text-slate-300"
+              >
+                {stageLabel}
+              </span>
+            ) : (
+              <span
+                style={badgeVars(stageOption?.color)}
+                title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
+                className={cn(
+                  'max-w-[7rem] shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-bold',
+                  stageOption?.color ? 'badge-solid' : 'bg-brand-700 text-white',
+                )}
+              >
+                {stageLabel}
+              </span>
+            )
+          )}
+        </span>
       </button>
 
       {/*
-        The stage and the tick box sit over the card's top-right corner. The
-        tick box only shows on hover or once ticked, so the card reads like the
-        mock-up until somebody reaches for a bulk action.
+        The tick box and the task chip sit over the card's top-right corner.
+        The tick box only shows on hover or once ticked, so the card reads like
+        the prototype until somebody reaches for a bulk action.
       */}
       <span className="absolute right-2.5 top-2.5 flex items-center gap-1">
         <input
@@ -1019,33 +959,35 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
           checked={checked}
           onChange={(event) => onToggle(event.target.checked)}
           className={cn(
-            'h-4 w-4 rounded border-slate-300 transition-opacity',
+            'h-3.5 w-3.5 rounded border-slate-300 transition-opacity',
             checked ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100',
           )}
         />
         {due && <FollowUpBadge due={due} date={followUp} />}
       </span>
-      {stageLabel && stageOption?.meta?.plainText !== true && (
-        <span
-          style={badgeVars(stageOption?.color)}
-          title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
-          className={cn(
-            'absolute bottom-2.5 right-2.5 max-w-[7.5rem] truncate rounded-full px-2.5 py-0.5 text-2xs font-bold',
-            stageOption?.color ? 'badge-solid' : 'bg-brand-700 text-white',
-          )}
-        >
-          {stageLabel}
-        </span>
-      )}
-      {stageLabel && stageOption?.meta?.plainText === true && (
-        <span
-          title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
-          className="absolute bottom-2.5 right-2.5 max-w-[7.5rem] truncate text-xs font-semibold text-[var(--text)]"
-        >
-          {stageLabel}
-        </span>
-      )}
     </div>
+  );
+}
+
+/**
+ * The kind of record, as the prototype's notched flag.
+ *
+ * A clip-path rather than a rounded chip, which is what tells the two apart at
+ * a glance down a queue: the stage chip at the other end of the card is round,
+ * this one is a tag. The point is cut off the *left* edge, so the flag reads
+ * as pinned to the name it follows.
+ */
+function TypeFlag({ label, strong }: { label: string; strong: boolean }): JSX.Element {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center py-0.5 pl-2.5 pr-1.5 text-[9px] uppercase tracking-wider text-sky-900',
+        strong ? 'bg-blue-100 font-bold dark:bg-sky-900/70 dark:text-sky-100' : 'bg-sky-100 font-semibold dark:bg-sky-950 dark:text-sky-200',
+      )}
+      style={{ clipPath: 'polygon(6px 0%, 100% 0%, 100% 100%, 6px 100%, 0% 50%)' }}
+    >
+      {label}
+    </span>
   );
 }
 

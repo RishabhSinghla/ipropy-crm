@@ -46,7 +46,7 @@ interface Group { id: string; title: string; blurb: string; rows: Setting[] }
   Categories whose rows belong to a screen of their own, so this page does not
   also offer them as raw values.
 
-  `ui` holds `ui.split_view` and the header's arrangement — stored as JSON
+  `ui` holds the header's arrangement — stored as JSON
   objects. Shown here they are a text box full of JSON sitting among the
   company's address, and a slip in one of them breaks every list in the CRM for
   the whole team. Two
