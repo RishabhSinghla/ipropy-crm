@@ -29,6 +29,7 @@ import { ACTION_BASE, ACTION_CIRCLE, ACTION_REST } from '../lib/actionCircle';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
+import { queueRecordUrl } from '../lib/saveNextUrl';
 
 type DeskTabKey = 'overview' | 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
 
@@ -275,6 +276,24 @@ export function IpropyWorkspace({
     next.set('open', id);
     setSearchParams(next, { replace: true });
   }, [setSearchParams]);
+  const openNeighbour = useCallback((id: string, estimatedPosition: number) => {
+    if (rows.some((row) => row.id === id)) {
+      openRecord(id);
+      return;
+    }
+    // Crossing a page boundary needs both a new page and a new open record.
+    // Re-read the destination's ordinal because another rep may have edited
+    // the queue since the current record's neighbours were fetched.
+    void api.neighbours(module.name, id, {
+      ...neighbourContext,
+      ...(sortBy ? { sort: sortBy } : {}),
+      ...(sortDir ? { dir: sortDir } : {}),
+    }).then(({ position }) => {
+      window.location.assign(queueRecordUrl(callQueueUrl, module.name, id, position ?? estimatedPosition));
+    }).catch(() => {
+      window.location.assign(queueRecordUrl(callQueueUrl, module.name, id, estimatedPosition));
+    });
+  }, [rows, openRecord, module.name, neighbourContext, sortBy, sortDir, callQueueUrl]);
 
   const resize = useCallback((delta: number) => {
     const [min, max] = QUEUE_LIMITS;
@@ -514,13 +533,13 @@ export function IpropyWorkspace({
 
           <div className="flex min-w-0 flex-wrap items-start gap-2">
             <div className="mt-1 inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-800" aria-label="Record navigation">
-              <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openRecord(neighbours.prevId)} className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700">
+              <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700">
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="min-w-[3.4rem] text-center text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300" aria-live="polite">
                 {neighbours?.position && neighbours.total ? `${neighbours.position} / ${neighbours.total}` : '—'}
               </span>
-              <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openRecord(neighbours.nextId)} className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700">
+              <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700">
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
