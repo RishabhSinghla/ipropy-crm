@@ -12,7 +12,7 @@
  * testing one.
  */
 import { expect, test } from '@playwright/test';
-import { waitForRecords, searchList, fieldEditor } from './helpers';
+import { waitForRecords, searchList, fieldEditor, openFromListByName } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -35,24 +35,13 @@ test('a rep adds a lead they just spoke to', async ({ page }) => {
   await expect(toast).toContainText(/created/i);
 });
 
-test('they open it from the list', async ({ page, context }) => {
+test('they open it from the list', async ({ page }) => {
   await page.goto('/leads');
   // The search box renders before the list does, and typing into it while the
-  // rows are still coming filters nothing — in a full run, where a hundred
-  // specs share one account, that wait is long enough to spend the whole
-  // test timeout inside `fill`.
+  // cards are still coming filters nothing.
   await waitForRecords(page);
-  await searchList(page, name);
-  await page.waitForTimeout(1200);
-
-  // The list opens records in a new tab on purpose, so the list is never lost.
-  const opened = context.waitForEvent('page');
-  await page.locator('tr', { hasText: name }).first().click();
-  const detail = await opened;
-  await detail.waitForLoadState('domcontentloaded');
-  await expect(detail.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
-  recordUrl = detail.url();
-  await detail.close();
+  // The record opens beside the queue, in the split view.
+  recordUrl = await openFromListByName(page, 'leads', name);
 });
 
 test('they change the pipeline status without leaving the page', async ({ page }) => {

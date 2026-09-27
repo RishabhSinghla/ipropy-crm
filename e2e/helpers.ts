@@ -312,3 +312,29 @@ export async function openFirstRecord(page: Page): Promise<Locator> {
   await expect(card.locator('button[aria-current="true"]')).toBeVisible({ timeout: 15_000 });
   return card;
 }
+
+/**
+ * Find a record by name in the split view's queue, open it there, and return
+ * its own address (`/<module>/<id>`, which hands back over to the split view).
+ *
+ * The queue does not put the open record in the address bar, so the id is
+ * looked up the way the list itself finds it — a search as this user.
+ */
+export async function openFromListByName(page: Page, module: string, name: string): Promise<string> {
+  await searchList(page, name);
+  await page.waitForTimeout(1200);
+  await page.getByTestId('queue-card').filter({ hasText: name }).first().locator('button').first().click();
+  await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
+  const id = await page.evaluate(async ({ module: m, name: wanted }) => {
+    const token = localStorage.getItem('ipropy.token');
+    const res = await fetch(`/api/records/${m}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ search: wanted, pageSize: 5 }),
+    });
+    const body = await res.json() as { rows?: { id: string; label: string }[]; records?: { id: string; label: string }[] };
+    return (body.rows ?? body.records ?? []).find((r) => r.label === wanted)?.id ?? '';
+  }, { module, name });
+  expect(id, `could not find "${name}"`).not.toBe('');
+  return `/${module}/${id}`;
+}

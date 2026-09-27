@@ -16,7 +16,7 @@
  * Calls tab, and there is no way to send an outcome the list does not offer.
  */
 import { expect, test } from '@playwright/test';
-import { waitForRecords, searchList } from './helpers';
+import { waitForRecords, searchList, openFromListByName } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -33,27 +33,11 @@ test('a rep adds the lead they are about to ring', async ({ page }) => {
 
 test('they open it from the list', async ({ page }) => {
   await page.goto('/leads');
+  // The search box renders before the list does, and typing into it while the
+  // cards are still coming filters nothing.
   await waitForRecords(page);
-  await searchList(page, name);
-  await page.waitForTimeout(1200);
-
   // The record opens beside the queue, in the split view.
-  await page.getByTestId('queue-card').filter({ hasText: name }).first().locator('button').first().click();
-  await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
-
-  // Its own address, which hands over to the split view with it open.
-  const id = await page.evaluate(async (wanted) => {
-    const token = localStorage.getItem('ipropy.token');
-    const res = await fetch('/api/records/leads/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ search: wanted, pageSize: 5 }),
-    });
-    const body = await res.json() as { rows?: { id: string; label: string }[]; records?: { id: string; label: string }[] };
-    return (body.rows ?? body.records ?? []).find((r) => r.label === wanted)?.id ?? '';
-  }, name);
-  expect(id, 'the lead just added could not be found').not.toBe('');
-  recordUrl = `/leads/${id}`;
+  recordUrl = await openFromListByName(page, 'leads', name);
 });
 
 test('tapping the number opens the deck in the header, not a dialog over the record', async ({ page }) => {
