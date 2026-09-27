@@ -11,17 +11,15 @@
  * every phone number in the CRM.
  */
 import { expect, test } from '@playwright/test';
+import { openFirstRecord } from './helpers';
 
 test.use({ viewport: { width: 1512, height: 900 } });
 
 test('the icon still opens Chats while no business number is connected', async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
-
-  const opened = page.context().waitForEvent('page').catch(() => null);
-  await page.locator('tbody tr').first().locator('td').nth(1).click();
-  const detail = (await opened) ?? page;
-  await detail.waitForLoadState('domcontentloaded');
+  // The record opens beside the queue, in the split view.
+  await openFirstRecord(page);
+  const detail = page;
 
   const icon = detail.getByRole('link', { name: 'WhatsApp this number' }).first();
   await expect(icon, 'the WhatsApp icon is missing from the record').toBeVisible({ timeout: 20_000 });
@@ -38,12 +36,9 @@ test('the record header button is the one that leaves for WhatsApp itself', asyn
   // The two controls go deliberately different ways, and this is the half that
   // must keep leaving: the owner asked for it on 17 September.
   await page.goto('/leads');
-  await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
-
-  const opened = page.context().waitForEvent('page').catch(() => null);
-  await page.locator('tbody tr').first().locator('td').nth(1).click();
-  const detail = (await opened) ?? page;
-  await detail.waitForLoadState('domcontentloaded');
+  // The record opens beside the queue, in the split view.
+  await openFirstRecord(page);
+  const detail = page;
 
   const header = detail.getByRole('button', { name: /^WhatsApp \+?[\d ]+$/ }).first();
   if (await header.count()) await expect(header).toBeVisible();

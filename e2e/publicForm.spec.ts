@@ -94,7 +94,7 @@ test.describe('public form becomes a lead', () => {
     await searchList(page, run.phone);
     await page.waitForTimeout(1200);
     await expect(
-      page.locator('tbody tr:visible').filter({ hasText: run.visitorName }),
+      page.getByTestId('queue-card').filter({ hasText: run.visitorName }),
       'a website enquiry must arrive as a real, callable lead',
     ).toBeVisible();
   });

@@ -41,9 +41,10 @@ export function unique(prefix: string): string {
 }
 
 /**
- * Wait for the record list to have finished loading. The table and the mobile
- * card list both render rows only once the query resolves, so this is the
- * shared "page is ready" signal.
+ * Wait for the record list to have finished loading. The split view's queue
+ * renders its cards only once the query resolves, so this is the shared "page
+ * is ready" signal. (The table and its phone card list were removed on
+ * 27 September 2026.)
  */
 export async function waitForRecords(page: Page): Promise<void> {
   // Waits for a record, not for an edit affordance. It used to wait for an
@@ -51,7 +52,7 @@ export async function waitForRecords(page: Page): Promise<void> {
   // inline editing was switched off by default — reported as "the list view has
   // accessibility violations", which it did not. Wait for the thing the name
   // says.
-  const row = page.locator('tbody tr:visible, [data-record-card]:visible').first();
+  const row = page.getByTestId('queue-card').first();
   await expect(row).toBeVisible({ timeout: 30_000 });
 }
 
@@ -69,37 +70,7 @@ export async function inlineEditOn(page: Page): Promise<boolean> {
   return me.ui?.inlineEdit === true;
 }
 
-/**
- * Which column is this, by its header?
- *
- * List columns are metadata an administrator can reorder or remove, so a
- * hardcoded `td.nth(6)` asserts on a layout decision rather than on behaviour —
- * and fails as a mystery the day someone rearranges a view.
- */
-export async function columnIndex(page: Page, header: string): Promise<number> {
-  const headers = page.locator('thead th');
-  await expect(headers.first()).toBeVisible({ timeout: 30_000 });
-  const labels = await headers.allTextContents();
-  const index = labels.findIndex((t) => t.trim().toLowerCase() === header.toLowerCase());
-  expect(index, `no "${header}" column — found: ${labels.map((l) => l.trim()).join(', ')}`)
-    .toBeGreaterThan(-1);
-  return index;
-}
 
-/**
- * Inline-edit triggers, located by their title attribute rather than by
- * accessible name: the button's name is its *value* ("New", "Aisha Khan"),
- * because it wraps the rendered field. The title is the stable part.
- */
-export function editableCells(page: Page) {
-  // `:visible` matters: ListView renders BOTH a mobile card list (md:hidden)
-  // and a desktop table (hidden md:table), so the DOM always contains two sets
-  // of triggers and only one is displayed at any viewport. Without this the
-  // first match is a display:none card button that can never be clicked.
-  // The list's own editors are behind a pencil titled "Change" — a cell's value
-  // opens the record. On a record page the value itself is still the trigger.
-  return page.locator('button[title="Change"]:visible, button[aria-label^="Edit "]:visible');
-}
 
 /**
  * Fill every field the form says is required, whatever they turn out to be.
@@ -326,21 +297,18 @@ export async function openModuleSwitcher(page: Page): Promise<Locator> {
   return page.getByRole('link', { name: /\S/ });
 }
 
+
 /**
- * The first column in the table whose first row carries a dropdown editor.
+ * Open the first record in the split view's queue and wait for its pane.
  *
- * Which columns a list shows is an admin's arrangement (Admin → Table View),
- * so a spec that needs "a picklist column" has to find one rather than name
- * one. Returns -1 when the table has none, which is a skip and not a failure:
- * an arrangement of text and numbers is a legitimate table.
+ * The split view is the only list since 27 September 2026, so "click the
+ * first row" means "click the first card"; the record opens beside the queue
+ * rather than on a page of its own. Returns the card that was opened.
  */
-export async function firstPicklistColumn(page: Page): Promise<number> {
-  const cells = page.locator('tbody tr').first().locator('td');
-  const count = await cells.count();
-  for (let i = 0; i < count; i++) {
-    // `title="Change"` is what the inline editor's trigger carries, and only a
-    // field the list can edit in place has one.
-    if (await cells.nth(i).locator('button[title="Change"]').count()) return i;
-  }
-  return -1;
+export async function openFirstRecord(page: Page): Promise<Locator> {
+  const card = page.getByTestId('queue-card').first();
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await card.locator('button').first().click();
+  await expect(card.locator('button[aria-current="true"]')).toBeVisible({ timeout: 15_000 });
+  return card;
 }

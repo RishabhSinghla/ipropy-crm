@@ -92,9 +92,9 @@ test.describe('every screen', () => {
   test('a record opens without throwing', async ({ page }) => {
     const trouble = watch(page);
     await page.goto('/leads');
-    const row = page.locator('tbody tr:visible, [data-record-card]:visible').first();
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    await row.click();
+    const card = page.getByTestId('queue-card').first();
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await card.locator('button').first().click();
     await settle(page);
 
     const text = (await page.locator('body').innerText().catch(() => '')) ?? '';
