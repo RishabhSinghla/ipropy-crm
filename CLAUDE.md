@@ -3014,6 +3014,126 @@ Follow-ups button and no "Task wise" row on a development database**, because
 that module has no follow-up field there; both appear on any database where it
 does, which is the fallback working rather than the feature missing.
 
+### Seven in the left pane, and a filter that had to reach the server
+
+**27 September 2026, the owner**, of the split view's queue in both modules.
+Six are about how a row reads; the seventh is a new control.
+
+* **The two chips on the right are gone** — the follow-up date and the stage.
+  They had become the widest thing on a row that is meant to be scanned, and
+  both facts are on the open record two inches away. **This reverses the
+  morning's own instruction** — *"Replace the Star icon with Lead/Inventory
+  Status"*, eight hours earlier and written up above — so the corner the star
+  used to hold now carries only the tick box. He worked the screen in between;
+  the later decision is the one that stands, and both are recorded rather than
+  one quietly overwriting the other. `FollowUpChip.tsx` stays
+  where it is: `RecordBlocks.tsx` still draws the same chip in a field tile,
+  and deleting a component because one of its two callers stopped calling it
+  is how the other caller breaks.
+* **The name and the price carry the row.** Both are `font-extrabold`, the
+  price a step larger than the line above it, and every other line went up
+  with them — his *"increase whole record font size"*. The middle line is the
+  one that gives way, because it is the sentence and the other two are the
+  facts.
+* **One separator per record, none inside one.** The rule moved off the rows
+  and onto the card itself, so a three-line record reads as one thing rather
+  than as three. It is `border-[var(--border)]`, not a slate step, so it
+  follows the theme like everything else here.
+* **The open record is a light fill and nothing else** — no ring, no shadow,
+  no stripe down the edge. *"Remove highlight box and shadow of box, We Need
+  highlight whole box with only light colour."* The `span` marker this file
+  recommended on 19 September went with it, and `splitViewHeader.spec.ts`
+  measures what is there now instead: the fill differs from a plain row, the
+  shadow is `none`, and **the name reads a different colour open than closed**
+  — his *"Font colour of Name and Price should be change as per theme"*.
+* **Everything on this side is a brand token.** The type flag, the quick
+  filter, the open row's fill and the open name's colour are all `brand-*`,
+  which resolve through the CSS variables `applyBrandColour` rewrites when an
+  admin changes the Brand colour — *"so that we can change the theme any time
+  as we needed"*. A raw `indigo-600` looks identical today and stops moving
+  the moment somebody picks a different theme, which is the failure mode worth
+  naming: it is invisible until the day it matters.
+
+**And the fault underneath item six, which the browser found and no test
+could.** In dark mode the open row was **pale lilac text on a near-white
+fill** — about 1.2:1, effectively invisible — while light mode was perfect.
+The class list said `bg-brand-50 dark:bg-brand-950/40`, both present, and the
+dark one simply was not in the stylesheet: **an opacity modifier on a colour
+that is a bare `var()` compiles to nothing at all.** `tailwind.config.js`
+defines the whole brand scale as `var(--brand-950)` — which is what lets an
+admin recolour the CRM without a rebuild — and Tailwind can only apply `/40`
+to a colour whose channels it can see. So `dark:bg-brand-950` exists in the
+generated CSS and `dark:bg-brand-950/40` does not, the light rule is the only
+one left, and the row keeps its light fill on a dark page.
+
+Nothing catches this: the class is spelt correctly, typecheck does not read
+class names, and every unit test passes. **It is only visible in a browser, in
+dark mode, on the element that has it.**
+
+The left pane's five are plain steps now. **Fifty-six more are still spelt
+that way, across thirty-one files**, and each is a declaration that does
+nothing today. This finds them:
+
+```bash
+grep -rnE '(bg|text|border|ring)-(brand|accent|surface|muted|positive|negative)(-[a-z0-9-]+)?/[0-9]+' packages/web/src
+```
+
+They are left alone deliberately. The one-line cure is to give each step in
+`tailwind.config.js` a function instead of a string, so Tailwind has
+something to put the opacity into — `({ opacityValue }) =>` returning the
+plain `var()` when there is none and a `color-mix(in srgb, var(--brand-950)
+<n>%, transparent)` when there is. That switches all fifty-six on at once,
+across thirty-one screens nobody would have looked at, and **a rule that has
+never applied is not a rule anybody has seen**. It is worth doing with those
+screens open, not blind.
+
+**The quick filter is item seven, and where its state lives is the whole of
+it.** It sits between the record count and the sorting menu, offers the kind
+field's own dropdown, and is a multiple choice. **`typePick` is `ListView`'s
+state, not the pane's**: a filter applied to the rows already on screen would
+narrow the queue and leave the count beside it still describing all 22,975,
+and page two would bring the filtered-out records back. It appends an `in`
+condition to `effectiveFilter` like the stage, agent and tag pickers above it,
+and resets to page one — measured on a development database, contacts went
+from 185 to 0 for Broker, which is exactly what `ipy_e_leads` holds.
+
+**Its panel is anchored to the button's right edge, and that is a
+measurement rather than a preference.** Left-anchored it ran from x=190 to
+x=414 in a pane that ends at 368 — 46px outside — and the pane's scrollable
+width grew with it. An `overflow-hidden` box still scrolls when the browser
+reveals a focused child, so tabbing through the options slid every row
+sideways. Right-anchored the same panel sits at 24–216, wholly inside.
+
+**And it stays open when something is ticked**, because it is a multiple
+choice and shutting after the first tick means reopening it for every kind
+somebody wants. Clearing is the `Any …` row at the top, not a second click on
+the button — which shuts the panel and leaves nothing to click.
+
+**The dead end it created, and the reason it is worth writing down: a filter
+that lives inside the thing it can empty has no way back.** `ListView`
+replaces the whole workspace with the page's empty state when a list has no
+rows — so choosing a kind nobody has took the queue header, and with it the
+only control that could undo the choice, off the screen. Every other picker
+on that page sits in the toolbar above, which survives an empty list; this is
+the first one that does not.
+
+**And the copy was worse than the dead end.** That empty state decides its
+own wording from `search || countConditions(filter)`, and the quick filter
+goes into `effectiveFilter`, not `filter` — so a 22,988-contact database
+narrowed to a kind nobody has read ***"No contacts yet — create your first
+contact to get started"***. The three of them now count `typePick` too, so it
+says *"No matching records"* and offers **Clear … filter**, which is the one
+thing that caused it. `listDefaultView.spec.ts` walks the round trip — pick,
+count moves, clear, count returns. Found by a spec, not by reading the code.
+
+**Which field it filters is `queueCardFields(fields).type`** — the same
+metadata decision that puts the flag beside the name, so the chip and the
+filter are one fact found one way and **no screen names a field**. A module
+without it simply has no filter button: on a development database Inventories
+has no contact type and shows none, while production's own schema flags
+`contact_type` on both, so both get one there. That is the fallback working
+rather than the feature missing.
+
 ## Three warnings, and two of them were lying
 
 **27 September 2026, the owner**, with three screenshots of amber and red

@@ -13,7 +13,7 @@ import { saveListNav } from '../lib/listNav';
 import { cn } from '../lib/utils';
 import { FieldInput } from '../components/FieldRenderer';
 import { assignmentField, byLabel, pipelineFieldOf, withQueueSubtitle } from '../lib/fields';
-import { withQueueCardColumns } from '../lib/queueCard';
+import { queueCardFields, withQueueCardColumns } from '../lib/queueCard';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
@@ -67,6 +67,13 @@ export default function ListView(): JSX.Element {
   const [agentPick, setAgentPick] = useState<string | null>(null);
   const [tagPick, setTagPick] = useState<string | null>(null);
   const [dispositionPick, setDispositionPick] = useState<DispositionPick>(NO_DISPOSITION_PICK);
+  /*
+    The split view's quick filter, beside the record count. It lives here and
+    not in the pane because it has to reach the *server* with the rest of the
+    query: a filter applied to the rows already on screen would narrow the
+    queue and leave the count beside it still describing all 22,975.
+  */
+  const [typePick, setTypePick] = useState<string[]>([]);
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
@@ -350,6 +357,10 @@ export default function ListView(): JSX.Element {
   */
   const stageField = meta ? pipelineFieldOf(meta) : undefined;
   const ownerField = meta ? assignmentField(meta.fields) : undefined;
+  /* The kind field the queue card already leads with — Contact Type on a
+     contact — so the quick filter and the chip beside the name are the same
+     fact, found the same way, and no screen names a field. */
+  const typeField = meta ? queueCardFields(meta.fields).type : undefined;
 
   // Next Follow-up is the CRM's task field. These are deliberately not saved
   // views: every person gets the same obvious work queues without an admin
@@ -380,6 +391,9 @@ export default function ListView(): JSX.Element {
       // `record_tags` is the builder's own name for the tags on a record; a tag
       // is not a field on the module, so it cannot be resolved as one.
       ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
+      ...(typePick.length && typeField
+        ? [{ field: typeField.name, operator: 'in' as const, value: typePick }]
+        : []),
       /*
         How the last call went. `last_call_disposition` is a system field in the
         query builder, not a column on either module — a disposition lives on
@@ -394,7 +408,7 @@ export default function ListView(): JSX.Element {
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, dispositionPick]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, typePick, typeField?.name, dispositionPick]);
 
   /*
     What the breakdown counts is the view and the ad-hoc filter, but never the
@@ -1050,15 +1064,34 @@ export default function ListView(): JSX.Element {
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<ModuleIcon name={meta.icon} className="h-10 w-10" />}
-            title={search || countConditions(filter) ? 'No matching records' : `No ${meta.label.toLowerCase()} yet`}
-            body={search || countConditions(filter)
+            /*
+              The quick filter counts as a filter here. Without it a list
+              narrowed to a kind nobody has read *"Create your first contact
+              to get started"* over a database holding 22,988 of them — which
+              is alarming rather than helpful, and says nothing about the one
+              thing that caused it.
+            */
+            title={search || countConditions(filter) || typePick.length ? 'No matching records' : `No ${meta.label.toLowerCase()} yet`}
+            body={search || countConditions(filter) || typePick.length
               ? 'Try adjusting your search or filters.'
               : `Create your first ${meta.singularLabel.toLowerCase()} to get started.`}
-            action={canCreate && !search && !countConditions(filter)
-              ? <button className="btn-primary btn-sm" onClick={() => setShowQuickCreate(true)}>
-                  <Plus className="h-3.5 w-3.5" /> New {meta.singularLabel}
+            /*
+              The quick filter lives in the queue's own header, and an empty
+              result replaces the whole workspace — header and all. So the one
+              control that could undo it goes off the screen with it, and
+              "Try adjusting your filters" points at something that is no
+              longer there. Every other picker on this page is in the toolbar
+              above, which stays; this one needs its own way back.
+            */
+            action={typePick.length
+              ? <button className="btn-secondary btn-sm" onClick={() => { setTypePick([]); setPage(1); }}>
+                  Clear {typeField?.label.toLowerCase() ?? 'type'} filter
                 </button>
-              : undefined}
+              : canCreate && !search && !countConditions(filter)
+                ? <button className="btn-primary btn-sm" onClick={() => setShowQuickCreate(true)}>
+                    <Plus className="h-3.5 w-3.5" /> New {meta.singularLabel}
+                  </button>
+                : undefined}
           />
         ) : (
           <IpropyWorkspace
@@ -1108,6 +1141,8 @@ export default function ListView(): JSX.Element {
             }}
             callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
+            typePick={typePick}
+            onTypePick={(values) => { setTypePick(values); setPage(1); }}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
               : undefined}

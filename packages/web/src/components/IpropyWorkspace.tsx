@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { recordStrength, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Link2,
+  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Filter, Link2,
   MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
@@ -20,15 +20,12 @@ import { HeaderPills } from './HeaderPills';
 import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
-import { badgeVars } from '../lib/color';
-import { followUpChip } from '../lib/followUpDates';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar } from './RecordAvatar';
 import { api } from '../lib/api';
-import { FollowUpBadge } from './FollowUpChip';
 import { activeSortOption, sortOptions } from '../lib/listSort';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
@@ -141,7 +138,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
  */
 export function IpropyWorkspace({
   module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
-  openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
+  openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort, typePick, onTypePick,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -164,6 +161,20 @@ export function IpropyWorkspace({
   /** Snapshot of the effective queue, including unsaved quick-filter choices. */
   callQueueUrl: string;
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
+  /**
+   * The quick filter over the queue's own kind field — Contact Type.
+   *
+   * **27 September 2026, the owner:** *"A quick filter icon need in between
+   * Lead/Inventory Record count and Sorting tab for Contact type, so that we
+   * easy filter data from that icon."*
+   *
+   * The list owns it, not this pane: it has to reach the server with the rest
+   * of the query, or the queue would filter what is on screen and the count
+   * beside it would go on describing all 22,975. Which field it is is the
+   * module's own first subtitle field — no screen names it.
+   */
+  typePick?: string[];
+  onTypePick?: (values: string[]) => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey>('overview');
@@ -307,7 +318,7 @@ export function IpropyWorkspace({
     conversation and must reach the same answer. A second copy of this
     reasoning is the mistake this repo keeps finding months later.
   */
-  const { headerFields, blocks, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
+  const { headerFields, blocks, assignedField, followUpField, phoneField } = useRecordPanes(module);
   const { data: assignableUsers = [] } = useQuery({
     queryKey: ['users', 'assignable'],
     queryFn: () => api.users(false, false, true),
@@ -443,13 +454,71 @@ export function IpropyWorkspace({
               <span className="shrink-0 font-normal text-muted">({rows.length})</span>
             </span>
           </span>
+          {/*
+            The quick filter, between the count and the sorting menu, exactly
+            where he asked for it. It is the queue's own kind field, and its
+            values are that field's dropdown — never a list written here.
+          */}
+          {onTypePick && cardFields.type && (cardFields.type.options?.length ?? 0) > 0 && (
+            <Dropdown
+              /*
+                Anchored to the button's *right* edge, so the panel grows back
+                towards the left of the queue and stays inside it. Left-anchored
+                it ran 46px past the pane (measured), which widens the pane's
+                scrollable area — and an `overflow-hidden` box still scrolls
+                when the browser reveals a focused item inside it, so tabbing
+                through the options slid every row sideways.
+              */
+              align="right"
+              trigger={(
+                <button
+                  type="button"
+                  data-testid="queue-type-filter"
+                  title={`Filter by ${cardFields.type.label}`}
+                  aria-label={`Filter by ${cardFields.type.label}`}
+                  className={cn(
+                    'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold transition-colors',
+                    typePick?.length
+                      ? 'bg-brand-600 text-white'
+                      : 'text-slate-500 hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-950',
+                  )}
+                >
+                  <Filter className="h-3.5 w-3.5 shrink-0" />
+                  {typePick?.length ? <span className="tabular-nums">{typePick.length}</span> : null}
+                </button>
+              )}
+            >
+              {() => (
+                <div className="max-h-[20rem] overflow-y-auto py-1">
+                  <QueueFilterRow
+                    label={`Any ${cardFields.type!.label.toLowerCase()}`}
+                    chosen={!typePick?.length}
+                    onClick={() => onTypePick([])}
+                  />
+                  {(cardFields.type!.options ?? []).map((option) => {
+                    const on = typePick?.includes(option.value) ?? false;
+                    return (
+                      <QueueFilterRow
+                        key={option.value}
+                        label={option.label || option.value}
+                        chosen={on}
+                        onClick={() => onTypePick(on
+                          ? (typePick ?? []).filter((value) => value !== option.value)
+                          : [...(typePick ?? []), option.value])}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </Dropdown>
+          )}
           {onSort && (
             <Dropdown
               align="right"
               trigger={(
                 <button
                   type="button"
-                  className="flex max-w-[10rem] shrink-0 items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300"
+                  className="flex max-w-[10rem] shrink-0 items-center gap-1 text-[11px] font-medium text-slate-600 transition-colors hover:text-brand-700 dark:text-slate-300 dark:hover:text-brand-300"
                   aria-label="Sort this list"
                 >
                   <ArrowUpDown className="h-3 w-3 shrink-0 text-slate-400" />
@@ -502,7 +571,9 @@ export function IpropyWorkspace({
             </Dropdown>
           )}
         </div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
+        {/* Flush, because each row draws its own hairline — one separator
+            between records, which is what the owner asked for. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {rows.map((row) => (
             <QueueCard
               key={row.id}
@@ -511,8 +582,6 @@ export function IpropyWorkspace({
               checked={selected.has(row.id)}
               attention={attentionIds.has(row.id)}
               card={cardFields}
-              followUpField={followUpField ?? cardFields.followUp}
-              statusField={statusField}
               onSelect={() => openRecord(row.id)}
               onToggle={(checked) => onToggleSelect(row.id, checked)}
             />
@@ -640,7 +709,7 @@ export function IpropyWorkspace({
                 canEdit={canEdit}
                 className={cn(
                   ACTION_CIRCLE,
-                  active.tags?.length && 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-200',
+                  active.tags?.length && 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-200',
                 )}
               />
               <button
@@ -823,7 +892,7 @@ export function IpropyWorkspace({
       title={`Summary of ${active?.label ?? ''}`}
     >
       <div className="space-y-3">
-        <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4 text-sm leading-6 text-slate-700 dark:border-brand-900 dark:bg-brand-950/30 dark:text-slate-200">
+        <div className="rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm leading-6 text-slate-700 dark:border-brand-900 dark:bg-brand-950 dark:text-slate-200">
           {summary}
         </div>
         <p className="text-xs text-muted">
@@ -874,15 +943,12 @@ export function IpropyWorkspace({
  * than one button holding another. A button inside a button is not allowed in
  * HTML, and a screen reader cannot reach the inner one.
  */
-function QueueCard({ row, active, checked, attention, card, followUpField, statusField, onSelect, onToggle }: {
+function QueueCard({ row, active, checked, attention, card, onSelect, onToggle }: {
   row: RecordEnvelope;
   active: boolean;
   checked: boolean;
   attention: boolean;
   card: CardFields;
-  followUpField?: FieldMeta;
-  /** The module's own stage field, whatever it is called here. */
-  statusField?: FieldMeta;
   onSelect: () => void;
   onToggle: (checked: boolean) => void;
 }): JSX.Element {
@@ -895,13 +961,6 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
   const area = card.area
     ? cardArea(row.values[card.area.name], typeof areaUnitField === 'string' ? row.values[areaUnitField] : undefined)
     : '';
-  const followUp = followUpField ? row.values[followUpField.name] : null;
-  const due = followUpChip(followUp);
-  const stage = statusField ? String(row.values[statusField.name] ?? '') : '';
-  // The admin's own colour for that stage, never a hue written here.
-  const stageOption = statusField?.options?.find((option) => option.value === stage);
-  const stageLabel = stageOption?.label ?? stage;
-
   /*
     The open record is brought into view when it was opened from somewhere
     else — global search, a link, Save & Next — and left exactly where it is
@@ -914,38 +973,43 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
   }, [active]);
 
   return (
-    <div ref={self} data-testid="queue-card" className="group relative">
+    <div ref={self} data-testid="queue-card" className="group relative border-b border-[var(--border)]">
       <button
         type="button"
         onClick={onSelect}
         aria-current={active ? 'true' : undefined}
         className={cn(
-          'relative block w-full cursor-pointer rounded-lg p-2.5 text-left transition',
+          'relative block w-full cursor-pointer px-3 py-2.5 text-left transition-colors',
           /*
-            The open card, as the owner drew it on 27 September 2026: a ringed
-            violet card with a bar running down its left edge, rather than the
-            tinted row it was. The bar is an element and not a border, which is
-            the rule this repo keeps: two `border-*` utilities on one element
-            let Tailwind's own stylesheet order pick the colour, and the marker
-            came out slate on slate once.
+            **27 September 2026, the owner:** *"Remove highlight box and shadow
+            of box, We Need highlight whole box with only light colour for
+            Selected record, When we Selected a record Then Font colour of Name
+            and Price should be change as per theme."*
+
+            So the open record is a light wash of the brand across the whole
+            row and nothing else — no ring, no shadow, no bar down the edge,
+            no border of its own. The rows are divided by one hairline each
+            (the wrapper above), which is the separator he asked for; the card
+            itself draws none.
+
+            **Every colour here is a `brand-*` token**, which is the other half
+            of that message: those resolve to CSS variables that Brand settings
+            rewrites, so changing the theme moves this row with it. A hue
+            written in as `indigo-50` would not have.
           */
           active
-            ? 'border-2 border-brand-600 bg-brand-50/80 shadow-md ring-2 ring-brand-500/20 dark:border-brand-500 dark:bg-brand-950/40'
-            : 'border border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:border-slate-700 dark:hover:bg-slate-800',
+            ? 'bg-brand-50 dark:bg-brand-950'
+            : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
         )}
       >
-        {active && (
-          <span
-            className="absolute -left-1 bottom-2 top-2 w-1.5 rounded-r-md bg-brand-700 shadow-xs dark:bg-brand-400"
-            aria-hidden
-          />
-        )}
-
-        {/* 1. Who, and what kind of contact. */}
-        <span className={cn('flex min-w-0 items-center gap-1.5 pr-16', active && 'pl-1.5')}>
+        {/*
+          1. Who, and what kind of contact — the line a rep scans, so it is the
+          heaviest thing on the card.
+        */}
+        <span className="flex min-w-0 items-center gap-1.5 pr-8">
           <span className={cn(
-            'truncate text-xs',
-            active ? 'font-extrabold tracking-tight text-brand-900 dark:text-brand-100' : 'font-bold text-slate-900 dark:text-slate-100',
+            'truncate text-[15px] font-extrabold tracking-tight',
+            active ? 'text-brand-700 dark:text-brand-200' : 'text-slate-900 dark:text-slate-100',
           )}>
             {row.label}
           </span>
@@ -955,66 +1019,43 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
 
         {/* 2. Which unit, cut short with "…" rather than wrapped. */}
         <span className={cn(
-          'mt-1 block min-w-0 truncate text-[11px]',
+          'mt-1 block min-w-0 truncate text-xs',
           active ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400',
-          active && 'pl-1.5',
         )}>
           {[unit, description].filter(Boolean).join(', ') || '—'}
         </span>
 
-        {/* 3. The money and the size, under a hairline. */}
-        <span className={cn(
-          'mt-2 flex items-center justify-between gap-2 border-t pt-1 text-xs',
-          active ? 'border-brand-200 pl-1.5 dark:border-brand-800' : 'border-slate-100/60 dark:border-slate-800',
-        )}>
-          <span className="flex min-w-0 items-center gap-1.5">
-            {price && (
-              <span className={cn(
-                'shrink-0 whitespace-nowrap font-extrabold tabular-nums',
-                active ? 'text-brand-900 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100',
-              )}>
-                {price}
-              </span>
-            )}
-            {/* `text-muted` and not a slate step: this is 11px copy on white,
-                and slate-400 there is 2.56:1 — the scan catches it, which is
-                what the token exists for. */}
-            {area && <span className="truncate text-[11px] font-normal text-muted">• {area}</span>}
-          </span>
-          {/*
-            The stage keeps the corner it was given on 27 September 2026 —
-            *"Replace the Star icon with Lead/Inventory Status"* — in the slot
-            the prototype leaves open at the end of this row. Its colour is the
-            admin's own, off the picklist option, never a hue written here.
-          */}
-          {stageLabel && (
-            stageOption?.meta?.plainText === true ? (
-              <span
-                title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
-                className="max-w-[7rem] shrink-0 truncate text-[11px] font-semibold text-slate-600 dark:text-slate-300"
-              >
-                {stageLabel}
-              </span>
-            ) : (
-              <span
-                style={badgeVars(stageOption?.color)}
-                title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
-                className={cn(
-                  'max-w-[7rem] shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-bold',
-                  stageOption?.color ? 'badge-solid' : 'bg-brand-700 text-white',
-                )}
-              >
-                {stageLabel}
-              </span>
-            )
+        {/*
+          3. The money and the size. No rule above it — *"Remove Separator Line
+          In between second and Third Row"* — because the line between one
+          record and the next is the only one this queue needs.
+        */}
+        <span className="mt-1 flex items-center gap-2 text-sm">
+          {price && (
+            <span className={cn(
+              'shrink-0 whitespace-nowrap text-base font-extrabold tabular-nums',
+              active ? 'text-brand-700 dark:text-brand-200' : 'text-slate-900 dark:text-slate-100',
+            )}>
+              {price}
+            </span>
           )}
+          {/* `text-muted` and not a slate step: the token is the one that
+              carries a contrast guarantee in both themes. */}
+          {area && <span className="truncate text-xs font-medium text-muted">• {area}</span>}
         </span>
       </button>
 
       {/*
-        The tick box and the task chip sit over the card's top-right corner.
-        The tick box only shows on hover or once ticked, so the card reads like
-        the prototype until somebody reaches for a bulk action.
+        The tick box, and nothing else, over the card's top-right corner.
+
+        **The follow-up and stage chips were taken off on 27 September 2026**,
+        on the owner's instruction — both facts are on the open record's own
+        header, as chips, two inches away. A queue row that carries them as
+        well is the same thing said twice in the one place a rep is scanning
+        for a name.
+
+        The box only shows on hover or once ticked, so the row reads as a name
+        and a price until somebody reaches for a bulk action.
       */}
       <span className="absolute right-2.5 top-2.5 flex items-center gap-1">
         <input
@@ -1027,9 +1068,29 @@ function QueueCard({ row, active, checked, attention, card, followUpField, statu
             checked ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100',
           )}
         />
-        {due && <FollowUpBadge due={due} date={followUp} />}
       </span>
     </div>
+  );
+}
+
+/** One line of the queue's quick filter. Stays open — picking two is one visit. */
+function QueueFilterRow({ label, chosen, onClick }: { label: string; chosen: boolean; onClick: () => void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      data-testid="queue-filter-row"
+      onClick={onClick}
+      aria-pressed={chosen}
+      className={cn(
+        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors',
+        chosen
+          ? 'bg-brand-50 font-bold text-brand-900 dark:bg-brand-950 dark:text-brand-100'
+          : 'font-medium text-slate-700 hover:bg-[var(--surface-muted)] dark:text-slate-200',
+      )}
+    >
+      <Check className={cn('h-3.5 w-3.5 shrink-0', chosen ? 'text-brand-600' : 'invisible')} />
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
 
@@ -1045,8 +1106,15 @@ function TypeFlag({ label, strong }: { label: string; strong: boolean }): JSX.El
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center py-0.5 pl-2.5 pr-1.5 text-[9px] uppercase tracking-wider text-sky-900',
-        strong ? 'bg-blue-100 font-bold dark:bg-sky-900/70 dark:text-sky-100' : 'bg-sky-100 font-semibold dark:bg-sky-950 dark:text-sky-200',
+        /*
+          Brand tints, not a fixed sky: *"The Theme colour Changed from Admin
+          so please set all button/Chip/Text colour … accordingly."* These
+          resolve to the CSS variables Brand settings rewrites.
+        */
+        'inline-flex shrink-0 items-center py-0.5 pl-2.5 pr-1.5 text-[10px] uppercase tracking-wider',
+        strong
+          ? 'bg-brand-200 font-bold text-brand-900 dark:bg-brand-800 dark:text-brand-50'
+          : 'bg-brand-100 font-semibold text-brand-800 dark:bg-brand-950 dark:text-brand-200',
       )}
       style={{ clipPath: 'polygon(6px 0%, 100% 0%, 100% 100%, 6px 100%, 0% 50%)' }}
     >

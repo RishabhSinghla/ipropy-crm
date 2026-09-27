@@ -186,19 +186,29 @@ test('the open record is obvious in the queue', async ({ page }) => {
   const chosen = rows.nth(2).locator('button').first();
   await chosen.click();
   /*
-    The open card is a tint plus a marker down its left edge. It used to carry
-    a 4px inset shadow as well, and the owner asked for that on 27 September
-    2026 — *"its dark colour are irritating to my eyes"* — so the measurement
-    moved to the properties the treatment actually uses rather than staying on
-    one it no longer has.
+    **The open card is a light fill and nothing else**, on the owner's
+    instruction of 27 September 2026: *"Remove highlight box and shadow of
+    box, We Need highlight whole box with only light colour for Selected
+    record"*. So this measures the fill against a plain row and then measures
+    that the things he asked to go really have gone — a shadow or a marker
+    stripe would still read as a box around the row, which is what he was
+    looking at.
   */
-  const look = (el: Element): string =>
-    `${getComputedStyle(el).backgroundColor} ${getComputedStyle(el).boxShadow} ${getComputedStyle(el).borderColor}`;
-  const open = await chosen.evaluate(look);
-  const plain = await rows.nth(4).locator('button').first().evaluate(look);
-  expect(open, 'the open record looks like every other row').not.toBe(plain);
-  // And a marker that is an element, which cannot lose a stylesheet-order
-  // lottery to the row's own bottom border.
-  await expect(chosen.locator('span[aria-hidden]').first()).toBeVisible();
+  const fill = (el: Element): string => getComputedStyle(el).backgroundColor;
+  const open = await chosen.evaluate(fill);
+  const plain = await rows.nth(4).locator('button').first().evaluate(fill);
+  expect(open, 'the open record is not filled differently from every other row').not.toBe(plain);
+  expect(await chosen.evaluate((el) => getComputedStyle(el).boxShadow), 'the open row still has a shadow').toBe('none');
   await expect(chosen).toHaveAttribute('aria-current', 'true');
+
+  /*
+    And the name reads in the theme's own colour while it is open — his
+    *"When we Selected a record Then Font colour of Name and Price should be
+    change as per theme"*. Measured against the same row before it was
+    chosen, because a name that is one colour either way is the bug.
+  */
+  const nameOf = (row: typeof chosen): Promise<string> =>
+    row.locator('span span').first().evaluate((el) => getComputedStyle(el).color);
+  expect(await nameOf(chosen), 'the open name reads the same colour as a closed one')
+    .not.toBe(await nameOf(rows.nth(4).locator('button').first()));
 });
