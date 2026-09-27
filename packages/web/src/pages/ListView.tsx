@@ -442,7 +442,13 @@ export default function ListView(): JSX.Element {
     queryKey: ['records', moduleName, query],
     queryFn: () => api.list(moduleName!, query),
     enabled: Boolean(moduleName && meta),
-    placeholderData: (prev) => prev,
+    /*
+      Keep the last page on screen while the next one loads — but only within
+      one module. Across a switch the "last page" is the other module's rows,
+      and the split view would open a contact as if it were a unit (a 404 on
+      every switch between Contacts and Inventories).
+    */
+    placeholderData: (prev, previousQuery) => (previousQuery?.queryKey[1] === moduleName ? prev : undefined),
   });
 
   const commitPageInput = (): void => {
@@ -1022,6 +1028,13 @@ export default function ListView(): JSX.Element {
           />
         ) : (
           <IpropyWorkspace
+            /*
+              A fresh workspace per module. Without it the record open on
+              Contacts stays "open" for a moment after switching to
+              Inventories, and its id is asked for as a unit — a 404 on every
+              switch between the two.
+            */
+            key={meta.name}
             module={meta}
             rows={rows}
             // `?open=` — a record named in the address, from global search, a

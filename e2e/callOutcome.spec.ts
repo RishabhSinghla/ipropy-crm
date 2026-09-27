@@ -15,12 +15,24 @@
  * are the same ones, deliberately: the list is the admin's, a save reaches the
  * Calls tab, and there is no way to send an outcome the list does not offer.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { waitForRecords, searchList, openFromListByName } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
 const name = `Call Outcome ${Date.now()}`;
+
+/*
+  The outcomes, as the split view's deck draws them: one button each under
+  "Call disposition", named by the admin's own label.
+*/
+function outcomeButtons(deck: Locator): Locator {
+  return deck.getByText('Call disposition', { exact: true }).locator('..').getByRole('button');
+}
+async function chooseOutcome(deck: Locator, value: string): Promise<void> {
+  // Each outcome button is named by its own label, exactly.
+  await deck.getByRole('button', { name: value, exact: true }).first().click();
+}
 let recordUrl = '';
 
 test('a rep adds the lead they are about to ring', async ({ page }) => {
@@ -59,8 +71,7 @@ test('tapping the number opens the deck in the header, not a dialog over the rec
 
   // The real list, not one lonely option: the picklist ships with thirteen and
   // an admin only ever adds to it.
-  const outcomes = deck.getByRole('combobox', { name: /how the call went/i });
-  expect(await outcomes.locator('option').count(), 'the outcome list did not load').toBeGreaterThan(5);
+  expect(await outcomeButtons(deck).count(), 'the outcome list did not load').toBeGreaterThan(5);
 
   /*
     Speaker, mute, hold and End are dead, with the reason, until a phone says
@@ -82,7 +93,7 @@ test('saving the outcome records the call on the lead', async ({ page }) => {
 
   const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
-  await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
+  await chooseOutcome(deck, 'Interested');
   await deck.getByRole('button', { name: /save & exit/i }).click();
 
   await expect(deck).toBeHidden({ timeout: 20_000 });
@@ -102,7 +113,7 @@ test('an outcome the list does not offer cannot be sent', async ({ page }) => {
   const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
   expect(await deck.locator('input[type="text"]').count()).toBe(0);
-  expect(await deck.locator('option').count()).toBeGreaterThan(5);
+  expect(await outcomeButtons(deck).count()).toBeGreaterThan(5);
   await deck.getByRole('button', { name: /save & exit/i }).click();
 });
 
@@ -135,7 +146,7 @@ test('the outcome list follows the admin, not the bundle', async ({ page }) => {
     await expect(deck).toBeVisible({ timeout: 15_000 });
     // Reachable, not merely present: an option Settings can add and the deck
     // cannot pick is Settings editing a list nobody can use.
-    await deck.getByRole('combobox', { name: /how the call went/i }).selectOption(value);
+    await chooseOutcome(deck, value);
     await deck.getByRole('button', { name: /save & exit/i }).click();
   } finally {
     await page.evaluate(async (gone) => {
@@ -172,7 +183,7 @@ test('Save & Next carries the call to the next person', async ({ page }) => {
   const wasOffered = (await next.count()) > 0;
   const save = wasOffered ? next : deck.getByRole('button', { name: /save & exit/i });
 
-  await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
+  await chooseOutcome(deck, 'Interested');
   await save.click();
 
   // Landed on somebody else, still in whichever view this person uses.

@@ -53,12 +53,11 @@ test('they change the pipeline status without leaving the page', async ({ page }
   await page.goto(recordUrl);
   await fieldEditor(page, /^Change Pipeline Status$/).click();
 
-  const options = page.getByRole('option').or(page.locator('select').first());
-  await expect(options.first()).toBeVisible({ timeout: 10_000 });
-
-  await page.getByRole('option', { name: 'Contacted' }).click().catch(async () => {
-    await page.locator('select').first().selectOption({ label: 'Contacted' });
-  });
+  // The stage list itself, by the option wanted: the split view has other
+  // (hidden) dropdowns on the page, so "the first option anywhere" is not it.
+  const contacted = page.getByRole('option', { name: 'Contacted' });
+  await expect(contacted).toBeVisible({ timeout: 10_000 });
+  await contacted.click();
 
   // It saves on its own — no Save button in the inline flow.
   await expect(page.getByText('Contacted').first()).toBeVisible({ timeout: 10_000 });
