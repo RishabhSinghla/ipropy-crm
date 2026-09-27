@@ -995,6 +995,7 @@ function OverviewTab({
                           restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
                           linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
                           onSaved={onSaved}
+                          plain
                         />
                       ) : (
                         <FieldValue
@@ -1002,6 +1003,7 @@ function OverviewTab({
                           value={record.values[field.name]}
                           display={record.display?.[field.name]}
                           linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
+                          plain
                         />
                       )}
                     </dd>

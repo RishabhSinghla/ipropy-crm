@@ -2,8 +2,8 @@ import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDate, recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  AlarmClock, ArrowRightLeft, ArrowUpDown, CalendarClock, Check, CircleEllipsis, FileText, Home, Link2,
-  MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, TriangleAlert, Users,
+  ArrowRightLeft, ArrowUpDown, Check, FileText, Link2,
+  MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CALL_DECK_DOCK_ID } from './LiveCallDeck';
@@ -20,6 +20,7 @@ import { HeaderPills } from './HeaderPills';
 import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
+import { badgeVars } from '../lib/color';
 import { followUpChip, type FollowUpChip as FollowUpChipValue, type FollowUpTone } from '../lib/followUpDates';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ModuleIcon } from './Layout';
@@ -423,10 +424,10 @@ export function IpropyWorkspace({
               attention={attentionIds.has(row.id)}
               card={cardFields}
               followUpField={followUpField ?? cardFields.followUp}
+              statusField={statusField}
               adminLine={queueChosen ? subtitleFields : null}
               onSelect={() => setActiveId(row.id)}
               onToggle={(checked) => onToggleSelect(row.id, checked)}
-              onStar={() => star.mutate(row)}
             />
           ))}
         </div>
@@ -480,8 +481,13 @@ export function IpropyWorkspace({
               <div className="flex min-w-0 items-center gap-x-2 whitespace-nowrap">
                 <h2 className="min-w-0 truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
                 {assignedField && (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-200" title="Agent">
-                    <Users className="h-3 w-3" aria-hidden />
+                  /*
+                    The agent's name, plainly — 27 September 2026, the owner:
+                    *"remove chip and icon from Assign to before … Agent
+                    name"*. It was a violet pill with a person in it, which
+                    made the one editable fact on that line look like a label.
+                  */
+                  <span className="inline-flex shrink-0 items-center text-xs font-semibold text-muted" title="Agent">
                     {canEdit && isInlineEditable(assignedField) ? (
                       <EditableField
                         module={module.name}
@@ -758,9 +764,9 @@ export function IpropyWorkspace({
  *
  * **26 September 2026, the owner**, from a mock-up, in the colours he chose:
  *
- *   Name  [TYPE]                                              ☆
- *   🏢 H. No: A-2701 • Single, 4 BHK Builder Floor, Greenfields Colony
- *   ₹1.85 Cr  2,100 sq.ft                                 [TODAY]
+ *   Name  [TYPE]                                         [ CONTACTED ]
+ *   Single, 4 BHK Builder Floor, Greenfields Colony
+ *   ₹1.85 Cr  2,100 sq.ft                                     [TODAY]
  *
  * The open record carries a plum bar down its left edge and a lifted shadow,
  * so which one is open reads at a glance. The middle line is cut short with
@@ -769,22 +775,28 @@ export function IpropyWorkspace({
  * When Admin → Split View has chosen the line under the name, that choice
  * replaces the middle line: an admin's arrangement outranks this default.
  *
- * The card, its star and its tick box are three separate buttons laid over one
- * another rather than one button holding two more. A button inside a button
- * is not allowed in HTML, and a screen reader cannot reach the inner one.
+ * **27 September 2026, the owner:** *"Replace the Star icon with Lead/Inventory
+ * Status."* So the corner that carried a favourite now carries the stage the
+ * record is at, which is the fact a rep scans a queue for. Favouriting is
+ * still on the record's own header, a click away.
+ *
+ * The card and its tick box are separate buttons laid over one another rather
+ * than one button holding another. A button inside a button is not allowed in
+ * HTML, and a screen reader cannot reach the inner one.
  */
-function QueueCard({ row, active, checked, attention, card, followUpField, adminLine, onSelect, onToggle, onStar }: {
+function QueueCard({ row, active, checked, attention, card, followUpField, statusField, adminLine, onSelect, onToggle }: {
   row: RecordEnvelope;
   active: boolean;
   checked: boolean;
   attention: boolean;
   card: CardFields;
   followUpField?: FieldMeta;
+  /** The module's own stage field, whatever it is called here. */
+  statusField?: FieldMeta;
   /** Admin → Split View's chosen line, when there is one. */
   adminLine: FieldMeta[] | null;
   onSelect: () => void;
   onToggle: (checked: boolean) => void;
-  onStar: () => void;
 }): JSX.Element {
   const read = (field: FieldMeta): string => displayOf(row, field);
   const type = card.type ? read(card.type) : '';
@@ -800,6 +812,10 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
     : '';
   const followUp = followUpField ? row.values[followUpField.name] : null;
   const due = followUpChip(followUp);
+  const stage = statusField ? String(row.values[statusField.name] ?? '') : '';
+  // The admin's own colour for that stage, never a hue written here.
+  const stageOption = statusField?.options?.find((option) => option.value === stage);
+  const stageLabel = stageOption?.label ?? stage;
 
   /*
     The open record is brought into view when it was opened from somewhere
@@ -820,15 +836,27 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
         aria-current={active ? 'true' : undefined}
         className={cn(
           'relative block w-full overflow-hidden border-b-2 border-slate-200 bg-white py-2.5 pl-4 pr-3 text-left transition-colors dark:border-slate-800 dark:bg-slate-900',
+          /*
+            27 September 2026, the owner: the open card's background should be
+            its own colour. Indigo rather than the brand's plum, which at this
+            size reads pink against a white queue — and the accent is already
+            what the price on the card below is printed in.
+          */
           active
-            ? 'bg-violet-50/80 shadow-[inset_4px_0_0_#7c3aed] dark:bg-violet-950/30'
-            : 'hover:bg-violet-50/50 dark:hover:bg-slate-800',
+            ? 'bg-indigo-50 shadow-[inset_4px_0_0_#4e45d5] dark:bg-indigo-950/40'
+            : 'hover:bg-[var(--surface-subtle)] dark:hover:bg-slate-800',
         )}
       >
-        {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600 dark:bg-brand-400" aria-hidden />}
+        {active && <span className="absolute inset-y-0 left-0 w-1 bg-accent" aria-hidden />}
 
-        {/* 1. Who, and what kind of contact. Room kept on the right for the star. */}
-        <span className="flex min-w-0 items-center gap-2 pr-12">
+        {/*
+          1. Who, and what kind of contact.
+
+          The room kept on the right is for the stage chip in the corner, which
+          is wider than the star it replaced — at `pr-12` a long stage sat on
+          top of the contact-type chip and cut it in half.
+        */}
+        <span className="flex min-w-0 items-center gap-2 pr-[7.5rem]">
           <span className={cn(
             'truncate text-base font-bold',
             active ? 'text-brand-600 dark:text-brand-300' : 'text-[var(--text)] dark:text-slate-100',
@@ -836,7 +864,7 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
             {row.label}
           </span>
           {type && (
-            <span className="shrink-0 rounded bg-brand-100 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-brand-700 dark:bg-brand-950/50 dark:text-brand-200">
+            <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-brand-700 dark:bg-brand-950/40 dark:text-brand-200">
               {type}
             </span>
           )}
@@ -844,13 +872,18 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
         </span>
 
         {/* 2. Which unit, cut short with "…" rather than wrapped. */}
-        <span className="mt-1.5 flex min-w-0 items-center gap-1.5 text-sm text-[#475569] dark:text-slate-400">
-          <Home className="h-4 w-4 shrink-0 text-[#4338ca] dark:text-indigo-300" aria-hidden />
+        {/*
+          The facts about the place, with nothing in front of them — 27
+          September 2026: *"Remove House icon / H. No. from Left pane middle
+          raw."* The unit number still leads the line; it simply no longer
+          announces itself, and the icon was the same word drawn twice.
+        */}
+        <span className="mt-1.5 block min-w-0 text-sm text-[#475569] dark:text-slate-400">
           {adminLine ? (
-            <span className="truncate">{adminText || '—'}</span>
+            <span className="block truncate">{adminText || '—'}</span>
           ) : (
-            <span className="truncate">
-              {unit && <span className="font-semibold text-[#0f172a] dark:text-slate-100">H. No: {unit}</span>}
+            <span className="block truncate">
+              {unit && <span className="font-semibold text-[#0f172a] dark:text-slate-100">{unit}</span>}
               {unit && description && ' • '}
               {description}
               {!unit && !description && '—'}
@@ -869,8 +902,8 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
       </button>
 
       {/*
-        The star and the tick box sit over the card's top-right corner. The tick
-        box only shows on hover or once ticked, so the card reads like the
+        The stage and the tick box sit over the card's top-right corner. The
+        tick box only shows on hover or once ticked, so the card reads like the
         mock-up until somebody reaches for a bulk action.
       */}
       <span className="absolute right-2.5 top-2.5 flex items-center gap-1">
@@ -884,16 +917,18 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
             checked ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100',
           )}
         />
-        <button
-          type="button"
-          onClick={onStar}
-          aria-pressed={Boolean(row.starred)}
-          aria-label={row.starred ? `Remove ${row.label} from favourites` : `Add ${row.label} to favourites`}
-          title={row.starred ? 'Remove from favourites' : 'Add to favourites'}
-          className="rounded p-1 text-slate-400 hover:text-brand-600 dark:hover:text-brand-300"
-        >
-          <Star className={cn('h-5 w-5', row.starred && 'fill-brand-600 text-brand-600 dark:fill-brand-300 dark:text-brand-300')} />
-        </button>
+        {stageLabel && (
+          <span
+            style={badgeVars(stageOption?.color)}
+            title={`${statusField?.label ?? 'Status'}: ${stageLabel}`}
+            className={cn(
+              'max-w-[6.5rem] truncate rounded-full px-2.5 py-0.5 text-2xs font-bold',
+              stageOption?.color ? 'badge-solid' : 'bg-brand-700 text-white',
+            )}
+          >
+            {stageLabel}
+          </span>
+        )}
       </span>
     </div>
   );
@@ -904,22 +939,27 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
   clears WCAG AA against its tint; Pending uses the darker of his two slates,
   because #64748b on #f1f5f9 falls just short.
 */
-const FOLLOW_UP_STYLE: Record<FollowUpTone, { className: string; icon: typeof AlarmClock }> = {
-  today: { className: 'bg-[#fffbeb] text-[#b45309] dark:bg-amber-950/50 dark:text-amber-300', icon: AlarmClock },
-  tomorrow: { className: 'bg-[#eff6ff] text-[#1d4ed8] dark:bg-blue-950/50 dark:text-blue-300', icon: CalendarClock },
-  overdue: { className: 'bg-[#fef2f2] text-[#b91c1c] dark:bg-red-950/50 dark:text-red-300', icon: TriangleAlert },
-  pending: { className: 'bg-[#f1f5f9] text-[#475569] dark:bg-slate-800 dark:text-slate-300', icon: CircleEllipsis },
+const FOLLOW_UP_STYLE: Record<FollowUpTone, string> = {
+  today: 'bg-[#fffbeb] text-[#b45309] dark:bg-amber-950/50 dark:text-amber-300',
+  tomorrow: 'bg-[#eff6ff] text-[#1d4ed8] dark:bg-blue-950/50 dark:text-blue-300',
+  overdue: 'bg-[#fef2f2] text-[#b91c1c] dark:bg-red-950/50 dark:text-red-300',
+  pending: 'bg-[#f1f5f9] text-[#475569] dark:bg-slate-800 dark:text-slate-300',
 };
 
+/**
+ * When they are due, as a chip and nothing else.
+ *
+ * **27 September 2026, the owner:** *"The followup Button Should be Rounded
+ * and Lighter colour and also remove icon from followup button."* The icon
+ * said the same word the chip already says, and an alarm bell on every row of
+ * a queue reads as a queue full of alarms.
+ */
 function FollowUpBadge({ due, date }: { due: FollowUpChipValue; date: unknown }): JSX.Element {
-  const style = FOLLOW_UP_STYLE[due.tone];
-  const Icon = style.icon;
   return (
     <span
-      className={cn('inline-flex items-center gap-1 rounded px-2 py-1 text-2xs font-bold uppercase tracking-wide', style.className)}
+      className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-2xs font-semibold uppercase tracking-wide', FOLLOW_UP_STYLE[due.tone])}
       title={date ? `Follow-up ${formatDate(String(date))}` : undefined}
     >
-      <Icon className="h-3.5 w-3.5" aria-hidden />
       {due.label}
     </span>
   );

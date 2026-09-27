@@ -77,7 +77,7 @@ function DueChip({ due }: { due: DueDay }): JSX.Element {
 }
 
 export function FieldValue({
-  field, value, display, compact, linkTo,
+  field, value, display, compact, linkTo, plain,
 }: {
   field: FieldMeta;
   value: unknown;
@@ -85,6 +85,23 @@ export function FieldValue({
   compact?: boolean;
   /** module of a reference target, for building a link */
   linkTo?: string;
+  /**
+   * The value with nothing to click inside it.
+   *
+   * **27 September 2026, the owner:** *"All mobile number should be editable
+   * in Details Forms, Remove whatsapp icon from Details View of Form."* Those
+   * are one fault, not two. A field tile opens its editor when the tile itself
+   * is clicked, and the tile deliberately ignores a click that lands on a
+   * child — otherwise following a link would also start an edit. A phone
+   * rendered its number as a dial link with a WhatsApp button beside it, so on
+   * a form **every** part of that tile was a child, and there was no way to
+   * change a number at all.
+   *
+   * On a form the tile is for editing; the header strip, the queue and the
+   * lists keep the dial link and the WhatsApp icon, which is where a rep
+   * actually reaches for them.
+   */
+  plain?: boolean;
 }): JSX.Element {
   const callDisposition = useCallDisposition();
   const empty = value === null || value === undefined || value === ''
@@ -156,6 +173,7 @@ export function FieldValue({
       // Still a link, still underlines on hover, no longer shouting.
       // The WhatsApp way in sits beside the number everywhere the number is
       // shown, and goes to the CRM's own Chats screen rather than `wa.me`.
+      if (plain) return <span className="tnum">{shown}</span>;
       const wa = <WhatsAppIconButton to={display || String(value)} />;
       return callDisposition ? (
         <span className="inline-flex items-center gap-1.5">
@@ -256,13 +274,14 @@ export function FieldValue({
 
     case 'owner':
     case 'user':
+      /*
+        The name alone. It carried an avatar in front of it, and the owner
+        asked for that gone on 27 September 2026 — *"remove chip and icon from
+        Assign to before … Agent name"*. A face beside a name the reader is
+        scanning for is decoration; the name is the fact.
+      */
       return display
-        ? (
-          <span className="inline-flex items-center gap-1.5">
-            <Avatar name={display} size={compact ? 18 : 22} />
-            <span className="truncate">{display}</span>
-          </span>
-        )
+        ? <span className="truncate">{display}</span>
         // A dash, like every other empty field on the page. "Unassigned" read
         // as a state somebody had chosen; it is only an old record nobody has
         // handed on yet.

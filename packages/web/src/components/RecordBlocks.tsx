@@ -61,8 +61,9 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
               siblings={row.values}
               restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
               onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
+              plain
             />
-          : <FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact />}
+          : <FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact plain />}
       </dd>
     </div>)}</dl>
   </section>;

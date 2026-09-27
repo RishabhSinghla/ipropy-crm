@@ -20,7 +20,7 @@
  * One component, used by the split view and the record page, so the two cannot
  * drift into showing different things in the same place.
  */
-import { type JSX, useMemo } from 'react';
+import { type JSX } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PhoneCall } from 'lucide-react';
 import type { FieldMeta, RecordEnvelope } from '@ipropy/shared';
@@ -28,10 +28,8 @@ import { Dropdown, DropdownItem } from './ui';
 import { api } from '../lib/api';
 import { useCallDispositions } from '../lib/callDispositions';
 import { followUpFor } from '../lib/callConsole';
-import { badgeVars } from '../lib/color';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { type DescribedModule, useRecordPanes } from '../lib/recordPanes';
-import { optionsWithValue } from '../lib/picklistOptions';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 
@@ -40,109 +38,26 @@ export function HeaderPills({ module, row, canEdit, className }: {
   row: RecordEnvelope;
   canEdit: boolean;
   className?: string;
-}): JSX.Element | null {
+}): JSX.Element {
   /*
-    Which field is the stage and which is the chase date is `useRecordPanes`'s
-    decision, not this component's — the same one the record header, the split
-    view and the chat pane already read. A module with no stage field has no
-    stage to show, so the pair does not appear rather than guessing at a field
-    whose name happens to contain "status".
+    The call pill alone.
+
+    **27 September 2026, the owner:** *"in the header pane we have a
+    button/chip of Lead/Inventory Status Before Star Button, Please remove the
+    Lead/Inventory Status from Header Pane."* The stage moved to the queue
+    card's own corner the same day, where the star used to be — so it is on
+    screen for every record in the list rather than only the open one, and
+    showing it twice on the open one was the duplication he was looking at.
+
+    The editable stage chip went with it rather than being left here unused —
+    git remembers it, and dead code with a comment explaining why it is dead
+    is the thing the next reader has to work out before they can ignore it.
   */
-  const { statusField, followUpField } = useRecordPanes(module);
-  if (!statusField) return null;
+  const { followUpField } = useRecordPanes(module);
   return (
     <span className={cn('flex shrink-0 items-center gap-1.5', className)}>
-      <StatusPill module={module} field={statusField} row={row} canEdit={canEdit} />
       <CallAgainPill module={module} followUp={followUpField} row={row} canEdit={canEdit} />
     </span>
-  );
-}
-
-/**
- * Where this record stands, in the colour the admin chose for that stage.
- *
- * **26 September 2026, the owner:** *"it should be Normal editable Rounded
- * chip in dark color as we picked from Master Dropdown colors, Its shold be
- * very bold and highlighted then all text eye catching."* So it is the
- * **solid** variant — the admin's hue as the fill rather than as a wash of
- * itself — which `lib/color.ts` already computes beside the tinted one, with
- * black or white on top chosen so the pair still clears AA. Which of those it
- * picks is why a raw `${color}18` written here would not do: that lands
- * around 2–3:1, and how readable a stage came out would depend entirely on
- * which colour somebody happened to choose.
- *
- * **No arrow**, on the same instruction. It is still the same control — the
- * whole chip opens the list — and a chevron on a chip this size ate a third
- * of the word inside it.
- */
-function StatusPill({ module, field, row, canEdit }: {
-  module: DescribedModule; field: FieldMeta; row: RecordEnvelope; canEdit: boolean;
-}): JSX.Element {
-  const queryClient = useQueryClient();
-  const value = row.values[field.name];
-  const current = value === null || value === undefined ? '' : String(value);
-
-  const options = useMemo(
-    () => optionsWithValue(field.options?.filter((o) => o.isActive || o.value === current), current),
-    [field.options, current],
-  );
-
-  const set = useMutation({
-    mutationFn: (next: string) => api.update(module.name, row.id, { [field.name]: next }),
-    onSuccess: () => {
-      invalidateRecordQueries(queryClient, module.name, row.id);
-      toast.success('Status updated');
-    },
-    onError: (err: Error) => toast.error('Could not change the status', err.message),
-  });
-
-  const chosen = options.find((o) => o.value === current);
-  const label = chosen?.label ?? current ?? '';
-
-  return (
-    <Dropdown
-      align="right"
-      trigger={
-        <button
-          type="button"
-          disabled={!canEdit || set.isPending}
-          data-testid="status-pill"
-          title={`${field.label}${label ? `: ${label}` : ''} — change it`}
-          aria-label={`${field.label}${label ? `, ${label}` : ', not set'}. Change it`}
-          style={badgeVars(chosen?.color)}
-          className={cn(
-            'inline-flex h-8 max-w-[12rem] items-center rounded-full px-3.5 text-sm font-extrabold tracking-tight',
-            'shadow-sm transition-transform hover:brightness-110 active:scale-95',
-            'disabled:cursor-not-allowed disabled:opacity-60',
-            // A stage nobody has given a colour falls back to the brand rather
-            // than to an invented hue — still dark, still eye-catching.
-            chosen?.color ? 'badge-solid' : 'bg-brand-700 text-white',
-          )}
-        >
-          <span className="truncate">{label || field.label}</span>
-        </button>
-      }
-    >
-      {(close) => (
-        <>
-          {options.map((option) => (
-            <DropdownItem
-              key={option.value}
-              onClick={() => { close(); if (option.value !== current) set.mutate(option.value); }}
-              icon={
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: option.color ?? 'var(--border)' }}
-                  aria-hidden
-                />
-              }
-            >
-              {option.label}
-            </DropdownItem>
-          ))}
-        </>
-      )}
-    </Dropdown>
   );
 }
 

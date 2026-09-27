@@ -97,6 +97,8 @@ export interface EditableFieldProps {
   value: unknown;
   display?: string;
   compact?: boolean;
+  /** Draw the value with nothing clickable inside it — see `FieldValue.plain`. */
+  plain?: boolean;
   /** dependent-picklist restriction, resolved from the module's picklistDependencies against the record's current values */
   restrictTo?: string[];
   /**
@@ -115,7 +117,7 @@ export interface EditableFieldProps {
 
 export function EditableField(props: EditableFieldProps): JSX.Element {
   const {
-    module, recordId, field, value, display, compact, restrictTo, siblings, linkTo, onSaved,
+    module, recordId, field, value, display, compact, plain, restrictTo, siblings, linkTo, onSaved,
     surface = 'record',
   } = props;
 
@@ -256,7 +258,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   // without a reload. The exported isInlineEditable reads the same value for
   // callers that only need to decide whether to draw an edit affordance.
   if ((surface === 'list' && !inlineEdit) || !isInlineEditable(field, surface)) {
-    return <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} />;
+    return <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} plain={plain} />;
   }
 
   // --- instant: boolean --------------------------------------------------
@@ -332,7 +334,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     // breaks in browsers.
     <StatusRing key={flashKey} status={status}>
       <span className={cn('group/ef -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5', editing && coversValue && 'invisible')}>
-        <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} />
+        <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} />
         {status === 'saving' ? (
           <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />
         ) : (
@@ -364,7 +366,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     */
     <StatusRing key={flashKey} status={status}>
       <span className={cn('inline-flex items-center gap-1', editing && coversValue && 'invisible')}>
-        <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} />
+        <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} />
         {status === 'saving' && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />}
         {/*
           A real control for anyone not using a mouse.

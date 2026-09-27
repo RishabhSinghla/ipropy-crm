@@ -2642,6 +2642,55 @@ row** survived instead of the card tint written here: it already answers
 *"colour highlight on selected contact"*, and two answers to one ask is how a
 row ends up tinted twice. Before adding either back, read this paragraph.
 
+### Seven more the next morning, 27 September
+
+He worked the screen again. Four are in the queue, two in the form, one in the
+header — and one of them was a real fault wearing a preference's clothes.
+
+* **The stage chip took the star's corner.** *"Replace the Star icon with
+  Lead/Inventory Status."* The star moved nowhere — it is still on the record's
+  own header — and the corner a rep glances at now carries the fact they are
+  scanning for. The chip is the **solid** variant, the admin's own colour, the
+  same way a stage looks everywhere else. The name line reserves `7.5rem` for
+  it rather than the `12` a star needed, because at that width a long stage sat
+  on top of the contact-type chip and cut it in half.
+* **And the header's stage chip went**, on the same instruction: showing it on
+  the open record as well as in its own row was the duplication he was looking
+  at. `StatusPill` was deleted rather than left unused — dead code with a
+  comment explaining why it is dead is one more thing the next reader has to
+  work out before they can ignore it.
+* **The type chip and the follow-up chip are rounded and lighter**, and the
+  follow-up lost its icon: an alarm bell on every row reads as a queue full of
+  alarms, and the chip already says the word the icon was drawing.
+* **The middle line lost the house and the "H. No:" prefix.** The unit number
+  still leads it; it simply no longer announces itself.
+* **The open card is indigo, not plum.** At a whole row's size the brand reads
+  pink against a white queue, and the accent is already what the price under it
+  is printed in.
+
+**The form's two asks were one fault.** *"All mobile number should be editable
+in Details Forms, Remove whatsapp icon from Details View of Form."* A field
+tile opens its editor when **the tile itself** is clicked and deliberately
+ignores a click that lands on a child — otherwise following a link would also
+start an edit. A phone rendered its number as a dial link with a WhatsApp
+button beside it, so on a form *every* part of that tile was a child and
+**there was no way to change a number at all**. `FieldValue` takes a `plain`
+flag now and the form tiles ask for it; the header strip, the queue and the
+lists keep the dial link and the WhatsApp icon, which is where a rep reaches
+for them. Proved in a browser: clicking the tile opens the country-code
+control and the number in a box.
+
+**The recessed tone is lighter** — *"i dont like pinkish colour, i want more
+lighten"*. `--surface-muted` was `#f2f3ff`, the design's own step, which reads
+violet across a whole form of tiles. It is `#f6f7fb` now. **The table header
+keeps its own `--list-head-bg`**: column names have to stand out from their
+rows, which is the opposite job, and moving both would have taken the grid's
+headings with it.
+
+**The agent's name lost its avatar and its pill** — *"remove chip and icon
+from Assign to before … Agent name"* — in both places it is drawn, because
+both come from one renderer.
+
 **What is not proved:** none of this has been exercised against a real handset
 — a live call was staged by writing `ipropy.liveCall` and the panel driven
 from there, which proves the layout, the wiring and the outcome rules but not

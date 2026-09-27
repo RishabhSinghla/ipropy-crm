@@ -25,9 +25,17 @@
      slate-400, the previous muted colour, is 2.56:1 on white. */
   :root {
     --surface: #ffffff;
-    /* The recessed tone: table headers, field tiles, the inside of a chip.
-       Cool rather than grey, so a white card on top of it still reads as lit. */
-    --surface-muted: #f2f3ff;
+    /* The recessed tone: field tiles, panel headings, the inside of a chip.
+       Cool rather than grey, so a white card on top of it still reads as lit.
+
+       **27 September 2026, the owner**, of the details form: *"colour should
+       be more lighter, i dont like pinkish colour, i want more lighten."*
+       It was `#f2f3ff`, which is the design's own recessed step and reads
+       violet across a whole form. Lighter and nearer neutral, so a page of
+       tiles is a page of paper rather than a page of lilac. The table header
+       keeps its own `--list-head-bg`: column names have to stand out from
+       their rows, which is the opposite job. */
+    --surface-muted: #f6f7fb;
     /*
       A lighter step again, for a band that runs the width of a panel rather
       than a tile inside one.
@@ -39,7 +47,7 @@
       a whole header it reads as a second panel, which is exactly what he was
       looking at. `tests/color.test.ts` pins the text on it.
     */
-    --surface-subtle: #f8f9ff;
+    --surface-subtle: #fafbfe;
     --surface-raised: #ffffff;
     --border: #e2e7ff;
     --text: #131b2e;
