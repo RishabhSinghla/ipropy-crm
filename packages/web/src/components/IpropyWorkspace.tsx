@@ -77,13 +77,18 @@ function loadSplit(fallback: number): number {
  * Arrow keys move it too. A divider that only answers a mouse is one that
  * somebody working from the keyboard cannot move at all.
  */
-function SplitHandle({ label, onDrag }: { label: string; onDrag: (deltaX: number) => void }): JSX.Element {
+function SplitHandle({ label, width, onDrag }: { label: string; width: number; onDrag: (deltaX: number) => void }): JSX.Element {
   const from = useRef(0);
   return (
     <div
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
+      // A separator you can focus is a control, and a control says where it
+      // is: without these a screen reader announces a divider it cannot place.
+      aria-valuenow={width}
+      aria-valuemin={QUEUE_LIMITS[0]}
+      aria-valuemax={QUEUE_LIMITS[1]}
       tabIndex={0}
       className="group relative hidden w-1.5 shrink-0 cursor-col-resize touch-none bg-slate-200 transition-colors hover:bg-brand-400 focus:bg-brand-400 focus:outline-none dark:bg-slate-800 xl:block"
       onPointerDown={(event) => {
@@ -380,7 +385,7 @@ export function IpropyWorkspace({
           <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
             <ModuleIcon name={module.icon} className="h-4 w-4 shrink-0 text-brand-600" />{module.label}
           </p>
-          <span className="shrink-0 text-2xs font-semibold text-slate-400">{rows.length}</span>
+          <span className="shrink-0 text-2xs font-semibold text-muted">{rows.length}</span>
           {onSort && (
             <div className="ml-auto shrink-0">
               <Dropdown
@@ -433,7 +438,7 @@ export function IpropyWorkspace({
         </div>
       </aside>
 
-      <SplitHandle label="Resize the list" onDrag={resize} />
+      <SplitHandle label="Resize the list" width={queueWidth} onDrag={resize} />
 
       {/*
         **One scroll area, never two stacked.** The WhatsApp tab has its own
@@ -507,7 +512,7 @@ export function IpropyWorkspace({
                 )}
               </div>
               <div className="mt-0.5 flex items-center gap-2 text-xs">
-                <span className="text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
+                <span className="text-muted">Updated {relativeTime(active.updatedAt)}</span>
                 <span className="text-slate-300">•</span>
                 <span
                   className="font-semibold text-blue-600 dark:text-blue-300"
