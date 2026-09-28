@@ -7,6 +7,7 @@ import {
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
+import { isCompleteHex, tidyHexInput } from '../../lib/color';
 import { Badge, ConfirmDialog, Modal, Skeleton, Spinner, Toggle } from '../../components/ui';
 
 /**
@@ -52,6 +53,18 @@ interface Option {
   usedInCode?: string | null;
 }
 
+/** What the picker opens on, and what an unfinished code falls back to. */
+const NO_COLOUR = '#64748B';
+
+/**
+ * The colour a brand-new option opens on, cycled so two options added in a row
+ * do not arrive the same colour.
+ *
+ * **28 September 2026, the owner:** *"we don't need too much colour button,
+ * just want to easy colour picker else circle or square box with colour code."*
+ * These were ten preset buttons on every row — ten rows of ten, which is what
+ * he was looking at. They still choose a starting colour; nobody clicks them.
+ */
 const SWATCHES = ['#64748b', '#ef4444', '#f97316', '#f59e0b', '#22c55e', '#14b8a6',
   '#0ea5e9', '#6366f1', '#a855f7', '#ec4899'];
 
@@ -540,27 +553,55 @@ export default function PicklistManager(): JSX.Element {
                         : 'What gets written on the record'}
                     />
                   )}
-                  <div className="flex shrink-0 items-center gap-1">
-                    {SWATCHES.map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => update(index, { color: c })}
-                        className={cn(
-                          'h-4 w-4 rounded-full transition-transform hover:scale-125',
-                          option.color === c && 'ring-2 ring-slate-400 ring-offset-1 dark:ring-offset-slate-900',
-                        )}
-                        style={{ backgroundColor: c }}
-                        title={c}
-                        aria-label={`Colour ${c}`}
+                  {/*
+                    One swatch and the code beside it — *"we don't need too
+                    much colour button, just want to easy colour picker else
+                    circle or square box with colour code"* (28 September
+                    2026). Ten preset dots on every row of a long list is a
+                    wall of colour to read past before reaching the option's
+                    own name, and they were only ever a shortcut to the picker
+                    that sat at the end of them.
+
+                    The swatch *is* the picker: a real colour input, made
+                    invisible and stretched over the square, so the square is
+                    the whole click target rather than a 16px dot beside it.
+                  */}
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <label
+                      className={cn(
+                        'relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md shadow-2xs transition-transform hover:scale-105',
+                        /* A dashed empty square, never a grey filled one: a
+                           slate fill is itself a colour somebody may have
+                           chosen, so filling "no colour" with one makes the
+                           two states impossible to tell apart. */
+                        isCompleteHex(option.color)
+                          ? 'border border-slate-300 dark:border-slate-600'
+                          : 'border-2 border-dashed border-slate-300 dark:border-slate-600',
+                      )}
+                      style={isCompleteHex(option.color) ? { backgroundColor: option.color! } : undefined}
+                      title={isCompleteHex(option.color) ? option.color! : 'No colour yet — click to pick one'}
+                    >
+                      <input
+                        type="color"
+                        value={isCompleteHex(option.color) ? option.color! : NO_COLOUR}
+                        onChange={(e) => update(index, { color: e.target.value.toUpperCase() })}
+                        className="absolute inset-0 cursor-pointer opacity-0"
+                        aria-label={`Colour for ${option.label || option.value || 'this option'}`}
                       />
-                    ))}
+                    </label>
                     <input
-                      type="color"
-                      value={option.color ?? '#64748b'}
-                      onChange={(e) => update(index, { color: e.target.value })}
-                      className="h-4 w-4 cursor-pointer rounded-full border-0 bg-transparent p-0"
-                      title="Any other colour"
-                      aria-label="Pick any colour"
+                      className="input h-7 w-[5.75rem] font-mono text-xs"
+                      value={option.color ?? ''}
+                      placeholder={NO_COLOUR}
+                      spellCheck={false}
+                      onChange={(e) => update(index, { color: tidyHexInput(e.target.value) })}
+                      /* A code nobody finished typing is no colour, rather
+                         than a colour the option would then be saved with. */
+                      onBlur={(e) => {
+                        if (!isCompleteHex(e.target.value)) update(index, { color: null });
+                      }}
+                      aria-label="Colour code"
+                      title="Type a colour code, or use the square"
                     />
                   </div>
                   <Badge color={option.color} className="hidden sm:inline-flex">

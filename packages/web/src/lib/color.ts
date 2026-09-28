@@ -321,3 +321,31 @@ const WHITE: RGB = [255, 255, 255];
 /** Not pure black: slate-900, the colour body copy already uses. */
 const INK: RGB = [15, 23, 42];
 const avatarCache = new Map<string, string>();
+
+/**
+ * A colour code somebody is still typing.
+ *
+ * **29 September 2026, the owner, of the Dropdowns editor:** *"we don't need
+ * too much colour button, just want to easy colour picker else circle or
+ * square box with colour code."* Ten preset dots per option became one swatch
+ * and a box to type the code into — and a box means somebody types into it.
+ *
+ * So this keeps the field honest while it is half-finished: one `#`, then only
+ * hex digits, at most six, upper case. Nothing else can be typed at all, which
+ * is cheaper than validating afterwards and explaining a refusal.
+ */
+export function tidyHexInput(raw: string): string {
+  const digits = raw.replace(/[^0-9a-fA-F]/g, '').slice(0, 6).toUpperCase();
+  return `#${digits}`;
+}
+
+/**
+ * Whether that code is finished enough to paint with.
+ *
+ * Three digits or six, which is what CSS accepts. A half-typed `#64` is not an
+ * error — it is somebody mid-keystroke — so the swatch falls back rather than
+ * flashing a colour nobody chose.
+ */
+export function isCompleteHex(value: string | null | undefined): boolean {
+  return typeof value === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+}

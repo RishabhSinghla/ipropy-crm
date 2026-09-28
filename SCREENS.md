@@ -789,3 +789,48 @@ bar legitimately floats instead is **by design**: below `xl` the three panes
 stack, so the right pane falls below the fold, and the bar is what carries the
 call to wherever the rep goes. If it is seen floating on a wide window, that
 is a new fault and this paragraph is the evidence it was not there on the 28th.
+
+## A dropdown option's colour is one square and one code
+
+**28 September 2026, the owner**, of Admin → Dropdowns: *"In the dropdown, we
+don't need too much colour button, just want to easy colour picker else circle
+or square box with colour code."*
+
+Every option row carried **ten preset dots and a small picker at the end of
+them** — on Call Disposition, which has 27 options, that is 270 coloured
+buttons to read past before reaching the option's own name, and the dots were
+only ever a shortcut to the picker beside them. The row is now one 28px square
+and one code box.
+
+* **The square *is* the picker.** A real `<input type="color">` is stretched
+  invisibly over it (`absolute inset-0 opacity-0`), so the whole square is the
+  click target rather than a dot that opens something. One control, not two.
+* **An option with no colour is a dashed empty square, never a grey filled
+  one.** Slate is itself a colour somebody may have chosen, so filling "no
+  colour" with it makes the two states impossible to tell apart — and the
+  placeholder code in the box beside it says what the picker would open on.
+* **A half-typed code is no colour, not half a colour.** `tidyHexInput` keeps
+  only hex digits and caps at six, so pasting `rgb(100,116,139)` gives
+  `#B10011` rather than an error — it reads the digits out of what was pasted,
+  which is the honest thing a code box can do. On blur, anything that is not a
+  complete `#RGB` or `#RRGGBB` is cleared to no colour rather than saved as a
+  fragment. Pinned by `tests/hexInput.test.ts` (8).
+* **`SWATCHES` stayed** — it still chooses the colour a brand-new option opens
+  on, cycled so two options added in a row do not arrive the same. Nobody
+  clicks it any more.
+
+**The row still wraps below about 1400px, and that is not new** — it wrapped
+worse before this (the "Plain text" tick had a line of its own too). Measured
+both ways at 1280px on 28 September; this change frees about 110px and the
+remaining wrap comes from the preview badge, the tick, the star and the toggle,
+which is a separate piece of work.
+
+`e2e/dropdownColour.spec.ts` drives it in a real browser: one picker and one
+code box per option with no preset dots left, a code typed in reaching the
+server and surviving a reload, and an unfinished code clearing itself. **It
+restores whatever colour it found**, and it picks a target colour that differs
+from what is already stored — typing in the value an option already wears
+changes nothing, so Save stays correctly disabled and the spec hangs on a dead
+button. That is how it failed the first time it ran twice in a row, and it is
+the same rule as the unique markers: a spec that depends on what is already in
+the database reports the machine it ran on.
