@@ -57,7 +57,7 @@ test('the chips beside the face are one look, with the stage the only exception'
   await splitView(page);
 
   // The first column of the hero's grid: the chase date, the stage, the call.
-  const chipRow = recordPane(page).locator('header').first().locator('div.grid > span').first();
+  const chipRow = recordPane(page).locator('header').first().locator('div.relative.flex > span').first();
   await expect(chipRow).toBeVisible();
 
   const chips = await chipRow.evaluate((box) => [...box.children].map((wrap) => {

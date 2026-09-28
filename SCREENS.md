@@ -731,3 +731,16 @@ screen needs a WhatsApp provider, and none is on a developer's database, so
 to close it is to pull the arithmetic out of the component and test it as a
 function, which would prove more than either spec did. The other two were
 rewritten to the new truth.
+
+**And the face is pinned to the panel's centre** — *"Avtar shold be center
+align always"*, the same evening. Two arrangements had already failed that
+promise, and the third does not try to balance anything: the face is taken out
+of the row and centred on the panel, so the chips on one side and the controls
+on the other take exactly what they need and **neither can move it**. Measured
+at 1600px and 1280px: nought pixels off centre, pinned in
+`compactHero.spec.ts`.
+
+The wrapper that centres it stops taking pointer events so the chips and
+controls behind it stay clickable, and hands them back to the face — which
+carries a real button, the one that replaces the photo. It is deliberately not
+`aria-hidden`: that would hide the record's own name from a screen reader.

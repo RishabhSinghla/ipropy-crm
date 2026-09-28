@@ -684,23 +684,27 @@ export function IpropyWorkspace({
             however many controls sit beside it.
           */}
           {/*
-            The chips take the slack, the controls take what they need.
+            The face is centred on the panel, whatever sits beside it.
 
-            It was `1fr auto 1fr`, which holds the face at dead centre by
-            giving both sides the same width — and the right side holds five
-            circles, so the left was pinned to their width and the third chip
-            wrapped onto a line of its own. `auto` on the right lets the
-            controls ask for exactly what they are, and the chips keep the
-            rest. The face lands between the two groups rather than on the
-            panel's centre line, which is a difference of a few pixels against
-            a row that reads as one line.
+            **28 September 2026, the owner:** *"Avtar shold be center align
+            always."* Two arrangements had already been tried and neither kept
+            that promise: `1fr auto 1fr` centres the face by giving both sides
+            the same width — and the right side holds five circles, so the left
+            was pinned to their width and the third chip wrapped onto a line of
+            its own. `minmax(0,1fr) auto auto` freed the chips and moved the
+            face off centre, which is what he is looking at.
+
+            So the face is taken out of the row entirely and pinned to the
+            panel's own middle. The chips and the controls then take exactly
+            what they need, and neither can move it. The row carries the
+            face's height itself, since an absolutely positioned child
+            contributes none.
           */}
-          <div className="relative grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-2">
+          <div className="relative flex min-h-[5.5rem] w-full items-center justify-between gap-2 px-2">
             {/*
-              The facts a call changes, in the column the grid already left
-              empty — *"Move Overdue (11D), Visit Scheduled & Busy in to left
-              side from Avtar"*. They were a full-width band under the face,
-              which is the row this hero has stopped spending.
+              The facts a call changes — *"Move Overdue (11D), Visit Scheduled
+              & Busy in to left side from Avtar"*. They were a full-width band
+              under the face, which is the row this hero has stopped spending.
             */}
             <HeroStatusChips
               module={module}
@@ -710,17 +714,26 @@ export function IpropyWorkspace({
               followUpField={followUpField}
             />
 
-            {/* The face, ringed by how complete the record is. */}
-            <span className="flex min-w-0 flex-col items-center justify-center text-center">
-              <RecordAvatar
-                module={module.name}
-                recordId={active.id}
-                name={active.label}
-                percent={recordStrength(module.fields, active.values).percent}
-                canEdit={canEdit}
-                size={84}
-              />
+            {/*
+              Not `aria-hidden`: the wrapper only exists to centre the face,
+              and the face carries a real button — replacing the photo — plus
+              the label a screen reader reads the record by. It stops taking
+              pointer events so the chips and controls behind it stay
+              clickable, and hands them back to the face itself.
+            */}
+            <span className="pointer-events-none absolute inset-x-0 flex justify-center">
+              <span className="pointer-events-auto">
+                <RecordAvatar
+                  module={module.name}
+                  recordId={active.id}
+                  name={active.label}
+                  percent={recordStrength(module.fields, active.values).percent}
+                  canEdit={canEdit}
+                  size={84}
+                />
+              </span>
             </span>
+
 
             {/* Right: everything you do to the record, in one group. */}
             <span className="z-10 flex min-w-0 items-center justify-end gap-2">
