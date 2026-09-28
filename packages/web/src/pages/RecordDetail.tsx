@@ -204,7 +204,7 @@ function FullRecordPage(): JSX.Element {
     entry nothing reads.
   */
   useEffect(() => {
-    if (!moduleName || !id) return;
+    if (!moduleName || !id || (moduleName !== 'leads' && moduleName !== 'properties')) return;
     void queryClient.prefetchQuery({
       queryKey: ['matching', moduleName, id, 10],
       queryFn: (): Promise<{ matches?: PropertyMatch[]; buyers?: BuyerMatch[] }> => (moduleName === 'leads'
@@ -352,7 +352,7 @@ function FullRecordPage(): JSX.Element {
       label: r.label,
       icon: <Link2 className="h-3.5 w-3.5" />,
     })),
-    ...(moduleName === 'leads' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
+    ...(moduleName !== 'properties' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
     /* Offered wherever the record has a phone. The tab shows the history
        whoever sent it, which is the CRM's own question of who may read this
        record — not a question about whose phone it came from. */

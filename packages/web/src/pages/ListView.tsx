@@ -463,6 +463,7 @@ export default function ListView(): JSX.Element {
     columns: withQueueCardColumns(
       withQueueSubtitle(meta ? [...meta.labelFields] : undefined, meta),
       meta?.fields,
+      (meta?.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config as { queueFields?: string[] } | undefined)?.queueFields,
     ),
   }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta]);
 

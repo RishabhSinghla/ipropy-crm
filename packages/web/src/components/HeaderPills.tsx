@@ -133,7 +133,7 @@ function CallAgainPill({ module, followUp, row, canEdit }: {
           className={cn(
             'inline-flex h-8 max-w-[12rem] gap-1.5 px-3.5',
             HEADER_CHIP,
-            'transition-colors hover:bg-[var(--surface-raised)] active:scale-95',
+            'transition-colors hover:bg-slate-600 dark:hover:bg-slate-500 active:scale-95',
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
         >

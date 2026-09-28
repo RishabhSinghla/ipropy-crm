@@ -7,27 +7,22 @@
  * deck … the Existing Functionality and Feature are work Perfect."* So the
  * shape is new and the calling and saving actions still use `useCallDeckState`.
  *
- * Top to bottom, as he drew it: where this record sits in the queue and who
- * is next; who is on the call; the clock with the live controls; the note; the
- * outcome; the chase date; and the three ways out.
+ * Top to bottom: who is next, live controls, disposition and chase date, then
+ * the three ways out. The shared comments composer below is the only notes box.
  *
- * **It takes the notes panel's place only while a call is up on this record.**
- * A panel that replaced the team's notes permanently would take away the box
- * everybody writes in, and a call deck standing empty says nothing.
+ * It appears only while a call is up on this record; team notes remain visible.
  */
-import { type JSX, useEffect } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import {
-  CalendarDays, ChevronDown, Mic, Pause, PhoneCall, PhoneOff, SkipForward, Volume2, VolumeX,
+  CalendarDays, ChevronDown, Pause, PhoneCall, PhoneOff, SkipForward, Volume2, VolumeX,
 } from 'lucide-react';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDeckState, type CallDeckState } from './LiveCallDeck';
 import { quickFollowUpDates } from '../lib/followUpDates';
-import { outcomeCard } from '../lib/callConsole';
 import { Spinner } from './ui';
 import { cn } from '../lib/utils';
-import { toast, useApp } from '../lib/store';
-import { useVoiceCapture } from '../lib/useVoiceCapture';
-import { api } from '../lib/api';
+import { useApp } from '../lib/store';
+import { relativeDueDay } from '@ipropy/shared';
 
 /**
  * Nothing at all unless this very record is the one being called.
@@ -68,8 +63,7 @@ function Panel(): JSX.Element {
       <QueueBar deck={deck} />
       <div className="space-y-2 p-3">
         <WhoAndClock deck={deck} />
-        <Notes deck={deck} />
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Outcomes deck={deck} />
           <Chase deck={deck} />
         </div>
@@ -205,58 +199,19 @@ function CallBarStrip({ deck }: { deck: CallDeckState }): JSX.Element {
   );
 }
 
-/** What was said, typed while it is being said. */
-function Notes({ deck }: { deck: CallDeckState }): JSX.Element {
-  const voice = useVoiceCapture(async (audio) => {
-    try {
-      const { note } = await api.voiceNote(audio);
-      deck.onNotes(deck.notes.trim() ? `${deck.notes.trim()}\n\n${note}` : note);
-    } catch (error) {
-      toast.error('Could not write that up', (error as Error).message);
-    }
-  }, {
-    onTranscript: (transcript) => deck.onNotes(deck.notes.trim() ? `${deck.notes.trim()} ${transcript}` : transcript),
-    serverTranscription: false,
-  });
-  return (
-    <div className="relative">
-      <textarea
-        value={deck.notes}
-        onChange={(event) => deck.onNotes(event.target.value)}
-        placeholder={voice.interim || 'Call notes… type or dictate'}
-        aria-label="Call notes"
-        className="input min-h-20 resize-y pr-12 text-sm"
-      />
-      <button
-        type="button"
-        onClick={voice.toggle}
-        aria-label={voice.recording ? 'Stop dictation' : 'Dictate call notes'}
-        aria-pressed={voice.recording}
-        disabled={voice.busy}
-        title={voice.recording ? 'Stop dictation' : voice.busy ? 'Transcribing…' : 'Dictate notes'}
-        className={cn('absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors', voice.recording ? 'bg-red-100 text-red-700' : 'bg-brand-50 text-brand-700 hover:bg-brand-100')}
-      >
-        {voice.busy ? <Spinner className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-      </button>
-      {voice.recording && <span className="sr-only" role="status">Listening: {voice.interim}</span>}
-    </div>
-  );
-}
-
 /**
  * How the call went, in the admin's own words.
  *
  * Never a list written here: an outcome added in Settings has to be offered
  * the same afternoon, and one the server would refuse must never be on screen.
- * `outcomeCard` gives each a hint, and an outcome nobody has described still
- * gets a card — a rep who cannot record what happened is the worse failure.
+ * An outcome nobody has described still appears, so a rep can always record it.
  */
 function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
   return (
-    <label className="relative min-w-0 flex-1">
+    <label className="relative min-w-0">
       <span className="sr-only">Call disposition</span>
       <PhoneCall className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-brand-700" aria-hidden />
-      <select value={deck.outcome} onChange={(event) => deck.onOutcome(event.target.value)} aria-label="Call disposition" className="input h-9 appearance-none rounded-full bg-brand-50 py-1 pl-8 pr-8 text-xs font-semibold text-brand-800 dark:bg-brand-950/50 dark:text-brand-100">
+      <select value={deck.outcome} onChange={(event) => deck.onOutcome(event.target.value)} aria-label="Call disposition" className="input h-9 w-full appearance-none rounded-full bg-brand-50 py-1 pl-8 pr-8 text-xs font-semibold text-brand-800 dark:bg-brand-950/50 dark:text-brand-100">
         {deck.outcomes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-4 w-4 text-brand-700" aria-hidden />
@@ -286,11 +241,15 @@ function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
  * week is not expressible.
  */
 function Chase({ deck }: { deck: CallDeckState }): JSX.Element {
+  const [choosingDate, setChoosingDate] = useState(false);
   const choices = quickFollowUpDates();
-  const fromOutcome = outcomeCard(deck.outcome).followUpInHours;
-  // Short, because the control is half a narrow panel wide and a truncated
-  // "Auto — in 2 ho…" says less than the same thing said briefly.
-  const autoLabel = fromOutcome ? `Auto · in ${fromOutcome}h` : 'Auto · none';
+  const existing = deck.existingFollowUp;
+  const due = relativeDueDay(existing);
+  const autoLabel = due
+    ? due.tone === 'today' || due.tone === 'tomorrow' || due.tone === 'overdue'
+      ? due.label
+      : readableDay(existing!.slice(0, 10))
+    : 'Pending';
   const value = deck.followUp === undefined ? 'auto' : deck.followUp === null ? 'none' : deck.followUp;
   // A day the rep typed rather than tapped — it belongs in the list, or the
   // control would read as nothing chosen while a date is plainly set.
@@ -299,17 +258,18 @@ function Chase({ deck }: { deck: CallDeckState }): JSX.Element {
     : null;
 
   return (
-    <div className="min-w-0 flex-1 space-y-1.5">
-      <label className="sr-only" htmlFor="call-deck-followup">Auto follow-up</label>
-      <span className="flex min-w-0 items-center gap-2">
-        <CalendarDays className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
+    <div className="relative min-w-0">
+      <label className="sr-only" htmlFor="call-deck-followup">Next follow-up</label>
+      <CalendarDays className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-brand-700" aria-hidden />
         <select
           id="call-deck-followup"
           data-testid="call-deck-followup"
-          className="input h-9 min-w-0 flex-1 text-xs font-semibold"
+          className="input h-9 w-full appearance-none rounded-full bg-brand-50 py-1 pl-8 pr-8 text-xs font-semibold text-brand-800 dark:bg-brand-950/50 dark:text-brand-100"
           value={value}
           onChange={(event) => {
             const next = event.target.value;
+            if (next === 'custom') { setChoosingDate(true); return; }
+            setChoosingDate(false);
             deck.onFollowUp(next === 'auto' ? undefined : next === 'none' ? null : next);
           }}
         >
@@ -320,21 +280,22 @@ function Chase({ deck }: { deck: CallDeckState }): JSX.Element {
               {choice.label} — {readableDay(choice.value)}
             </option>
           ))}
-          {/* A day typed below is not one of the four, so it needs a row of its
-              own or the select would read as nothing chosen. */}
           {custom && <option value={custom}>{readableDay(custom)}</option>}
+          <option value="custom">Choose date…</option>
         </select>
-      </span>
-      {/* Any other day, in the browser's own date control — native for the same
-          reason as the select: a calendar drawn by this card would be clipped
-          by it. */}
-      <input
-        type="date"
-        aria-label="Chase them on another day"
-        className="input h-8 text-xs"
-        value={typeof deck.followUp === 'string' ? deck.followUp : ''}
-        onChange={(event) => deck.onFollowUp(event.target.value || null)}
-      />
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-4 w-4 text-brand-700" aria-hidden />
+      {choosingDate && (
+        <input
+          type="date"
+          aria-label="Chase them on another day"
+          autoFocus
+          className="input mt-1 h-9 w-full text-xs"
+          value={typeof deck.followUp === 'string' ? deck.followUp : ''}
+          onChange={(event) => {
+            if (event.target.value) { deck.onFollowUp(event.target.value); setChoosingDate(false); }
+          }}
+        />
+      )}
     </div>
   );
 }

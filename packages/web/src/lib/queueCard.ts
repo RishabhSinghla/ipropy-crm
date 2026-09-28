@@ -63,9 +63,13 @@ export function queueCardColumns(fields: FieldMeta[]): string[] {
 }
 
 /** A list's columns plus what the card reads; undefined means the server's defaults. */
-export function withQueueCardColumns(columns: string[] | undefined, fields: FieldMeta[] | undefined): string[] | undefined {
+export function withQueueCardColumns(
+  columns: string[] | undefined,
+  fields: FieldMeta[] | undefined,
+  queueFields?: string[],
+): string[] | undefined {
   if (!columns || !fields) return columns;
-  const extra = queueCardColumns(fields).filter((name) => !columns.includes(name));
+  const extra = [...new Set([...queueCardColumns(fields), ...(queueFields ?? [])])].filter((name) => !columns.includes(name));
   return extra.length ? [...columns, ...extra] : columns;
 }
 

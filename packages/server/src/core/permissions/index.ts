@@ -333,7 +333,7 @@ export interface ScopeContext {
  */
 async function hierarchyVisibleOwnerIds(ctx: ScopeContext, moduleName: string, conn: Tx = db): Promise<string[]> {
   const { user } = ctx;
-  if (user.isAdmin || !user.roleId || !['leads', 'properties'].includes(moduleName)) return [];
+  if (user.isAdmin || !user.roleId || !['leads', 'associates', 'properties'].includes(moduleName)) return [];
   const [lower, upper, same] = await Promise.all([
     hasCapability(user, 'records.view_lower_hierarchy'),
     hasCapability(user, 'records.view_upper_hierarchy'),

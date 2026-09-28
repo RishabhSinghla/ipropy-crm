@@ -74,7 +74,7 @@ interface ProfileDef {
   fieldOverrides?: Record<string, Record<string, 'hidden' | 'readonly'>>;
 }
 
-const ALL = ['leads', 'properties'];
+const ALL = ['leads', 'associates', 'properties'];
 
 function perms(
   modules: string[],

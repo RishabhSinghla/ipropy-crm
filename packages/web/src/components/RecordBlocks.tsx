@@ -1,6 +1,6 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
+import { picklistOptionForValue, relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
 import { FileText, LayoutList, Send } from 'lucide-react';
 import { Avatar } from './ui';
 import { FieldValue } from './FieldRenderer';
@@ -12,7 +12,8 @@ import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
 import { appendSnippet, useNoteSnippets } from '../lib/noteSnippets';
 import { followUpChip } from '../lib/followUpDates';
-import { headerChipTone, HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE } from '../lib/headerChip';
+import { HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE } from '../lib/headerChip';
+import { badgeVars } from '../lib/color';
 import { FollowUpBadge } from './FollowUpChip';
 
 /**
@@ -196,10 +197,8 @@ export function NotesPanel({ module, record, flush = false }: {
       <textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
-        /* Deliberately not "call notes": while a call is up, the deck above
-           this pane has a box of its own whose text is saved *with the call*.
-           This one is the team's note on the record. Two boxes wearing one
-           placeholder is how a rep types the wrong thing into the wrong one. */
+        /* The single notes composer, including while a call is active. The
+           deck above handles disposition and follow-up, not a second note. */
         placeholder="Add a note for the team… type @ to notify someone"
         aria-label="Add a note for the team"
         className={cn('w-full resize-none text-xs text-slate-800 placeholder-slate-400 dark:text-slate-100', flush ? 'border-none bg-transparent p-0 focus:ring-0' : 'input min-h-24 p-3')}
@@ -410,16 +409,9 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
             line is the one that means something.
           */
           const ownColour = variant === 'chips' && keepsItsOwnColour(field, statusField);
-          const asWords = variant === 'chips' && !ownColour;
-          /*
-            The second exception, and the only other one: a chase date that
-            has already passed reads red — *"bring the overdue red back on
-            followup chip"*. Today and Tomorrow keep the ordinary chip, and
-            every other fact on the line always does.
-          */
-          const tone = field.name === followUpField
-            ? headerChipTone(row.values[field.name])
-            : HEADER_CHIP_TONE;
+          const statusColor = ownColour
+            ? picklistOptionForValue(field.options, row.values[field.name])?.color
+            : null;
           return (
             <span
               key={field.name}
@@ -444,17 +436,16 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
               {variant === 'chips' ? (
                 <span className={cn(
                   'inline-flex min-w-0 max-w-[12rem] truncate',
-                  ownColour
-                    ? 'items-center'
-                    // One shape, and one of two tones — never one written
-                    // over the other, which Tailwind would decide for us.
-                    : cn(HEADER_CHIP_SHAPE, HEADER_CHIP_PAD, tone),
-                )}>
+                  HEADER_CHIP_SHAPE,
+                  HEADER_CHIP_PAD,
+                  statusColor ? 'badge-solid border-transparent' : HEADER_CHIP_TONE,
+                )}
+                style={badgeVars(statusColor)}>
                   {field.name === followUpField
                     ? <FollowUpChipCell module={module} row={row} field={field} canEdit={canEdit} asWords />
                     : <HeaderChipValue
                         module={module} row={row} field={field} canEdit={canEdit}
-                        asWords={asWords}
+                        asWords
                         onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
                       />}
                 </span>

@@ -1,5 +1,6 @@
 import { type JSX, useEffect, useMemo, useState } from 'react';
-import { byLabel } from '../../lib/fields';
+import { byLabel, pipelineFieldOf } from '../../lib/fields';
+import { queueCardFields } from '../../lib/queueCard';
 /**
  * Layout Designer — what a record page looks like, as data.
  *
@@ -34,6 +35,8 @@ interface LayoutBlock {
 interface DesignerConfig {
   blocks: LayoutBlock[];
   headerFields: string[];
+  headerFieldsCustomized?: boolean;
+  queueFields?: string[];
   defaultTab: string;
   headerTitleField?: string;
   tabs?: DetailTabConfig[];
@@ -79,6 +82,8 @@ export default function LayoutDesigner(): JSX.Element {
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
   const [newSection, setNewSection] = useState(false);
   const [headerFields, setHeaderFields] = useState<string[]>([]);
+  const [headerTouched, setHeaderTouched] = useState(false);
+  const [queueFields, setQueueFields] = useState<string[] | undefined>();
   const [defaultTab, setDefaultTab] = useState('overview');
   const [headerTitleField, setHeaderTitleField] = useState('');
   const [detailTabs, setDetailTabs] = useState<DetailTabConfig[]>([]);
@@ -109,7 +114,18 @@ export default function LayoutDesigner(): JSX.Element {
     if (layout) {
       setLayoutId(layout.id);
       setBlocks(layout.config.blocks ?? []);
-      setHeaderFields(layout.config.headerFields ?? []);
+      const saved = layout.config.headerFields ?? [];
+      const implicit = meta && !layout.config.headerFieldsCustomized
+        ? [
+          pipelineFieldOf(meta),
+          meta.fields.find((field) => field.config.picklist === 'lost_reason'),
+          meta.fields.find((field) => String(field.config.picklist ?? '').endsWith('_source')),
+          meta.fields.find((field) => field.columnName === 'next_followup_at'),
+          meta.fields.find((field) => field.config.picklist === 'contact_type'),
+        ].filter((field): field is NonNullable<typeof field> => Boolean(field)).map((field) => field.name)
+        : [];
+      setHeaderFields([...new Set([...saved, ...implicit])]);
+      setQueueFields(layout.config.queueFields);
       setDefaultTab(layout.config.defaultTab ?? 'overview');
       setHeaderTitleField(layout.config.headerTitleField ?? '');
       setDetailTabs(layout.config.tabs ?? []);
@@ -123,12 +139,14 @@ export default function LayoutDesigner(): JSX.Element {
         collapsed: b.isCollapsed, fields: b.fields.map((f) => f.name),
       })));
       setHeaderFields(meta.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? []);
+      setQueueFields(undefined);
       setDefaultTab('overview');
       setHeaderTitleField('');
       setDetailTabs([]);
       setCapturePanel(DEFAULT_CAPTURE_PANEL);
     }
     setDirty(false);
+    setHeaderTouched(false);
   }, [layouts, layoutType, meta?.id]);
 
   const fieldMap = useMemo(
@@ -151,7 +169,7 @@ export default function LayoutDesigner(): JSX.Element {
   const availableTabs = [
     ...BASE_TABS,
     ...(meta?.relations ?? []).map((r) => ({ value: `rel:${r.name}`, label: r.label })),
-    ...(moduleName === 'leads' ? [{ value: 'calls', label: 'Calls' }] : []),
+    ...(meta?.fields.some((field) => field.uitype === 'phone') ? [{ value: 'calls', label: 'Calls' }] : []),
   ];
   const detailTabOptions = detailTabs.length
     ? detailTabs
@@ -254,7 +272,7 @@ export default function LayoutDesigner(): JSX.Element {
         // Only the detail view has a header strip and tabs; keeping them off the
         // edit/quick-create configs avoids writing keys nothing will read.
         ...(layoutType === 'detail'
-          ? { headerFields, defaultTab, headerTitleField: headerTitleField || undefined, tabs: detailTabOptions }
+          ? { headerFields, ...(headerTouched ? { headerFieldsCustomized: true } : {}), ...(queueFields !== undefined ? { queueFields } : {}), defaultTab, headerTitleField: headerTitleField || undefined, tabs: detailTabOptions }
           : {}),
         ...(layoutType === 'quick_create' && moduleName === 'properties'
           ? { capture: capturePanel }
@@ -391,6 +409,10 @@ export default function LayoutDesigner(): JSX.Element {
             {layoutType === 'detail' && (
               <HeaderStripEditor
                 value={headerFields}
+                queueFields={queueFields ?? (() => {
+                  const card = queueCardFields(meta.fields);
+                  return [card.bedrooms, card.portion, card.category, card.locality].filter((field): field is NonNullable<typeof field> => Boolean(field)).map((field) => field.name);
+                })()}
                 /*
                   The pipeline field belongs here like any other.
 
@@ -408,7 +430,8 @@ export default function LayoutDesigner(): JSX.Element {
                 tabs={detailTabOptions}
                 availableTabs={availableTabs}
                 headerTitleField={headerTitleField}
-                onChange={(next) => { setHeaderFields(next); touch(); }}
+                onChange={(next) => { setHeaderFields(next); setHeaderTouched(true); touch(); }}
+                onQueueChange={(next) => { setQueueFields(next); touch(); }}
                 onHeaderTitleFieldChange={(next) => { setHeaderTitleField(next); touch(); }}
                 onDefaultTabChange={(next) => { setDefaultTab(next); touch(); }}
                 onTabsChange={(next) => {
@@ -644,10 +667,11 @@ export default function LayoutDesigner(): JSX.Element {
  * land there.
  */
 function HeaderStripEditor({
-  value, options, defaultTab, tabOptions, tabs, availableTabs, headerTitleField,
-  onChange, onDefaultTabChange, onTabsChange, onHeaderTitleFieldChange,
+  value, queueFields, options, defaultTab, tabOptions, tabs, availableTabs, headerTitleField,
+  onChange, onQueueChange, onDefaultTabChange, onTabsChange, onHeaderTitleFieldChange,
 }: {
   value: string[];
+  queueFields: string[];
   options: { value: string; label: string }[];
   defaultTab: string;
   tabOptions: { value: string; label: string }[];
@@ -655,6 +679,7 @@ function HeaderStripEditor({
   availableTabs: { value: string; label: string }[];
   headerTitleField: string;
   onChange: (next: string[]) => void;
+  onQueueChange: (next: string[]) => void;
   onDefaultTabChange: (next: string) => void;
   onTabsChange: (next: DetailTabConfig[]) => void;
   onHeaderTitleFieldChange: (next: string) => void;
@@ -726,6 +751,26 @@ function HeaderStripEditor({
               />
             </div>
           )}
+        </div>
+
+        <div>
+          <label className="label">Left pane record fields</label>
+          <p className="mb-1.5 text-2xs text-muted">Choose and order the facts below each record name. The contact type, price and follow-up stay in their own positions.</p>
+          <div className="flex flex-wrap gap-1.5">
+            {queueFields.map((name, index) => (
+              <span key={name} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs dark:border-slate-700">
+                <button type="button" disabled={index === 0} aria-label={`Move ${labelOf(name)} left in queue`} onClick={() => {
+                  const next = [...queueFields];
+                  [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                  onQueueChange(next);
+                }}><ChevronUp className="h-3 w-3 -rotate-90" /></button>
+                {labelOf(name)}
+                <button type="button" aria-label={`Remove ${labelOf(name)} from queue`} onClick={() => onQueueChange(queueFields.filter((field) => field !== name))}><X className="h-3 w-3" /></button>
+              </span>
+            ))}
+          </div>
+          <Select value="" placeholder="Add a field…" onChange={(name) => name && onQueueChange([...queueFields, name])}
+            options={options.filter((option) => !queueFields.includes(option.value))} className="mt-2 w-56 py-1.5 text-xs" />
         </div>
 
         {/*

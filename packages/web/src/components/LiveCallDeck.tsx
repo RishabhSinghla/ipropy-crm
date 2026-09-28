@@ -66,8 +66,8 @@ export interface CallDeckState {
   outcomes: { value: string; label: string }[];
   outcome: string;
   onOutcome: (value: string) => void;
-  /** What the rep typed while they talked, kept until the call is saved. */
-  notes: string; onNotes: (value: string) => void;
+  /** Current CRM date, so the call-deck button reflects the record before edits. */
+  existingFollowUp: string | null;
   /**
    * The chase date this call leaves behind, as a local day.
    *
@@ -254,8 +254,7 @@ export function useCallDeckState(): CallDeckState {
     outcomes,
     outcome,
     onOutcome: (value) => update({ outcome: value }),
-    notes,
-    onNotes: (value) => update({ notes: value }),
+    existingFollowUp: (record?.values?.[call.followUpField] as string | null | undefined) ?? null,
     // Not `?? null`: absent means "let the outcome decide" and null means
     // "chase nobody", and collapsing them makes the second unsayable.
     followUp: chaseOverride,

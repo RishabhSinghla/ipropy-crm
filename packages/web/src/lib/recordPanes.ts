@@ -39,6 +39,8 @@ export type DescribedModule = ModuleMeta & {
 export interface DetailLayout {
   blocks?: { key: string; label: string; columns: number; collapsed?: boolean; fields: string[] }[];
   headerFields?: string[];
+  headerFieldsCustomized?: boolean;
+  queueFields?: string[];
 }
 
 export interface FieldBlockSpec {
@@ -85,6 +87,8 @@ const CHIP_PICKLISTS: ((picklist: string) => boolean)[] = [
 export interface RecordPanes {
   /** The strip beside the record's name. */
   headerFields: FieldMeta[];
+  /** Optional admin-arranged facts in the queue card's middle line. */
+  queueFields?: FieldMeta[];
   /** The cards below it, in the Layout Designer's grouping. */
   blocks: FieldBlockSpec[];
   /** The line under a name in a queue — `Buyer — 304`. */
@@ -101,6 +105,9 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
     [module.layouts],
   );
   const fieldMap = useMemo(() => new Map(module.fields.map((field) => [field.name, field])), [module.fields]);
+  const queueFields = useMemo(() => layout.queueFields?.map((name) => fieldMap.get(name))
+    .filter((field): field is FieldMeta => Boolean(field?.isActive && field.displayType !== 'hidden')),
+  [layout.queueFields, fieldMap]);
 
   const assignedField = useMemo(() => assignmentField(module.fields), [module.fields]);
 
@@ -141,8 +148,10 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
 
   const headerFields = useMemo(() => {
     const names: string[] = [...(layout.headerFields ?? [])];
-    for (const field of [phoneField, ...chipFields]) {
-      if (field && !names.includes(field.name)) names.push(field.name);
+    if (!layout.headerFieldsCustomized) {
+      for (const field of [phoneField, ...chipFields]) {
+        if (field && !names.includes(field.name)) names.push(field.name);
+      }
     }
     const identity = new Set(module.labelFields);
     const named = new Set(chipFields.map((field) => field.name));
@@ -157,10 +166,10 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
         **unless the owner named it as a chip**. Contact Type is both, and on
         27 September 2026 he asked for it in the header by name.
       */
-      .filter((name) => named.has(name) || !subtitleFields.some((field) => field.name === name))
+      .filter((name) => layout.headerFieldsCustomized || named.has(name) || !subtitleFields.some((field) => field.name === name))
       .map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
-  }, [layout.headerFields, fieldMap, module.labelFields, assignedField, phoneField, chipFields, subtitleFields]);
+  }, [layout.headerFields, layout.headerFieldsCustomized, fieldMap, module.labelFields, assignedField, phoneField, chipFields, subtitleFields]);
 
   const blocks = useMemo<FieldBlockSpec[]>(() => {
     const identity = new Set(module.labelFields);
@@ -205,5 +214,5 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
     }];
   }, [layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
 
-  return { headerFields, blocks, subtitleFields, assignedField, statusField, followUpField, phoneField };
+  return { headerFields, queueFields, blocks, subtitleFields, assignedField, statusField, followUpField, phoneField };
 }

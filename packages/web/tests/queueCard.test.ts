@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta } from '@ipropy/shared';
-import { cardArea, cardPrice, queueCardColumns, queueCardFields, unitDescription } from '../src/lib/queueCard';
+import { cardArea, cardPrice, queueCardColumns, queueCardFields, unitDescription, withQueueCardColumns } from '../src/lib/queueCard';
 
 const field = (name: string, config: Record<string, unknown> = {}): FieldMeta =>
   ({ name, columnName: name, label: name, isActive: true, displayType: 'default', config }) as unknown as FieldMeta;
@@ -25,6 +25,12 @@ describe('queue card', () => {
 
   it('asks the list for an area\'s unit as well as the area', () => {
     expect(queueCardColumns(leads)).toEqual(expect.arrayContaining(['area_size', 'area_size_unit', 'next_followup_at']));
+  });
+
+  it('requests admin-arranged left pane fields even when the saved list view omitted them', () => {
+    const columns = withQueueCardColumns(['full_name'], leads, ['category', 'preferred_locations']);
+    expect(columns).toEqual(expect.arrayContaining(['full_name', 'category', 'preferred_locations']));
+    expect(columns?.filter((name) => name === 'category')).toHaveLength(1);
   });
 
   it('skips a field that is switched off', () => {

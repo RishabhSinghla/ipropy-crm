@@ -318,7 +318,7 @@ export function IpropyWorkspace({
     conversation and must reach the same answer. A second copy of this
     reasoning is the mistake this repo keeps finding months later.
   */
-  const { headerFields, blocks, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
+  const { headerFields, queueFields, blocks, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
   const { data: assignableUsers = [] } = useQuery({
     queryKey: ['users', 'assignable'],
     queryFn: () => api.users(false, false, true),
@@ -335,7 +335,7 @@ export function IpropyWorkspace({
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
   const { data: matchingCount } = useQuery({
     queryKey: ['workspace-matching-count', module.name, active?.id],
-    enabled: Boolean(active?.id),
+    enabled: Boolean(active?.id && (module.name === 'leads' || module.name === 'properties')),
     staleTime: 60_000,
     queryFn: async (): Promise<number> => {
       if (!active) return 0;
@@ -582,6 +582,7 @@ export function IpropyWorkspace({
               checked={selected.has(row.id)}
               attention={attentionIds.has(row.id)}
               card={cardFields}
+              queueFields={queueFields}
               onSelect={() => openRecord(row.id)}
               onToggle={(checked) => onToggleSelect(row.id, checked)}
             />
@@ -753,7 +754,7 @@ export function IpropyWorkspace({
                         Share with team
                       </DropdownItem>
                     )}
-                    {canEdit && onDelete && (
+                    {canEdit && onDelete && (module.name === 'leads' || module.name === 'properties') && (
                       <DropdownItem
                         icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
                         onClick={() => { close(); setMoveTarget(module.name === 'leads' ? 'properties' : 'leads'); }}
@@ -821,7 +822,7 @@ export function IpropyWorkspace({
         <nav className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900" aria-label="Record workspace sections">
           <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
           <DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab>
-          <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'} {matchingCount ? <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{matchingCount}</span> : null}</DeskTab>
+          {(module.name === 'leads' || module.name === 'properties') && <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'} {matchingCount ? <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{matchingCount}</span> : null}</DeskTab>}
           <DeskTab active={tab === 'files'} onClick={() => setTab('files')}><FileText className="h-3.5 w-3.5" />Files</DeskTab>
           <DeskTab active={tab === 'calls'} onClick={() => setTab('calls')}><Phone className="h-3.5 w-3.5" />Calls</DeskTab>
           <DeskTab active={tab === 'whatsapp'} onClick={() => setTab('whatsapp')}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab>
@@ -849,7 +850,7 @@ export function IpropyWorkspace({
             />
           ))}
           {tab === 'timeline' && <TimelineTab module={module.name} id={active.id} />}
-          {tab === 'matching' && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
+          {tab === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
           {tab === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {tab === 'calls' && <CallsTab recordId={active.id} />}
           {tab === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
@@ -947,19 +948,22 @@ export function IpropyWorkspace({
  * than one button holding another. A button inside a button is not allowed in
  * HTML, and a screen reader cannot reach the inner one.
  */
-function QueueCard({ row, active, checked, attention, card, onSelect, onToggle }: {
+function QueueCard({ row, active, checked, attention, card, queueFields, onSelect, onToggle }: {
   row: RecordEnvelope;
   active: boolean;
   checked: boolean;
   attention: boolean;
   card: CardFields;
+  queueFields?: FieldMeta[];
   onSelect: () => void;
   onToggle: (checked: boolean) => void;
 }): JSX.Element {
   const read = (field: FieldMeta): string => displayOf(row, field);
   const type = card.type ? read(card.type) : '';
   const unit = card.unit ? read(card.unit) : '';
-  const description = unitDescription(card, read);
+  const description = queueFields
+    ? queueFields.map((field) => read(field)).filter((value) => value && value !== '—').join(', ')
+    : unitDescription(card, read);
   const price = card.price ? cardPrice(row.values[card.price.name]) : '';
   const areaUnitField = card.area?.config.unitField;
   const area = card.area
