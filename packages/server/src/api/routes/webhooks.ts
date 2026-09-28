@@ -20,6 +20,7 @@ import {
 } from '../../integrations/leadsources/capture.js';
 import { verifyMetaSignature } from '../../integrations/leadsources/metaSignature.js';
 import { recordTruecallerDelivery } from '../../integrations/leadsources/truecallerDelivery.js';
+import { acceptTruecallerCallback, readTruecallerResult, truecallerIsSwitchedOn } from '../../integrations/leadsources/truecaller.js';
 import { recordOpen } from '../../integrations/email/service.js';
 import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
@@ -264,7 +265,10 @@ webhooksRouter.get('/forms/:publicKey', asyncHandler(async (req, res) => {
     [req.params.publicKey],
   );
   if (!form) throw new NotFoundError('Form not found');
-  res.json(form);
+  // Whether to offer "Verify with Truecaller" at all. Answered here rather
+  // than by a second request, and false when nobody has switched the card on —
+  // so a form with no provider looks exactly as it does today.
+  res.json({ ...form, truecaller: truecallerIsSwitchedOn() });
 }));
 
 webhooksRouter.post('/forms/:publicKey', asyncHandler(async (req, res) => {
@@ -310,15 +314,30 @@ webhooksRouter.post('/forms/:publicKey', asyncHandler(async (req, res) => {
   const first = String(payload.first_name ?? payload.firstName ?? '').trim() || firstFromWhole || '';
   const last = String(payload.last_name ?? payload.lastName ?? '').trim() || restOfWhole.join(' ');
 
+  /*
+    A verified number is the server's own fact, never the browser's claim.
+
+    The page sends back the nonce it was given, and the number comes from the
+    row this CRM wrote when Truecaller answered — not from the form field. A
+    page that could post "verified: true" beside any digits it liked would make
+    the whole exercise decorative.
+  */
+  const verified = payload.truecallerNonce
+    ? await readTruecallerResult(String(payload.truecallerNonce))
+    : null;
+  const truecallerVerified = verified?.status === 'verified';
+
   const normalized: NormalizedLead = {
     // Never empty: a nameless enquiry with a real phone number is still a lead
     // worth calling, and rejecting it loses the number too.
-    firstName: first || 'Website',
+    firstName: first || (truecallerVerified ? (verified?.name ?? '') : '') || 'Website',
     lastName: last,
     email: payload.email ? String(payload.email) : undefined,
-    mobile: String(payload.mobile ?? payload.phone ?? ''),
+    // The proven number wins over the typed one: that is what was proven.
+    mobile: (truecallerVerified && verified?.phone) || String(payload.mobile ?? payload.phone ?? ''),
     source: String(form.defaults?.lead_source ?? 'Website'),
-    subSource: form.defaults?.sub_source ? String(form.defaults.sub_source) : undefined,
+    subSource: form.defaults?.sub_source ? String(form.defaults.sub_source)
+      : truecallerVerified ? 'Truecaller verified' : undefined,
     message: payload.message ? String(payload.message) : undefined,
     // What the visitor picked wins over the form's own default.
     projectName: payload.project
@@ -845,6 +864,9 @@ webhooksRouter.all('/truecaller', asyncHandler(async (req, res) => {
   // a prompt 200 for, and a retry is a second copy of a delivery to read.
   res.status(200).json({ ok: true });
 
+  // Recorded whatever happens. Their field names are documented nowhere
+  // reachable from here, so the delivery itself stays the source of truth and
+  // a shape we do not yet understand becomes a fact somebody can read.
   await recordTruecallerDelivery({
     method: req.method,
     query: req.query,
@@ -852,7 +874,7 @@ webhooksRouter.all('/truecaller', asyncHandler(async (req, res) => {
     body: req.body,
   });
 
-  logger.info({ method: req.method }, 'truecaller delivery recorded — not yet turned into a lead');
+  await acceptTruecallerCallback(req.body);
 }));
 
 /**

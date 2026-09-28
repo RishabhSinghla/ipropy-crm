@@ -20,6 +20,7 @@ import { NotFoundError } from '../../utils/errors.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
+import { readTruecallerResult, startTruecallerVerification } from '../../integrations/leadsources/truecaller.js';
 import {
   getShareConfig, loadSharedProperty, loadSharedRecord,
 } from '../../core/sharing/propertyShare.js';
@@ -1316,6 +1317,31 @@ async function currentBundle(): Promise<BundleInfo | null> {
  * this before anybody has signed in, and the bundle is the same public
  * JavaScript any browser already downloads from this origin.
  */
+// ---------------------------------------------------------------------------
+/*
+  Truecaller verification, for the public enquiry form.
+
+  Both routes are open by design — the person using them has not signed in and
+  is not going to. What keeps that safe is that neither reveals anything: start
+  mints a random nonce, and result answers only about a nonce the caller
+  already holds, with the two facts that person has just agreed to share.
+
+  With the card switched off, start answers 404 and the form simply never shows
+  the button — the same rule the WhatsApp composer follows.
+*/
+publicRouter.post('/truecaller/start', asyncHandler(async (_req, res) => {
+  const started = await startTruecallerVerification();
+  if (!started) throw new NotFoundError('Truecaller verification is not switched on');
+  res.json(started);
+}));
+
+publicRouter.get('/truecaller/result/:nonce', asyncHandler(async (req, res) => {
+  // Never cached: the browser polls this, and a cached "pending" would keep
+  // answering that after the verification has landed.
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(await readTruecallerResult(req.params.nonce));
+}));
+
 publicRouter.get('/app/bundle', asyncHandler(async (_req, res) => {
   const bundle = await currentBundle();
   res.json({

@@ -3249,40 +3249,66 @@ URL is **Early Access only**, so it stays empty; and the App Key is not a secret
 mobile web it travels inside the link that opens the app, and what protects it is the
 registered domain.
 
-**The door is deliberately inert** (`integrations/leadsources/truecallerDelivery.ts`,
-`webhooksRouter.all('/truecaller')`). Their mobile-web documentation has not been
-updated in six years, and every route to reading it — their docs site, their developer
-site, a mirror, an engineer's write-up, YouTube — is blocked by this container's egress
-proxy. So rather than guess the shape of a delivery, the door **records what arrives and
-creates nothing**: no lead, no contact, nothing on a rep's screen. The guess is exactly
-what produced four separate bugs in the WhatsMarketing adapter, one of which recorded
-refused messages as sent.
+**The listening door came first, and the reasoning behind it stands.** Their mobile-web
+documentation has not been updated in six years and their docs site, developer site, a
+mirror, an engineer's write-up and YouTube are all blocked by this container's egress
+proxy. Rather than guess the shape of a delivery — which produced four separate bugs in
+the WhatsMarketing adapter, one of them recording refused messages as sent — the callback
+first recorded what arrived and created nothing.
 
-It writes to **`ipy_lead_inbox`**, the table every other inbound source already uses, so
-there is one place to look for "something arrived from outside" and so these rows become
-ordinary captures the day the real integration is written. `status` stays `pending` and
-the row says in words that no lead was created — otherwise it reads as a capture that
-failed. Fifty deliveries are kept, bounded on the way in; 16KB each, and anything larger
-is stored as a note saying so rather than dropped, because "nothing arrived" and
-"something arrived that was too big" look identical afterwards and mean opposite things.
+**The whole flow is built now** (`integrations/leadsources/truecaller.ts`), and every fact in
+it was read off Truecaller's own published code rather than guessed — which was only
+possible because `github.com` and `raw.githubusercontent.com` are reachable from this
+container while their documentation site is not. Four moves:
 
-**Two rules it holds to, both pinned by `tests/integration/truecallerListeningDoor.test.ts`:**
+1. the browser asks `POST /api/public/truecaller/start` for a nonce and gets a deep link;
+2. it opens `truecallersdk://truesdk/web_verify?requestNonce=…&partnerKey=…&partnerName=…`;
+3. Truecaller posts `{ requestId, accessToken, endpoint }` to the callback;
+4. the CRM fetches the profile from that endpoint with that token.
 
-* **It answers 200 before it writes.** Every provider retries what it does not hear a
-  prompt 200 for. The consequence is that a test reading straight after the request is
-  racing the door — `waitForDelivery` in that suite exists for exactly that, and both
-  header and GET assertions failed on it first.
-* **A credential header is dropped and a signature header is kept.** `authorization`,
-  `cookie` and `proxy-authorization` can only ever be secrets; everything else is kept,
-  because the signature is the thing this door exists to discover and it will be an
-  `x-…` name nobody can predict from here. A third party's payload has already carried a
-  live Meta token into a log in this repo once.
+**The callback carries no signature at all**, which is the fact everything else turns on.
+Two checks make it safe, and both are tested:
 
-**Unauthenticated, and only safe while inert.** The one thing that could authenticate it
-is the signature scheme it exists to find. Today the worst anybody on the internet can do
-is put a row in the lead inbox. **Nothing here may create a record until a delivery can be
-proved to have come from Truecaller** — that check is the next piece of work, and it is
-written from the first real delivery, not from anybody's documentation.
+* **The `requestId` must be a nonce this CRM minted and is still waiting on**
+  (`ipy_truecaller_request`, migration `177`, ten minutes). Otherwise a stranger could
+  announce a verification that never started here.
+* **The `endpoint` must be a `*.truecaller.com` host over https** (`isTruecallerEndpoint`,
+  pure and exported). Without it, anyone could name their own server, collect the access
+  token and answer with whatever profile they liked. The check is on the dot and not on the
+  substring — `nottruecaller.com` ends with the same letters and is a different company.
+
+The real proof of identity is move 4: the profile comes from Truecaller over TLS in answer
+to a token only they issued. A delivery is also single-use — a second one finds the row no
+longer `pending` and spends nothing.
+
+**The browser never decides a number is verified.** The form posts back only the nonce, and
+`webhooksRouter.post('/forms/:publicKey')` re-reads the row and uses **the number Truecaller
+proved**, not the one in the box. A page that could post `verified: true` beside any digits
+it liked would make the whole exercise decorative — and the owner's own standing rule is
+that the mobile client is never trusted for authorization. A verified enquiry lands with
+`sub_source` reading *Truecaller verified*, so a rep can see it on the record.
+
+**The App Key is `config`, not `credentials`, on purpose.** On mobile web it travels inside
+the link that opens the app, so every visitor's browser already has it; encrypting it would
+suggest a secrecy it does not have. What protects it is the App domain registered with
+Truecaller. Admin → Integrations → **Truecaller Number Verification**.
+
+**Their profile field names are documented nowhere reachable**, so `nameAndPhoneFrom` reads
+the shapes their samples show and answers null otherwise, with the whole profile stored
+beside it. The first real verification corrects that rather than losing a lead.
+
+**The listening door stays** (`truecallerDelivery.ts`), recording every delivery to
+`ipy_lead_inbox` whether or not it verifies — so a shape nobody here understood becomes a
+fact somebody can read instead of a customer who quietly never arrived.
+
+**What is proved, and what is not.** Nine unit tests on the two decisions, eight integration
+tests that switch the card on and drive the whole round trip against a real database with
+only Truecaller's own host stubbed, and `e2e/truecallerOnTheForm.spec.ts` in a real browser:
+the button absent with the card off, present with it on, the nonce requested, and the
+fallback message when Truecaller cannot answer. **Never once exercised against Truecaller
+themselves** — reaching `*.truecaller.com` is blocked from this container, so the last mile
+is a real phone on the live site. That is the one remaining unknown, and it is the kind that
+only a handset can close.
 
 **The lead inbox shows its payloads now.** Admin → Integrations → Lead inbox has always
 said *"every payload is stored before processing"* and there was no way to see one, which
