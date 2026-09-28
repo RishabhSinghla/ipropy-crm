@@ -660,6 +660,10 @@ metadataRouter.post('/modules/:name/fields', asyncHandler(async (req, res) => {
   const module = await registry.requireModule(req.params.name, { allowDisabled: true });
   const input = fieldSchema.parse(req.body);
   validateFieldConfig(input.uitype, input.config);
+  if ((input.name === 'lost_reason' || input.config.picklist === 'lost_reason')
+    && (input.config.requiredWhen || input.config.visibleWhen)) {
+    throw new BadRequestError('Lost Reason cannot depend on another field');
+  }
 
   if (module.fields.some((f) => f.name === input.name)) {
     throw new ConflictError(`${module.label} already has a field named '${input.name}'`);
@@ -884,6 +888,10 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   const nextConfig: Record<string, unknown> = { ...current.config, ...(input.config ?? {}) };
   for (const [key, value] of Object.entries(input.config ?? {})) {
     if (value === null) delete nextConfig[key];
+  }
+  if ((current.column_name === 'lost_reason' || nextConfig.picklist === 'lost_reason')
+    && (nextConfig.requiredWhen || nextConfig.visibleWhen)) {
+    throw new BadRequestError('Lost Reason cannot depend on another field');
   }
   if (input.uitype || input.config) validateFieldConfig(nextType, nextConfig);
 
@@ -1881,6 +1889,17 @@ metadataRouter.put('/modules/:name/picklist-dependency', asyncHandler(async (req
     targetField: z.string(),
     mapping: z.record(z.array(z.string())),
   }).parse(req.body);
+
+  // Status no longer controls another dropdown, and Lost Reason stays an
+  // ordinary optional field. Reject a saved rule through this API too, or a
+  // future admin/client could silently bring the removed coupling back.
+  const source = module.fields.find((field) => field.name === sourceField);
+  const target = module.fields.find((field) => field.name === targetField);
+  if (sourceField === module.pipelineField || source?.columnName === 'status'
+    || String(source?.config.picklist ?? '').endsWith('_status')
+    || target?.config.picklist === 'lost_reason') {
+    throw new BadRequestError('Status and Lost Reason cannot be used as dependent dropdowns');
+  }
 
   await db.query(
     `INSERT INTO ipy_picklist_dependency (module_id, source_field, target_field, mapping)

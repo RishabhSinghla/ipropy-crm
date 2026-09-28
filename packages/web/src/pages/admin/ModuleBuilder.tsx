@@ -942,6 +942,7 @@ function FieldEditor({
   */
   /** Only a scalar can be compared to another field of the same kind. */
   const comparable = COMPARABLE.includes(uitype);
+  const isLostReason = name === 'lost_reason' || field?.columnName === 'lost_reason' || picklist === 'lost_reason';
 
   /** Everything on this module except the field being edited — nothing can depend on itself. */
   const otherFields = module.fields.filter((f) => f.isActive && f.name !== field?.name);
@@ -992,7 +993,7 @@ function FieldEditor({
       // remove a key. Deleting here would just leave the old rule in place.
       const clear = (key: string): void => { config[key] = null; };
 
-      if (showWhenField) {
+      if (showWhenField && !isLostReason) {
         config.visibleWhen = {
           logic: 'AND',
           conditions: [{
@@ -1347,7 +1348,7 @@ function FieldEditor({
           {advancedOpen && (
             <div className="space-y-4 border-t border-slate-100 p-3 dark:border-slate-800">
               {/* --- conditional visibility ------------------------------ */}
-              <div>
+              {!isLostReason && <div>
                 <label className="label">Only show this field when…</label>
                 <p className="mb-1.5 text-2xs text-muted">
                   Leave the first box empty to always show it. Example: show “Loan Bank”
@@ -1386,7 +1387,7 @@ function FieldEditor({
                     </>
                   )}
                 </div>
-              </div>
+              </div>}
 
               {/* --- cross-field bounds ---------------------------------- */}
               {comparable && (

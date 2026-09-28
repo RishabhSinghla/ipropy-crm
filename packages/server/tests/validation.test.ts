@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type FieldMeta, toInternational } from '@ipropy/shared';
-import { validateValues } from '../src/core/metadata/values.js';
+import { validateRequired, validateValues } from '../src/core/metadata/values.js';
 
 /**
  * Validation is metadata-driven on purpose: every rule below is read from a
@@ -174,6 +174,22 @@ describe('validateValues — behaviour', () => {
   it('skips inactive fields', () => {
     const f = [field({ name: 'email', uitype: 'email', isActive: false })];
     expect(() => validateValues(f, { email: 'bad' }, {})).not.toThrow();
+  });
+});
+
+describe('Lost Reason is independent of Status', () => {
+  const fields = [
+    field({ name: 'status', uitype: 'picklist' }),
+    field({ name: 'lost_reason', uitype: 'picklist', config: { picklist: 'lost_reason' } }),
+  ];
+
+  it('allows any module to save a Lost status without a Lost Reason', () => {
+    expect(() => validateRequired(fields, { status: 'Lost' }, false, { status: 'Lost', lost_reason: null })).not.toThrow();
+    expect(() => validateRequired(fields, { status: 'Lead Lost' }, true)).not.toThrow();
+  });
+
+  it('still respects an explicitly mandatory Lost Reason field', () => {
+    expect(() => validateRequired([{ ...fields[1]!, isMandatory: true }], { lost_reason: null }, true)).toThrow(/Lost Reason|lost_reason/);
   });
 });
 

@@ -403,11 +403,8 @@ export default function PicklistManager(): JSX.Element {
             an admin say which statuses close a record and which Lost Reasons
             open with them, and it wrote an ordinary picklist dependency.
 
-            Only the screen is gone. **Any rule already saved keeps working** —
-            the dependency engine reads `picklistDependencies` exactly as
-            before, nothing was deleted from the database, and a rule can still
-            be removed through the API if one ever needs to be. Putting the
-            panel back is a revert, not a rebuild.
+            The old Status → Lost Reason rules are removed by migration 176,
+            while the Lost Reason field and its saved values remain available.
           */}
 
           {/* Only for a list long enough that ticking one at a time is a chore,
