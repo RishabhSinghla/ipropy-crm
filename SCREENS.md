@@ -635,3 +635,50 @@ the standing decision. Measured in a browser on the day: ordinary chips
 `#f5f3ff` on dark violet text, overdue `#fef2f2` on `#b91c1c`, the stage
 untouched. Before making them solid again, get it from him rather than from a
 screenshot.
+
+## The record hero gave a third of itself back
+
+**28 September 2026, the owner**, with a screenshot of the middle pane:
+*"Please decrease Avtar Size and Remove Buyer, Old Leads Icons … Move Overdue
+(11D), Visit Scheduled & Busy in to left side from Avtar in very Light colour
+as Icon colour of Call, Star, Tag … Move Name and Mobile Number at replacement
+Yogesh Bindal Agent … Actually we need this space compact so that below that
+much visible to my Team."*
+
+**Measured: 253.5px before, 169px after**, on the same record in the same
+window. The saving is one whole row, not padding — the chip band under the
+face is gone, and what was on it moved into the column the grid already left
+empty on the left.
+
+* **The name and the number moved up** into the row that held the agent, at
+  the size they already had. They are still the heading of the screen; they
+  have simply stopped costing a row of their own. The agent took their place
+  under the face, small, as it has read since 27 September.
+* **Three chips beside the face, and only three** — the chase date, the stage,
+  and the call outcome. `HeroStatusChips` takes the first two from
+  `useRecordPanes` and the third is `HeaderPills`, so **no screen names a
+  field** and a module without one of them simply shows two.
+* **Contact type and source came off** (*"Remove Buyer, Old Leads Icons"*).
+  They are still on the record's own Overview, which is where a fact nobody
+  changes mid-call belongs.
+* **Light, and coloured by meaning**, at `h-8` to match the action circles.
+  The chase date wears `FOLLOW_UP_STYLE` — the queue's own tints, shared
+  rather than copied, so the two can never disagree about who is late; the
+  stage keeps the admin's colour as a wash. Nothing is solid: four solid chips
+  beside a face read as four warnings, which is why the action circles are
+  grey at rest.
+
+**Two traps this cost, both the same one in different clothes.** `cn` is plain
+clsx with **no** Tailwind merging, so a caller appending `px-3` to a chip that
+already says `px-2.5` leaves Tailwind's own stylesheet order to choose — the
+lottery that made every column header in the CRM scroll away once. So
+`FollowUpBadge` gained a real `size` variant that swaps the whole string
+rather than layering on it. And the stage chip first used **`.badge`**, which
+is the base shape with its own padding and no colour at all; the light tint is
+**`.badge-tinted`**, which sets three colours and nothing else. On screen that
+read as a stage with no chip around it.
+
+`e2e/compactHero.spec.ts` measures the promise in both modules rather than
+reading a class name — the height, the name sitting above the face, and the
+chips to the left of it. A class that is present while the chip still sits
+underneath is exactly the bug.

@@ -25,6 +25,7 @@ import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar } from './RecordAvatar';
+import { HeroStatusChips } from './HeroStatusChips';
 import { api } from '../lib/api';
 import { activeSortOption, sortOptions } from '../lib/listSort';
 import { cn, restrictionForField } from '../lib/utils';
@@ -615,16 +616,85 @@ export function IpropyWorkspace({
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </span>
-            <span className="flex min-w-0 items-center gap-2">
-              <TagChips module={module.name} tags={active.tags} className="max-w-[10rem]" />
+            {/*
+              The name and the number, up here where the agent used to be —
+              *"Move Name and Mobile Number at replacement Yogesh Bindal
+              Agent"*. They keep the size they had: this is still the heading
+              of the screen, it has simply stopped costing a row of its own.
+            */}
+            <span className="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden">
+              <h2 className="min-w-0 truncate text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+                {active.label}
+              </h2>
+              {phoneField && phoneValue && (
+                <>
+                  <span className="h-4 w-px shrink-0 bg-slate-300 dark:bg-slate-600" aria-hidden />
+                  <span className="shrink-0 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    {canEdit && isInlineEditable(phoneField) ? (
+                      <EditableField
+                        module={module.name}
+                        recordId={active.id}
+                        field={phoneField}
+                        value={active.values[phoneField.name]}
+                        display={active.display?.[phoneField.name]}
+                        compact
+                        siblings={active.values}
+                        onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                      />
+                    ) : (
+                      <FieldValue field={phoneField} value={active.values[phoneField.name]} display={active.display?.[phoneField.name]} compact />
+                    )}
+                  </span>
+                </>
+              )}
+              {/*
+                Tags ride at the end, where they can give way without touching
+                the name — which is the one thing on this row that has to stay
+                readable. The tag icon in the controls is how they are edited.
+              */}
+              <TagChips module={module.name} tags={active.tags} className="hidden max-w-[7rem] shrink overflow-hidden lg:flex" />
+            </span>
+          </div>
+
+          {/*
+            The face in the middle, everything you do to the record on the
+            right — 27 September 2026: *"The Call and whatsapp icon move to
+            adjoining of Tag and Star icon."* A three-column grid rather than
+            `justify-between`, so the face stays in the middle of the panel
+            however many controls sit beside it.
+          */}
+          <div className="relative grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2 px-2">
+            {/*
+              The facts a call changes, in the column the grid already left
+              empty — *"Move Overdue (11D), Visit Scheduled & Busy in to left
+              side from Avtar"*. They were a full-width band under the face,
+              which is the row this hero has stopped spending.
+            */}
+            <HeroStatusChips
+              module={module}
+              row={active}
+              canEdit={canEdit}
+              statusField={statusField}
+              followUpField={followUpField}
+            />
+
+            {/* The face, ringed by how complete the record is. */}
+            <span className="flex min-w-0 flex-col items-center justify-center text-center">
+              <RecordAvatar
+                module={module.name}
+                recordId={active.id}
+                name={active.label}
+                percent={recordStrength(module.fields, active.values).percent}
+                canEdit={canEdit}
+                size={84}
+              />
+              {/*
+                Who owns it, under the face — the place the name and the number
+                have just left. Small, a face and a name and nothing else, as
+                it has been in this corner since 27 September.
+              */}
               {assignedField && (
-                /*
-                  27 September 2026, the owner: *"in the Assigned to and Name n
-                  Only Agent name and Avtar show there in Small Font."* The word
-                  "Assigned:" and the pill around it were two-thirds of what
-                  that corner said; the face and the name are the fact.
-                */
-                <span className="inline-flex min-w-0 shrink-0 items-center gap-1.5 text-[11px]" title="Assigned to">
+                <span className="mt-1.5 inline-flex min-w-0 items-center gap-1.5 text-[11px]" title="Assigned to">
                   {assignedName && <Avatar name={assignedName} size={16} />}
                   {canEdit && isInlineEditable(assignedField) ? (
                     <EditableField
@@ -643,60 +713,6 @@ export function IpropyWorkspace({
                   )}
                 </span>
               )}
-            </span>
-          </div>
-
-          {/*
-            The face in the middle, everything you do to the record on the
-            right — 27 September 2026: *"The Call and whatsapp icon move to
-            adjoining of Tag and Star icon."* A three-column grid rather than
-            `justify-between`, so the face stays in the middle of the panel
-            however many controls sit beside it.
-          */}
-          <div className="relative mb-1.5 grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2 px-2">
-            <span aria-hidden />
-
-            {/* The face, ringed by how complete the record is. */}
-            <span className="flex min-w-0 flex-col items-center justify-center text-center">
-              <RecordAvatar
-                module={module.name}
-                recordId={active.id}
-                name={active.label}
-                percent={recordStrength(module.fields, active.values).percent}
-                canEdit={canEdit}
-                size={112}
-              />
-              {/*
-                The name, then the number, divided by a hairline — *"Move
-                Mobile Number after Name with line seprator."* The number is
-                dropped from the chip strip below so it is not said twice.
-              */}
-              <span className="mt-2 flex min-w-0 max-w-full items-center justify-center gap-2.5">
-                <h2 className="min-w-0 truncate text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-                  {active.label}
-                </h2>
-                {phoneField && phoneValue && (
-                  <>
-                    <span className="h-4 w-px shrink-0 bg-slate-300 dark:bg-slate-600" aria-hidden />
-                    <span className="shrink-0 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                      {canEdit && isInlineEditable(phoneField) ? (
-                        <EditableField
-                          module={module.name}
-                          recordId={active.id}
-                          field={phoneField}
-                          value={active.values[phoneField.name]}
-                          display={active.display?.[phoneField.name]}
-                          compact
-                          siblings={active.values}
-                          onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                        />
-                      ) : (
-                        <FieldValue field={phoneField} value={active.values[phoneField.name]} display={active.display?.[phoneField.name]} compact />
-                      )}
-                    </span>
-                  </>
-                )}
-              </span>
             </span>
 
             {/* Right: everything you do to the record, in one group. */}
@@ -773,43 +789,6 @@ export function IpropyWorkspace({
             </span>
           </div>
 
-          {/*
-            The facts a call changes, as chips — the stage, the chase date and
-            whatever else the Layout Designer puts in this module's header,
-            each typed in where it stands. One measuring rule with the ledger
-            strip the WhatsApp header shows; only the clothes differ.
-          */}
-          {/*
-            The facts a call changes, as chips — *"editable Beautiful solid
-            multi colour rounded chips"*. Which fields those are stays the
-            Layout Designer's decision; what this file decides is that they are
-            chips and that the chase date wears the queue's own Today /
-            Tomorrow / Pending / Overdue colours.
-
-            No rule above it: *"A separator line below Name not necessary and
-            the Status etc Button space should be compact."*
-          */}
-          <div className="flex items-center gap-2">
-            <HeaderFieldStrip
-              module={module}
-              row={active}
-              /*
-                Without the number: it moved on to the name line above, and
-                saying it twice two inches apart is what the strip was already
-                being trimmed of elsewhere.
-              */
-              fields={headerFields.filter((field) => field.name !== phoneField?.name)}
-              canEdit={canEdit}
-              variant="chips"
-              followUpField={followUpField?.name}
-              /* The one chip that keeps its own colour — his instruction of
-                 28 September. Which field it is stays `useRecordPanes`'s
-                 answer, never a name written here. */
-              statusField={statusField?.name}
-              className="min-w-0 flex-1"
-            />
-            <HeaderPills module={module} row={active} canEdit={canEdit} />
-          </div>
         </header>
 
         {/*

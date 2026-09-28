@@ -31,13 +31,30 @@ export const FOLLOW_UP_STYLE: Record<FollowUpTone, string> = {
   pending: 'bg-[#f1f5f9] text-[#475569] dark:bg-slate-800 dark:text-slate-300',
 };
 
-export function FollowUpBadge({ due, date, className }: {
-  due: FollowUpChipValue; date: unknown; className?: string;
+/**
+ * Two sizes, swapped rather than layered.
+ *
+ * `cn` is plain clsx with no Tailwind merging, so a caller appending `px-3` to
+ * a chip that already says `px-2.5` leaves Tailwind's own stylesheet order to
+ * pick between them — the same lottery that made every column header in the
+ * CRM scroll away once. A state swaps the whole string out.
+ *
+ * `hero` is the record header's column beside the face, sized to match the
+ * action circles (28 September 2026).
+ */
+const FOLLOW_UP_SIZE = {
+  row: 'px-2.5 py-0.5 text-2xs',
+  hero: 'h-8 px-3 text-xs',
+} as const;
+
+export function FollowUpBadge({ due, date, className, size = 'row' }: {
+  due: FollowUpChipValue; date: unknown; className?: string; size?: keyof typeof FOLLOW_UP_SIZE;
 }): JSX.Element {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-2xs font-semibold uppercase tracking-wide',
+        'inline-flex items-center rounded-full font-semibold uppercase tracking-wide',
+        FOLLOW_UP_SIZE[size],
         FOLLOW_UP_STYLE[due.tone],
         className,
       )}
@@ -53,8 +70,10 @@ export function FollowUpBadge({ due, date, className }: {
  * rather than the decision. Nothing when the date is empty — a record nobody
  * has promised to chase has no chip, rather than one reading "none".
  */
-export function FollowUpFromValue({ value, className }: { value: unknown; className?: string }): JSX.Element | null {
+export function FollowUpFromValue({ value, className, size }: {
+  value: unknown; className?: string; size?: 'row' | 'hero';
+}): JSX.Element | null {
   const due = followUpChip(value);
   if (!due) return null;
-  return <FollowUpBadge due={due} date={value} className={className} />;
+  return <FollowUpBadge due={due} date={value} className={className} size={size} />;
 }

@@ -99,7 +99,7 @@ function keepsItsOwnColour(field: FieldMeta, statusField?: string): boolean {
  * Pulled out of the strip's own loop because both looks now need it and the
  * loop had grown a ternary nobody could read aloud.
  */
-function HeaderChipValue({ module, row, field, canEdit, asWords, onSaved }: {
+export function HeaderChipValue({ module, row, field, canEdit, asWords, onSaved }: {
   module: DescribedModule; row: RecordEnvelope; field: FieldMeta; canEdit: boolean;
   asWords?: boolean; onSaved: () => void;
 }): JSX.Element {
@@ -130,8 +130,10 @@ function HeaderChipValue({ module, row, field, canEdit, asWords, onSaved }: {
  * control rather than two. A record nobody has promised to chase shows the
  * field's own empty state, not a chip reading "none".
  */
-function FollowUpChipCell({ module, row, field, canEdit, asWords }: {
+export function FollowUpChipCell({ module, row, field, canEdit, asWords, size }: {
   module: DescribedModule; row: RecordEnvelope; field: FieldMeta; canEdit: boolean;
+  /** `hero` matches the action circles beside the record's face. */
+  size?: 'row' | 'hero';
   /**
    * The word without the colour, for a strip where only the stage is
    * coloured (28 September 2026). "Overdue 3D" still says everything the
@@ -144,7 +146,7 @@ function FollowUpChipCell({ module, row, field, canEdit, asWords }: {
   const value = row.values[field.name];
   const due = followUpChip(value);
   const chip = due
-    ? (asWords ? <span>{due.label}</span> : <FollowUpBadge due={due} date={value} />)
+    ? (asWords ? <span>{due.label}</span> : <FollowUpBadge due={due} date={value} size={size} />)
     : undefined;
   if (!canEdit || !isInlineEditable(field)) {
     return chip ?? <FieldValue field={field} value={value} display={row.display?.[field.name]} compact />;
