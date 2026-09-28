@@ -50,7 +50,7 @@ for (const module of MODULES) {
   });
 }
 
-test('the chase date and the stage sit to the left of the face', async ({ page }) => {
+test('the chase date, stage and call outcome sit below the actions on the right', async ({ page }) => {
   await openFirstRecord(page, 'leads');
   const header = page.locator('section header').first();
 
@@ -59,11 +59,14 @@ test('the chase date and the stage sit to the left of the face', async ({ page }
   if (await chip.count() === 0) test.skip(true, 'this record has no chase date to show');
 
   const chipBox = await chip.boundingBox();
-  const heroBox = await header.boundingBox();
+  const avatarBox = await header.getByTestId('split-hero-avatar').boundingBox();
+  const actionRowBox = await header.getByTestId('split-hero-actions-status').locator('> span').first().boundingBox();
   expect(chipBox, 'the chase date has no box').not.toBeNull();
+  expect(avatarBox, 'the avatar has no box').not.toBeNull();
+  expect(actionRowBox, 'the actions have no box').not.toBeNull();
 
-  // Left of centre, which is where the face is.
-  expect(chipBox!.x).toBeLessThan(heroBox!.x + heroBox!.width / 2);
+  expect(chipBox!.x).toBeGreaterThan(avatarBox!.x + avatarBox!.width);
+  expect(chipBox!.y).toBeGreaterThanOrEqual(actionRowBox!.y + actionRowBox!.height);
 });
 
 test('the three chips read as one row, not a column', async ({ page }) => {
@@ -74,7 +77,7 @@ test('the three chips read as one row, not a column', async ({ page }) => {
   await openFirstRecord(page, 'leads');
 
   const header = page.locator('section header').first();
-  const chipRow = header.locator('div.relative.flex > span').first();
+  const chipRow = header.getByTestId('split-hero-status-row').locator('> span');
 
   /*
     The row's own height, not each chip's top. They are centred against one
@@ -94,28 +97,19 @@ test('the three chips read as one row, not a column', async ({ page }) => {
 });
 
 /**
- * The face sits on the panel's centre line, whatever is beside it.
- *
- * **28 September 2026:** *"Avtar shold be center align always."* Two
- * arrangements had already failed it — equal side columns centred the face but
- * pinned the chips to the width of five circles, and letting each side take
- * what it needs freed the chips and moved the face off centre. It is pinned to
- * the middle now and neither side can shift it, which is what this measures:
- * the distance between the row's centre and the face's, in pixels.
+ * The face starts the operational row and the actions use the remaining space.
+ * This deliberately replaces the former centre-pinned layout.
  */
 for (const width of [1600, 1280]) {
-  test(`the face is centred on the panel at ${width}px`, async ({ page }) => {
+  test(`the face stays left of actions at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await openFirstRecord(page, 'leads');
 
-    const row = page.locator('section header').first().locator('div.relative.flex').first();
-    const off = await row.evaluate((r) => {
-      const box = r.getBoundingClientRect();
-      const centred = [...r.children].find((c) => (c as HTMLElement).className.includes('absolute'));
-      const face = (centred as HTMLElement).firstElementChild!.getBoundingClientRect();
-      return Math.abs((box.x + box.width / 2) - (face.x + face.width / 2));
-    });
-
-    expect(off, `the face is ${Math.round(off)}px off the panel's centre`).toBeLessThan(3);
+    const row = page.locator('section header').first().getByTestId('split-hero-layout');
+    const avatar = await row.getByTestId('split-hero-avatar').boundingBox();
+    const actions = await row.getByTestId('split-hero-actions-status').boundingBox();
+    expect(avatar, 'the avatar has no box').not.toBeNull();
+    expect(actions, 'the actions have no box').not.toBeNull();
+    expect(avatar!.x + avatar!.width).toBeLessThan(actions!.x + actions!.width);
   });
 }

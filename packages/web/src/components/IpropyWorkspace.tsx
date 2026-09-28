@@ -680,66 +680,27 @@ export function IpropyWorkspace({
           </div>
 
           {/*
-            The face in the middle, everything you do to the record on the
-            right — 27 September 2026: *"The Call and whatsapp icon move to
-            adjoining of Tag and Star icon."* A three-column grid rather than
-            `justify-between`, so the face stays in the middle of the panel
-            however many controls sit beside it.
+            **29 September 2026:** the face starts this row; every record
+            action sits at the right, and the three facts a call changes sit
+            directly below those actions. This keeps the operational side of
+            the header together and gives long translated labels room to wrap
+            without pushing the avatar back into the middle.
           */}
-          {/*
-            The face is centred on the panel, whatever sits beside it.
-
-            **28 September 2026, the owner:** *"Avtar shold be center align
-            always."* Two arrangements had already been tried and neither kept
-            that promise: `1fr auto 1fr` centres the face by giving both sides
-            the same width — and the right side holds five circles, so the left
-            was pinned to their width and the third chip wrapped onto a line of
-            its own. `minmax(0,1fr) auto auto` freed the chips and moved the
-            face off centre, which is what he is looking at.
-
-            So the face is taken out of the row entirely and pinned to the
-            panel's own middle. The chips and the controls then take exactly
-            what they need, and neither can move it. The row carries the
-            face's height itself, since an absolutely positioned child
-            contributes none.
-          */}
-          <div className="relative flex min-h-[5.5rem] w-full items-center justify-between gap-2 px-2">
-            {/*
-              The facts a call changes — *"Move Overdue (11D), Visit Scheduled
-              & Busy in to left side from Avtar"*. They were a full-width band
-              under the face, which is the row this hero has stopped spending.
-            */}
-            <HeroStatusChips
-              module={module}
-              row={active}
-              canEdit={canEdit}
-              statusField={statusField}
-              followUpField={followUpField}
-            />
-
-            {/*
-              Not `aria-hidden`: the wrapper only exists to centre the face,
-              and the face carries a real button — replacing the photo — plus
-              the label a screen reader reads the record by. It stops taking
-              pointer events so the chips and controls behind it stay
-              clickable, and hands them back to the face itself.
-            */}
-            <span className="pointer-events-none absolute inset-x-0 flex justify-center">
-              <span className="pointer-events-auto">
-                <RecordAvatar
-                  module={module.name}
-                  recordId={active.id}
-                  name={active.label}
-                  percent={recordStrength(module.fields, active.values).percent}
-                  canEdit={canEdit}
-                  size={84}
-                />
-              </span>
+          <div className="flex min-h-[5.5rem] w-full items-center gap-3 px-2" data-testid="split-hero-layout">
+            <span className="shrink-0" data-testid="split-hero-avatar">
+              <RecordAvatar
+                module={module.name}
+                recordId={active.id}
+                name={active.label}
+                percent={recordStrength(module.fields, active.values).percent}
+                canEdit={canEdit}
+                size={84}
+              />
             </span>
 
-
-            {/* Right: everything you do to the record, in one group. */}
-            <span className="z-10 flex min-w-0 items-center justify-end gap-2">
+            <div className="ml-auto flex min-w-0 flex-1 flex-col items-end gap-2" data-testid="split-hero-actions-status">
+              {/* Right: everything you do to the record, in one group. */}
+              <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {/*
                 Tags first — *"move tag from left top to beside of icons of
                 whatsapp and call, The tag alignment should be Before whatsapp
@@ -754,6 +715,7 @@ export function IpropyWorkspace({
                 canEdit={canEdit}
                 className={cn(
                   ACTION_CIRCLE,
+                  'hover:bg-brand-600',
                   active.tags?.length && 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-200',
                 )}
               />
@@ -816,7 +778,22 @@ export function IpropyWorkspace({
                   </>
                 )}
               </Dropdown>
-            </span>
+              </span>
+
+              {/* A hairline separates record actions from the three editable
+                  call facts, while their common right edge keeps the group
+                  easy to scan. */}
+              <div className="flex w-full justify-end border-t border-slate-200/80 pt-2 dark:border-slate-700/80" data-testid="split-hero-status-row">
+                <HeroStatusChips
+                  module={module}
+                  row={active}
+                  canEdit={canEdit}
+                  statusField={statusField}
+                  followUpField={followUpField}
+                  className="justify-end"
+                />
+              </div>
+            </div>
           </div>
 
         </header>
@@ -1015,7 +992,7 @@ function QueueCard({ row, active, checked, attention, card, queueFields, onSelec
             written in as `indigo-50` would not have.
           */
           active
-            ? 'bg-brand-50 dark:bg-brand-950'
+            ? 'bg-brand-50/45 dark:bg-brand-950/45'
             : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
         )}
       >

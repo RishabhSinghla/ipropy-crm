@@ -11,9 +11,9 @@
  * do not, so the same toolbar reads as two toolbars. The shape and both states
  * live here; each caller supplies its own icon, label and count.
  *
- * Dark purple is the brand's own step 800, which is a fill rather than a tint —
- * so the count chip on top is white at a low opacity, never a slate step that
- * would read grey on purple.
+ * **29 September 2026:** these are pale controls with a darker brand stroke.
+ * The active filter gains one tint step rather than turning into a solid block,
+ * so the toolbar remains calm while still making its state obvious.
  */
 import { cn } from './utils';
 
@@ -22,17 +22,16 @@ export function toolbarButton(on: boolean, extra?: string): string {
   return cn(
     // Fully round, on the owner's prototype of 27 September 2026 — a row of
     // pills rather than a row of tabs.
-    'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-white shadow-xs transition-colors',
+    'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-xs transition-colors',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1',
-    // A filter that is on is lighter and ringed, not a different colour: the
-    // row has to stay one row of purple pills for the "on" one to stand out
-    // at all.
-    on ? 'bg-brand-700 ring-2 ring-brand-300 dark:ring-brand-700' : 'bg-brand-900 hover:bg-brand-800',
+    on
+      ? 'border-brand-500 bg-brand-100 text-brand-900 ring-1 ring-brand-300 hover:bg-brand-200 dark:border-brand-600 dark:bg-brand-900/70 dark:text-brand-100 dark:ring-brand-700'
+      : 'border-brand-300 bg-brand-50 text-brand-800 hover:border-brand-400 hover:bg-brand-100 dark:border-brand-700 dark:bg-brand-950/35 dark:text-brand-200 dark:hover:bg-brand-900/55',
     extra,
   );
 }
 
 /** The number beside the label, on the same fill. */
 export function toolbarCount(extra?: string): string {
-  return cn('rounded-full bg-brand-700 px-1.5 py-px text-[10px] font-semibold tabular-nums text-white', extra);
+  return cn('rounded-full bg-brand-100 px-1.5 py-px text-[10px] font-semibold tabular-nums text-brand-800 dark:bg-brand-900/80 dark:text-brand-100', extra);
 }

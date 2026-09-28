@@ -111,9 +111,9 @@ export function FollowUpQueue({
           >
             <Clock className="h-3.5 w-3.5 shrink-0" />
             Follow-ups
-            {/* Something overdue stays red on the purple: it is the one count
-                in this row that is a warning rather than a size. */}
-            <span className={toolbarCount(counts.pending > 0 ? 'bg-red-600' : undefined)}>
+            {/* Something overdue stays red, but as the same quiet tint as the
+                toolbar rather than a solid warning disc. */}
+            <span className={toolbarCount(counts.pending > 0 ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300' : undefined)}>
               {total.toLocaleString('en-IN')}
             </span>
             <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
