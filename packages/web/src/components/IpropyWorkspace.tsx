@@ -15,8 +15,7 @@ import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
 import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
-import { FieldBlock, HeaderFieldStrip, NotesPanel } from './RecordBlocks';
-import { HeaderPills } from './HeaderPills';
+import { FieldBlock, NotesPanel } from './RecordBlocks';
 import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
@@ -617,19 +616,46 @@ export function IpropyWorkspace({
               </button>
             </span>
             {/*
-              The name and the number, up here where the agent used to be —
-              *"Move Name and Mobile Number at replacement Yogesh Bindal
-              Agent"*. They keep the size they had: this is still the heading
-              of the screen, it has simply stopped costing a row of its own.
+              Who owns it, right beside where this record sits in the queue —
+              *"Move Agent name after Page Number 1/100"*. Two facts about
+              *where you are* rather than about the customer, so they read as
+              one group and leave the whole right half to the name.
+            */}
+            {assignedField && (
+              <span className="inline-flex min-w-0 shrink items-center gap-1.5 text-[11px]" title="Assigned to">
+                {assignedName && <Avatar name={assignedName} size={16} />}
+                {canEdit && isInlineEditable(assignedField) ? (
+                  <EditableField
+                    module={module.name}
+                    recordId={active.id}
+                    field={assignedField}
+                    value={active.values[assignedField.name]}
+                    display={assignedName}
+                    compact
+                    siblings={active.values}
+                    restrictTo={restrictionForField(module.picklistDependencies, active.values, assignedField.name)}
+                    onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                  />
+                ) : (
+                  <FieldValue field={assignedField} value={active.values[assignedField.name]} display={assignedName} compact />
+                )}
+              </span>
+            )}
+
+            {/*
+              The name and the number, a size down — *"decrease Font size of
+              Name and mobile number"*. Still the heading of the screen, and
+              still the first thing read; it simply no longer sets how tall
+              this row has to be.
             */}
             <span className="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden">
-              <h2 className="min-w-0 truncate text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+              <h2 className="min-w-0 truncate text-base font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
                 {active.label}
               </h2>
               {phoneField && phoneValue && (
                 <>
-                  <span className="h-4 w-px shrink-0 bg-slate-300 dark:bg-slate-600" aria-hidden />
-                  <span className="shrink-0 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  <span className="h-3.5 w-px shrink-0 bg-slate-300 dark:bg-slate-600" aria-hidden />
+                  <span className="shrink-0 text-xs font-semibold text-slate-600 dark:text-slate-300">
                     {canEdit && isInlineEditable(phoneField) ? (
                       <EditableField
                         module={module.name}
@@ -647,12 +673,6 @@ export function IpropyWorkspace({
                   </span>
                 </>
               )}
-              {/*
-                Tags ride at the end, where they can give way without touching
-                the name — which is the one thing on this row that has to stay
-                readable. The tag icon in the controls is how they are edited.
-              */}
-              <TagChips module={module.name} tags={active.tags} className="hidden max-w-[7rem] shrink overflow-hidden lg:flex" />
             </span>
           </div>
 
@@ -663,7 +683,19 @@ export function IpropyWorkspace({
             `justify-between`, so the face stays in the middle of the panel
             however many controls sit beside it.
           */}
-          <div className="relative grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2 px-2">
+          {/*
+            The chips take the slack, the controls take what they need.
+
+            It was `1fr auto 1fr`, which holds the face at dead centre by
+            giving both sides the same width — and the right side holds five
+            circles, so the left was pinned to their width and the third chip
+            wrapped onto a line of its own. `auto` on the right lets the
+            controls ask for exactly what they are, and the chips keep the
+            rest. The face lands between the two groups rather than on the
+            panel's centre line, which is a difference of a few pixels against
+            a row that reads as one line.
+          */}
+          <div className="relative grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-2">
             {/*
               The facts a call changes, in the column the grid already left
               empty — *"Move Overdue (11D), Visit Scheduled & Busy in to left
@@ -688,37 +720,17 @@ export function IpropyWorkspace({
                 canEdit={canEdit}
                 size={84}
               />
-              {/*
-                Who owns it, under the face — the place the name and the number
-                have just left. Small, a face and a name and nothing else, as
-                it has been in this corner since 27 September.
-              */}
-              {assignedField && (
-                <span className="mt-1.5 inline-flex min-w-0 items-center gap-1.5 text-[11px]" title="Assigned to">
-                  {assignedName && <Avatar name={assignedName} size={16} />}
-                  {canEdit && isInlineEditable(assignedField) ? (
-                    <EditableField
-                      module={module.name}
-                      recordId={active.id}
-                      field={assignedField}
-                      value={active.values[assignedField.name]}
-                      display={assignedName}
-                      compact
-                      siblings={active.values}
-                      restrictTo={restrictionForField(module.picklistDependencies, active.values, assignedField.name)}
-                      onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                    />
-                  ) : (
-                    <FieldValue field={assignedField} value={active.values[assignedField.name]} display={assignedName} compact />
-                  )}
-                </span>
-              )}
             </span>
 
             {/* Right: everything you do to the record, in one group. */}
-            <span className="z-10 flex shrink-0 items-center justify-end gap-2">
-              {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
-              {phoneValue && <CallButton to={phoneValue} iconOnly round active={onCall} />}
+            <span className="z-10 flex min-w-0 items-center justify-end gap-2">
+              {/*
+                Tags first — *"move tag from left top to beside of icons of
+                whatsapp and call, The tag alignment should be Before whatsapp
+                and call"*. They read as a label on the controls rather than
+                as one more thing competing with the name.
+              */}
+              <TagChips module={module.name} tags={active.tags} className="hidden max-w-[6rem] shrink overflow-hidden lg:flex" />
               <TagButton
                 module={module.name}
                 recordId={active.id}
@@ -729,6 +741,8 @@ export function IpropyWorkspace({
                   active.tags?.length && 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-200',
                 )}
               />
+              {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
+              {phoneValue && <CallButton to={phoneValue} iconOnly round active={onCall} />}
               <button
                 aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
                 title={active.starred ? 'Remove from starred' : 'Star this record'}

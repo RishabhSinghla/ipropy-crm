@@ -682,3 +682,52 @@ read as a stage with no chip around it.
 reading a class name — the height, the name sitting above the face, and the
 chips to the left of it. A class that is present while the chip still sits
 underneath is exactly the bug.
+
+### Four more the same evening, and the chip that would not shrink
+
+**28 September 2026, the owner:** *"Can you alight vertical to horizontal of
+Next followup, Lead/Inventory Status, call disposition chip in a small chip and
+in a reduce font size … Move Agent name after Page Number 1/100 … decrease Font
+size of Name and mobile number … move tag from left top to beside of icons of
+whatsapp and call, The tag alignment should be Before whatsapp and call."*
+
+**145px now**, against 169 after the first pass and 253.5 before either.
+
+* **The three chips are a row**, `h-6` at 10px, sentence case. Capitals and
+  wide tracking cost about a fifth of the width of every chip for no fact the
+  words do not already carry, and three of them have to fit a column that is a
+  third of the panel.
+* **The agent sits beside the page number.** Where you are in the queue and who
+  owns it are both facts about *where you are* rather than about the customer,
+  so they read as one group and leave the whole right half to the name.
+* **Tags lead the controls**, then the tag button, then WhatsApp and Call.
+* **The grid is `minmax(0,1fr) auto auto`**, not `1fr auto 1fr`. Equal side
+  columns hold the face at dead centre — and the right one holds five circles,
+  so the left was pinned to their width and the third chip wrapped onto a line
+  of its own. `auto` lets the controls ask for what they are and the chips keep
+  the rest. Measured: 152px for the chips before, 379px after, against the
+  198px they need. Below about 1100px the row still wraps, which is the
+  graceful answer rather than one that leaves the panel.
+
+**The chip that would not shrink, and it is this repo's oldest trap wearing
+new clothes.** The call pill's class list said `h-6` *and* `HEADER_CHIP_SHAPE`,
+which says `h-8`. `cn` is plain clsx, so Tailwind's own stylesheet order picked
+between them and `h-8` won — a chip that stayed 32px tall while its classes
+said 24, and an e2e failing with *"a chip is 32px tall"* against a screenshot
+where it plainly was not. `HEADER_CHIP_SHAPE_SM` is a whole second string now,
+and `tests/headerChipTone.test.ts` pins that neither carries the other's
+height.
+
+**And a fault of mine the specs caught:** the tag chips were first shown from
+`2xl` — 1536px — which hides them from every laptop in the business. They show
+from `lg`.
+
+**Four specs measured the header this replaced.** Two that drove
+`data-testid="header-fields"` in the record pane are **deleted**: that strip is
+off this screen entirely now. `HeaderFieldStrip` and its count-what-fits rule
+are still real and still right — the **Chats** header draws them — but that
+screen needs a WhatsApp provider, and none is on a developer's database, so
+**that rule is untested today.** Written down rather than quietly lost; the way
+to close it is to pull the arithmetic out of the component and test it as a
+function, which would prove more than either spec did. The other two were
+rewritten to the new truth.

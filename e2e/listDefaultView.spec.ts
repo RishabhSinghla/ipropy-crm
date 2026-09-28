@@ -200,27 +200,28 @@ test('the queue is faces and facts, with the completeness bar off it', async ({ 
   await expect(queue.locator('svg.lucide-chevron-right')).toHaveCount(0);
 });
 
-test('the record\'s controls sit either side of the name, not above it', async ({ page }) => {
+test('the controls sit beside the face, with the name on the row above', async ({ page }) => {
   await forgetTheChoice(page, '/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
 
   /*
-    The prototype of 27 September 2026 centres the face and the name and puts
-    the controls in two groups either side of it. Measured rather than read off
-    a class: the star has to fall on the same band as the name and to the
-    *right* of it, which is the only thing that says it is beside the name
-    rather than stacked above it.
+    **28 September 2026** moved the name and the number up beside the page
+    number, and left the controls in the row with the face — *"Actually we need
+    this space compact so that below that much visible to my Team."*
+
+    Measured rather than read off a class: the star has to be to the *right* of
+    the face and *below* the name, which together are the only thing that says
+    the header is two rows rather than the three it used to be.
   */
   const header = recordPane(page).locator('header').first();
   const name = header.getByRole('heading').first();
   const star = header.locator('button[title$="starred"], button[title^="Star "]').first();
   const nameBox = (await name.boundingBox())!;
   const starBox = (await star.boundingBox())!;
-  const middle = starBox.y + starBox.height / 2;
 
-  expect(starBox.x, 'the star is to the left of the name').toBeGreaterThan(nameBox.x);
-  expect(middle, 'the star sits above the name block').toBeGreaterThan(nameBox.y - 90);
-  expect(middle, 'the star sits below the name block').toBeLessThan(nameBox.y + nameBox.height + 20);
+  expect(starBox.y, 'the star is on the name\'s own row').toBeGreaterThan(nameBox.y + nameBox.height - 4);
+  // And still on the face's row rather than stacked under everything.
+  expect(starBox.y, 'the star has fallen a long way below the name').toBeLessThan(nameBox.y + 140);
 });
 
 test('the queue can be ticked in bulk and sorted from its own header', async ({ page }) => {

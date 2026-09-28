@@ -39,12 +39,12 @@ export const FOLLOW_UP_STYLE: Record<FollowUpTone, string> = {
  * pick between them — the same lottery that made every column header in the
  * CRM scroll away once. A state swaps the whole string out.
  *
- * `hero` is the record header's column beside the face, sized to match the
- * action circles (28 September 2026).
+ * `hero` is the record header's row beside the face — small, because three
+ * chips stacked there set the height of the whole header (28 September 2026).
  */
 const FOLLOW_UP_SIZE = {
   row: 'px-2.5 py-0.5 text-2xs',
-  hero: 'h-8 px-3 text-xs',
+  hero: 'h-6 px-2 text-[10px] normal-case tracking-normal',
 } as const;
 
 export function FollowUpBadge({ due, date, className, size = 'row' }: {

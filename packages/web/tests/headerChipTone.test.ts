@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  HEADER_CHIP_OVERDUE, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE, headerChipTone,
+  HEADER_CHIP_OVERDUE, HEADER_CHIP_SHAPE, HEADER_CHIP_SHAPE_SM, HEADER_CHIP_TONE, headerChipTone,
 } from '../src/lib/headerChip';
 
 /** A date this many days from today, as the record stores it. */
@@ -29,6 +29,15 @@ describe('record header chip', () => {
     expect(HEADER_CHIP_SHAPE).toContain('rounded-full');
     expect(HEADER_CHIP_SHAPE).toContain('font-bold');
     expect(HEADER_CHIP_SHAPE).toContain('border');
+  });
+
+  it('has a small twin that is a whole string, not the big one plus h-6', () => {
+    // Two heights in one class list are decided by Tailwind's stylesheet
+    // order, not by which was written last — which is how the hero's chip
+    // stayed 32px tall while its class list said 24.
+    expect(HEADER_CHIP_SHAPE_SM).toContain('h-6');
+    expect(HEADER_CHIP_SHAPE_SM).not.toContain('h-8');
+    expect(HEADER_CHIP_SHAPE).not.toContain('h-6');
   });
 
   it('is light and wears the brand, so it moves when the theme does', () => {

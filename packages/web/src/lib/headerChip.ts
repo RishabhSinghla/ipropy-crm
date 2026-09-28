@@ -12,6 +12,16 @@ import { followUpChip } from './followUpDates';
 export const HEADER_CHIP_SHAPE = 'h-8 items-center rounded-full border text-[13px] font-bold';
 
 /**
+ * The same chip, small — the record hero's row beside the face.
+ *
+ * A whole second string rather than `HEADER_CHIP_SHAPE` with `h-6` written
+ * after it: `cn` is plain clsx, so two height utilities in one class list are
+ * decided by Tailwind's own stylesheet order and `h-8` won. On screen that was
+ * a chip that ignored every attempt to shrink it.
+ */
+export const HEADER_CHIP_SHAPE_SM = 'h-6 items-center rounded-full border text-[10px] font-bold';
+
+/**
  * Every ordinary fact: a light chip with a border, in the brand's own colour.
  *
  * Brand steps rather than slate, so the chips move when an admin changes the

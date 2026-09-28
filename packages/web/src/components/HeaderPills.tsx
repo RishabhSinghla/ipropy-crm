@@ -29,16 +29,18 @@ import { api } from '../lib/api';
 import { useCallDispositions } from '../lib/callDispositions';
 import { followUpFor } from '../lib/callConsole';
 import { invalidateRecordQueries } from '../lib/invalidate';
-import { HEADER_CHIP } from '../lib/headerChip';
+import { HEADER_CHIP_SHAPE, HEADER_CHIP_SHAPE_SM, HEADER_CHIP_TONE } from '../lib/headerChip';
 import { type DescribedModule, useRecordPanes } from '../lib/recordPanes';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 
-export function HeaderPills({ module, row, canEdit, className }: {
+export function HeaderPills({ module, row, canEdit, className, size = 'row' }: {
   module: DescribedModule;
   row: RecordEnvelope;
   canEdit: boolean;
   className?: string;
+  /** `hero` is the small chip in the record header's row beside the face. */
+  size?: 'row' | 'hero';
 }): JSX.Element {
   /*
     The call pill alone.
@@ -57,7 +59,7 @@ export function HeaderPills({ module, row, canEdit, className }: {
   const { followUpField } = useRecordPanes(module);
   return (
     <span className={cn('flex shrink-0 items-center gap-1.5', className)}>
-      <CallAgainPill module={module} followUp={followUpField} row={row} canEdit={canEdit} />
+      <CallAgainPill module={module} followUp={followUpField} row={row} canEdit={canEdit} size={size} />
     </span>
   );
 }
@@ -78,8 +80,9 @@ export function HeaderPills({ module, row, canEdit, className }: {
  * put in the future. So a rep who rang from their own handset records what
  * happened without opening anything.
  */
-function CallAgainPill({ module, followUp, row, canEdit }: {
+function CallAgainPill({ module, followUp, row, canEdit, size = 'row' }: {
   module: DescribedModule; followUp: FieldMeta | undefined; row: RecordEnvelope; canEdit: boolean;
+  size?: 'row' | 'hero';
 }): JSX.Element {
   const queryClient = useQueryClient();
   // The same key and the same request the record's Calls tab uses, so opening
@@ -131,13 +134,20 @@ function CallAgainPill({ module, followUp, row, canEdit }: {
           title={last?.disposition ? `Last call: ${label} — record another` : 'Record how a call went'}
           aria-label={last?.disposition ? `Last call ${label}. Record how a call went` : 'Record how a call went'}
           className={cn(
-            'inline-flex h-8 max-w-[12rem] gap-1.5 px-3.5',
-            HEADER_CHIP,
-            'transition-colors hover:bg-slate-600 dark:hover:bg-slate-500 active:scale-95',
+            'inline-flex max-w-[12rem]',
+            // Swapped whole rather than layered: `cn` is plain clsx, so a
+            // second `px-*` beside this one would be decided by Tailwind's own
+            // stylesheet order rather than by which was written last.
+            size === 'hero' ? 'gap-1 px-2' : 'gap-1.5 px-3.5',
+            size === 'hero' ? HEADER_CHIP_SHAPE_SM : HEADER_CHIP_SHAPE,
+            HEADER_CHIP_TONE,
+            // A light chip brightens on hover. It used to darken to charcoal,
+            // which was right while these were solid and is not any more.
+            'transition-colors hover:bg-brand-100 dark:hover:bg-brand-900 active:scale-95',
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
         >
-          <PhoneCall className="h-4 w-4 shrink-0" aria-hidden />
+          <PhoneCall className={cn('shrink-0', size === 'hero' ? 'h-3 w-3' : 'h-4 w-4')} aria-hidden />
           <span className="truncate">{label}</span>
         </button>
       }

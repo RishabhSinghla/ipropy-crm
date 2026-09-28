@@ -35,10 +35,21 @@ import { invalidateRecordQueries } from '../lib/invalidate';
 import { useQueryClient } from '@tanstack/react-query';
 
 /**
- * The same height as an action circle, so the column beside the face reads as
- * one set of controls rather than two sizes of thing.
+ * Small, and in a row.
+ *
+ * **28 September 2026, the owner:** *"Can you alight vertical to horizontal of
+ * Next followup, Lead/Inventory Status, call disposition chip in a small chip
+ * and in a reduce font size accordingly in all module."* Stacked they were
+ * three lines tall beside an 84px face, which set the height of the whole
+ * hero; in a row they set none of it.
  */
-const CHIP = 'inline-flex h-8 max-w-[9rem] items-center justify-center rounded-full px-3 text-2xs font-semibold uppercase tracking-wide';
+/*
+  Sentence case, not capitals. Three chips have to sit on one line in a column
+  that is a third of the panel, and `uppercase tracking-wide` costs about a
+  fifth of the width of every one of them for no fact the words do not already
+  carry.
+*/
+const CHIP = 'inline-flex h-6 max-w-[6.5rem] items-center justify-center rounded-full px-2 text-[10px] font-semibold';
 
 /** The resting look for a chip with no colour of its own. */
 /** A stage the admin has given no colour still has to read as a chip, not as
@@ -59,7 +70,9 @@ export function HeroStatusChips({ module, row, canEdit, statusField, followUpFie
     : null;
 
   return (
-    <span className={cn('flex min-w-0 flex-col items-start gap-1.5', className)}>
+    // A row that wraps rather than one that overflows: at a narrow pane the
+    // third chip drops under the first two instead of leaving the panel.
+    <span className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
       {followUpField && (
         // No wrapper tint: the chip inside carries its own, and a tint under a
         // tint is how "overdue" stopped reading as overdue once already.
@@ -88,7 +101,7 @@ export function HeroStatusChips({ module, row, canEdit, statusField, followUpFie
         </span>
       )}
 
-      <HeaderPills module={module} row={row} canEdit={canEdit} />
+      <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
     </span>
   );
 }

@@ -9,7 +9,8 @@
  *
  * Measured rather than read off a class name: a class that is present while
  * the chip still sits under the face is exactly the bug. It ran 253.5px before
- * this and 169px after, on the same record in the same window.
+ * this, 169px after the first pass, and 145px once the chips went into a row
+ * and the agent moved up beside the page number — same record, same window.
  *
  * Both modules, because "it works on leads" is how a module gets left behind.
  */
@@ -36,7 +37,7 @@ for (const module of MODULES) {
     // It was 253.5px with the chip band under the face. This is the promise
     // that gave a third of it back; a generous ceiling, so an extra line of
     // padding does not fail the build while the band coming back does.
-    expect(headerBox!.height).toBeLessThan(210);
+    expect(headerBox!.height).toBeLessThan(180);
 
     const avatar = header.locator('img, [class*="rounded-full"]').first();
     const avatarBox = await avatar.boundingBox();
@@ -63,4 +64,31 @@ test('the chase date and the stage sit to the left of the face', async ({ page }
 
   // Left of centre, which is where the face is.
   expect(chipBox!.x).toBeLessThan(heroBox!.x + heroBox!.width / 2);
+});
+
+test('the three chips read as one row, not a column', async ({ page }) => {
+  // A width a rep actually works at. At a narrow pane the third chip wraps on
+  // purpose, which is the graceful answer rather than one that leaves the
+  // panel — so the promise is pinned where it is a promise.
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await openFirstRecord(page, 'leads');
+
+  const header = page.locator('section header').first();
+  const chipRow = header.locator('div.grid > span').first();
+
+  /*
+    The row's own height, not each chip's top. They are centred against one
+    another and differ by a pixel or two, so comparing tops reports the
+    alignment rather than the wrapping — which is how this assertion first
+    failed against a row that was plainly one line on screen.
+  */
+  const box = await chipRow.boundingBox();
+  expect(box, 'no chips beside the face').not.toBeNull();
+
+  const count = await chipRow.evaluate((el) => el.children.length);
+  expect(count, 'nothing to lay out').toBeGreaterThan(1);
+
+  // One row of small chips is 24px. A second line would be about 28 more.
+  expect(box!.height, `the chips are ${box!.height}px tall — that is more than one row`)
+    .toBeLessThan(34);
 });
