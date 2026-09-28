@@ -12,6 +12,7 @@ import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
 import { appendSnippet, useNoteSnippets } from '../lib/noteSnippets';
 import { followUpChip } from '../lib/followUpDates';
+import { HEADER_CHIP, HEADER_CHIP_PAD } from '../lib/headerChip';
 import { FollowUpBadge } from './FollowUpChip';
 
 /**
@@ -74,15 +75,50 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
 }
 
 /**
- * Whether this field already draws itself as a chip.
+ * The one chip in this strip that keeps a colour of its own.
  *
- * A picklist renders through `Badge`, which is solid and carries the admin's
- * own colour; the chase date wears the queue's four. Wrapping either in a
- * white bordered box is a chip inside a chip, and the outer one wins.
+ * **28 September 2026, the owner:** *"All chips colour will same except
+ * Leads/Inventory Status. We want colour of Leads/Inventory Status display
+ * own colour picking from Dropdown colour picker."*
+ *
+ * Which field that is arrives as a prop rather than being worked out here —
+ * `useRecordPanes` already answers it for every screen, and a second answer
+ * is how one header comes to colour a different field from another. Until it
+ * is passed, nothing is special and the whole strip reads as one.
  */
-function wearsItsOwnChip(field: FieldMeta, followUpField?: string): boolean {
-  if (field.name === followUpField) return true;
-  return field.uitype === 'picklist' || field.uitype === 'radio' || field.uitype === 'multipicklist' || field.uitype === 'tags';
+function keepsItsOwnColour(field: FieldMeta, statusField?: string): boolean {
+  return Boolean(statusField) && field.name === statusField;
+}
+
+
+
+/**
+ * One field's value in the header, editable where it may be.
+ *
+ * Pulled out of the strip's own loop because both looks now need it and the
+ * loop had grown a ternary nobody could read aloud.
+ */
+function HeaderChipValue({ module, row, field, canEdit, asWords, onSaved }: {
+  module: DescribedModule; row: RecordEnvelope; field: FieldMeta; canEdit: boolean;
+  asWords?: boolean; onSaved: () => void;
+}): JSX.Element {
+  if (canEdit && isInlineEditable(field)) {
+    return (
+      <EditableField
+        module={module.name}
+        recordId={row.id}
+        field={field}
+        value={row.values[field.name]}
+        display={row.display?.[field.name]}
+        compact
+        asWords={asWords}
+        siblings={row.values}
+        restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
+        onSaved={onSaved}
+      />
+    );
+  }
+  return <FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact asWords={asWords} />;
 }
 
 /**
@@ -93,16 +129,24 @@ function wearsItsOwnChip(field: FieldMeta, followUpField?: string): boolean {
  * control rather than two. A record nobody has promised to chase shows the
  * field's own empty state, not a chip reading "none".
  */
-function FollowUpChipCell({ module, row, field, canEdit }: {
+function FollowUpChipCell({ module, row, field, canEdit, asWords }: {
   module: DescribedModule; row: RecordEnvelope; field: FieldMeta; canEdit: boolean;
+  /**
+   * The word without the colour, for a strip where only the stage is
+   * coloured (28 September 2026). "Overdue 3D" still says everything the
+   * four tints did; what goes is a fifth hue competing with the one that
+   * carries meaning.
+   */
+  asWords?: boolean;
 }): JSX.Element {
   const queryClient = useQueryClient();
   const value = row.values[field.name];
   const due = followUpChip(value);
+  const chip = due
+    ? (asWords ? <span>{due.label}</span> : <FollowUpBadge due={due} date={value} />)
+    : undefined;
   if (!canEdit || !isInlineEditable(field)) {
-    return due
-      ? <FollowUpBadge due={due} date={value} />
-      : <FieldValue field={field} value={value} display={row.display?.[field.name]} compact />;
+    return chip ?? <FieldValue field={field} value={value} display={row.display?.[field.name]} compact />;
   }
   return (
     <EditableField
@@ -114,7 +158,7 @@ function FollowUpChipCell({ module, row, field, canEdit }: {
       compact
       siblings={row.values}
       onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
-      render={due ? <FollowUpBadge due={due} date={value} /> : undefined}
+      render={chip}
     />
   );
 }
@@ -243,7 +287,7 @@ function NoteEntry({ entry, flush = false }: { entry: TimelineEntry; flush?: boo
  * A window listener is not enough: the strip also narrows when a divider is
  * dragged, which moves no window. `ResizeObserver` watches the element.
  */
-export function HeaderFieldStrip({ module, row, fields, canEdit, className, variant = 'columns', followUpField }: {
+export function HeaderFieldStrip({ module, row, fields, canEdit, className, variant = 'columns', followUpField, statusField }: {
   module: DescribedModule; row: RecordEnvelope; fields: FieldMeta[]; canEdit: boolean; className?: string;
   /**
    * How each field is drawn.
@@ -268,6 +312,12 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
    * chase a different date from another.
    */
   followUpField?: string;
+  /**
+   * This module's stage field — the one chip that keeps the colour an admin
+   * picked for it in the dropdown editor (28 September 2026). Passed in for
+   * the same reason as the chase date: `useRecordPanes` owns that decision.
+   */
+  statusField?: string;
 }): JSX.Element {
   const queryClient = useQueryClient();
   const strip = useRef<HTMLDivElement>(null);
@@ -351,53 +401,56 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
         )}
         style={{ borderColor: 'var(--border)' }}
       >
-        {shown.map((field, index) => (
-          <span
-            key={field.name}
-            title={variant === 'chips' ? field.label : undefined}
-            className={cn(
-              'inline-flex shrink-0 justify-center',
-              variant === 'columns'
-                ? cn('flex-col py-0.5', index === 0 ? 'pr-3.5' : 'px-3.5')
-                : cn(
-                  'items-center rounded-full text-xs',
+        {shown.map((field, index) => {
+          /*
+            The stage is the exception; everything else is words in one chip.
+
+            `asWords` is what takes a dropdown's own colour off — the source,
+            the contact type, why it was lost — so the only hue left on the
+            line is the one that means something.
+          */
+          const ownColour = variant === 'chips' && keepsItsOwnColour(field, statusField);
+          const asWords = variant === 'chips' && !ownColour;
+          return (
+            <span
+              key={field.name}
+              title={variant === 'chips' ? field.label : undefined}
+              className={cn(
+                'inline-flex shrink-0 justify-center',
+                variant === 'columns'
+                  ? cn('flex-col py-0.5', index === 0 ? 'pr-3.5' : 'px-3.5')
                   /*
-                    A picklist already draws itself as a solid chip in the
-                    admin's own colour (`Badge`), and the chase date wears the
-                    queue's. Only a plain value — a number, a word — needs a
-                    chip drawn around it, or it would be bare text in a row of
-                    colour. That is the whole of *"editable Beautiful solid
-                    multi colour rounded chips"*: the colours were already
-                    there, inside a white box that hid them.
+                    A hairline between every pair — *"All chips need a line
+                    separator"*. It rides on the chip's own wrapper rather
+                    than standing between them as an element of its own,
+                    because the measuring loop above counts one child per
+                    field and a divider in that list would make it count the
+                    wrong things.
                   */
-                  wearsItsOwnChip(field, followUpField)
-                    ? 'py-0'
-                    : 'border border-slate-200 bg-white px-2.5 py-1 shadow-2xs dark:border-slate-700 dark:bg-slate-800',
-                ),
-              index >= fits && 'invisible',
-            )}
-            style={{ borderColor: 'var(--border)' }}
-          >
-            {variant === 'columns' && <span className="key-label shrink-0">{field.label}</span>}
-            {variant === 'chips' && field.name === followUpField
-              ? <FollowUpChipCell module={module} row={row} field={field} canEdit={canEdit} />
-              : canEdit && isInlineEditable(field) ? (
-                <EditableField
-                  module={module.name}
-                  recordId={row.id}
-                  field={field}
-                  value={row.values[field.name]}
-                  display={row.display?.[field.name]}
-                  compact
-                  siblings={row.values}
-                  restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
+                  : cn('items-center', index > 0 && 'border-l border-[var(--border)] pl-2'),
+                index >= fits && 'invisible',
+              )}
+            >
+              {variant === 'columns' && <span className="key-label shrink-0">{field.label}</span>}
+              {variant === 'chips' ? (
+                <span className={cn('inline-flex min-w-0 max-w-[12rem] truncate', ownColour ? 'items-center' : cn(HEADER_CHIP, HEADER_CHIP_PAD))}>
+                  {field.name === followUpField
+                    ? <FollowUpChipCell module={module} row={row} field={field} canEdit={canEdit} asWords />
+                    : <HeaderChipValue
+                        module={module} row={row} field={field} canEdit={canEdit}
+                        asWords={asWords}
+                        onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
+                      />}
+                </span>
+              ) : (
+                <HeaderChipValue
+                  module={module} row={row} field={field} canEdit={canEdit}
                   onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
                 />
-              ) : (
-                <FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact />
               )}
-          </span>
-        ))}
+            </span>
+          );
+        })}
       </div>
       {fits < shown.length && (
         <span

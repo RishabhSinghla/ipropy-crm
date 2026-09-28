@@ -74,7 +74,20 @@ test('a narrow pane says there are more fields rather than cutting one in half',
     is the *relationship*: once something does not fit, it is hidden whole and
     the line says so.
   */
-  for (const width of [900, 760, 620, 480, 400]) {
+  /*
+    **28 September 2026: the ladder needed two more rungs, and not because
+    anything broke.** The chips became bolder and gained a separator each, so
+    every field is *wider* — but the call pill beside the strip went from 14px
+    extra-bold to the same 13px chip and handed those pixels back, which was
+    enough to keep this record's two facts on the line at 400px. Measured:
+    nothing hides down to 400, one field hides at 360, both at 320.
+
+    Where the line falls is a fact about this record's values and the controls
+    beside them, not about the promise — the same trap this spec already
+    carries a paragraph about. 320px is the narrowest phone worth drawing for,
+    so the ladder ends there.
+  */
+  for (const width of [900, 760, 620, 480, 400, 360, 320]) {
     await page.setViewportSize({ width, height: 900 });
     // Give the strip's ResizeObserver a frame to recount.
     await expect(async () => {
@@ -211,4 +224,78 @@ test('the open record is obvious in the queue', async ({ page }) => {
     row.locator('span span').first().evaluate((el) => getComputedStyle(el).color);
   expect(await nameOf(chosen), 'the open name reads the same colour as a closed one')
     .not.toBe(await nameOf(rows.nth(4).locator('button').first()));
+});
+
+/**
+ * Every fact in the header wears one chip, and only the stage carries colour.
+ *
+ * **28 September 2026, the owner:** *"All of them into Round Chip/Box/Card In
+ * Light Colour with a Border, All chips colour will same except
+ * Leads/Inventory Status … All chips need a line separator, And All chips
+ * also be Bolder."*
+ *
+ * Measured rather than read off a class name: what he is looking at is the
+ * *fill*, and a class that is present while two chips still come out
+ * different colours is exactly the bug. The stage is identified by being the
+ * one that is not like the others, which is the promise itself — naming a
+ * field here would be the thing `useRecordPanes` exists to prevent.
+ */
+test('the header chips are one look, with the stage the only exception', async ({ page }) => {
+  await splitView(page);
+  const strip = recordPane(page).locator('header').first().getByTestId('header-fields');
+  await expect(strip).toBeVisible();
+
+  const chips = await strip.evaluate((box) => [...box.children].map((wrap, i) => {
+    const w = getComputedStyle(wrap as Element);
+    const inner = (wrap as Element).querySelector('span');
+    const c = inner ? getComputedStyle(inner) : null;
+    return {
+      separator: i === 0 ? 'n/a' : w.borderLeftWidth,
+      fill: c?.backgroundColor ?? '', radius: c?.borderRadius ?? '',
+      border: c?.borderTopWidth ?? '', weight: Number(c?.fontWeight ?? 0),
+    };
+  }));
+  expect(chips.length, 'no chips to compare').toBeGreaterThan(1);
+
+  // The stage draws its own `Badge` inside, so its wrapper carries no fill.
+  const plain = chips.filter((c) => c.fill !== 'rgba(0, 0, 0, 0)');
+  expect(plain.length, 'every chip drew its own colour — none share the header chip').toBeGreaterThan(0);
+  expect(new Set(plain.map((c) => c.fill)).size, 'the chips are not all the same colour').toBe(1);
+  for (const chip of plain) {
+    expect(chip.radius, 'a chip is not round').toMatch(/9999px/);
+    expect(chip.border, 'a chip has no border').toBe('1px');
+    expect(chip.weight, 'a chip is not bold').toBeGreaterThanOrEqual(700);
+  }
+  // A hairline between each pair — every chip after the first.
+  for (const chip of chips.slice(1)) {
+    expect(chip.separator, 'no separator between two chips').toBe('1px');
+  }
+});
+
+/**
+ * The photo reaches the innermost ring.
+ *
+ * **28 September 2026:** *"There are three lines after avatar. Please increase
+ * the avtar size till touch inner circle first line."* It stops one white
+ * ring short of the dashes on purpose — grown flush it covers them and he is
+ * left with two lines where he counted three — so this checks both halves:
+ * the photo nearly fills that circle, and the circle is still drawn.
+ */
+test('the photo fills the dashed ring without swallowing it', async ({ page }) => {
+  await splitView(page);
+  const rings = recordPane(page).locator('svg[role="img"]').first();
+  await expect(rings).toBeVisible();
+
+  const size = await rings.evaluate((svg) => {
+    const width = (n: Element): number => n.getBoundingClientRect().width;
+    const dashed = [...svg.querySelectorAll('circle')].find((c) => c.getAttribute('stroke-dasharray') === '2 3');
+    const face = [...svg.parentElement!.children]
+      .find((c) => c !== svg && (c as HTMLElement).className?.toString().includes('z-10'));
+    return dashed && face ? { dashed: width(dashed), face: width(face) } : null;
+  });
+  expect(size, 'the rings or the photo are not where this spec expects them').not.toBeNull();
+  expect(size!.dashed, 'the dashed ring is gone').toBeGreaterThan(0);
+  // Inside it, and filling all but its own white hairline on each side.
+  expect(size!.face).toBeLessThan(size!.dashed);
+  expect(size!.face / size!.dashed, 'the photo no longer reaches the inner ring').toBeGreaterThan(0.9);
 });

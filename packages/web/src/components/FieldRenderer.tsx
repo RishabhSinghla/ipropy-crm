@@ -77,7 +77,7 @@ function DueChip({ due }: { due: DueDay }): JSX.Element {
 }
 
 export function FieldValue({
-  field, value, display, compact, linkTo, plain,
+  field, value, display, compact, linkTo, plain, asWords,
 }: {
   field: FieldMeta;
   value: unknown;
@@ -102,6 +102,17 @@ export function FieldValue({
    * actually reaches for them.
    */
   plain?: boolean;
+  /**
+   * A dropdown value as words, not as its own coloured chip.
+   *
+   * **28 September 2026, the owner**, of the record header: *"All chips
+   * colour will same except Leads/Inventory Status."* Five hues in a row
+   * leave none of them saying anything, so on that strip only the stage
+   * keeps the colour an admin picked for it and the rest are words inside
+   * one chip the caller draws. Everywhere else a picklist still carries its
+   * own colour, which is what makes a stage readable at a glance.
+   */
+  asWords?: boolean;
 }): JSX.Element {
   const callDisposition = useCallDisposition();
   const empty = value === null || value === undefined || value === ''
@@ -224,6 +235,9 @@ export function FieldValue({
     case 'picklist':
     case 'radio': {
       const option = picklistOptionForValue(field.options, value);
+      // No colour classes on the `asWords` branch: the chip around it owns
+      // the weight and the tone, and a colour written here would fight it.
+      if (asWords) return <span className="truncate">{option?.label ?? String(value)}</span>;
       if (option?.meta?.plainText === true) {
         return <span className="font-medium text-slate-700 dark:text-slate-200">{option.label ?? String(value)}</span>;
       }
@@ -238,6 +252,7 @@ export function FieldValue({
         <span className="inline-flex flex-wrap items-center gap-1">
           {shown.map((v) => {
             const option = picklistOptionForValue(field.options, v);
+            if (asWords) return <span key={String(v)}>{option?.label ?? String(v)}</span>;
             return option?.meta?.plainText === true
               ? <span key={String(v)} className="font-medium text-slate-700 dark:text-slate-200">{option.label ?? String(v)}</span>
               : <Badge key={String(v)} color={option?.color}>{option?.label ?? String(v)}</Badge>;

@@ -28,6 +28,20 @@ import { Avatar, Dropdown, DropdownItem } from './ui';
 /** What the record's own photo is filed under. */
 const AVATAR_CATEGORY = 'avatar';
 
+/**
+ * The dashed circle's radius, as a share of the panel's width — and the
+ * photo's own edge, because the owner asked for the two to meet.
+ *
+ * One number for both, so the day somebody moves the ring the face moves with
+ * it rather than leaving the gap this was raised about.
+ */
+const DASHED_RING = 0.385;
+
+/** The white hairline drawn around the photo (`ring-2`), in pixels. The photo
+ *  shrinks by it on each side so that ring — not the picture — is what meets
+ *  the dashed circle. */
+const PHOTO_RING = 2;
+
 /** Big enough that a face is a face; a phone photo is scaled by the pipeline. */
 const MAX_BYTES = 8 * 1024 * 1024;
 
@@ -131,11 +145,31 @@ export function RecordAvatar({ module, recordId, name, percent, canEdit, size = 
     <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }}>
       <StrengthRings percent={percent} size={size} name={name} />
 
-      {/* The photo itself, inside the dashed hairline. */}
+      {/*
+        The photo, filling the dashed hairline.
+
+        **28 September 2026, the owner:** *"There are three lines after
+        avatar. Please increase the avtar size till touch inner circle first
+        line, so that we see the picture as big as."* It was 62% of the
+        panel's width against a dashed circle at 77%, so a fifth of the space
+        inside the rings was empty and the face was the smallest thing in its
+        own portrait.
+
+        `DASHED_RING` is the shared number: the photo's diameter and the
+        dashed circle's radius are printed from it, so the two cannot drift
+        apart the next time either is touched.
+
+        **It stops one white ring short of the dashes rather than on them.**
+        He counted three lines and asked the photo to reach the first, so the
+        first still has to be there when it arrives — grown flush, the
+        photo's own ring covers the dashes and he is left with two. So the
+        picture is the dashed circle less its ring on each side, and that
+        ring is the hairline where the two meet.
+      */}
       <Avatar
         name={name}
         src={file ? fileUrl(file.id) : null}
-        size={Math.round(size * 0.62)}
+        size={Math.round(size * DASHED_RING * 2) - PHOTO_RING * 2}
         className="relative z-10 ring-2 ring-white dark:ring-slate-900"
       />
 
@@ -229,7 +263,7 @@ function StrengthRings({ percent, size, name }: { percent: number; size: number;
   const r = (size - stroke) / 2;
   const circumference = 2 * Math.PI * r;
   const hairline = size * 0.425;
-  const dashed = size * 0.385;
+  const dashed = size * DASHED_RING;
 
   return (
     <svg

@@ -110,6 +110,8 @@ export interface EditableFieldProps {
    * and a link or a button inside would swallow it.
    */
   render?: ReactNode;
+  /** Draw a dropdown value as words rather than as its own coloured chip — see `FieldValue`. */
+  asWords?: boolean;
   /** dependent-picklist restriction, resolved from the module's picklistDependencies against the record's current values */
   restrictTo?: string[];
   /**
@@ -128,7 +130,7 @@ export interface EditableFieldProps {
 
 export function EditableField(props: EditableFieldProps): JSX.Element {
   const {
-    module, recordId, field, value, display, compact, plain, restrictTo, siblings, linkTo, onSaved,
+    module, recordId, field, value, display, compact, plain, asWords, restrictTo, siblings, linkTo, onSaved,
     surface = 'record', render,
   } = props;
 
@@ -345,7 +347,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     // breaks in browsers.
     <StatusRing key={flashKey} status={status}>
       <span className={cn('group/ef -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5', editing && coversValue && 'invisible')}>
-        {render ?? <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} />}
+        {render ?? <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} asWords={asWords} />}
         {status === 'saving' ? (
           <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />
         ) : (
@@ -377,7 +379,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     */
     <StatusRing key={flashKey} status={status}>
       <span className={cn('inline-flex items-center gap-1', editing && coversValue && 'invisible')}>
-        {render ?? <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} />}
+        {render ?? <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} plain={plain} asWords={asWords} />}
         {status === 'saving' && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />}
         {/*
           A real control for anyone not using a mouse.

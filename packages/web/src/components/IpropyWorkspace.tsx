@@ -318,7 +318,7 @@ export function IpropyWorkspace({
     conversation and must reach the same answer. A second copy of this
     reasoning is the mistake this repo keeps finding months later.
   */
-  const { headerFields, blocks, assignedField, followUpField, phoneField } = useRecordPanes(module);
+  const { headerFields, blocks, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
   const { data: assignableUsers = [] } = useQuery({
     queryKey: ['users', 'assignable'],
     queryFn: () => api.users(false, false, true),
@@ -801,6 +801,10 @@ export function IpropyWorkspace({
               canEdit={canEdit}
               variant="chips"
               followUpField={followUpField?.name}
+              /* The one chip that keeps its own colour — his instruction of
+                 28 September. Which field it is stays `useRecordPanes`'s
+                 answer, never a name written here. */
+              statusField={statusField?.name}
               className="min-w-0 flex-1"
             />
             <HeaderPills module={module} row={active} canEdit={canEdit} />

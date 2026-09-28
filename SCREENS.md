@@ -86,6 +86,72 @@ view still keeps its filter and sort, and now always saves `display_mode = 'ipro
 
 The sections below that describe choosing between views are history.
 
+## One chip, and one exception
+
+**28 September 2026, the owner**, of the middle pane in both modules: *"contact type,
+Next followup, Leads/Inventory Status, Source, Call Dissipation … All of them into Round
+Chip/Box/Card In Light Colour with a Border, All chips colour will same except
+Leads/Inventory Status … All chips need a line separator, And All chips also be Bolder."*
+
+`lib/headerChip.ts` is that chip — round, `--surface-muted` behind a `var(--border)`
+hairline, 13px bold — and it lives in its own file because **two components draw it**:
+the key strip under the name and the call pill beside it. A second copy of one class
+string is a second thing to keep in step, and the first time they disagree two chips an
+inch apart stop looking like a set. Same rule, same reason, as `lib/actionCircle.ts`.
+
+**The stage is the only chip that keeps a colour**, and that is the whole design rather
+than an exemption: on that one the colour *is* the fact, which is why a queue of stages
+can be scanned by hue. The source, the contact type, why it was lost, when to chase
+them — each is a word, and five hues in a row leave none of them saying anything.
+
+Three pieces made it possible without any screen naming a field:
+
+* **`FieldValue` gained `asWords`** — a dropdown drawn as its label rather than as its
+  own `Badge`. Only this strip asks for it; everywhere else a picklist still carries the
+  admin's colour, which is what makes a stage readable on a list. `EditableField` passes
+  it through, so the chip stays editable in place and reads back live after a save
+  rather than from a snapshot.
+* **`statusField` is a prop**, beside `followUpField`. `useRecordPanes` already answers
+  "which field is the stage" for every screen, and a second answer is how one header
+  comes to colour a different field from another.
+* **The chase date keeps its words and loses its four colours** (`FollowUpChipCell`
+  gained `asWords`). "Overdue 3D" still says everything the tints did.
+
+**The separator rides on each chip's own wrapper**, as a left border, rather than
+standing between them as an element of its own. The strip measures how many fields fit
+by walking `box.children` and counting one per field; a divider in that list would make
+it count the wrong things, and the symptom would be a header that hides a chip it has
+room for.
+
+**Two of his own earlier instructions are reversed here**, and both stay written down
+rather than one quietly overwriting the other: the call pill was *"Colour Always Fix
+With Dark Purple as theme button"* (26 September), and the chase date wore Today /
+Tomorrow / Pending / Overdue in four tints (27 September). He has worked the screen
+since; the later decision stands.
+
+**There is no Call Disposition *field* on either module and there never has been** — an
+outcome lives on `ipy_call`, one row per call. What he is naming is the **call pill**,
+which reads the last call and offers the admin's own outcome list. It is on the name
+line rather than in the strip for that reason, and it now wears the same chip as the
+rest, which is what he was asking for.
+
+## The photo fills the inner ring
+
+**28 September 2026:** *"There are three lines after avatar. Please increase the avtar
+size till touch inner circle first line, so that we see the picture as big as."*
+
+It was 62% of the panel's width inside a dashed circle at 77%, so a fifth of the space
+inside the rings was empty and the face was the smallest thing in its own portrait.
+`DASHED_RING` in `RecordAvatar.tsx` is one number now, printed both as the dashed
+circle's radius and as the photo's size, so the two cannot drift apart the next time
+either is touched.
+
+**It stops one white ring short of the dashes rather than on them**, and that is the
+point of the ask rather than a detail: he counted three lines and asked the photo to
+reach the first, so the first still has to be there when it arrives. Grown flush, the
+photo's own `ring-2` covers the dashes and he is left with two. Measured in a browser —
+the dashed circle is 86px, the photo 82px, and all three lines survive.
+
 ## Lists open on the split view
 
 **18 September 2026, the owner's instruction:** it is the default for everybody in both

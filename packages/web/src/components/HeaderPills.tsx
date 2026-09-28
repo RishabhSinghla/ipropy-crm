@@ -29,6 +29,7 @@ import { api } from '../lib/api';
 import { useCallDispositions } from '../lib/callDispositions';
 import { followUpFor } from '../lib/callConsole';
 import { invalidateRecordQueries } from '../lib/invalidate';
+import { HEADER_CHIP } from '../lib/headerChip';
 import { type DescribedModule, useRecordPanes } from '../lib/recordPanes';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -64,10 +65,12 @@ export function HeaderPills({ module, row, canEdit, className }: {
 /**
  * How the last call went, and one tap to record how this one did.
  *
- * Dark purple whatever the outcome — the owner asked for the theme colour
- * fixed here, which is also the right call: the stage pill beside it is the
- * one carrying meaning in its colour, and two coloured pills side by side
- * would leave neither saying anything.
+ * **It wears the header's own chip now** (`HEADER_CHIP`, 28 September 2026):
+ * light, round, a hairline border, bold — the same as the contact type and
+ * the source beside it, because he asked for the whole header to read as one
+ * set with the stage as the single exception. It was dark purple on his
+ * instruction of 26 September; that is the earlier of the two and this is the
+ * later one.
  *
  * Choosing an outcome writes a call the ordinary way, through the same
  * `logCall` the call deck saves with, and lets the outcome set the chase date
@@ -128,8 +131,9 @@ function CallAgainPill({ module, followUp, row, canEdit }: {
           title={last?.disposition ? `Last call: ${label} — record another` : 'Record how a call went'}
           aria-label={last?.disposition ? `Last call ${label}. Record how a call went` : 'Record how a call went'}
           className={cn(
-            'inline-flex h-8 max-w-[12rem] items-center gap-1.5 rounded-full bg-brand-800 px-3.5 text-sm font-extrabold tracking-tight text-white',
-            'shadow-sm transition-transform hover:bg-brand-900 active:scale-95',
+            'inline-flex h-8 max-w-[12rem] gap-1.5 px-3.5',
+            HEADER_CHIP,
+            'transition-colors hover:bg-[var(--surface-raised)] active:scale-95',
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
         >
