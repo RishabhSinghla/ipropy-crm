@@ -596,3 +596,42 @@ The open row is **unmistakable**: a solid brand fill, a 2px inset outline and a
 1.5 bar down the left, the name in brand ink, `aria-current`. It is scrolled
 into view with `block: 'nearest'` when it was opened from elsewhere (search, a
 link, Save & Next), which does nothing to a row that was just clicked.
+
+## The header chips: one light tone, and red when a chase date has passed
+
+**28 September 2026, the owner**, asked twice in one day because a parallel
+session reversed him in between: *"All of them into Round Chip/Box/Card In
+Light Colour with a Border, All chips colour will same except Leads/Inventory
+Status"*, then *"Light colour as per theme"* and *"need to update Red
+overdue"*.
+
+`lib/headerChip.ts` holds all of it, so the field strip and the call pill
+cannot drift into two looks. Three tones and no more:
+
+* **Every ordinary fact** — contact type, source, chase date — is a light
+  chip with a border, in **brand steps** (`bg-brand-50`, `border-brand-200`,
+  `text-brand-900`). Brand rather than slate because `applyBrandColour`
+  rewrites those CSS variables at runtime, so the chips move when an admin
+  changes the Brand colour; a raw hue looks identical today and stops moving
+  the moment somebody picks a different theme.
+* **The stage** keeps the admin's own colour from the dropdown, solid, through
+  `badgeVars` — the one exception he named both times.
+* **A chase date that has passed turns red** (`headerChipTone`), and that red
+  is deliberately **not** a brand token: a warning that changed colour with
+  the theme would stop reading as a warning the day somebody picks a red
+  brand.
+
+**Never an opacity modifier on these.** Each brand step resolves to a bare
+`var(--brand-…)`, and Tailwind can only apply `/40` to a colour whose channels
+it can see — so `dark:bg-brand-950/40` compiles to nothing at all, the light
+rule is the only one left, and the chip stays light on a dark page. That
+failure is invisible to typecheck and to every unit test;
+`tests/headerChipTone.test.ts` pins that no modifier is present, which is the
+closest a test can get.
+
+**This has now been reversed once and restored once**, hours apart, by two
+sessions answering the same message. The light chips and the red overdue are
+the standing decision. Measured in a browser on the day: ordinary chips
+`#f5f3ff` on dark violet text, overdue `#fef2f2` on `#b91c1c`, the stage
+untouched. Before making them solid again, get it from him rather than from a
+screenshot.

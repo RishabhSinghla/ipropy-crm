@@ -12,7 +12,7 @@ import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
 import { appendSnippet, useNoteSnippets } from '../lib/noteSnippets';
 import { followUpChip } from '../lib/followUpDates';
-import { HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE } from '../lib/headerChip';
+import { HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE, headerChipTone } from '../lib/headerChip';
 import { badgeVars } from '../lib/color';
 import { FollowUpBadge } from './FollowUpChip';
 
@@ -438,7 +438,11 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
                   'inline-flex min-w-0 max-w-[12rem] truncate',
                   HEADER_CHIP_SHAPE,
                   HEADER_CHIP_PAD,
-                  statusColor ? 'badge-solid border-transparent' : HEADER_CHIP_TONE,
+                  statusColor ? 'badge-solid border-transparent'
+                    // The chase date turns red once it has passed; every other
+                    // fact keeps the one light tone.
+                    : field.name === followUpField ? headerChipTone(row.values[field.name])
+                    : HEADER_CHIP_TONE,
                 )}
                 style={badgeVars(statusColor)}>
                   {field.name === followUpField
