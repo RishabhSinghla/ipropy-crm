@@ -744,3 +744,48 @@ The wrapper that centres it stops taking pointer events so the chips and
 controls behind it stay clickable, and hands them back to the face — which
 carries a real button, the one that replaces the photo. It is deliberately not
 `aria-hidden`: that would hide the record's own name from a screen reader.
+
+## A third module arrived and the screens were still counting to two
+
+**28 September 2026, the owner:** *"Check the Toolbar in Associate module,
+there are Followup Filter Button are missing."*
+
+Associates carries `next_followup_at` exactly as Contacts does — it was cloned
+from it by migration `175` — and still had no chase list, because the toolbar
+read `moduleName === 'leads' || moduleName === 'properties'`. The field decides
+now, which is the rule this repo already has for fields and had never applied
+to modules.
+
+**Eleven places name those two modules.** Two were wrong and are fixed:
+
+* the **Follow-ups button** (`ListView.tsx`), above;
+* **neighbours** (`IpropyWorkspace.tsx`), which is what *Save & dial next*
+  walks — so a rep on Associates could not move through their own queue. A
+  record's id is the only real condition.
+
+**The other nine are correct and should stay.** Move-to, the Matching tab and
+the server's own `targetModule` enum are genuinely about Contacts and
+Inventories — a buyer matches a unit, and neither matches an associate. Two
+are worth knowing rather than changing blind: `db/seed/helpers.ts` gives only
+those two a **Calls tab** (seeding is create-only, so changing it reaches no
+existing database), and `core/search/semantic.ts` defaults to those two, so an
+associate is **not in semantic search**. Both are decisions for whoever owns
+Associates.
+
+`e2e/everyModuleGetsItsTools.spec.ts` walks every module the CRM offers rather
+than naming any: a module the API says has a chase date must show the chase
+list. The next module added is covered the day it exists.
+
+### The call deck was already where it belongs
+
+Reported in the same message — *"fix the placement of floating call deck,
+before on the top of Note/Comment section in Right/Last Pane"*. Driven with a
+call staged on a live record, **it docks exactly there**: top of the right
+pane, above the note box and the activity stream, with no floating bar on
+screen. Proved on **Contacts and on Associates** at 1600px.
+
+So there was nothing to fix and nothing was changed. The one case where the
+bar legitimately floats instead is **by design**: below `xl` the three panes
+stack, so the right pane falls below the fold, and the bar is what carries the
+call to wherever the rep goes. If it is seen floating on a wide window, that
+is a new fault and this paragraph is the evidence it was not there on the 28th.

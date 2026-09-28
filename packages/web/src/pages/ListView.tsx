@@ -371,7 +371,17 @@ export default function ListView(): JSX.Element {
   // task queues can be used.
   const taskField = meta?.fields.find((field) => field.columnName === 'next_followup_at')
     ?? meta?.fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up');
-  const taskQueuesEnabled = Boolean(taskField && (moduleName === 'leads' || moduleName === 'properties'));
+  /*
+    The field decides, never a list of module names.
+
+    This read `moduleName === 'leads' || moduleName === 'properties'`, so the
+    Follow-ups button vanished the day a third module arrived — Associates
+    carries `next_followup_at` and still had no way to work its chase list
+    (28 September 2026, the owner: *"there are Followup Filter Button are
+    missing"*). A module either has somewhere to put a chase date or it does
+    not, and that is a fact about its metadata.
+  */
+  const taskQueuesEnabled = Boolean(taskField);
   const taskFilters = useMemo(
     () => followUpFilters(taskField?.name ?? 'next_follow_up'),
     [taskField?.name],

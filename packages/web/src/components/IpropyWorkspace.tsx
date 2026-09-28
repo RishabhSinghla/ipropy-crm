@@ -335,7 +335,10 @@ export function IpropyWorkspace({
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
   const { data: matchingCount } = useQuery({
     queryKey: ['workspace-matching-count', module.name, active?.id],
-    enabled: Boolean(active?.id && (module.name === 'leads' || module.name === 'properties')),
+    // Any module has neighbours — this is what Save & dial next walks, and
+    // naming two modules here left a third one unable to move through its own
+    // queue. The record's id is the only real condition.
+    enabled: Boolean(active?.id),
     staleTime: 60_000,
     queryFn: async (): Promise<number> => {
       if (!active) return 0;
