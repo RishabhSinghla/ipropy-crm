@@ -13,7 +13,14 @@ DECLARE
   lead_module UUID;
   associate_module UUID;
 BEGIN
-  SELECT id INTO STRICT lead_module FROM ipy_module WHERE name = 'leads';
+  SELECT id INTO lead_module FROM ipy_module WHERE name = 'leads';
+
+  -- Migrations run before the seed, so on a brand-new database there is no
+  -- Leads module to clone yet and no Dealer or Builder to move. `INTO STRICT`
+  -- raised there, which failed the whole migration run and took the integration
+  -- suite and CI's "Prepare database" step with it. Migrations in this repo are
+  -- written to no-op on a fresh database; this is that rule, met late.
+  IF lead_module IS NULL THEN RETURN; END IF;
 
   INSERT INTO ipy_module (
     name, label, singular_label, table_name, icon, color, sequence,

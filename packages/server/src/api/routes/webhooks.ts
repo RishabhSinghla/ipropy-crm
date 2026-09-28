@@ -19,6 +19,7 @@ import {
   captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
 import { verifyMetaSignature } from '../../integrations/leadsources/metaSignature.js';
+import { recordTruecallerDelivery } from '../../integrations/leadsources/truecallerDelivery.js';
 import { recordOpen } from '../../integrations/email/service.js';
 import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
@@ -818,6 +819,41 @@ webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
   res.json({ ok: true, notified: new Set(recipients).size });
 }));
 
+
+// ---------------------------------------------------------------------------
+/*
+  Truecaller — the listening door.
+
+  Registered at developer.truecaller.com as the app's Callback URL on
+  28 September 2026. Their mobile-web documentation has not been updated in six
+  years and is unreachable from the machine this was written on, so the shape
+  of a delivery is genuinely unknown.
+
+  Rather than guess it — four separate bugs on the WhatsMarketing adapter came
+  from exactly that — this door records what arrives and does nothing else.
+  It creates no lead, touches no contact, and appears on no screen a rep uses.
+  The first real delivery is what the rest will be built from.
+
+  It is deliberately unauthenticated, because the one thing that could
+  authenticate it is the signature scheme this door exists to discover. That is
+  safe only for as long as it stays inert: anyone on the internet can put a row
+  in the lead inbox and nothing more. **Nothing here may create a record until
+  a delivery can be proved to have come from Truecaller.**
+*/
+webhooksRouter.all('/truecaller', asyncHandler(async (req, res) => {
+  // 200 first, work second — every provider retries anything it does not hear
+  // a prompt 200 for, and a retry is a second copy of a delivery to read.
+  res.status(200).json({ ok: true });
+
+  await recordTruecallerDelivery({
+    method: req.method,
+    query: req.query,
+    headers: req.headers as Record<string, unknown>,
+    body: req.body,
+  });
+
+  logger.info({ method: req.method }, 'truecaller delivery recorded — not yet turned into a lead');
+}));
 
 /**
  * Constant-time compare that tolerates a length mismatch.

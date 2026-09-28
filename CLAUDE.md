@@ -381,6 +381,13 @@ links a missing workspace from the lockfile, so leaving it out fails quietly rat
   validation and visibility from that upsert.
 * **Migrations are forward-only**, numbered `00N_name.sql`, each applied in its own transaction and
   recorded in `ipy_migration`. Write them defensively (`IF EXISTS`) so they no-op on a fresh DB.
+  **Migrations run before the seed**, so a migration that reads seeded data has nothing to read on a
+  new database. `175_associates_from_dealers_and_builders.sql` did — `SELECT id INTO STRICT lead_module
+  FROM ipy_module WHERE name = 'leads'` — and raised, which failed the whole migration run and took
+  the integration suite and CI's "Prepare database" step down with it on 28 September 2026. It
+  returns early when the module is absent now. **Consequence still open: the seed does not create the
+  Associates module**, so on a fresh database it does not exist. Whoever owns that feature has to add
+  it to `db/seed/templates/realEstate.ts`; a clone-from-Leads migration cannot do it.
 * **Colour goes through tokens, not raw palette steps.** Secondary copy is `text-muted`; up/down
   deltas are `text-positive`/`text-negative`; anything tinted from an admin-chosen hex (badges,
   status chips, module tiles, metric values) goes through `badgeVars`/`tintedTextVars` in
@@ -3206,6 +3213,82 @@ long gone, so the test invents its ids and depends on nothing. And a
 multi-statement `psql -c` is **one implicit transaction**: an error in the
 last statement rolled back the three restores before it, and the database
 read back unchanged while the output said `UPDATE 1` three times.
+
+## Truecaller: what it actually sells, and the door that is listening
+
+**28 September 2026, the owner:** *"Please Integrate True caller API, work with fully
+Functional."*
+
+**The first finding is the one that stops this being re-litigated: Truecaller does not
+sell "an unknown number rings, show me the name".** That is a feature of their consumer
+phone app and it is not available to a business through any API. The packages on GitHub
+that claim to do it impersonate the app, which breaks their terms and risks the
+business's account. Do not build that, and say so plainly when it is asked for again.
+
+What they genuinely sell is three things, and only one of them is code in this repo:
+
+* **Verified Business Caller ID** — the business's name and logo on the *outbound* calls
+  a rep makes. Paid, bought in India through resellers (Route Mobile, Tata Tele), and
+  **no integration at all**: the numbers are registered on their side. This is the one
+  that would most change pickup rates, and there is nothing here to write.
+* **The verification SDK** — a person proving *their own* number, with consent, by
+  tapping a button. Free, no usage limits. On mobile web it also falls back to a silent
+  dropped call for visitors who do not have the app, so coverage is close to every
+  Indian mobile rather than only Truecaller users. **This is the only road that is an
+  integration**, and it belongs on the public enquiry form (`PublicForm.tsx` →
+  `public.ts` → `captureLead`), never on a screen the team uses: the whole flow needs
+  the visitor's own phone.
+* **Signing a rep into the CRM.** Possible, pointless — they already have passwords.
+
+**Registered on 28 September 2026:** app type Web, name `IPROPY CRM`, domain
+`crm.ipropy.com`, callback `https://crm.ipropy.com/api/webhooks/truecaller`. Three facts
+that cost a round each and are not in their documentation: the callback **must** be
+`https`, so a `localhost` app cannot be created at all (and could never have worked —
+the callback arrives from Truecaller's servers over the public internet); the Banner CDN
+URL is **Early Access only**, so it stays empty; and the App Key is not a secret — on
+mobile web it travels inside the link that opens the app, and what protects it is the
+registered domain.
+
+**The door is deliberately inert** (`integrations/leadsources/truecallerDelivery.ts`,
+`webhooksRouter.all('/truecaller')`). Their mobile-web documentation has not been
+updated in six years, and every route to reading it — their docs site, their developer
+site, a mirror, an engineer's write-up, YouTube — is blocked by this container's egress
+proxy. So rather than guess the shape of a delivery, the door **records what arrives and
+creates nothing**: no lead, no contact, nothing on a rep's screen. The guess is exactly
+what produced four separate bugs in the WhatsMarketing adapter, one of which recorded
+refused messages as sent.
+
+It writes to **`ipy_lead_inbox`**, the table every other inbound source already uses, so
+there is one place to look for "something arrived from outside" and so these rows become
+ordinary captures the day the real integration is written. `status` stays `pending` and
+the row says in words that no lead was created — otherwise it reads as a capture that
+failed. Fifty deliveries are kept, bounded on the way in; 16KB each, and anything larger
+is stored as a note saying so rather than dropped, because "nothing arrived" and
+"something arrived that was too big" look identical afterwards and mean opposite things.
+
+**Two rules it holds to, both pinned by `tests/integration/truecallerListeningDoor.test.ts`:**
+
+* **It answers 200 before it writes.** Every provider retries what it does not hear a
+  prompt 200 for. The consequence is that a test reading straight after the request is
+  racing the door — `waitForDelivery` in that suite exists for exactly that, and both
+  header and GET assertions failed on it first.
+* **A credential header is dropped and a signature header is kept.** `authorization`,
+  `cookie` and `proxy-authorization` can only ever be secrets; everything else is kept,
+  because the signature is the thing this door exists to discover and it will be an
+  `x-…` name nobody can predict from here. A third party's payload has already carried a
+  live Meta token into a log in this repo once.
+
+**Unauthenticated, and only safe while inert.** The one thing that could authenticate it
+is the signature scheme it exists to find. Today the worst anybody on the internet can do
+is put a row in the lead inbox. **Nothing here may create a record until a delivery can be
+proved to have come from Truecaller** — that check is the next piece of work, and it is
+written from the first real delivery, not from anybody's documentation.
+
+**The lead inbox shows its payloads now.** Admin → Integrations → Lead inbox has always
+said *"every payload is stored before processing"* and there was no way to see one, which
+made the promise unverifiable on exactly the morning a source starts failing. Each row has
+a **Show** button. Guarded by `admin.integrations`, the same capability as every other
+integration's settings.
 
 ## Every request appears twice in development, and once in production
 

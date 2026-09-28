@@ -1027,11 +1027,21 @@ miscRouter.post('/webforms', asyncHandler(async (req, res) => {
   });
 }));
 
+/*
+  The stored payload comes back with the row.
+
+  The panel above this has always promised "every payload is stored before
+  processing", and until now there was no way to see one — which made the
+  promise unverifiable exactly when it mattered, the morning a source started
+  failing. `admin.integrations` is what guards it, the same capability that
+  reveals every other integration's settings.
+*/
 miscRouter.get('/lead-inbox', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
   const status = typeof req.query.status === 'string' ? req.query.status : null;
   const rows = await db.query(
-    `SELECT id, source, external_id, status, error, received_at, processed_at, record_id, normalized
+    `SELECT id, source, external_id, status, error, received_at, processed_at, record_id,
+            normalized, raw_payload
      FROM ipy_lead_inbox ${status ? 'WHERE status = $1' : ''}
      ORDER BY received_at DESC LIMIT 100`,
     status ? [status] : [],

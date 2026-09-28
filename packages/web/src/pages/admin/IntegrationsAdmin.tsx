@@ -1,4 +1,4 @@
-import { type JSX, useState } from 'react';
+import { Fragment, type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
@@ -1372,6 +1372,9 @@ export default function IntegrationsAdmin(): JSX.Element {
     enabled: tab === 'inbox',
   });
 
+  /** Which stored payload is open. One at a time — these run to hundreds of lines. */
+  const [openPayload, setOpenPayload] = useState<string | null>(null);
+
   const summaries = integrations ?? [];
 
   // Resolved from the query on every render rather than stashed, so a save or
@@ -1592,6 +1595,7 @@ export default function IntegrationsAdmin(): JSX.Element {
             <p className="text-sm font-medium">Raw inbound leads</p>
             <p className="text-xs text-muted">
               Every payload is stored before processing, so a mapping problem never loses a lead.
+              Press Show to read exactly what arrived.
             </p>
           </div>
           {!inbox?.length ? (
@@ -1599,25 +1603,45 @@ export default function IntegrationsAdmin(): JSX.Element {
           ) : (
             <table className="w-full">
               <thead>
-                <tr>{['Source', 'Status', 'Received', 'Error'].map((h) => <th key={h} className="list-head">{h}</th>)}</tr>
+                <tr>{['Source', 'Status', 'Received', 'Error', 'Payload'].map((h) => <th key={h} className="list-head">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {(inbox as { id: string; source: string; status: string; received_at: string; error: string | null; record_id: string | null }[])
+                {(inbox as { id: string; source: string; status: string; received_at: string; error: string | null; record_id: string | null; raw_payload: unknown }[])
                   .map((row) => (
-                    <tr key={row.id}>
-                      <td className="list-cell font-medium capitalize">{row.source.replace(/_/g, ' ')}</td>
-                      <td className="list-cell">
-                        <Badge color={
-                          row.status === 'processed' ? '#22c55e'
-                            : row.status === 'duplicate' ? '#f59e0b'
-                            : row.status === 'failed' ? '#ef4444' : '#94a3b8'
-                        }>
-                          {row.status}
-                        </Badge>
-                      </td>
-                      <td className="list-cell text-2xs text-muted">{relativeTime(row.received_at)}</td>
-                      <td className="list-cell max-w-xs truncate text-2xs text-negative">{row.error ?? '—'}</td>
-                    </tr>
+                    <Fragment key={row.id}>
+                      <tr>
+                        <td className="list-cell font-medium capitalize">{row.source.replace(/_/g, ' ')}</td>
+                        <td className="list-cell">
+                          <Badge color={
+                            row.status === 'processed' ? '#22c55e'
+                              : row.status === 'duplicate' ? '#f59e0b'
+                              : row.status === 'failed' ? '#ef4444' : '#94a3b8'
+                          }>
+                            {row.status}
+                          </Badge>
+                        </td>
+                        <td className="list-cell text-2xs text-muted">{relativeTime(row.received_at)}</td>
+                        <td className="list-cell max-w-xs truncate text-2xs text-negative">{row.error ?? '—'}</td>
+                        <td className="list-cell">
+                          <button
+                            type="button"
+                            className="btn-secondary btn-sm"
+                            onClick={() => setOpenPayload(openPayload === row.id ? null : row.id)}
+                          >
+                            {openPayload === row.id ? 'Hide' : 'Show'}
+                          </button>
+                        </td>
+                      </tr>
+                      {openPayload === row.id && (
+                        <tr>
+                          <td colSpan={5} className="bg-[var(--surface-muted)] px-4 py-3">
+                            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all text-2xs">
+                              {JSON.stringify(row.raw_payload, null, 2)}
+                            </pre>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
               </tbody>
             </table>
