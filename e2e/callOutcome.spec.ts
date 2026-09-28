@@ -49,12 +49,16 @@ test('they open it from the list', async ({ page }) => {
 
 test('tapping the number opens the deck beside the record, not a dialog over it', async ({ page }) => {
   await page.goto(recordUrl);
+  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
+  // The deck is a permanent part of the work pane. At rest it gives an
+  // unambiguous answer before anybody presses Call.
+  await expect(deck).toBeVisible({ timeout: 15_000 });
+  await expect(deck.getByTestId('call-panel-status')).toContainText('No call in progress');
   // The number is a button on the record, not a tel: link — tapping it is what
   // starts the call. Matched on its title: the accessible name is the number
   // itself, which changes every run.
   await page.locator('button[title^="Call "]').first().click();
 
-  const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
 
   /*
@@ -79,7 +83,8 @@ test('tapping the number opens the deck beside the record, not a dialog over it'
   await expect(endCall).toHaveAttribute('title', /calling app|Control calls from the CRM/i);
   await expect(deck.getByRole('button', { name: /^hold/i })).toBeDisabled();
   await deck.getByRole('button', { name: /save & exit/i }).click();
-  await expect(deck).toBeHidden();
+  await expect(deck).toBeVisible();
+  await expect(deck.getByTestId('call-panel-status')).toContainText('No call in progress');
 });
 
 test('saving the outcome records the call on the lead', async ({ page }) => {
@@ -91,7 +96,8 @@ test('saving the outcome records the call on the lead', async ({ page }) => {
   await chooseOutcome(deck, 'Interested');
   await deck.getByRole('button', { name: /save & exit/i }).click();
 
-  await expect(deck).toBeHidden({ timeout: 20_000 });
+  await expect(deck).toBeVisible({ timeout: 20_000 });
+  await expect(deck.getByTestId('call-panel-status')).toContainText('No call in progress');
 
   // The Calls tab is where the rep looks next, and an outcome that does not
   // show up there reads as a call that was not logged at all.

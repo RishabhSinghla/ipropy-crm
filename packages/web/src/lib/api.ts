@@ -800,15 +800,6 @@ export const api = {
     } | null;
     url: string;
   }>('/api/public/companion'),
-  /** The separate iPROPY Dialer beta — never an upgrade of the CRM app. */
-  dialerBuild: () => get<{
-    available: boolean;
-    build: {
-      versionName: string; versionCode: number; minSdk: number;
-      sizeBytes: number; sha256: string; builtAt: string;
-    } | null;
-    url: string;
-  }>('/api/public/dialer'),
   /** A real call against one model id, to find out whether it answers. */
   testAiModel: (job: string, model: string) =>
     post<{ ok: boolean; message: string; ms?: number }>('/api/admin/ai-models/test', { job, model }),
@@ -1498,13 +1489,7 @@ export const api = {
   webforms: () => get<Record<string, unknown>[]>('/api/webforms'),
   /** Public, no sign-in: what a visitor's form page renders from. */
   publicForm: (publicKey: string) =>
-    get<{ id: string; name: string; fields: { name: string; label: string; type?: string; required?: boolean }[]; success_message: string | null; captcha_enabled: boolean; truecaller?: boolean }>(`/api/webhooks/forms/${publicKey}`),
-  /** Mint a verification nonce. 404 when nobody has switched the card on. */
-  startTruecaller: () =>
-    post<{ nonce: string; deepLink: string }>('/api/public/truecaller/start', {}),
-  truecallerResult: (nonce: string) =>
-    get<{ status: 'pending' | 'verified' | 'failed' | 'unknown'; name: string | null; phone: string | null }>(
-      `/api/public/truecaller/result/${nonce}`),
+    get<{ id: string; name: string; fields: { name: string; label: string; type?: string; required?: boolean }[]; success_message: string | null; captcha_enabled: boolean }>(`/api/webhooks/forms/${publicKey}`),
   submitPublicForm: (publicKey: string, payload: Record<string, unknown>) =>
     post<{ ok: boolean; message: string; redirectUrl: string | null }>(`/api/webhooks/forms/${publicKey}`, payload),
   createWebform: (data: Record<string, unknown>) => post<{ id: string; publicKey: string; endpoint: string }>('/api/webforms', data),

@@ -392,7 +392,7 @@ export function IpropyWorkspace({
   // A list row carries no `can`, so the module's own permission stands in
   // until the record itself arrives and answers for this row.
   const canEdit = active?.can?.edit ?? module.permissions.edit;
-  // While a call is up on the open record, the deck takes the notes box's place.
+  // Light the Call action while this record owns the permanent deck's live call.
   const onCall = useCallIsOn(module.name, active?.id ?? '');
   const allChecked = rows.length > 0 && rows.every((row) => selected.has(row.id));
 
@@ -877,11 +877,11 @@ export function IpropyWorkspace({
           {/*
             The deck and the notes are one pane now — 27 September 2026, the
             owner: *"call deck merge in to Note/Comment pane/Box"*. The deck
-            only exists while a call is up on this very record; the notes and
-            the activity below it are always there, which is the half that was
-            being taken away every time somebody pressed Call.
+            is always present above notes: at rest it says no call is running,
+            and it expands into the working controls during a call. Saving a
+            call returns it to that ready state instead of hiding the deck.
           */}
-          {onCall && <CallDeckPanel module={module.name} recordId={active.id} />}
+          <CallDeckPanel module={module.name} recordId={active.id} />
           <NotesPanel module={module.name} record={active} flush />
         </aside>
       )}

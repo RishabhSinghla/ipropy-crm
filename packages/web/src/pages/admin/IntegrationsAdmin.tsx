@@ -81,17 +81,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'campaignName', label: 'Default campaign name', source: 'config' },
     { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
   ],
-  /*
-    The App Key is `config`, not `credentials`, and that is deliberate. On
-    mobile web it travels inside the link that opens the Truecaller app, so
-    every visitor's browser already has it — encrypting it here would only
-    suggest a secrecy it does not have. What actually protects it is the App
-    domain registered with Truecaller.
-  */
-  truecaller: [
-    { key: 'appKey', label: 'App Key', source: 'config', placeholder: 'from developer.truecaller.com' },
-    { key: 'partnerName', label: 'Name shown to the visitor', source: 'config', placeholder: 'iPropy' },
-  ],
   whatsapp_gupshup: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
     { key: 'source', label: 'Source number', source: 'config', placeholder: '919876543210' },

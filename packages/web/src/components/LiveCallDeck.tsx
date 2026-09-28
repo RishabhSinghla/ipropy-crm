@@ -19,7 +19,7 @@ import { useApp } from '../lib/store';
 const NOT_THE_CALLING_APP =
   'On the phone, open iPropy → This phone → "Control calls from the CRM" to switch these from here.';
 
-function returnToCallUrl(call: { queueUrl?: string | null; module: string; recordId: string }): string {
+export function returnToCallUrl(call: { queueUrl?: string | null; module: string; recordId: string }): string {
   const target = new URL(call.queueUrl || `/${encodeURIComponent(call.module)}`, 'https://crm.local');
   target.searchParams.set('open', call.recordId);
   target.searchParams.delete('dial');
@@ -275,7 +275,7 @@ export function useCallDeckState(): CallDeckState {
  * moment the phone reports — the poll is the net under the socket, which a
  * laptop lid or a flaky Wi-Fi drops without saying so.
  */
-function usePhoneReport(): (PhoneCallReport & LiveCallState) | null {
+export function usePhoneReport(): (PhoneCallReport & LiveCallState) | null {
   const queryClient = useQueryClient();
   const { data } = useQuery({
     queryKey: ['live-call'],
