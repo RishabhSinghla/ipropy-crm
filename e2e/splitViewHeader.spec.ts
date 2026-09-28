@@ -260,7 +260,15 @@ test('the header chips are one look, with the stage the only exception', async (
   // The stage draws its own `Badge` inside, so its wrapper carries no fill.
   const plain = chips.filter((c) => c.fill !== 'rgba(0, 0, 0, 0)');
   expect(plain.length, 'every chip drew its own colour — none share the header chip').toBeGreaterThan(0);
-  expect(new Set(plain.map((c) => c.fill)).size, 'the chips are not all the same colour').toBe(1);
+  /*
+    One tone, and at most one exception: a chase date that has already passed
+    reads red (*"bring the overdue red back on followup chip"*). Which record
+    the queue opens on decides whether that second tone is on screen at all,
+    so this allows it rather than depending on it — `an overdue chase date is
+    the one red chip` below is where it is actually proved.
+  */
+  expect(new Set(plain.map((c) => c.fill)).size, 'the chips carry more tones than the ordinary one and overdue')
+    .toBeLessThanOrEqual(2);
   for (const chip of plain) {
     expect(chip.radius, 'a chip is not round').toMatch(/9999px/);
     expect(chip.border, 'a chip has no border').toBe('1px');

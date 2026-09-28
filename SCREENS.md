@@ -114,8 +114,19 @@ Three pieces made it possible without any screen naming a field:
 * **`statusField` is a prop**, beside `followUpField`. `useRecordPanes` already answers
   "which field is the stage" for every screen, and a second answer is how one header
   comes to colour a different field from another.
-* **The chase date keeps its words and loses its four colours** (`FollowUpChipCell`
-  gained `asWords`). "Overdue 3D" still says everything the tints did.
+* **The chase date keeps its words** (`FollowUpChipCell` gained `asWords`).
+  Today and Tomorrow read as the ordinary chip.
+
+**Overdue is the second exception, and the only other one.** All four tints
+went with the first cut of this; he saw it and asked for one back — *"bring
+the overdue red back on followup chip"* — which is the right line to draw:
+the other facts on that row are states, and a chase date that has passed is a
+debt. `HEADER_CHIP_OVERDUE` is the pair `FOLLOW_UP_STYLE` already used, so the
+colours are not a new decision, and it is a **separate string swapped in**
+rather than appended to the ordinary tone — two `bg-*` utilities in one class
+list are decided by Tailwind's own stylesheet order, which this repo has been
+bitten by twice.
+
 
 **The separator rides on each chip's own wrapper**, as a left border, rather than
 standing between them as an element of its own. The strip measures how many fields fit

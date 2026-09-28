@@ -12,7 +12,7 @@ import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
 import { appendSnippet, useNoteSnippets } from '../lib/noteSnippets';
 import { followUpChip } from '../lib/followUpDates';
-import { HEADER_CHIP, HEADER_CHIP_PAD } from '../lib/headerChip';
+import { headerChipTone, HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE } from '../lib/headerChip';
 import { FollowUpBadge } from './FollowUpChip';
 
 /**
@@ -411,6 +411,15 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
           */
           const ownColour = variant === 'chips' && keepsItsOwnColour(field, statusField);
           const asWords = variant === 'chips' && !ownColour;
+          /*
+            The second exception, and the only other one: a chase date that
+            has already passed reads red — *"bring the overdue red back on
+            followup chip"*. Today and Tomorrow keep the ordinary chip, and
+            every other fact on the line always does.
+          */
+          const tone = field.name === followUpField
+            ? headerChipTone(row.values[field.name])
+            : HEADER_CHIP_TONE;
           return (
             <span
               key={field.name}
@@ -433,7 +442,14 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className, vari
             >
               {variant === 'columns' && <span className="key-label shrink-0">{field.label}</span>}
               {variant === 'chips' ? (
-                <span className={cn('inline-flex min-w-0 max-w-[12rem] truncate', ownColour ? 'items-center' : cn(HEADER_CHIP, HEADER_CHIP_PAD))}>
+                <span className={cn(
+                  'inline-flex min-w-0 max-w-[12rem] truncate',
+                  ownColour
+                    ? 'items-center'
+                    // One shape, and one of two tones — never one written
+                    // over the other, which Tailwind would decide for us.
+                    : cn(HEADER_CHIP_SHAPE, HEADER_CHIP_PAD, tone),
+                )}>
                   {field.name === followUpField
                     ? <FollowUpChipCell module={module} row={row} field={field} canEdit={canEdit} asWords />
                     : <HeaderChipValue
