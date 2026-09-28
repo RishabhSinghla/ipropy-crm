@@ -1,0 +1,157 @@
+# Add one option to one dropdown on production, without touching the rest.
+#
+# 28 September 2026: the Lead inbox showed a website enquiry refused with
+# "Lead Source must be one of: 99acres, E-Bills, Facebook, Housing,
+# MagicBricks, Old Leads, Referral". The enquiry form files every submission
+# under "Website", which is not in that list, so the whole record was thrown
+# away — the visitor saw "our team will call you shortly" and nothing reached
+# Contacts.
+#
+# Seeding is create-only, so editing db/seed/picklists.ts cannot reach a
+# database that already holds the row. This is the other half.
+#
+# Two rules it is built on, both learned here the hard way:
+#
+#  * It ADDS. It never sends a whole list. A dropdown is somebody's work, and
+#    a job that rewrites one wholesale cannot tell a value nobody chose from a
+#    value somebody spent an afternoon arranging.
+#  * A permanently deleted option leaves a tombstone, and re-inserting the row
+#    without clearing it means the next seed run takes the option away again.
+#    Both halves, or neither.
+name: Add a dropdown option
+
+on:
+  workflow_dispatch:
+    inputs:
+      picklist:
+        description: "The dropdown's internal name (Lead Source is lead_source)."
+        default: "lead_source"
+      value:
+        description: "The value stored on every record that chooses it."
+        default: "Website"
+      label:
+        description: "What a person reads. Blank uses the value."
+        default: ""
+      apply:
+        description: "Type apply to write. Anything else only shows what is there."
+        default: "dry-run"
+
+permissions:
+  contents: read
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Read first, always. A job that writes to a live dropdown should never
+      # be the thing that discovers what is in it.
+      - name: What is there now
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PICKLIST: ${{ inputs.picklist }}
+          VALUE: ${{ inputs.value }}
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ]; then
+            echo "No PROD_DATABASE_URL secret configured." >&2
+            exit 1
+          fi
+
+          echo "=== dropdowns whose name looks like a source ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT name || '  (' || label || ')' FROM ipy_picklist
+              WHERE name ILIKE '%source%' OR label ILIKE '%source%' ORDER BY name;"
+
+          echo
+          echo "=== options on '$PICKLIST' today ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT v.sequence || '  ' || v.value || '  (' || v.label || ')'
+                    || CASE WHEN v.is_active THEN '' ELSE '  [switched off]' END
+               FROM ipy_picklist_value v
+               JOIN ipy_picklist p ON p.id = v.picklist_id
+              WHERE p.name = '$PICKLIST' ORDER BY v.sequence, v.value;"
+
+          echo
+          echo "=== is '$VALUE' tombstoned? ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'deleted on ' || deleted_at FROM ipy_picklist_tombstone
+              WHERE picklist_name = '$PICKLIST' AND value = '$VALUE';"
+
+          echo
+          echo "=== how many contacts hold '$VALUE' already ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT count(*) FROM ipy_e_leads WHERE lead_source = '$VALUE';"
+
+      - name: Add it
+        if: ${{ inputs.apply == 'apply' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PICKLIST: ${{ inputs.picklist }}
+          VALUE: ${{ inputs.value }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          # The label defaults to the value; the column is NOT NULL.
+          LABEL_TO_USE="${LABEL:-}"
+          [ -z "$LABEL_TO_USE" ] && LABEL_TO_USE="$VALUE"
+
+          # Checked in the shell, not in a DO block: psql does not substitute
+          # its own variables inside dollar-quoted SQL, so `:'picklist'` there
+          # would be the literal text and the guard would never fire.
+          FOUND=$(psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT count(*) FROM ipy_picklist WHERE name = '$PICKLIST';")
+          if [ "$FOUND" != "1" ]; then
+            echo "No dropdown called '$PICKLIST' — nothing written." >&2
+            exit 1
+          fi
+
+          # One file rather than three -c flags: each -c is its own implicit
+          # transaction, so a failure halfway could leave the tombstone
+          # cleared and the option absent.
+          cat > /tmp/add.sql <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN;
+
+          -- Without this the next seed run takes the option straight back out.
+          DELETE FROM ipy_picklist_tombstone
+           WHERE picklist_name = :'picklist' AND value = :'value';
+
+          INSERT INTO ipy_picklist_value (picklist_id, value, label, sequence, is_active)
+          SELECT p.id, :'value', :'label',
+                 COALESCE((SELECT MAX(sequence) FROM ipy_picklist_value WHERE picklist_id = p.id), 0) + 10,
+                 true
+            FROM ipy_picklist p
+           WHERE p.name = :'picklist'
+          ON CONFLICT (picklist_id, value) DO UPDATE
+            -- An option switched off rather than deleted comes back on; its
+            -- label and its place in the list are left exactly as arranged.
+            SET is_active = true;
+
+          COMMIT;
+          SQL
+
+          psql "$PROD_DATABASE_URL" \
+            -v picklist="$PICKLIST" -v value="$VALUE" -v label="$LABEL_TO_USE" \
+            -f /tmp/add.sql
+
+          echo
+          echo "=== options on '$PICKLIST' now ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT v.sequence || '  ' || v.value || '  (' || v.label || ')'
+               FROM ipy_picklist_value v
+               JOIN ipy_picklist p ON p.id = v.picklist_id
+              WHERE p.name = '$PICKLIST' AND v.is_active ORDER BY v.sequence, v.value;"
+
+      # Every dropdown is cached in the running process's memory, so the new
+      # option is invisible to the CRM until it reloads — and an enquiry would
+      # still be refused while the screen showed the option. Render restarts
+      # on a deploy; this is the deploy.
+      - name: Tell production to pick it up
+        if: ${{ inputs.apply == 'apply' }}
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "::warning::No RENDER_DEPLOY_HOOK secret — restart the service by hand, or the CRM keeps refusing the value it is now offering."
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK" > /dev/null && echo "redeploy requested"
