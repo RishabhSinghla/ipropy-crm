@@ -40,8 +40,8 @@ test('every module with a chase date offers its follow-up queue', async ({ page 
     await page.goto(`/${name}`);
     await expect(page.locator('text=/of [\\d,]+ records/').first()).toBeVisible({ timeout: 40_000 });
     await expect(
-      page.getByRole('button', { name: /^Follow-ups/ }),
-      `${name} has a chase date and no Follow-ups button`,
+      page.getByRole('button', { name: /^Task/ }),
+      `${name} has a chase date and no Task button`,
     ).toHaveCount(1);
   }
 });

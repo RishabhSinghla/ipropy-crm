@@ -35,7 +35,11 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
   const queryClient = useQueryClient();
   return <section className="card overflow-hidden">
     <header className="panel-head"><LayoutList className="h-4 w-4 text-brand-600" />{title}</header>
-    <dl className={cn('grid gap-x-4 gap-y-4 p-5', columns >= 3 ? 'sm:grid-cols-3' : columns === 1 ? '' : 'sm:grid-cols-2')}>{fields.map((field) => <div key={field.name}>
+    {/* A step tighter top and bottom, on the owner's instruction of
+        28 September 2026 — the rows and the card's own padding, matching the
+        step `.key-tile` lost. The columns keep their gap: fields that touch
+        sideways read as one wide field. */}
+    <dl className={cn('grid gap-x-4 gap-y-3 px-5 py-4', columns >= 3 ? 'sm:grid-cols-3' : columns === 1 ? '' : 'sm:grid-cols-2')}>{fields.map((field) => <div key={field.name}>
       <dt className="key-label mb-1.5">{field.label}{field.isMandatory && <span className="ml-0.5 text-negative">*</span>}</dt>
       {/*
         The whole cell is the target, not just the value inside it.

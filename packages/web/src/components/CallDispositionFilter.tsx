@@ -19,7 +19,7 @@
  * a dropdown is seventeen round trips for a number nobody asked for.
  */
 import { type JSX } from 'react';
-import { ChevronDown, Check, PhoneOutgoing } from 'lucide-react';
+import { Check, PhoneOutgoing } from 'lucide-react';
 import { Dropdown } from './ui';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
@@ -64,11 +64,11 @@ export function CallDispositionFilter({ pick, onPick }: {
           className={toolbarButton(on)}
         >
           <PhoneOutgoing className="h-3.5 w-3.5 shrink-0" />
-          Call Disposition
+          {/* *"Call Disposition to Call Log"*, 28 September 2026. */}
+          Call Log
           <span className={toolbarCount()}>
             {pick.never ? 'Never called' : pick.outcomes.length ? `${pick.outcomes.length} picked` : outcomes.length}
           </span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
         </button>
       }
     >

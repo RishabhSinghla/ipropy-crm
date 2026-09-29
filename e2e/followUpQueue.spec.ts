@@ -28,7 +28,7 @@ function isListSearch(r: Request): boolean {
 async function openPanel(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/leads');
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: /^Follow-ups/ }).click();
+  await page.getByRole('button', { name: /^Task/ }).click();
   await expect(page.getByRole('heading', { name: 'Follow-up Queue' })).toBeVisible();
 }
 
@@ -36,7 +36,7 @@ test('the three cards add up to the number on the button', async ({ page }) => {
   await page.goto('/leads');
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
-  const trigger = page.getByRole('button', { name: /^Follow-ups/ });
+  const trigger = page.getByRole('button', { name: /^Task/ });
   // The count is a chip beside the word now, not "(981)" in the label.
   const total = Number((/([\d,]+)\s*$/.exec((await trigger.innerText()).trim())?.[1] ?? '').replace(/,/g, ''));
   await trigger.click();
@@ -87,7 +87,7 @@ test('a sort the person chose is not taken away by a queue', async ({ page }) =>
   const queued = page.waitForRequest((r) =>
     isListSearch(r) && JSON.stringify(r.postDataJSON()?.filter ?? '').includes('less_than'));
 
-  await page.getByRole('button', { name: /^Follow-ups/ }).click();
+  await page.getByRole('button', { name: /^Task/ }).click();
   await page.getByRole('button', { name: /^Overdue/ }).click();
 
   expect((await queued).postDataJSON().sortBy).toBe(chosen);

@@ -106,7 +106,7 @@ test.describe('accessibility', () => {
     // on and none of its colours are scanned while it is shut.
     await page.goto('/leads');
     await waitForRecords(page);
-    await page.getByRole('button', { name: /^Follow-ups/ }).click();
+    await page.getByRole('button', { name: /^Task/ }).click();
     await expect(page.getByRole('heading', { name: 'Follow-up Queue' })).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);

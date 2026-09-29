@@ -125,13 +125,26 @@ export interface EditableFieldProps {
   siblings?: Record<string, unknown>;
   /** module of a reference field's target, so its read state can still link through (edit affordance becomes a separate pencil icon) */
   linkTo?: string;
+  /**
+   * Start with the editor already open and the cursor in it.
+   *
+   * **28 September 2026, the owner**, of the split view's queue: *"Please
+   * Change Name and Contact Type in editable formate on double click, with
+   * cursor on Name or Cotact type accordingly."* A double-click mounts this
+   * with the flag set, so the rep types straight away rather than
+   * double-clicking and then clicking again.
+   */
+  openOnMount?: boolean;
+  /** Called when the editor closes, saved or not — a caller that mounted it
+   *  on a double-click needs to know to go back to its read state. */
+  onClosed?: () => void;
   onSaved?: (value: unknown, display?: string) => void;
 }
 
 export function EditableField(props: EditableFieldProps): JSX.Element {
   const {
     module, recordId, field, value, display, compact, plain, asWords, restrictTo, siblings, linkTo, onSaved,
-    surface = 'record', render,
+    surface = 'record', render, openOnMount, onClosed,
   } = props;
 
   const inlineEdit = useApp((st) => st.user?.ui?.inlineEdit ?? false);
@@ -141,7 +154,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   const [localDisplay, setLocalDisplay] = useState(display);
   const [status, setStatus] = useState<Status>('idle');
   const [flashKey, setFlashKey] = useState(0);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(Boolean(openOnMount));
   const [draft, setDraft] = useState<unknown>(value);
   const editRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -200,6 +213,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
 
   function closeWithoutSaving(): void {
     setEditing(false);
+    onClosed?.();
     setDraft(localValue);
     setOtherDraft({});
     restoreFocus();
@@ -208,6 +222,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   function closeAndCommitIfChanged(nextDraft: unknown = draft): void {
     if (field.isMandatory && isEmptyValue(nextDraft)) return; // stay open — inline error is already visible
     setEditing(false);
+    onClosed?.();
     // A changed companion field is a change even when the number itself is
     // untouched — switching +91 to +971 has to save.
     if (deepEqual(nextDraft, localValue) && !Object.keys(otherDraft).length) return;
@@ -220,6 +235,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   function pickAndClose(next: unknown): void {
     setDraft(next);
     setEditing(false);
+    onClosed?.();
     if (deepEqual(next, localValue)) return;
     const previous = localValue;
     setLocalValue(next);
@@ -475,7 +491,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
               field={field}
               value={draft as string | null}
               autoOpen
-              onOpenChange={(open) => { if (!open) setEditing(false); }}
+              onOpenChange={(open) => { if (!open) { setEditing(false); onClosed?.(); } }}
               onChange={pickAndClose}
             />
           ) : field.uitype === 'multipicklist' ? (

@@ -97,6 +97,8 @@ export interface RecordPanes {
   statusField?: FieldMeta;
   followUpField?: FieldMeta;
   phoneField?: FieldMeta;
+  /** The first email on the record, so a header can offer to write to it. */
+  emailField?: FieldMeta;
 }
 
 export function useRecordPanes(module: DescribedModule): RecordPanes {
@@ -128,6 +130,14 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
     [module.fields],
   );
   const phoneField = useMemo(() => module.fields.find((f) => f.uitype === 'phone'), [module.fields]);
+  /*
+    **28 September 2026, the owner:** *"show email Icon in Icon bar of middle
+    pane, If Record have a Email Id, so that we can send mail directly from
+    icon."* Found by uitype like the phone beside it, never by the name
+    `email` — a module may call it Work Email, and an admin may rename it on a
+    Tuesday. A module with no email field simply gets no icon.
+  */
+  const emailField = useMemo(() => module.fields.find((f) => f.uitype === 'email'), [module.fields]);
 
   /*
     The five the owner named, found through metadata and in his order: the
@@ -214,5 +224,8 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
     }];
   }, [layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
 
-  return { headerFields, queueFields, blocks, subtitleFields, assignedField, statusField, followUpField, phoneField };
+  return {
+    headerFields, queueFields, blocks, subtitleFields,
+    assignedField, statusField, followUpField, phoneField, emailField,
+  };
 }

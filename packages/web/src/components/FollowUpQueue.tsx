@@ -1,7 +1,7 @@
 import { type JSX } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Clock, ChevronDown, ChevronRight, Phone, Sparkles } from 'lucide-react';
+import { Clock, ChevronRight, Phone, Sparkles } from 'lucide-react';
 import type { FieldMeta, FilterGroup, ListQuery, RecordEnvelope } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
@@ -110,13 +110,15 @@ export function FollowUpQueue({
             className={toolbarButton(Boolean(active))}
           >
             <Clock className="h-3.5 w-3.5 shrink-0" />
-            Follow-ups
+            {/* *"'Follow-ups' to Task"* — the owner's word for it, 28
+                September 2026. The field is still whatever the module calls
+                it; this is the button. */}
+            Task
             {/* Something overdue stays red on the purple: it is the one count
                 in this row that is a warning rather than a size. */}
             <span className={toolbarCount(counts.pending > 0 ? 'bg-red-600' : undefined)}>
               {total.toLocaleString('en-IN')}
             </span>
-            <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
           </button>
         }
       >

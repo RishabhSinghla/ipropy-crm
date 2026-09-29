@@ -25,6 +25,7 @@
  * the same reason the action circles are grey at rest.
  */
 import { type JSX } from 'react';
+import type React from 'react';
 import { picklistOptionForValue, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import { type DescribedModule } from '../lib/recordPanes';
 import { badgeVars } from '../lib/color';
@@ -56,6 +57,27 @@ const CHIP = 'inline-flex h-6 max-w-[6.5rem] items-center justify-center rounded
  *  a word floating on the banner. */
 const CHIP_PLAIN = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200';
 
+/**
+ * The field's own name, printed in front of its chip.
+ *
+ * **28 September 2026, the owner:** *"Add Key Field name before Key fields
+ * Value in Middle Pane Header before Follow-up, Status, Call Disposition from
+ * All modules."* A row of three bare words — `Tomorrow`, `New`, `Busy` — says
+ * nothing about which is which until you already know the screen, and a new
+ * rep does not.
+ *
+ * **It is the field's own label**, so a module that calls its stage
+ * "Associate Status" says so and a rename in the Field Manager reaches this
+ * header the same afternoon. No screen names a field.
+ */
+function KeyLabel({ children }: { children: React.ReactNode }): JSX.Element {
+  return (
+    <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      {children}
+    </span>
+  );
+}
+
 export function HeroStatusChips({ module, row, canEdit, statusField, followUpField, className }: {
   module: DescribedModule;
   row: RecordEnvelope;
@@ -72,16 +94,19 @@ export function HeroStatusChips({ module, row, canEdit, statusField, followUpFie
   return (
     // A row that wraps rather than one that overflows: at a narrow pane the
     // third chip drops under the first two instead of leaving the panel.
-    <span className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
+    <span data-testid="hero-chips" className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
       {followUpField && (
         // No wrapper tint: the chip inside carries its own, and a tint under a
         // tint is how "overdue" stopped reading as overdue once already.
-        <span title={followUpField.label}>
+        <span className="inline-flex min-w-0 items-center gap-1" title={followUpField.label}>
+          <KeyLabel>{followUpField.label}</KeyLabel>
           <FollowUpChipCell module={module} row={row} field={followUpField} canEdit={canEdit} size="hero" />
         </span>
       )}
 
       {statusField && (
+        <span className="inline-flex min-w-0 items-center gap-1">
+        <KeyLabel>{statusField.label}</KeyLabel>
         <span
           // `badge-tinted`, not `badge`: the base class carries its own padding
           // and size, which would fight CHIP's for the stylesheet's attention.
@@ -99,9 +124,17 @@ export function HeroStatusChips({ module, row, canEdit, statusField, followUpFie
             onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
           />
         </span>
+        </span>
       )}
 
-      <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
+      <span className="inline-flex min-w-0 items-center gap-1">
+        {/* The call pill's own word. It is not a field on the module — an
+            outcome lives on `ipy_call` — so this is the one label here that
+            is not read from metadata, and it is the owner's own wording for
+            the toolbar button that filters on it. */}
+        <KeyLabel>Call Log</KeyLabel>
+        <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
+      </span>
     </span>
   );
 }

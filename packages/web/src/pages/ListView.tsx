@@ -796,8 +796,10 @@ export default function ListView(): JSX.Element {
                 aria-label="Choose or manage list views"
               >
                 {tagPick ? <Tag className="h-3.5 w-3.5 shrink-0" /> : <Filter className="h-3.5 w-3.5 shrink-0" />}
+                {/* No chevron — *"remove arrow key from all Buttons, so that
+                    we can See neet and clean Toolbar"* (28 September 2026).
+                    The icon on the left already says what this opens. */}
                 <span className="truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-80" />
               </button>
             )}
           >

@@ -834,3 +834,94 @@ changes nothing, so Save stays correctly disabled and the spec hangs on a dead
 button. That is how it failed the first time it ran twice in a row, and it is
 the same rule as the unique markers: a spec that depends on what is already in
 the database reports the machine it ran on.
+
+## Nine on the split view, and a Save & next that rebooted the CRM
+
+**28 September 2026, the owner**, against a screenshot of the Associates split
+view. Every one of them is on **all** modules — "it works on Leads" is exactly
+how a module gets left behind — and `e2e/splitViewHeaderKeys.spec.ts` plus
+`e2e/saveAndNextStaysInApp.spec.ts` pin the four only a browser can settle.
+
+* **The toolbar button that is *on* is the darkest one.** It was the other way
+  round: the pressed pill went lighter and took a ring. One row of purple
+  pills still, so the difference is depth rather than hue — the resting ones
+  are `brand-700`, the one narrowing the list is `brand-950`.
+* **The open record in the queue is a step darker** (`brand-100`, `brand-900`
+  in dark). It was the palest step there is, which he asked for on the 27th and
+  has now worked; the later decision stands. Still a wash rather than a fill,
+  so the name and the price on it keep their contrast instead of being reversed
+  out to white.
+* **The three toolbar buttons are Status · Task · Call Log, and none has an
+  arrow.** *"so that we can See neet and clean Toolbar."* One set of words on
+  every module rather than "Lead Status" here and "Associate Status" there —
+  the field's own label still names it inside the panel and in the tooltip,
+  which is where a module's own wording belongs.
+* **The agent line says when the record was last touched** — `iPropy Admin ·
+  Updated 4 hours ago`. Both are facts about the *record's* state rather than
+  about the customer, so they read as one group. `hidden sm:inline`: on a
+  narrow pane the name is what has to survive.
+* **The name is editable where it stands.** Which field carries it is
+  `module.labelFields`, never the word `full_name` — Inventories names a record
+  by its unit, and an admin may rename either.
+* **Every header chip is introduced by its field's own name** — `NEXT FOLLOW-UP
+  Pending`, `PIPELINE STATUS New`, `CALL LOG Call Again`. Three bare words said
+  nothing about which was which until you already knew the screen.
+  **And the group is capped at `calc(50% - 3.25rem)`**, which is the fix the
+  labels forced: the face is positioned absolutely, so nothing pushes it out of
+  the way, and the third chip slid underneath it and was unreadable. The spec
+  measures the two boxes rather than reading a class name.
+* **An email icon sits in the icon bar when the record has an address**, and
+  only then — an icon that opens a dialog which can only apologise is one a rep
+  learns to ignore, and that bar already carries five. It opens the CRM's own
+  composer rather than `mailto:`, so the reply threads back onto the record and
+  a rep on a phone has something to write in. The field is found by uitype
+  through `useRecordPanes`; no screen names a field.
+* **The detail form lost a step top and bottom** — `.key-tile` is `min-h-9 py-1.5`
+  and the grid `gap-y-3 py-4`. The sides are unchanged, because the value still
+  has to clear the box's own hairline.
+* **Double-clicking a name or a type chip in the queue opens its editor with
+  the cursor already in it.** The editor **replaces the card** rather than
+  sitting inside it: the card is a `<button>` with its tick box laid over the
+  top precisely because a button inside a button is not allowed in HTML, and an
+  inline editor is several buttons.
+
+### Save & next was reloading the whole CRM
+
+*"When we Click Save and Next from the Call deck, then the new window open in
+same window of entire CRM instead of Next record."* It used
+`window.location.assign`, so between one call and the next a rep watched the
+app boot — sign-in, metadata, every chunk.
+
+It could not simply navigate, and that is the part worth keeping. The next
+record usually lives on the same `/leads` route with a **different** filter,
+sort and page, and React Router keeps one `ListView` mounted across that — its
+own list state then overwrites the new URL before adopting it, leaving the
+selected card several pages away. The reload was the blunt way to get a clean
+mount.
+
+So the hand-off carries a stamp in the navigation's own state and `ListRoute`
+in `App.tsx` keys `ListView` on it. A fresh mount hydrates the captured queue
+exactly as the reload did, and nothing is downloaded again. **Only the hand-off
+changes that key** — an ordinary filter, sort or page change writes no state,
+so a rep working a list is never remounted under their own cursor.
+
+**The spec had to be made to fail first, and that is how it earned its keep.**
+The first version left `queueUrl` out of the staged call, so there was no next
+record, Save & next saved and stayed put, and the assertion passed against the
+very bug it exists to catch — the URL still changes when the workspace writes
+`open=`. With the queue in place it fails on the old code with
+*"Save & next reloaded the whole CRM"* and passes on the new. A mark written
+into `window` is the measurement: it survives a React Router move and cannot
+survive a reload.
+
+**Two test traps met on the way**, both of which made a locator find nothing
+against correct markup. `page.locator('section header').first()` catches one of
+the app shell's own headers, the same trap this repo already wrote down about
+`main` — the hero's parts carry `data-testid` now. And **the inline editor
+floats in a portal on `body`**, so a locator rooted in the queue card finds
+nothing at all; what it holds is the only honest way to find it.
+
+**Found and not fixed:** `e2e/followUpQueue.spec.ts`'s *"a sort the person
+chose is not taken away by a queue"* fails on a clean tree, so it predates all
+of this — after the Task queue is opened, the sort menu's A–Z button is
+`disabled`. It is a real bug and it is somebody's next job.

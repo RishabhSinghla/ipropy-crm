@@ -4,7 +4,7 @@
  */
 import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, type LiveCallState } from '../lib/api';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
@@ -89,6 +89,7 @@ export function useCallDeckState(): CallDeckState {
   const call = useLiveCall((state) => state.call)!;
   const { update, finish } = useLiveCall.getState();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const outcomes = useCallDispositionOptions();
   const outcome = call.outcome && outcomes.some((option) => option.value === call.outcome)
     ? call.outcome
@@ -222,12 +223,22 @@ export function useCallDeckState(): CallDeckState {
       // pressed Call. Recompute the destination page from the next row's
       // ordinal in that queue; a record id is not a page number.
       if (goTo) {
-        // This destination can be the same /leads route with a *different*
-        // filter, sort and page. React Router reuses ListView in that case;
-        // its local list state would otherwise overwrite the new URL before
-        // adopting it, leaving the selected card several pages away. A fresh
-        // visit hydrates the exact captured queue before the next call starts.
-        window.location.assign(saveNextUrl(call.queueUrl, module, goTo, nextPosition));
+        /*
+          An ordinary in-app move, never `window.location.assign`. That
+          reloaded the whole CRM between one call and the next — sign-in,
+          metadata, every chunk — which is what the owner reported on
+          28 September 2026 as "the new window open in same window of entire
+          CRM instead of Next record".
+
+          The destination can be the same /leads route with a *different*
+          filter, sort and page, and React Router keeps one ListView mounted
+          across that — so the stamp below tells `ListRoute` in `App.tsx` to
+          remount. That gives the clean hydration the reload was there for,
+          and costs nothing.
+        */
+        navigate(saveNextUrl(call.queueUrl, module, goTo, nextPosition), {
+          state: { callDeckHandoff: Date.now() },
+        });
       }
     } catch (err) {
       toast.error('Could not log the call', (err as Error).message);

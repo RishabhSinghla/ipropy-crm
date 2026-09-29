@@ -20,6 +20,34 @@ const Layout = lazy(() => import('./components/Layout'));
 const MobileShell = lazy(() => import('./mobile/Shell'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const ListView = lazy(() => import('./pages/ListView'));
+
+/**
+ * A list, and a way to arrive at one as if it were a fresh visit.
+ *
+ * **28 September 2026, the owner:** *"When we Click Save and Next from the
+ * Call deck, then the new window open in same window of entire CRM instead of
+ * Next record."* Save & next used `window.location.assign`, which reloads the
+ * whole CRM — sign-in, metadata, every chunk — so the rep watched the app boot
+ * between one call and the next.
+ *
+ * It could not simply navigate, and that is what this fixes. The next record
+ * usually lives on the same `/leads` route with a *different* filter, sort and
+ * page, and React Router keeps one `ListView` mounted across that — its own
+ * list state then overwrites the new URL before adopting it, leaving the
+ * selected card several pages away. A full reload was the blunt way to get a
+ * clean mount.
+ *
+ * So the hand-off carries a stamp in the navigation's own state and this
+ * remounts on it. A fresh `ListView` hydrates the captured queue exactly as a
+ * reload did, and nothing else is downloaded again. **Only this hand-off
+ * changes the key** — an ordinary filter, sort or page change writes no state,
+ * so a rep working a list is never remounted under their own cursor.
+ */
+function ListRoute(): JSX.Element {
+  const { state } = useLocation();
+  const handoff = (state as { callDeckHandoff?: number } | null)?.callDeckHandoff;
+  return <ListView key={handoff ? `handoff-${handoff}` : undefined} />;
+}
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
@@ -123,7 +151,7 @@ export default function App(): JSX.Element {
               <Route path="admin/*" element={<AdminPage />} />
 
               {/* Generic module routes — every module, seeded or custom, uses these. */}
-              <Route path=":module" element={<ListView />} />
+              <Route path=":module" element={<ListRoute />} />
               <Route path=":module/new" element={<RecordEdit />} />
               <Route path=":module/:id" element={<RecordDetail />} />
             </Route>

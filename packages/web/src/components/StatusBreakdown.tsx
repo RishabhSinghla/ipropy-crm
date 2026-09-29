@@ -1,6 +1,6 @@
 import { type JSX, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { BarChart3, Check, ChevronRight } from 'lucide-react';
 import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
@@ -54,11 +54,21 @@ export function StatusBreakdown({
           className={toolbarButton(on)}
         >
           <BarChart3 className="h-3.5 w-3.5 shrink-0" />
-          {field.label}
+          {/*
+            **28 September 2026, the owner:** *"Rename Toolbar Button Text
+            'Lead/Property/Associate Status' to Status … Also remove arrow key
+            from all Buttons, so that we can See neet and clean Toolbar."*
+
+            One word on every module, so the row reads the same wherever a rep
+            is. The field's own label still names it in the panel behind and in
+            the button's tooltip, which is where the module's own wording
+            belongs — a rep who needs to know it is "Associate Status" is
+            already looking at the list of stages.
+          */}
+          Status
           <span className={toolbarCount()}>
             {selected.length ? `${selected.length} picked` : `${field.options?.length ?? 0} stages`}
           </span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
         </button>
       }
     >

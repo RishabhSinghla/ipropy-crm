@@ -1,10 +1,10 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { recordStrength, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
+import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Filter, Link2,
-  MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
+  Mail, MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
@@ -14,6 +14,7 @@ import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
 import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
+import ComposeModal from './ComposeModal';
 import { EditableField, isInlineEditable } from './EditableField';
 import { FieldBlock, NotesPanel } from './RecordBlocks';
 import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
@@ -318,7 +319,23 @@ export function IpropyWorkspace({
     conversation and must reach the same answer. A second copy of this
     reasoning is the mistake this repo keeps finding months later.
   */
-  const { headerFields, queueFields, blocks, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
+  const {
+    headerFields, queueFields, blocks,
+    assignedField, statusField, followUpField, phoneField, emailField,
+  } = useRecordPanes(module);
+
+  /*
+    Which field holds the name. `module.labelFields` is what every other
+    screen reads a record's heading from, so the heading and the field its
+    edit writes to cannot disagree.
+  */
+  /** The email dialog, open against the record on screen. */
+  const [composing, setComposing] = useState(false);
+
+  const nameField = useMemo(
+    () => module.fields.find((f) => f.name === module.labelFields?.[0]),
+    [module.fields, module.labelFields],
+  );
   const { data: assignableUsers = [] } = useQuery({
     queryKey: ['users', 'assignable'],
     queryFn: () => api.users(false, false, true),
@@ -333,6 +350,7 @@ export function IpropyWorkspace({
     : '';
   const cardFields = useMemo(() => queueCardFields(module.fields), [module.fields]);
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
+  const emailValue = active && emailField ? displayOf(active, emailField) : '';
   const { data: matchingCount } = useQuery({
     queryKey: ['workspace-matching-count', module.name, active?.id],
     // Any module has neighbours — this is what Save & dial next walks, and
@@ -586,6 +604,10 @@ export function IpropyWorkspace({
               attention={attentionIds.has(row.id)}
               card={cardFields}
               queueFields={queueFields}
+              moduleName={module.name}
+              nameField={nameField}
+              canEdit={canEdit}
+              onEdited={() => invalidateRecordQueries(queryClient, module.name, row.id)}
               onSelect={() => openRecord(row.id)}
               onToggle={(checked) => onToggleSelect(row.id, checked)}
             />
@@ -644,6 +666,25 @@ export function IpropyWorkspace({
                 )}
               </span>
             )}
+            {/*
+              When it was last touched, right after who owns it — *"Updated
+              Time also shown After Agent Name"* (28 September 2026). It rides
+              in the same group as the agent because both are facts about the
+              *record's* state rather than about the customer, and a rep
+              picking a record out of a queue wants to know how stale it is
+              before they dial.
+
+              `hidden sm:inline` — on a narrow pane the name is what has to
+              survive, and this is the first thing worth losing.
+            */}
+            {active.updatedAt && (
+              <span
+                className="hidden shrink-0 whitespace-nowrap text-[11px] text-muted sm:inline"
+                title={new Date(active.updatedAt).toLocaleString('en-IN')}
+              >
+                · Updated {relativeTime(active.updatedAt)}
+              </span>
+            )}
 
             {/*
               The name and the number, a size down — *"decrease Font size of
@@ -652,8 +693,30 @@ export function IpropyWorkspace({
               this row has to be.
             */}
             <span className="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden">
+              {/*
+                The heading, and you can change it where it stands — *"Full
+                Name should be Editable in Middle Pane"* (28 September 2026).
+                Renaming somebody meant opening a form for the one field this
+                pane exists to show.
+
+                **Which field carries the name is `module.labelFields`**, not
+                the word "full_name": Inventories names a record by its unit
+                and an admin may change either. With no editable label field
+                it stays the plain heading it was.
+              */}
               <h2 className="min-w-0 truncate text-base font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-                {active.label}
+                {canEdit && nameField && isInlineEditable(nameField) ? (
+                  <EditableField
+                    module={module.name}
+                    recordId={active.id}
+                    field={nameField}
+                    value={active.values[nameField.name]}
+                    display={active.label}
+                    compact
+                    siblings={active.values}
+                    onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                  />
+                ) : active.label}
               </h2>
               {phoneField && phoneValue && (
                 <>
@@ -715,6 +778,17 @@ export function IpropyWorkspace({
               canEdit={canEdit}
               statusField={statusField}
               followUpField={followUpField}
+              /*
+                It may not reach the middle of the panel, because that is where
+                the face is and the face is positioned absolutely — so nothing
+                pushes it out of the way. Carrying its field names (28 September
+                2026) made this group wide enough to matter: the third chip slid
+                under the avatar and was unreadable.
+
+                Half the panel, less the face's own half-width and a gap. It
+                wraps inside that rather than overflowing.
+              */
+              className="max-w-[calc(50%-3.25rem)]"
             />
 
             {/*
@@ -725,7 +799,7 @@ export function IpropyWorkspace({
               clickable, and hands them back to the face itself.
             */}
             <span className="pointer-events-none absolute inset-x-0 flex justify-center">
-              <span className="pointer-events-auto">
+              <span data-testid="record-avatar" className="pointer-events-auto">
                 <RecordAvatar
                   module={module.name}
                   recordId={active.id}
@@ -759,6 +833,32 @@ export function IpropyWorkspace({
               />
               {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
               {phoneValue && <CallButton to={phoneValue} iconOnly round active={onCall} />}
+              {/*
+                Write to them without leaving the pane — *"show email Icon in
+                Icon bar of middle pane, If Record have a Email Id, so that we
+                can send mail directly from icon"* (28 September 2026).
+
+                **Only when there is an address to write to.** An icon that
+                opens a dialog which can only say "no email on this record"
+                is one a rep learns to ignore, and this bar already carries
+                five. Which field holds it is `useRecordPanes`, found by
+                uitype, so no screen names a field.
+
+                It opens the CRM's own composer rather than `mailto:` — the
+                reply threads back onto the record, and a rep on a phone has
+                no desktop mail client to hand it to.
+              */}
+              {emailValue && (
+                <button
+                  type="button"
+                  aria-label={`Email ${emailValue}`}
+                  title={`Email ${emailValue}`}
+                  onClick={() => setComposing(true)}
+                  className={cn(ACTION_CIRCLE, 'hover:bg-brand-600')}
+                >
+                  <Mail className="h-4 w-4" />
+                </button>
+              )}
               <button
                 aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
                 title={active.starred ? 'Remove from starred' : 'Star this record'}
@@ -926,6 +1026,20 @@ export function IpropyWorkspace({
       body="Matching values, files, and call history move to the new record. The original record is removed from its current module."
       confirmLabel={move.isPending ? 'Moving…' : 'Move record'}
     />
+
+    {/* The CRM's own composer, the same one the record page opens, so a
+        reply threads back onto the record either way. */}
+    {composing && active && (
+      <ComposeModal
+        module={module.name}
+        record={active}
+        onClose={() => setComposing(false)}
+        onSent={() => {
+          setComposing(false);
+          invalidateRecordQueries(queryClient, module.name, active.id);
+        }}
+      />
+    )}
     </section>
     </WhatsAppComposerProvider>
   </CallDispositionProvider>;
@@ -957,16 +1071,38 @@ export function IpropyWorkspace({
  * than one button holding another. A button inside a button is not allowed in
  * HTML, and a screen reader cannot reach the inner one.
  */
-function QueueCard({ row, active, checked, attention, card, queueFields, onSelect, onToggle }: {
+function QueueCard({
+  row, active, checked, attention, card, queueFields,
+  moduleName, nameField, canEdit, onEdited, onSelect, onToggle,
+}: {
   row: RecordEnvelope;
   active: boolean;
   checked: boolean;
   attention: boolean;
   card: CardFields;
   queueFields?: FieldMeta[];
+  moduleName: string;
+  nameField?: FieldMeta;
+  canEdit: boolean;
+  onEdited: () => void;
   onSelect: () => void;
   onToggle: (checked: boolean) => void;
 }): JSX.Element {
+  /*
+    Which of the two facts on this row is being changed, if either.
+
+    **28 September 2026, the owner:** *"Please Change Name and Contact Type in
+    editable formate on double click, with cursor on Name or Cotact type
+    accordingly in the Left pane record."*
+
+    The editor **replaces the card** rather than sitting inside it. This card
+    is a `<button>` with its tick box laid over the top precisely because a
+    button inside a button is not allowed in HTML and a screen reader cannot
+    reach the inner one — and an inline editor is several buttons. So for the
+    moment somebody is typing, the row is a plain box with one editor in it.
+  */
+  const [editing, setEditing] = useState<'name' | 'type' | null>(null);
+  const editField = editing === 'name' ? nameField : editing === 'type' ? card.type : undefined;
   const read = (field: FieldMeta): string => displayOf(row, field);
   const type = card.type ? read(card.type) : '';
   const unit = card.unit ? read(card.unit) : '';
@@ -988,6 +1124,33 @@ function QueueCard({ row, active, checked, attention, card, queueFields, onSelec
   useEffect(() => {
     if (active) self.current?.scrollIntoView({ block: 'nearest' });
   }, [active]);
+
+  if (editing && editField) {
+    return (
+      <div ref={self} data-testid="queue-card" className="group relative border-b border-[var(--border)] px-3 py-2.5">
+        <EditableField
+          module={moduleName}
+          recordId={row.id}
+          field={editField}
+          value={row.values[editField.name]}
+          display={editing === 'name' ? row.label : read(editField)}
+          compact
+          openOnMount
+          siblings={row.values}
+          onClosed={() => setEditing(null)}
+          onSaved={onEdited}
+        />
+      </div>
+    );
+  }
+
+  /** A double-click opens that field, and only when this rep may edit. */
+  const openEditor = (which: 'name' | 'type') => (event: React.MouseEvent) => {
+    if (!canEdit) return;
+    event.stopPropagation();
+    event.preventDefault();
+    setEditing(which);
+  };
 
   return (
     <div ref={self} data-testid="queue-card" className="group relative border-b border-[var(--border)]">
@@ -1014,8 +1177,16 @@ function QueueCard({ row, active, checked, attention, card, queueFields, onSelec
             rewrites, so changing the theme moves this row with it. A hue
             written in as `indigo-50` would not have.
           */
+          /*
+            **28 September 2026, the owner:** *"Active Record Should be Darker
+            As Theme Colour in Left Pane in All modules."* It was the palest
+            step there is, which he asked for the day before and has now
+            worked; the later decision stands. A step up is still a wash
+            rather than a fill, so the name and the price on it keep their
+            contrast without being reversed out to white.
+          */
           active
-            ? 'bg-brand-50 dark:bg-brand-950'
+            ? 'bg-brand-100 dark:bg-brand-900'
             : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
         )}
       >
@@ -1024,13 +1195,21 @@ function QueueCard({ row, active, checked, attention, card, queueFields, onSelec
           heaviest thing on the card.
         */}
         <span className="flex min-w-0 items-center gap-1.5 pr-8">
-          <span className={cn(
-            'truncate text-[15px] font-extrabold tracking-tight',
-            active ? 'text-brand-700 dark:text-brand-200' : 'text-slate-900 dark:text-slate-100',
-          )}>
+          <span
+            onDoubleClick={openEditor('name')}
+            title={canEdit && nameField ? 'Double-click to rename' : undefined}
+            className={cn(
+              'truncate text-[15px] font-extrabold tracking-tight',
+              active ? 'text-brand-900 dark:text-brand-50' : 'text-slate-900 dark:text-slate-100',
+            )}
+          >
             {row.label}
           </span>
-          {type && <TypeFlag label={type} strong={active} />}
+          {type && (
+            <span onDoubleClick={openEditor('type')} title={canEdit && card.type ? `Double-click to change ${card.type.label}` : undefined}>
+              <TypeFlag label={type} strong={active} />
+            </span>
+          )}
           {attention && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Needs attention" />}
         </span>
 
@@ -1051,7 +1230,7 @@ function QueueCard({ row, active, checked, attention, card, queueFields, onSelec
           {price && (
             <span className={cn(
               'shrink-0 whitespace-nowrap text-base font-extrabold tabular-nums',
-              active ? 'text-brand-700 dark:text-brand-200' : 'text-slate-900 dark:text-slate-100',
+              active ? 'text-brand-900 dark:text-brand-50' : 'text-slate-900 dark:text-slate-100',
             )}>
               {price}
             </span>

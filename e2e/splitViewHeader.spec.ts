@@ -64,12 +64,18 @@ test('the chips beside the face are one look, with the stage the only exception'
     const el = wrap as HTMLElement;
     // The chase date draws its own chip inside its wrapper; the others are the
     // wrapper. Take whichever actually carries a fill.
-    const inner = el.querySelector('span,button') as HTMLElement | null;
-    // The painted node, not its wrapper: a Dropdown puts its own box around
-    // the call pill, so measuring the wrapper reports that box's height
-    // rather than the chip's — which is how this first failed at 32px
-    // against a chip that is plainly 24.
-    const painted = [el, inner].filter(Boolean)
+    /*
+      The painted node, not its wrapper: a Dropdown puts its own box around
+      the call pill, so measuring the wrapper reports that box's height
+      rather than the chip's — which is how this first failed at 32px
+      against a chip that is plainly 24.
+
+      **Every descendant, not the first one.** Since 28 September 2026 each
+      chip is introduced by its field's own name, so the first inner span is
+      that label — which carries no fill, and reading it reported that not one
+      chip was painted.
+    */
+    const painted = [el, ...el.querySelectorAll('span,button')]
       .map((n) => n as HTMLElement)
       .find((n) => getComputedStyle(n).backgroundColor !== 'rgba(0, 0, 0, 0)');
     const style = painted ? getComputedStyle(painted) : null;

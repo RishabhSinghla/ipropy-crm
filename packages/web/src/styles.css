@@ -477,8 +477,17 @@
     than as text on a wash — and an empty one still looks like somewhere a
     value goes.
   */
+  /*
+    **28 September 2026, the owner:** *"Please reduce little bit Box Size from
+    top and bottom of Detail Form, Minor Little bit."* A step off the top and
+    bottom only — the sides are unchanged, because the value inside still has
+    to clear the box's own hairline.
+
+    One class, so every form of tiles in the CRM loses the same step rather
+    than the split view drifting from the record page.
+  */
   .key-tile {
-    @apply flex min-h-10 items-center rounded-lg px-3.5 py-2 shadow-2xs;
+    @apply flex min-h-9 items-center rounded-lg px-3.5 py-1.5 shadow-2xs;
     background-color: var(--surface-muted);
     border: 1px solid var(--border);
   }

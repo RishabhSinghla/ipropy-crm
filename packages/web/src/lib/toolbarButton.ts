@@ -24,10 +24,19 @@ export function toolbarButton(on: boolean, extra?: string): string {
     // pills rather than a row of tabs.
     'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-white shadow-xs transition-colors',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1',
-    // A filter that is on is lighter and ringed, not a different colour: the
-    // row has to stay one row of purple pills for the "on" one to stand out
-    // at all.
-    on ? 'bg-brand-700 ring-2 ring-brand-300 dark:ring-brand-700' : 'bg-brand-900 hover:bg-brand-800',
+    /*
+      **28 September 2026, the owner:** *"Active Button Should Darker as Theme
+      Colour in Tool bar in All modules."* It was the other way round — the
+      button that was on went *lighter* and took a ring — and he is right that
+      the darker one reads as the pressed one.
+
+      Still one row of purple pills, so the difference is depth rather than
+      hue: the resting pills are the mid step, the one that is on is the
+      darkest there is and keeps its ring.
+    */
+    on
+      ? 'bg-brand-950 ring-2 ring-brand-400 dark:ring-brand-600'
+      : 'bg-brand-700 hover:bg-brand-800',
     extra,
   );
 }
