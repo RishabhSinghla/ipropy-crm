@@ -1,7 +1,7 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { picklistOptionForValue, relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
-import { FileText, LayoutList, Send } from 'lucide-react';
+import { FileText, LayoutList, Mic, Send } from 'lucide-react';
 import { Avatar } from './ui';
 import { FieldValue } from './FieldRenderer';
 import { EditableField, isInlineEditable } from './EditableField';
@@ -9,7 +9,8 @@ import { invalidateRecordQueries } from '../lib/invalidate';
 import type { DescribedModule } from '../lib/recordPanes';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
+import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { appendSnippet, useNoteSnippets } from '../lib/noteSnippets';
 import { followUpChip } from '../lib/followUpDates';
 import { HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE, headerChipTone } from '../lib/headerChip';
@@ -198,11 +199,36 @@ export function NotesPanel({ module, record, flush = false }: {
     onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, record.id] }); toast.success('Note added'); },
     onError: (error: Error) => toast.error('Could not add note', error.message),
   });
+  /*
+    Speak the note instead of typing it — back in the split view, where it went
+    missing when the full record page (which had it) was parked.
+
+    Two ears, one button. With a transcription service configured, the
+    recording goes to it and comes back as a tidied note; without one, the
+    browser's own recogniser writes the words into the box as they are said.
+    Either way the words land in the box, not on the record: what gets posted
+    is still the rep's decision.
+  */
+  const { sttAvailable } = useApp();
+  const addWords = (text: string): void => setNote((current) => (current.trim() ? `${current.trim()} ${text}` : text));
+  const voice = useVoiceCapture(async (audio) => {
+    try {
+      const { note: written } = await api.voiceNote(audio);
+      setNote((current) => (current.trim() ? `${current.trim()}\n\n${written}` : written));
+    } catch (err) {
+      toast.error('Could not write that up', (err as Error).message);
+    }
+  }, { serverTranscription: sttAvailable, onTranscript: addWords });
+  const post = (): void => { if (note.trim() && !add.isPending) add.mutate(); };
   const composer = (
     <div className={cn('rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs dark:border-slate-700 dark:bg-slate-800', !flush && 'border-0 p-4 shadow-none dark:bg-transparent')}>
       <textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
+        // The hint under the box has always promised this; now it does it.
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); post(); }
+        }}
         /* The single notes composer, including while a call is active. The
            deck above handles disposition and follow-up, not a second note. */
         placeholder="Add a note for the team… type @ to notify someone"
@@ -231,11 +257,39 @@ export function NotesPanel({ module, record, flush = false }: {
           ))}
         </div>
       )}
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-2xs text-muted">⌘↵ to post</span>
-        <button disabled={!note.trim() || add.isPending} onClick={() => add.mutate()} className="btn-primary btn-sm">
-          <Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}
-        </button>
+      {/* What the browser has heard so far, so the rep can see it is listening. */}
+      {voice.recording && voice.interim && (
+        <p className="mt-2 rounded-md bg-slate-50 px-2 py-1 text-xs italic text-slate-600 dark:bg-slate-900 dark:text-slate-300" aria-live="polite">
+          {voice.interim}
+        </p>
+      )}
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-2xs text-muted" aria-live="polite">
+          {voice.recording
+            ? 'Listening — tap the mic again when you have finished'
+            : voice.busy ? 'Writing that up…' : '⌘↵ to post'}
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {voice.supported && (
+            <button
+              type="button"
+              onClick={voice.toggle}
+              disabled={voice.busy || add.isPending}
+              title={voice.recording ? 'Stop listening' : 'Speak the note instead of typing it'}
+              aria-label={voice.recording ? 'Stop recording' : 'Record a voice note'}
+              aria-pressed={voice.recording}
+              className={cn(
+                'btn-secondary btn-sm px-2',
+                voice.recording && 'animate-pulse bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400',
+              )}
+            >
+              <Mic className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button disabled={!note.trim() || add.isPending} onClick={post} className="btn-primary btn-sm">
+            <Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}
+          </button>
+        </span>
       </div>
     </div>
   );
@@ -263,11 +317,13 @@ export function NotesPanel({ module, record, flush = false }: {
 }
 function NoteEntry({ entry, flush = false }: { entry: TimelineEntry; flush?: boolean }): JSX.Element {
   return <article className={cn(flush && 'rounded-xl border border-slate-200/70 bg-cream-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/60')}>
-    <p className="flex items-center gap-1.5 text-xs">
+    {/* A div, not a p: the avatar is a div, and a div inside a p is invalid
+        HTML that React warns about on every note. */}
+    <div className="flex items-center gap-1.5 text-xs">
       {entry.actorName && <Avatar name={entry.actorName} size={20} />}
       <span className="truncate font-bold text-slate-900 dark:text-slate-100">{entry.actorName ?? 'iPROPY'}</span>
       <span className="shrink-0 text-[10px] text-muted">· {relativeTime(entry.at)}</span>
-    </p>
+    </div>
     <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{entry.title}</p>
     {entry.body && <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-700 dark:text-slate-300">{entry.body}</p>}
   </article>;

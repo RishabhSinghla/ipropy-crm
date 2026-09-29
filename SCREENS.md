@@ -78,10 +78,11 @@ view still keeps its filter and sort, and now always saves `display_mode = 'ipro
   it still holds the property photo carousel, the AI panel, the duplicate check, share
   links and the related list, which the split view does not show. Moving those in or
   deleting them is the owner's call.
-* **The Layout Designer is not a duplicate of Split View and stays.** It drives the
-  "+ New" form and Capture on site (quick create), the phone app's record screen
-  (detail) and Inventories' full form (edit). Split View only decides what the split
-  view shows, and where it has a list it wins over the Layout Designer.
+* **The Layout Designer is where the split view is arranged** (Admin → Split View was
+  removed on 27 September). Its **Split view** screen is the `detail` layout; its
+  **New record form** drives "+ New", Capture on site and the phone app's record screen
+  (quick create); **Full page form** is Inventories' full form (edit). See *The Layout
+  Designer, rebuilt so every control does something* below.
 * **The phone app is untouched** — it has its own screens in `src/mobile`.
 
 The sections below that describe choosing between views are history.
@@ -1056,3 +1057,66 @@ row); `splitViewHeaderKeys` compared the label's and the value's *left* edges
 (they share a centre). The promises underneath — the hero stays compact, the
 three pairs read as one row, the controls stay on the face's row, the value sits
 under its name — are all still measured, and measured on the elements' own boxes.
+
+## The Layout Designer, rebuilt so every control does something
+
+**29 September 2026, the owner:** *"I need a proper layout designer in admin panel
+for split view … not at all properly made and usable … looks complex to use."*
+
+**The real fault was that half of it did nothing.** Read against the code, the split
+view ignored four of the controls on its own designer: the header's key fields (the
+hero drew a fixed chase date and stage), the main heading field, the tabs' names,
+order and hiding, and "Opens on" — the split view drew its six tabs in code. And
+"Collapsed" was offered for a view that draws every section open. An admin changed
+them, pressed Save, saw nothing, and reasonably concluded the screen was broken.
+
+What it is now (`pages/admin/LayoutDesigner.tsx`, `SplitViewZones.tsx`):
+
+* **Three screens, named for what they change** — *Split view*, *New record form*,
+  *Full page form* — instead of "Detail view" and "Quick create".
+* **Numbered zones in the order a rep meets them**, each with a **preview drawn from
+  a real record** (*Show another record* steps through the list) and a **Default**
+  button: ① the queue card's line of facts, ② the header's key facts, ③ the tabs,
+  ④ the Overview form, ⑤ the WhatsApp chat header (the one list here that is not the
+  split view, so it says so).
+* **Every list reorders by drag, by arrows, or from a menu.** A field on the form has a
+  ⋯ menu — move up, move down, move to another section, take it off the form — because
+  dragging to a section that is off screen was the original complaint.
+* **The first tab is the one a record opens on.** One rule instead of an "Opens on"
+  setting that could name a hidden tab.
+* **Unsaved work is protected**: *Undo changes*, a confirm before switching module or
+  screen, and the browser's own leave-page warning. Deleting a section asks first and
+  says it goes from every screen.
+
+**The split view reads two new keys, on purpose** (`lib/splitViewLayout.ts`):
+`heroFields` and `splitTabs`. Production's layouts already carry old `headerFields`
+and `tabs` values saved for the parked full record page; had the split view started
+obeying *those*, every rep's screen would have changed on deploy with nobody asking.
+An unsaved key means "exactly what the split view showed before", which is also what
+**Default** writes — by deleting the key, not by writing today's default down, so a
+later improvement to the default still reaches that module. `headerTitleField` and
+`defaultTab` are no longer on the screen and are left in the database untouched.
+
+Also on 29 September, the same message:
+
+* **The Task button filters by agent**, like Status. `components/AgentPicker.tsx` is
+  the one row of agent chips both panels draw, over the list's one agent choice, so
+  picking Vijay in either narrows the list, the stage counts and the task counts
+  together. It also lost a `slice(0, 9)` that made a tenth agent unpickable.
+* **Agent and "Updated" sit right after the record arrows**, and the record's tags
+  take the right end of that row (they used to be squeezed to 6rem beside the icons,
+  and hidden below `lg`).
+* **The notes box has its microphone back**, and ⌘/Ctrl+Enter now posts — the hint
+  under the box had promised it with no key handler behind it. The mic is
+  `useVoiceCapture`: on a laptop in Chrome, with no speech-to-text key configured, the
+  browser's own recogniser types the words in as they are said; with a key, the
+  recording is sent to the server and comes back as a tidied note. **Not proved:** a
+  real microphone — a headless browser has none.
+
+Driven in a browser against a fresh database: the header positions (measured), the
+tag, the mic button, Ctrl+Enter posting, the task agent filter narrowing its counts
+and showing the same agent in Status, and the designer round trip — add a header
+fact, reorder and rename a tab, save, see both in the split view, press Default, see
+them go. `callOutcome` *Save & Next*, `followUpQueue` *a sort … not taken away* and
+`noteSnippets` fail on a clean main as well as with this change; they predate it.
+

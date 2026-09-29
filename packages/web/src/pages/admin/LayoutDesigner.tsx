@@ -1,28 +1,35 @@
-import { type JSX, useEffect, useMemo, useState } from 'react';
-import { byLabel, pipelineFieldOf } from '../../lib/fields';
-import { queueCardFields } from '../../lib/queueCard';
 /**
- * Layout Designer — what a record page looks like, as data.
+ * Layout Designer — what a record looks like, as data.
  *
- * Record presentation and the property-capture panel are editable here rather
- * than hard-coded:
+ * Three screens are arranged here, and the picker at the top names them by the
+ * screen they change:
  *
- *   * the sections and the fields inside them (drag, plus add/rename/reorder/delete);
- *   * the summary chips in the record header;
- *   * which tab a record opens on.
- *   * which quick-create fields stay visible at the gate, plus voice/GPS mode.
+ *   * **Split view** — the queue card, the record's header facts, its tabs and
+ *     the Overview form. This is the screen the team works in all day, and
+ *     since 29 September 2026 every control for it is one the split view
+ *     actually reads (`lib/splitViewLayout.ts`). Before that, the header's key
+ *     fields, the tabs and "opens on" were saved and ignored.
+ *   * **New record form** — the + New dialog, Capture on site and the phone
+ *     app's record screen.
+ *   * **Full page form** — Inventories only.
  *
  * Saving marks the layout as customised, which stops `db:seed` rewriting it on
  * the next schema change — see seed/helpers.ts.
  */
+import { type JSX, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronDown, ChevronUp, GripVertical, Plus, Save, Trash2, X,
+  ChevronDown, ChevronUp, GripVertical, MoreHorizontal, Plus, RefreshCw, RotateCcw, Save, Trash2,
 } from 'lucide-react';
+import type { RecordEnvelope } from '@ipropy/shared';
+import { byLabel, pipelineFieldOf } from '../../lib/fields';
+import { queueCardFields } from '../../lib/queueCard';
+import { allSplitTabs, heroFieldNames, splitTabsFor, type SplitTab } from '../../lib/splitViewLayout';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Badge, Dropdown, DropdownItem, Modal, Select, Skeleton, Spinner } from '../../components/ui';
+import { HeaderFactsPreview, OrderedFieldList, Preview, QueueCardPreview, TabsEditor, Zone } from './SplitViewZones';
 
 interface LayoutBlock {
   key: string;
@@ -37,16 +44,9 @@ interface DesignerConfig {
   headerFields: string[];
   headerFieldsCustomized?: boolean;
   queueFields?: string[];
-  defaultTab: string;
-  headerTitleField?: string;
-  tabs?: DetailTabConfig[];
+  heroFields?: string[];
+  splitTabs?: SplitTab[];
   capture?: CapturePanelConfig;
-}
-
-interface DetailTabConfig {
-  key: string;
-  label: string;
-  icon?: string;
 }
 
 interface CapturePanelConfig {
@@ -59,18 +59,30 @@ const DEFAULT_CAPTURE_PANEL: CapturePanelConfig = {
   gpsEnabled: true,
 };
 
-/** Tabs the record page can open on. Relation tabs are appended per module. */
-const BASE_TABS = [
-  { value: 'overview', label: 'Overview' },
-  { value: 'timeline', label: 'Timeline' },
-  { value: 'files', label: 'Files' },
-];
+type LayoutType = 'detail' | 'edit' | 'quick_create';
+
+/** Named after the screen each one changes, not after the database's word for it. */
+const SCREEN_LABEL: Record<LayoutType, string> = {
+  detail: 'Split view',
+  quick_create: 'New record form',
+  edit: 'Full page form',
+};
+
+/** A record's value as a person reads it, for the previews. */
+function readValue(record: RecordEnvelope | null | undefined, name: string): string {
+  if (!record) return '';
+  const shown = record.display?.[name];
+  if (shown) return shown;
+  const raw = record.values[name];
+  if (Array.isArray(raw)) return raw.join(', ');
+  return raw === null || raw === undefined ? '' : String(raw);
+}
 
 export default function LayoutDesigner(): JSX.Element {
   const queryClient = useQueryClient();
   const { modules } = useApp();
   const [moduleName, setModuleName] = useState(modules[0]?.name ?? 'leads');
-  const [layoutType, setLayoutType] = useState<'detail' | 'edit' | 'quick_create'>('detail');
+  const [layoutType, setLayoutType] = useState<LayoutType>('detail');
   /*
     Switching to a module that has no full-page form must not leave the picker
     on an option it no longer offers — the Select would show blank and the next
@@ -81,12 +93,13 @@ export default function LayoutDesigner(): JSX.Element {
   }, [moduleName, layoutType]);
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
   const [newSection, setNewSection] = useState(false);
+  /** The WhatsApp chat header's facts — the old "header fields" key. */
   const [headerFields, setHeaderFields] = useState<string[]>([]);
   const [headerTouched, setHeaderTouched] = useState(false);
+  /** Undefined means "not chosen": the split view shows what it ships with. */
   const [queueFields, setQueueFields] = useState<string[] | undefined>();
-  const [defaultTab, setDefaultTab] = useState('overview');
-  const [headerTitleField, setHeaderTitleField] = useState('');
-  const [detailTabs, setDetailTabs] = useState<DetailTabConfig[]>([]);
+  const [heroFields, setHeroFields] = useState<string[] | undefined>();
+  const [splitTabs, setSplitTabs] = useState<SplitTab[] | undefined>();
   const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -94,6 +107,24 @@ export default function LayoutDesigner(): JSX.Element {
   const [dragging, setDragging] = useState<{ block: string; field: string } | null>(null);
   /** Filters the Unplaced list. On a module with sixty fields, scrolling to find one is the whole problem. */
   const [search, setSearch] = useState('');
+  /** Which record the previews are drawn from — "Show another" steps through the list. */
+  const [sampleAt, setSampleAt] = useState(1);
+  /** Reloads the saved layout, throwing away what has not been saved. */
+  const [reloadKey, setReloadKey] = useState(0);
+
+  /*
+    Work in progress is not lost to a stray click. Leaving the page, or moving
+    to another module or screen, asks first while there is something unsaved.
+  */
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (event: BeforeUnloadEvent): void => { event.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+  const leaveIfSaved = (go: () => void): void => {
+    if (!dirty || window.confirm('You have changes that are not saved. Leave them?')) go();
+  };
 
   const { data: meta } = useQuery({
     queryKey: ['module', moduleName],
@@ -104,6 +135,17 @@ export default function LayoutDesigner(): JSX.Element {
     queryKey: ['layouts', moduleName],
     queryFn: () => api.layouts(moduleName),
   });
+
+  const { data: sample } = useQuery({
+    queryKey: ['layout-sample', moduleName, sampleAt],
+    queryFn: async () => {
+      const page = await api.list(moduleName, { page: sampleAt, pageSize: 1 });
+      const id = page.rows[0]?.id;
+      return id ? api.record(moduleName, id) : null;
+    },
+    enabled: layoutType === 'detail',
+  });
+  const sampleOf = (name: string): string => readValue(sample, name);
 
   useEffect(() => {
     const layout = (layouts ?? []).find(
@@ -126,9 +168,8 @@ export default function LayoutDesigner(): JSX.Element {
         : [];
       setHeaderFields([...new Set([...saved, ...implicit])]);
       setQueueFields(layout.config.queueFields);
-      setDefaultTab(layout.config.defaultTab ?? 'overview');
-      setHeaderTitleField(layout.config.headerTitleField ?? '');
-      setDetailTabs(layout.config.tabs ?? []);
+      setHeroFields(layout.config.heroFields);
+      setSplitTabs(layout.config.splitTabs ? splitTabsFor(moduleName, layout.config.splitTabs) : undefined);
       setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
       // Fall back to the module's block structure so there's always something
@@ -140,14 +181,13 @@ export default function LayoutDesigner(): JSX.Element {
       })));
       setHeaderFields(meta.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? []);
       setQueueFields(undefined);
-      setDefaultTab('overview');
-      setHeaderTitleField('');
-      setDetailTabs([]);
+      setHeroFields(undefined);
+      setSplitTabs(undefined);
       setCapturePanel(DEFAULT_CAPTURE_PANEL);
     }
     setDirty(false);
     setHeaderTouched(false);
-  }, [layouts, layoutType, meta?.id]);
+  }, [layouts, layoutType, meta?.id, reloadKey]);
 
   const fieldMap = useMemo(
     () => new Map((meta?.fields ?? []).map((f) => [f.name, f])),
@@ -166,15 +206,25 @@ export default function LayoutDesigner(): JSX.Element {
     ? availableFields.filter((f) => f.label.toLowerCase().includes(search.trim().toLowerCase()))
     : availableFields;
 
-  const availableTabs = [
-    ...BASE_TABS,
-    ...(meta?.relations ?? []).map((r) => ({ value: `rel:${r.name}`, label: r.label })),
-    ...(meta?.fields.some((field) => field.uitype === 'phone') ? [{ value: 'calls', label: 'Calls' }] : []),
-  ];
-  const detailTabOptions = detailTabs.length
-    ? detailTabs
-    : availableTabs.map((option) => ({ key: option.value, label: option.label }));
-  const tabOptions = detailTabOptions.map((tab) => ({ value: tab.key, label: tab.label }));
+  const fieldOptions = byLabel(placeable).map((f) => ({ value: f.name, label: f.label }));
+
+  /*
+    What the split view shows when nothing has been chosen — the same answers
+    `useRecordPanes` reaches, so the designer opens on the screen as it is.
+  */
+  const followUpName = meta?.fields.find((f) => f.columnName === 'next_followup_at')?.name
+    ?? meta?.fields.find((f) => /next.*follow.*up/i.test(f.name))?.name;
+  const statusName = meta ? pipelineFieldOf(meta)?.name : undefined;
+  const queueShown = queueFields ?? (() => {
+    const card = meta ? queueCardFields(meta.fields) : null;
+    return card
+      ? [card.bedrooms, card.portion, card.category, card.locality]
+        .filter((field): field is NonNullable<typeof field> => Boolean(field)).map((field) => field.name)
+      : [];
+  })();
+  const heroShown = heroFieldNames(heroFields, followUpName, statusName);
+  const tabsShown = splitTabs ?? allSplitTabs(moduleName);
+  const labelOf = (name: string): string => fieldMap.get(name)?.label ?? name;
 
   const touch = (): void => setDirty(true);
 
@@ -266,18 +316,29 @@ export default function LayoutDesigner(): JSX.Element {
     try {
       const existing = (layouts ?? []).find((l) => (l as { id: string }).id === layoutId) as
         { config: Record<string, unknown> } | undefined;
-      const config = {
+      const config: Record<string, unknown> = {
         ...(existing?.config ?? {}),
         blocks,
-        // Only the detail view has a header strip and tabs; keeping them off the
-        // edit/quick-create configs avoids writing keys nothing will read.
+        // Only the split view reads these; keeping them off the other two
+        // screens avoids writing keys nothing will read.
         ...(layoutType === 'detail'
-          ? { headerFields, ...(headerTouched ? { headerFieldsCustomized: true } : {}), ...(queueFields !== undefined ? { queueFields } : {}), defaultTab, headerTitleField: headerTitleField || undefined, tabs: detailTabOptions }
+          ? { headerFields, ...(headerTouched ? { headerFieldsCustomized: true } : {}) }
           : {}),
         ...(layoutType === 'quick_create' && moduleName === 'properties'
           ? { capture: capturePanel }
           : {}),
       };
+      /*
+        "Back to default" has to reach the database as an absent key, not as
+        the default's current value written down — otherwise the day the CRM's
+        own default improves, this module keeps the old one for ever.
+      */
+      if (layoutType === 'detail') {
+        for (const [key, chosen] of [['queueFields', queueFields], ['heroFields', heroFields], ['splitTabs', splitTabs]] as const) {
+          if (chosen === undefined) delete config[key];
+          else config[key] = chosen;
+        }
+      }
 
       if (layoutId) {
         await api.saveLayout(layoutId, { config });
@@ -291,7 +352,7 @@ export default function LayoutDesigner(): JSX.Element {
         setLayoutId(created.id);
       }
 
-      toast.success('Layout saved');
+      toast.success('Layout saved', layoutType === 'detail' ? 'The split view shows it for everybody now — reload an open list to see it.' : undefined);
       setDirty(false);
       void queryClient.invalidateQueries({ queryKey: ['layouts', moduleName] });
       void queryClient.invalidateQueries({ queryKey: ['layout', moduleName] });
@@ -320,45 +381,53 @@ export default function LayoutDesigner(): JSX.Element {
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">Layout Designer</h1>
           <p className="text-sm text-muted">
-            Arrange the sections, fields, header chips and opening tab of a record page.
+            {layoutType === 'detail'
+              ? 'Arrange the split view: the queue card, the record header, its tabs and the Overview form.'
+              : layoutType === 'quick_create'
+                ? 'Arrange the + New form, Capture on site and the phone app’s record screen.'
+                : 'Arrange the Inventories full page form.'}
           </p>
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Select
             value={moduleName}
-            onChange={setModuleName}
+            onChange={(next) => leaveIfSaved(() => setModuleName(next))}
             options={modules.filter((m) => m.isEntity).map((m) => ({ value: m.name, label: m.label }))}
             className="w-44 py-1.5 text-sm"
           />
-          <Select
-            value={layoutType}
-            onChange={(v) => setLayoutType(v as typeof layoutType)}
-            /*
-              Only the layouts this module actually has a screen for.
+          {/*
+            Named after the screen each one changes. "Detail view" and "Quick
+            create" were the database's words; nobody could tell from them
+            that the first one *is* the split view.
 
-              There are three in the database, and on Leads one of them shapes
-              a form nobody can open: "Full page form" is the second half of
-              the split New button, and that split button exists only on
-              Inventories. So an admin arranging Leads was offered a third
-              option, saved it, and saw no effect anywhere — which is what
-              "there are only 2 for us" means.
-
-              It is also named after the thing that opens it now. It read "New
-              record form" while the only door to it says "Full page form",
-              and two names for one screen is the other half of the confusion.
-            */
-            options={[
-              { value: 'detail', label: 'Detail view' },
-              { value: 'quick_create', label: 'Quick create' },
-              ...(moduleName === 'properties'
-                ? [{ value: 'edit', label: 'Full page form' }]
-                : []),
-            ]}
-            className="w-36 py-1.5 text-sm"
-          />
+            Only the screens this module actually has: "Full page form" is the
+            second half of the split New button, which exists on Inventories
+            alone.
+          */}
+          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700" role="group" aria-label="Which screen">
+            {(['detail', 'quick_create', ...(moduleName === 'properties' ? ['edit' as const] : [])] as LayoutType[]).map((type) => (
+              <button
+                key={type}
+                type="button"
+                aria-pressed={layoutType === type}
+                onClick={() => leaveIfSaved(() => setLayoutType(type))}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
+                  layoutType === type ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+                )}
+              >
+                {SCREEN_LABEL[type]}
+              </button>
+            ))}
+          </div>
+          {dirty && (
+            <button type="button" onClick={() => setReloadKey((n) => n + 1)} className="btn-ghost btn-sm" title="Throw away what has not been saved">
+              <RotateCcw className="h-3.5 w-3.5" /> Undo changes
+            </button>
+          )}
           <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm">
-            {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
+            {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} {dirty ? 'Save changes' : 'Saved'}
           </button>
         </div>
       </div>
@@ -407,52 +476,89 @@ export default function LayoutDesigner(): JSX.Element {
             )}
 
             {layoutType === 'detail' && (
-              <HeaderStripEditor
-                value={headerFields}
-                queueFields={queueFields ?? (() => {
-                  const card = queueCardFields(meta.fields);
-                  return [card.bedrooms, card.portion, card.category, card.locality].filter((field): field is NonNullable<typeof field> => Boolean(field)).map((field) => field.name);
-                })()}
-                /*
-                  The pipeline field belongs here like any other.
+              <>
+                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800/50">
+                  <span className="text-muted">Previews use</span>
+                  <strong className="truncate">{sample?.label ?? '…'}</strong>
+                  <button type="button" onClick={() => setSampleAt((n) => n + 1)} className="btn-ghost btn-sm ml-auto text-2xs">
+                    <RefreshCw className="h-3 w-3" /> Show another record
+                  </button>
+                </div>
 
-                  It used to be filtered out, because it was once drawn as a
-                  status chip beside the record name and offering it twice
-                  would have been offering a no-op. That chip was removed — the
-                  header is the record name now — so the filter was hiding
-                  Property Status from the one list that could put it back, and
-                  the detail header skipped drawing it for the same dead
-                  reason. Both are gone.
-                */
-                options={byLabel(placeable).map((f) => ({ value: f.name, label: f.label }))}
-                defaultTab={defaultTab}
-                tabOptions={tabOptions}
-                tabs={detailTabOptions}
-                availableTabs={availableTabs}
-                headerTitleField={headerTitleField}
-                onChange={(next) => { setHeaderFields(next); setHeaderTouched(true); touch(); }}
-                onQueueChange={(next) => { setQueueFields(next); touch(); }}
-                onHeaderTitleFieldChange={(next) => { setHeaderTitleField(next); touch(); }}
-                onDefaultTabChange={(next) => { setDefaultTab(next); touch(); }}
-                onTabsChange={(next) => {
-                  setDetailTabs(next);
-                  if (!next.some((item) => item.key === defaultTab)) setDefaultTab(next[0]?.key ?? 'overview');
-                  touch();
-                }}
-              />
-            )}
+                <div className="grid gap-3 xl:grid-cols-[18rem_minmax(0,1fr)]">
+                  <Zone
+                    step={1}
+                    title="Left pane — queue card"
+                    hint="The line of facts under each name in the list on the left. Name, type, price and follow-up keep their own places."
+                    onReset={queueFields ? () => { setQueueFields(undefined); touch(); } : undefined}
+                    testId="zone-queue"
+                  >
+                    <Preview>
+                      <QueueCardPreview name={sample?.label ?? 'A record'} values={queueShown.map(sampleOf)} />
+                    </Preview>
+                    <OrderedFieldList
+                      label="Queue card facts"
+                      value={queueShown}
+                      options={fieldOptions}
+                      sampleOf={sampleOf}
+                      onChange={(next) => { setQueueFields(next); touch(); }}
+                      emptyText="No facts — the card shows only the name."
+                    />
+                  </Zone>
 
-            {/*
-              The third of the split view's three areas — *"Left Pane, Middle
-              Pane Header, Middle Pane Form etc."* (28 September 2026). The
-              cards below are what the open record shows under its tabs, and
-              nothing said so.
-            */}
-            {layoutType === 'detail' && blocks.length > 0 && (
-              <div className="px-1 pt-1">
-                <p className="text-sm font-medium">Middle pane — form</p>
-                <p className="text-2xs text-muted">The cards of fields below the open record’s tabs, in this order.</p>
-              </div>
+                  <div className="space-y-3">
+                    <Zone
+                      step={2}
+                      title="Middle pane header — key facts"
+                      hint="The small labelled chips in the open record’s header, each editable where it stands. The call log always comes last."
+                      onReset={heroFields ? () => { setHeroFields(undefined); touch(); } : undefined}
+                      testId="zone-header"
+                    >
+                      <Preview>
+                        <HeaderFactsPreview facts={heroShown.map((name) => ({ label: labelOf(name), value: sampleOf(name) }))} />
+                      </Preview>
+                      <OrderedFieldList
+                        label="Header key facts"
+                        value={heroShown}
+                        options={fieldOptions}
+                        sampleOf={sampleOf}
+                        onChange={(next) => { setHeroFields(next); touch(); }}
+                        emptyText="No facts — the header shows only the call log."
+                      />
+                      {heroShown.length > 4 && (
+                        <p className="text-2xs text-amber-700 dark:text-amber-300">
+                          More than four makes the header wrap onto a second line on a laptop screen.
+                        </p>
+                      )}
+                    </Zone>
+
+                    <Zone
+                      step={3}
+                      title="Middle pane — tabs"
+                      hint="Rename, reorder or hide the tabs under the header. The first tab is the one a record opens on."
+                      onReset={splitTabs ? () => { setSplitTabs(undefined); touch(); } : undefined}
+                      testId="zone-tabs"
+                    >
+                      <TabsEditor
+                        tabs={tabsShown}
+                        all={allSplitTabs(moduleName)}
+                        onChange={(next) => { setSplitTabs(next); touch(); }}
+                      />
+                    </Zone>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5 px-1 pt-2">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-[11px] font-bold text-white">4</span>
+                  <span>
+                    <span className="block text-sm font-semibold">Middle pane — Overview form</span>
+                    <span className="block text-2xs text-muted">
+                      The cards of fields on the Overview tab, in this order. Drag a field, or use its ⋯ menu to move it.
+                      Fields on the right are not on the form yet.
+                    </span>
+                  </span>
+                </div>
+              </>
             )}
 
             {blocks.map((block, index) => (
@@ -493,18 +599,22 @@ export default function LayoutDesigner(): JSX.Element {
                     onBlur={() => void renameSection(block.key, block.label)}
                   />
 
-                  <label className="flex shrink-0 items-center gap-1 text-2xs text-muted">
-                    <input
-                      type="checkbox"
-                      className="h-3 w-3 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                      checked={Boolean(block.collapsed)}
-                      onChange={(e) => {
-                        setBlocks((prev) => prev.map((b) => b.key === block.key ? { ...b, collapsed: e.target.checked } : b));
-                        touch();
-                      }}
-                    />
-                    Collapsed
-                  </label>
+                  {/* The split view draws every section open, so offering
+                      "Collapsed" there would be a switch that does nothing. */}
+                  {layoutType !== 'detail' && (
+                    <label className="flex shrink-0 items-center gap-1 text-2xs text-muted">
+                      <input
+                        type="checkbox"
+                        className="h-3 w-3 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                        checked={Boolean(block.collapsed)}
+                        onChange={(e) => {
+                          setBlocks((prev) => prev.map((b) => b.key === block.key ? { ...b, collapsed: e.target.checked } : b));
+                          touch();
+                        }}
+                      />
+                      Collapsed
+                    </label>
+                  )}
 
                   <Select
                     value={String(block.columns)}
@@ -517,7 +627,14 @@ export default function LayoutDesigner(): JSX.Element {
                   />
 
                   <button
-                    onClick={() => void removeSection(block.key)}
+                    onClick={() => {
+                      // A section is the module's, not this layout's: deleting
+                      // it removes it from every screen. Its fields are kept
+                      // and go back to the list on the right.
+                      if (window.confirm(`Delete the section "${block.label}" from every screen? Its fields are kept and go back to the list on the right.`)) {
+                        void removeSection(block.key);
+                      }
+                    }}
                     className="btn-ghost shrink-0 p-1 text-slate-400 hover:text-red-500"
                     title="Delete this section everywhere — move its fields out first"
                     aria-label={`Delete section ${block.label}`}
@@ -561,19 +678,50 @@ export default function LayoutDesigner(): JSX.Element {
                           )}
                         >
                           <GripVertical className="h-3 w-3 shrink-0 text-slate-300" />
-                          <span className="min-w-0 flex-1 truncate font-medium">{field?.label ?? fieldName}</span>
-                          {field?.isMandatory && <span className="text-negative">*</span>}
-                          <button
-                            onClick={() => {
-                              setBlocks((prev) => prev.map((b) =>
-                                b.key === block.key ? { ...b, fields: b.fields.filter((f) => f !== fieldName) } : b));
-                              touch();
-                            }}
-                            className="shrink-0 text-slate-300 hover:text-red-500"
-                            title="Remove from layout"
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">
+                              {field?.label ?? fieldName}
+                              {field?.isMandatory && <span className="ml-0.5 text-negative">*</span>}
+                            </span>
+                            {layoutType === 'detail' && (
+                              <span className="block truncate text-2xs text-muted">{sampleOf(fieldName) || '—'}</span>
+                            )}
+                          </span>
+                          {/*
+                            Everything a drag does, without a drag: on a long
+                            form the target section is off screen, and a laptop
+                            trackpad is a poor tool for carrying a field there.
+                          */}
+                          <Dropdown
+                            trigger={
+                              <span className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700" title={`Move ${field?.label ?? fieldName}`} aria-label={`Move ${field?.label ?? fieldName}`}>
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </span>
+                            }
                           >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
+                            {fieldIndex > 0 && (
+                              <DropdownItem icon={<ChevronUp className="h-3.5 w-3.5" />} onClick={() => move(block.key, fieldName, block.key, fieldIndex - 1)}>Move up</DropdownItem>
+                            )}
+                            {fieldIndex < block.fields.length - 1 && (
+                              <DropdownItem icon={<ChevronDown className="h-3.5 w-3.5" />} onClick={() => move(block.key, fieldName, block.key, fieldIndex + 1)}>Move down</DropdownItem>
+                            )}
+                            {blocks.filter((other) => other.key !== block.key).map((other) => (
+                              <DropdownItem key={other.key} onClick={() => move(block.key, fieldName, other.key, other.fields.length)}>
+                                Move to {other.label}
+                              </DropdownItem>
+                            ))}
+                            <DropdownItem
+                              danger
+                              icon={<Trash2 className="h-3.5 w-3.5" />}
+                              onClick={() => {
+                                setBlocks((prev) => prev.map((b) =>
+                                  b.key === block.key ? { ...b, fields: b.fields.filter((f) => f !== fieldName) } : b));
+                                touch();
+                              }}
+                            >
+                              Take off the form
+                            </DropdownItem>
+                          </Dropdown>
                         </div>
                       );
                     })}
@@ -588,6 +736,30 @@ export default function LayoutDesigner(): JSX.Element {
             <button onClick={() => setNewSection(true)} className="btn-secondary btn-sm">
               <Plus className="h-3.5 w-3.5" /> Add section
             </button>
+
+            {/*
+              The one list here that is not the split view: the WhatsApp Chats
+              screen shows the same record beside a conversation, with a strip
+              of facts above it. It keeps its own list, and says plainly which
+              screen it changes.
+            */}
+            {layoutType === 'detail' && (
+              <Zone
+                step={5}
+                title="WhatsApp chat — facts above the conversation"
+                hint="The strip of facts beside a customer’s name on the WhatsApp Chats screen."
+                testId="zone-chat"
+              >
+                <OrderedFieldList
+                  label="WhatsApp chat facts"
+                  value={headerFields}
+                  options={fieldOptions}
+                  sampleOf={sampleOf}
+                  onChange={(next) => { setHeaderFields(next); setHeaderTouched(true); touch(); }}
+                  emptyText="No facts — only the name and the agent show."
+                />
+              </Zone>
+            )}
           </div>
 
           {/*
@@ -670,237 +842,6 @@ export default function LayoutDesigner(): JSX.Element {
     </div>
   );
 }
-
-/**
- * The strip of key-value chips beside a record's name, and the tab it opens on.
- *
- * Both were fixed in code — the header always showed the first four fields of
- * the first section, and every record opened on Overview. On a lead the useful
- * four are not the first four, and a desk that lives in the timeline wants to
- * land there.
- */
-function HeaderStripEditor({
-  value, queueFields, options, defaultTab, tabOptions, tabs, availableTabs, headerTitleField,
-  onChange, onQueueChange, onDefaultTabChange, onTabsChange, onHeaderTitleFieldChange,
-}: {
-  value: string[];
-  queueFields: string[];
-  options: { value: string; label: string }[];
-  defaultTab: string;
-  tabOptions: { value: string; label: string }[];
-  tabs: DetailTabConfig[];
-  availableTabs: { value: string; label: string }[];
-  headerTitleField: string;
-  onChange: (next: string[]) => void;
-  onQueueChange: (next: string[]) => void;
-  onDefaultTabChange: (next: string) => void;
-  onTabsChange: (next: DetailTabConfig[]) => void;
-  onHeaderTitleFieldChange: (next: string) => void;
-}): JSX.Element {
-  const labelOf = (name: string): string => options.find((o) => o.value === name)?.label ?? name;
-  const unused = options.filter((o) => !value.includes(o.value));
-  const unusedTabs = availableTabs.filter((option) => !tabs.some((tab) => tab.key === option.value));
-
-  return (
-    <div className="card overflow-hidden">
-      {/*
-        **28 September 2026, the owner:** *"Reset Layout Designer according to
-        Split View i.e Left Pane, Middle Pane Header, Middle Pane Form etc."*
-
-        Everything this panel arranges was already here; what it did not do was
-        say **where** each list lands. "Summary fields" and "Left pane record
-        fields" sat under one heading called "Record header", so an admin had
-        to try a change and go and look. The split view is the only view, so
-        its own three areas are the names.
-      */}
-      <div className="border-b border-slate-100 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
-        <p className="text-sm font-medium">Split view — left pane and middle pane header</p>
-        <p className="text-2xs text-muted">The queue on the left, and the strip above the open record.</p>
-      </div>
-
-      <div className="space-y-3 p-3">
-        <div>
-          <label className="label">Left pane — the line under each name</label>
-          <p className="mb-1.5 text-2xs text-muted">The facts on each card in the queue, in this order. The contact type, price and follow-up stay in their own positions.</p>
-          <div className="flex flex-wrap gap-1.5">
-            {queueFields.map((name, index) => (
-              <span key={name} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs dark:border-slate-700">
-                <button type="button" disabled={index === 0} aria-label={`Move ${labelOf(name)} left in queue`} onClick={() => {
-                  const next = [...queueFields];
-                  [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                  onQueueChange(next);
-                }}><ChevronUp className="h-3 w-3 -rotate-90" /></button>
-                {labelOf(name)}
-                <button type="button" aria-label={`Remove ${labelOf(name)} from queue`} onClick={() => onQueueChange(queueFields.filter((field) => field !== name))}><X className="h-3 w-3" /></button>
-              </span>
-            ))}
-          </div>
-          <Select value="" placeholder="Add a field…" onChange={(name) => name && onQueueChange([...queueFields, name])}
-            options={options.filter((option) => !queueFields.includes(option.value))} className="mt-2 w-56 py-1.5 text-xs" />
-        </div>
-        <div>
-          <label className="label">Middle pane header — main heading</label>
-          <p className="mb-1.5 text-2xs text-muted">The large name at the top of the open record. Leave it as “Record name” to use the module’s normal label.</p>
-          <Select value={headerTitleField} onChange={onHeaderTitleFieldChange} placeholder="Record name" options={options} className="w-56 py-1.5 text-xs" />
-        </div>
-        <div>
-          <label className="label">Middle pane header — key fields</label>
-          <p className="mb-1.5 text-2xs text-muted">
-            The strip under the open record’s name, in this order. A field with no value on a
-            record shows as a dash rather than disappearing, so what you pick here is what
-            every record shows.
-          </p>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {value.map((name, i) => (
-              <span
-                key={name}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800"
-              >
-                <button
-                  onClick={() => {
-                    const next = [...value];
-                    [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                    onChange(next);
-                  }}
-                  disabled={i === 0}
-                  className="text-slate-300 hover:text-slate-500 disabled:opacity-25"
-                  aria-label={`Move ${labelOf(name)} left`}
-                >
-                  <ChevronUp className="h-3 w-3 -rotate-90" />
-                </button>
-                <span className="font-medium">{labelOf(name)}</span>
-                <button
-                  onClick={() => onChange(value.filter((v) => v !== name))}
-                  className="text-slate-300 hover:text-red-500"
-                  aria-label={`Remove ${labelOf(name)} from the header`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
-            {value.length === 0 && (
-              <span className="text-xs text-muted">No summary fields — only the name and owner will show.</span>
-            )}
-          </div>
-
-          {unused.length > 0 && (
-            <div className="mt-2 flex items-center gap-2">
-              <Select
-                value=""
-                placeholder="Add a field…"
-                onChange={(v) => v && onChange([...value, v])}
-                options={unused}
-                className="w-56 py-1.5 text-xs"
-              />
-            </div>
-          )}
-        </div>
-
-
-        {/*
-          Two switches were here — "show the status chip beside the name" and
-          "show the record number beside the name" — and both are gone on the
-          owner's instruction. The status chip is simply always drawn, and the
-          record number is never drawn; neither was a decision anyone wanted to
-          make per module, and a settings page is worth more for what it leaves
-          out.
-        */}
-
-        <div>
-          <label className="label">Middle pane — tabs</label>
-          <p className="mb-1.5 text-2xs text-muted">
-            Rename, reorder, hide and restore Overview, Timeline, Calls, Files and related sections.
-          </p>
-          <div className="space-y-1.5">
-            {tabs.map((tab, index) => (
-              <div key={tab.key} className="flex items-center gap-1.5 rounded-lg border border-slate-200 p-1.5 dark:border-slate-700">
-                <div className="flex shrink-0 flex-col">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = [...tabs];
-                      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                      onTabsChange(next);
-                    }}
-                    disabled={index === 0}
-                    className="text-slate-300 hover:text-slate-500 disabled:opacity-25"
-                    aria-label={`Move ${tab.label} up`}
-                  >
-                    <ChevronUp className="h-3 w-3" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = [...tabs];
-                      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-                      onTabsChange(next);
-                    }}
-                    disabled={index === tabs.length - 1}
-                    className="text-slate-300 hover:text-slate-500 disabled:opacity-25"
-                    aria-label={`Move ${tab.label} down`}
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                </div>
-                <input
-                  className="input min-w-0 flex-1 py-1 text-xs"
-                  value={tab.label}
-                  aria-label={`Name for ${tab.key} tab`}
-                  onChange={(event) => onTabsChange(tabs.map((item) => (
-                    item.key === tab.key ? { ...item, label: event.target.value } : item
-                  )))}
-                />
-                <span className="hidden shrink-0 font-mono text-2xs text-muted sm:inline">{tab.key}</span>
-                <button
-                  type="button"
-                  className="btn-ghost p-1 text-slate-400 hover:text-red-500"
-                  onClick={() => onTabsChange(tabs.filter((item) => item.key !== tab.key))}
-                  disabled={tabs.length === 1}
-                  aria-label={`Hide ${tab.label} tab`}
-                  title={tabs.length === 1 ? 'A record needs at least one tab' : 'Hide tab'}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-          {unusedTabs.length > 0 && (
-            <Select
-              value=""
-              placeholder="Restore a hidden tab…"
-              onChange={(key) => {
-                const option = unusedTabs.find((item) => item.value === key);
-                if (option) onTabsChange([...tabs, { key: option.value, label: option.label }]);
-              }}
-              options={unusedTabs}
-              className="mt-2 w-56 py-1.5 text-xs"
-            />
-          )}
-          {tabs.length === 0 && (
-            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-              At least one tab is recommended. Restore one before saving to keep the record body usable.
-            </p>
-          )}
-        </div>
-
-        <div>
-          <label className="label" htmlFor="default-tab">Opens on</label>
-          <Select
-            value={defaultTab}
-            onChange={onDefaultTabChange}
-            options={tabOptions}
-            disabled={tabOptions.length === 0}
-            className="w-56 py-1.5 text-sm"
-          />
-          <p className="mt-1 text-2xs text-muted">
-            The tab shown when someone opens a record of this module.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 
 /**
  * Names a new section before it is created, in the same styled dialog the

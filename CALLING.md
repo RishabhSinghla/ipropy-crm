@@ -889,3 +889,39 @@ its own filter out so it keeps showing the whole split. "When" slices are
 disjoint (today / earlier this week / earlier this month / before), with
 matching entries in the When dropdown. Every row now always says its Duration
 and either offers the recording or says "No recording".
+
+### Recordings named the most common way never matched — 29 September 2026
+
+**The owner:** *"I am frustrated it isn't working."* Setup was one half (the folder has
+to be picked, 26 September above). The other half was a bug in the phone app.
+
+`RecordingFinder` joins a recording to a call by the number in the file's **name** plus
+a five-minute time window. It found that number by deleting spaces, hyphens **and
+underscores** and then taking the longest run of 7–12 digits. Deleting the underscore
+glues the number to the date, so the commonest naming of all —
+`9876543210_20260929101010.mp3`, `Call recording 9876543210_260929_101010.m4a` — came
+out as `929101010` or `9101010`, matched nothing, and the file stayed on the phone.
+Checked against seven real naming styles: five failed.
+
+Now it asks the question the other way round (`matchTo`): **is this call's own
+number (last ten digits) somewhere in the file name's digits?** Nothing either side of
+it can spoil that, and the time window still has to agree, so a date that happens to
+contain someone's digits cannot pair the wrong call. A file named only by the
+contact's *name* (`Rahul Sharma_260929.m4a`) still cannot match — there is no number
+in it — and that is a setting in the phone's own recorder, not ours.
+
+**It is Android code, so it reaches a phone only in a new APK: 2.4.1.** Built by
+`build-the-app.yml`; this container has no Android SDK, so the build there is the
+compile check.
+
+**Setting recordings up, in the order it has to happen on each phone:**
+
+1. Turn on **automatic call recording** in the phone's own dialler — menu names vary by phone (typically Samsung: Phone →
+   ⋮ → Settings → Record calls → Auto record; Xiaomi/Redmi: Phone → Settings → Call
+   recording → Record calls automatically). Android does not let any other app record
+   a call; iPropy only picks up the file the phone makes.
+2. Make one call and check a recording file appears in the phone's own recordings.
+3. In iPropy on the phone: **You → Call recordings → choose folder**, and pick the
+   folder those files are in (often `Recordings/Call` or `MIUI/sound_recorder/call_rec`).
+4. Recordings upload with the next call sync (about every fifteen minutes, or *Sync
+   now*), and appear on the call in the Calls tab.

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
 import { assignmentField, pipelineFieldOf, subtitleFieldsOf } from './fields';
+import { heroFieldNames, splitTabsFor, type SplitTab } from './splitViewLayout';
 
 /**
  * Which fields a record's panes show, decided once for every screen that
@@ -41,6 +42,10 @@ export interface DetailLayout {
   headerFields?: string[];
   headerFieldsCustomized?: boolean;
   queueFields?: string[];
+  /** The key facts in the split view's header; see `lib/splitViewLayout.ts`. */
+  heroFields?: string[];
+  /** The split view's tabs, in order; the first is the one a record opens on. */
+  splitTabs?: { key: string; label?: string }[];
 }
 
 export interface FieldBlockSpec {
@@ -99,6 +104,10 @@ export interface RecordPanes {
   phoneField?: FieldMeta;
   /** The first email on the record, so a header can offer to write to it. */
   emailField?: FieldMeta;
+  /** The key facts in the split view's header, in the Layout Designer's order. */
+  heroFields: FieldMeta[];
+  /** The split view's tabs; the first is the one a record opens on. */
+  tabs: SplitTab[];
 }
 
 export function useRecordPanes(module: DescribedModule): RecordPanes {
@@ -224,8 +233,17 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
     }];
   }, [layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
 
+  const heroFields = useMemo(
+    () => heroFieldNames(layout.heroFields, followUpField?.name, statusField?.name)
+      .map((name) => fieldMap.get(name))
+      .filter((field): field is FieldMeta => Boolean(field?.isActive && field.displayType !== 'hidden')),
+    [layout.heroFields, followUpField, statusField, fieldMap],
+  );
+  const tabs = useMemo(() => splitTabsFor(module.name, layout.splitTabs), [module.name, layout.splitTabs]);
+
   return {
     headerFields, queueFields, blocks, subtitleFields,
     assignedField, statusField, followUpField, phoneField, emailField,
+    heroFields, tabs,
   };
 }

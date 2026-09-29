@@ -38,7 +38,8 @@ object RecordingFinder {
     data class Candidate(
         val uri: Uri,
         val name: String,
-        val number: String?,
+        /** Every digit in the file name, in order — the number is somewhere in here. */
+        val digits: String,
         val modifiedAt: Long,
         val size: Long,
     ) {
@@ -74,7 +75,7 @@ object RecordingFinder {
                     Candidate(
                         uri = file.uri,
                         name = name,
-                        number = extractNumber(name),
+                        digits = name.filter { it.isDigit() },
                         modifiedAt = file.lastModified(),
                         size = file.length(),
                     ),
@@ -86,22 +87,6 @@ object RecordingFinder {
     }
 
     /**
-     * Pull a phone number out of the filename.
-     *
-     * Every OEM format seen in the wild embeds it as a run of digits, usually
-     * with the country code and sometimes with separators. Taking the longest
-     * digit run of a plausible length is more robust than trying to enumerate
-     * the formats — and a wrong extraction just means no match, not a bad one.
-     */
-    private fun extractNumber(fileName: String): String? =
-        Regex("\\d{7,15}")
-            .findAll(fileName.replace(Regex("[-_\\s]"), ""))
-            .map { it.value }
-            // A 14-digit run is usually a yyyyMMddHHmmss timestamp, not a number.
-            .filter { it.length in 7..12 }
-            .maxByOrNull { it.length }
-
-    /**
      * Match a recording to a call.
      *
      * Requires *both* the number and the time to agree. Either alone produces
@@ -109,12 +94,17 @@ object RecordingFinder {
      * two different people called a minute apart.
      */
     fun matchTo(candidate: Candidate, call: Api.CallEntry): Boolean {
-        val fileDigits = candidate.number?.takeLast(10) ?: return false
+        /*
+          Is the call's own number inside the file name? Asked this way round
+          on 29 September 2026. It used to *extract* a number from the name,
+          after first deleting the underscores — which glued the number to the
+          date in the most common naming of all, "9876543210_20260929101010",
+          read it as "929101010", and matched nothing. Every recording named
+          that way stayed on the phone. Looking for a number we already know
+          cannot be fooled by what sits either side of it.
+        */
         val callDigits = call.number.filter { it.isDigit() }.takeLast(10)
-        if (fileDigits != callDigits) return false
-
-        // The recorder closes the file when the call ends, so its modified time
-        // lands near the end of the call rather than the start.
+        if (callDigits.length < 7 || !candidate.digits.contains(callDigits)) return false
         val callEnd = call.timestamp + call.durationSeconds * 1000L
         return kotlin.math.abs(candidate.modifiedAt - callEnd) <= MATCH_WINDOW_MS ||
             kotlin.math.abs(candidate.modifiedAt - call.timestamp) <= MATCH_WINDOW_MS

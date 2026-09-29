@@ -26,6 +26,7 @@ import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from '.
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar } from './RecordAvatar';
 import { HeroStatusChips } from './HeroStatusChips';
+import type { SplitTabKey } from '../lib/splitViewLayout';
 import { api } from '../lib/api';
 import { activeSortOption, sortOptions } from '../lib/listSort';
 import { cn, restrictionForField } from '../lib/utils';
@@ -33,7 +34,16 @@ import { toast } from '../lib/store';
 import { queueRecordUrl } from '../lib/saveNextUrl';
 import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
 
-type DeskTabKey = 'overview' | 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
+type DeskTabKey = SplitTabKey;
+
+const TAB_ICON: Record<DeskTabKey, JSX.Element | null> = {
+  overview: null,
+  timeline: null,
+  matching: <Link2 className="h-3.5 w-3.5" />,
+  files: <FileText className="h-3.5 w-3.5" />,
+  calls: <Phone className="h-3.5 w-3.5" />,
+  whatsapp: <MessageCircle className="h-3.5 w-3.5" />,
+};
 
 /**
  * The module as the list itself has it: fields, the layout an admin arranged,
@@ -179,7 +189,7 @@ export function IpropyWorkspace({
   onTypePick?: (values: string[]) => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
-  const [tab, setTab] = useState<DeskTabKey>('overview');
+  const [tab, setTab] = useState<DeskTabKey | null>(null);
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
   const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -336,9 +346,11 @@ export function IpropyWorkspace({
     reasoning is the mistake this repo keeps finding months later.
   */
   const {
-    headerFields, queueFields, blocks,
+    queueFields, blocks, heroFields, tabs,
     assignedField, statusField, followUpField, phoneField, emailField,
   } = useRecordPanes(module);
+  // Nothing picked yet, or a tab the designer has since hidden: the first tab.
+  const shownTab: DeskTabKey = tabs.some((item) => item.key === tab) ? tab! : tabs[0]!.key;
 
   /*
     Which field holds the name. `module.labelFields` is what every other
@@ -644,7 +656,15 @@ export function IpropyWorkspace({
           and the facts a rep changes on a call along the bottom.
         */}
         <header className="shrink-0 border-b border-slate-200/80 bg-gradient-to-b from-sage-50/70 via-cream-50 to-white p-3.5 dark:border-slate-800 dark:from-slate-800/60 dark:via-slate-900 dark:to-slate-900">
-          <div className="mb-2 flex w-full items-center justify-between gap-2">
+          {/*
+            **29 September 2026, the owner:** *"move Assigned to and Updated
+            towards left … right next to where that arrow key ends"*, and
+            *"where current updated 4 hours ago is written there I need to see
+            tag"*. So the queue position, the agent and the age read as one
+            group from the left, and the record's tags take the right end —
+            where they have room, rather than squeezed beside the icons.
+          */}
+          <div className="mb-2 flex w-full items-center gap-3">
             <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200/60 bg-white/80 px-2 py-0.5 text-xs font-medium text-slate-500 shadow-2xs dark:border-slate-700 dark:bg-slate-800/80" aria-label="Record navigation">
               <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -701,6 +721,7 @@ export function IpropyWorkspace({
                 · Updated {relativeTime(active.updatedAt)}
               </span>
             )}
+            <TagChips module={module.name} tags={active.tags} className="ml-auto justify-end" />
 
           </div>
 
@@ -803,13 +824,6 @@ export function IpropyWorkspace({
             <div className="ml-auto flex shrink-0 flex-col items-end gap-2" data-testid="split-hero-actions-status">
               {/* Right: everything you do to the record, in one group. */}
               <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-              {/*
-                Tags first — *"move tag from left top to beside of icons of
-                whatsapp and call, The tag alignment should be Before whatsapp
-                and call"*. They read as a label on the controls rather than
-                as one more thing competing with the name.
-              */}
-              <TagChips module={module.name} tags={active.tags} className="hidden max-w-[6rem] shrink overflow-hidden lg:flex" />
               <TagButton
                 module={module.name}
                 recordId={active.id}
@@ -921,6 +935,7 @@ export function IpropyWorkspace({
                   module={module}
                   row={active}
                   canEdit={canEdit}
+                  fields={heroFields}
                   statusField={statusField}
                   followUpField={followUpField}
                   className="justify-end"
@@ -939,12 +954,17 @@ export function IpropyWorkspace({
           rather than as the everyday state.
         */}
         <nav className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900" aria-label="Record workspace sections">
-          <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
-          <DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab>
-          {(module.name === 'leads' || module.name === 'properties') && <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'} {matchingCount ? <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{matchingCount}</span> : null}</DeskTab>}
-          <DeskTab active={tab === 'files'} onClick={() => setTab('files')}><FileText className="h-3.5 w-3.5" />Files</DeskTab>
-          <DeskTab active={tab === 'calls'} onClick={() => setTab('calls')}><Phone className="h-3.5 w-3.5" />Calls</DeskTab>
-          <DeskTab active={tab === 'whatsapp'} onClick={() => setTab('whatsapp')}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab>
+          {/*
+            The tabs, their order and their names are the Layout Designer's
+            (29 September 2026). The first is the one a record opens on.
+          */}
+          {tabs.map((item) => (
+            <DeskTab key={item.key} active={shownTab === item.key} onClick={() => setTab(item.key)}>
+              {TAB_ICON[item.key]}
+              {item.label}
+              {item.key === 'matching' && matchingCount ? <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{matchingCount}</span> : null}
+            </DeskTab>
+          ))}
         </nav>
 
         {/*
@@ -955,9 +975,9 @@ export function IpropyWorkspace({
         */}
         <div className={cn(
           'min-w-0 flex-1 bg-[#fafbfa] dark:bg-slate-950/40',
-          tab === 'whatsapp' ? 'flex min-h-0 flex-col overflow-hidden' : 'space-y-5 overflow-y-auto p-5',
+          shownTab === 'whatsapp' ? 'flex min-h-0 flex-col overflow-hidden' : 'space-y-5 overflow-y-auto p-5',
         )}>
-          {tab === 'overview' && blocks.map((block) => (
+          {shownTab === 'overview' && blocks.map((block) => (
             <FieldBlock
               key={block.key}
               module={module}
@@ -968,11 +988,11 @@ export function IpropyWorkspace({
               canEdit={canEdit}
             />
           ))}
-          {tab === 'timeline' && <TimelineTab module={module.name} id={active.id} />}
-          {tab === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
-          {tab === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
-          {tab === 'calls' && <CallsTab recordId={active.id} />}
-          {tab === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
+          {shownTab === 'timeline' && <TimelineTab module={module.name} id={active.id} />}
+          {shownTab === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
+          {shownTab === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
+          {shownTab === 'calls' && <CallsTab recordId={active.id} />}
+          {shownTab === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
         </div>
       </section>}
 

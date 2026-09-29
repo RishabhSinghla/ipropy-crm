@@ -943,6 +943,9 @@ export default function ListView(): JSX.Element {
               fieldMap={fieldMap}
               active={taskQueue}
               onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
+              ownerField={ownerField?.name ?? null}
+              agent={agentPick}
+              onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
             />
           )}
 

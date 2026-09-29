@@ -7,7 +7,8 @@ import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
 import { badgeVars } from '../lib/color';
 import { pipelineFieldOf } from '../lib/fields';
-import { Avatar, Dropdown } from './ui';
+import { Dropdown } from './ui';
+import { AgentPicker } from './AgentPicker';
 
 /**
  * The pipeline at a glance, and a filter built from it.
@@ -133,17 +134,6 @@ function BreakdownPanel({
       view: viewId, page: 1, pageSize: 1, filter: baseFilter, groupBy: fieldName,
     }),
   });
-  const { data: rawUsers } = useQuery({
-    queryKey: ['users', 'assignable'],
-    queryFn: () => api.users(false, false, true),
-  });
-  // `api.users` is untyped on purpose (the admin screens read many shapes off
-  // it); narrow to the two fields this panel needs rather than casting inline.
-  const users = (rawUsers ?? []).map((u) => ({
-    id: String((u as { id?: unknown }).id ?? ''),
-    name: String((u as { fullName?: unknown }).fullName ?? ''),
-  })).filter((u) => u.id && u.name);
-
   const groups = data?.groups ?? [];
   // Still the header's number, and what "All stages" shows; the per-row
   // percentages are gone on the owner's instruction — the count is the fact,
@@ -184,48 +174,7 @@ function BreakdownPanel({
       </div>
 
       <div className="space-y-1 p-2 pt-1.5">
-        {users.length > 1 && (
-          <div className="border-b border-slate-100 px-1 pb-2 pt-0.5 dark:border-slate-800">
-            <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted">
-              <span>Filter by agent</span>
-              <button
-                type="button"
-                onClick={() => onPickAgent(null)}
-                className={cn(
-                  'font-medium normal-case',
-                  agent === null ? 'text-muted' : 'text-brand-600 hover:underline dark:text-brand-400',
-                )}
-              >
-                All
-              </button>
-            </div>
-            {/* Two rows of agents, then it scrolls. Nine people is three rows
-                of chips, which pushed the stages themselves off the screen. */}
-            <div className="grid max-h-[3.4rem] grid-cols-3 gap-1 overflow-y-auto">
-              {users.slice(0, 9).map((user) => {
-                const mine = agent === user.id;
-                return (
-                  <button
-                    key={user.id}
-                    type="button"
-                    aria-pressed={mine}
-                    title={user.name}
-                    onClick={() => onPickAgent(mine ? null : user.id)}
-                    className={cn(
-                      'flex items-center justify-center gap-1 truncate rounded-md border px-1.5 py-1 text-[10px] transition-colors',
-                      mine
-                        ? 'border-brand-200 bg-brand-50 font-semibold text-brand-700 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200'
-                        : 'border-slate-200 bg-slate-50 font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800',
-                    )}
-                  >
-                    <Avatar name={user.name} size={14} className="text-[8px]" />
-                    <span className="truncate">{user.name.split(/\s+/)[0]}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <AgentPicker agent={agent} onPickAgent={onPickAgent} />
 
         {/* All stages, which is what no choice means — shown as a row so the
             way back is in the same place as the way in. */}

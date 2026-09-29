@@ -97,10 +97,17 @@ function KeyLabel({ children }: { children: React.ReactNode }): JSX.Element {
   );
 }
 
-export function HeroStatusChips({ module, row, canEdit, statusField, followUpField, className }: {
+export function HeroStatusChips({ module, row, canEdit, fields, statusField, followUpField, className }: {
   module: DescribedModule;
   row: RecordEnvelope;
   canEdit: boolean;
+  /**
+   * The key facts, in the Layout Designer's order (29 September 2026 — before
+   * that the header always showed the chase date and the stage and nothing an
+   * admin chose). The chase date and the stage keep their own coloured chips
+   * wherever they are placed; anything else is a plain chip.
+   */
+  fields: FieldMeta[];
   statusField?: FieldMeta;
   followUpField?: FieldMeta;
   className?: string;
@@ -143,37 +150,41 @@ export function HeroStatusChips({ module, row, canEdit, statusField, followUpFie
         className,
       )}
     >
-      {followUpField && (
-        // No wrapper tint: the chip inside carries its own, and a tint under a
-        // tint is how "overdue" stopped reading as overdue once already.
-        <span className={PAIR} title={followUpField.label}>
-          <KeyLabel>{followUpField.label}</KeyLabel>
-          <FollowUpChipCell module={module} row={row} field={followUpField} canEdit={canEdit} size="hero" />
-        </span>
-      )}
-
-      {statusField && (
-        <span className={PAIR}>
-        <KeyLabel>{statusField.label}</KeyLabel>
-        <span
-          // `badge-tinted`, not `badge`: the base class carries its own padding
-          // and size, which would fight CHIP's for the stylesheet's attention.
-          // The tinted one sets three colours and nothing else.
-          className={cn(CHIP, statusColour ? 'badge-tinted' : CHIP_PLAIN, 'truncate')}
-          style={statusColour ? badgeVars(statusColour) : undefined}
-          title={statusField.label}
-        >
-          <HeaderChipValue
-            module={module}
-            row={row}
-            field={statusField}
-            canEdit={canEdit}
-            asWords
-            onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
-          />
-        </span>
-        </span>
-      )}
+      {fields.map((field) => {
+        if (field.name === followUpField?.name) {
+          return (
+            // No wrapper tint: the chip inside carries its own, and a tint under a
+            // tint is how "overdue" stopped reading as overdue once already.
+            <span key={field.name} className={PAIR} title={field.label}>
+              <KeyLabel>{field.label}</KeyLabel>
+              <FollowUpChipCell module={module} row={row} field={field} canEdit={canEdit} size="hero" />
+            </span>
+          );
+        }
+        const coloured = field.name === statusField?.name ? statusColour : null;
+        return (
+          <span key={field.name} className={PAIR}>
+            <KeyLabel>{field.label}</KeyLabel>
+            <span
+              // `badge-tinted`, not `badge`: the base class carries its own padding
+              // and size, which would fight CHIP's for the stylesheet's attention.
+              // The tinted one sets three colours and nothing else.
+              className={cn(CHIP, coloured ? 'badge-tinted' : CHIP_PLAIN, 'truncate')}
+              style={coloured ? badgeVars(coloured) : undefined}
+              title={field.label}
+            >
+              <HeaderChipValue
+                module={module}
+                row={row}
+                field={field}
+                canEdit={canEdit}
+                asWords
+                onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
+              />
+            </span>
+          </span>
+        );
+      })}
 
       <span className={PAIR}>
         {/* The call pill's own word. It is not a field on the module — an

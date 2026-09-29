@@ -9,12 +9,31 @@ import { cn } from '../lib/utils';
 import { dial } from '../lib/nativeActions';
 import { phoneOf } from '../mobile/rows';
 import { Avatar, Dropdown } from './ui';
+import { AgentPicker } from './AgentPicker';
 
 export type TaskQueue = 'pending' | 'today' | 'tomorrow' | 'week' | 'month';
 
 /** Date-only values are stored without a time, so keep task filters date-only too. */
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * The queues narrowed to one agent's records, when an agent is picked.
+ *
+ * The same condition the list itself adds for the agent, so the numbers on the
+ * cards are the rows the list then shows.
+ */
+export function followUpFiltersFor(
+  fieldName: string, agent: { field: string; userId: string } | null,
+): Record<TaskQueue, FilterGroup> {
+  const filters = followUpFilters(fieldName);
+  if (!agent) return filters;
+  const mine = { field: agent.field, operator: 'equals' as const, value: agent.userId };
+  for (const queue of Object.keys(filters) as TaskQueue[]) {
+    filters[queue] = { ...filters[queue], conditions: [...filters[queue].conditions, mine] };
+  }
+  return filters;
 }
 
 /**
@@ -64,7 +83,7 @@ const QUEUE_LABEL: Record<TaskQueue, string> = {
 };
 
 export function FollowUpQueue({
-  moduleName, fieldName, viewId, fieldMap, active, onPick,
+  moduleName, fieldName, viewId, fieldMap, active, onPick, ownerField, agent, onPickAgent,
 }: {
   moduleName: string;
   fieldName: string;
@@ -72,8 +91,14 @@ export function FollowUpQueue({
   fieldMap: Map<string, FieldMeta>;
   active: TaskQueue | null;
   onPick: (queue: TaskQueue | null) => void;
+  /** The module's assignment field; without one there is no agent to pick. */
+  ownerField: string | null;
+  /** The list's own agent choice — the same one the Status panel sets. */
+  agent: string | null;
+  onPickAgent: (userId: string | null) => void;
 }): JSX.Element {
-  const filters = followUpFilters(fieldName);
+  const scope = ownerField && agent ? { field: ownerField, userId: agent } : null;
+  const filters = followUpFiltersFor(fieldName, scope);
   const countQuery = (queue: TaskQueue): ListQuery => ({ view: viewId, page: 1, pageSize: 1, filter: filters[queue] });
 
   // Only the three the trigger adds up are fetched while the panel is shut.
@@ -128,10 +153,12 @@ export function FollowUpQueue({
             fieldName={fieldName}
             viewId={viewId}
             fieldMap={fieldMap}
+            filters={filters}
             counts={counts}
             total={total}
             active={active}
             onPick={(queue) => { onPick(queue); close(); }}
+            agentPicker={ownerField ? <AgentPicker agent={agent} onPickAgent={onPickAgent} /> : null}
           />
         )}
       </Dropdown>
@@ -153,19 +180,20 @@ export function FollowUpQueue({
 
 /** Mounted only while the panel is open, so its queries cost nothing when it is shut. */
 function QueuePanel({
-  moduleName, fieldName, viewId, fieldMap, counts, total, active, onPick,
+  moduleName, fieldName, viewId, fieldMap, filters, counts, total, active, onPick, agentPicker,
 }: {
   moduleName: string;
   fieldName: string;
   viewId: string | undefined;
   fieldMap: Map<string, FieldMeta>;
+  filters: Record<TaskQueue, FilterGroup>;
   counts: { pending: number; today: number; tomorrow: number };
   total: number;
   active: TaskQueue | null;
   onPick: (queue: TaskQueue | null) => void;
+  agentPicker: JSX.Element | null;
 }): JSX.Element {
   const navigate = useNavigate();
-  const filters = followUpFilters(fieldName);
 
   const week = useQuery({
     queryKey: ['task-count', moduleName, viewId, 'week', filters.week],
@@ -222,6 +250,8 @@ function QueuePanel({
           Start calling
         </button>
       </div>
+
+      {agentPicker && <div className="px-2 pt-2">{agentPicker}</div>}
 
       <div className="grid grid-cols-3 gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
         {CARDS.map((card) => {
