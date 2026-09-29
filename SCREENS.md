@@ -925,3 +925,24 @@ nothing at all; what it holds is the only honest way to find it.
 chose is not taken away by a queue"* fails on a clean tree, so it predates all
 of this — after the Task queue is opened, the sort menu's A–Z button is
 `disabled`. It is a real bug and it is somebody's next job.
+
+### The Layout Designer is named for the panes it arranges
+
+*"Reset Layout Designer according to Split View i.e Left Pane, Middle Pane
+Header, Middle Pane Form etc."* — 28 September 2026.
+
+**Everything it arranges was already there; what it did not do was say where
+each list lands.** "Summary fields" and "Left pane record fields" sat under one
+heading called "Record header", so an admin had to make a change and go and
+look to find out which strip they had just edited. The split view is the only
+view, so its own three areas are the names now, in the order a rep meets them:
+
+* **Left pane — the line under each name** (`queueFields`)
+* **Middle pane header — main heading** (`headerTitleField`)
+* **Middle pane header — key fields** (`headerFields`)
+* **Middle pane — tabs**, and which one a record opens on
+* **Middle pane — form** (the blocks), which had no heading at all
+
+**No stored shape changed.** The same four lists go to the same four keys in
+`ipy_layout.config`, so every arrangement an admin has already made reads back
+exactly as it did — this is wording and order, not a migration.

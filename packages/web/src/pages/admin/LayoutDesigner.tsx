@@ -442,6 +442,19 @@ export default function LayoutDesigner(): JSX.Element {
               />
             )}
 
+            {/*
+              The third of the split view's three areas — *"Left Pane, Middle
+              Pane Header, Middle Pane Form etc."* (28 September 2026). The
+              cards below are what the open record shows under its tabs, and
+              nothing said so.
+            */}
+            {layoutType === 'detail' && blocks.length > 0 && (
+              <div className="px-1 pt-1">
+                <p className="text-sm font-medium">Middle pane — form</p>
+                <p className="text-2xs text-muted">The cards of fields below the open record’s tabs, in this order.</p>
+              </div>
+            )}
+
             {blocks.map((block, index) => (
               <div key={block.key} className="card overflow-hidden">
                 <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
@@ -690,20 +703,50 @@ function HeaderStripEditor({
 
   return (
     <div className="card overflow-hidden">
+      {/*
+        **28 September 2026, the owner:** *"Reset Layout Designer according to
+        Split View i.e Left Pane, Middle Pane Header, Middle Pane Form etc."*
+
+        Everything this panel arranges was already here; what it did not do was
+        say **where** each list lands. "Summary fields" and "Left pane record
+        fields" sat under one heading called "Record header", so an admin had
+        to try a change and go and look. The split view is the only view, so
+        its own three areas are the names.
+      */}
       <div className="border-b border-slate-100 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
-        <p className="text-sm font-medium">Record header</p>
+        <p className="text-sm font-medium">Split view — left pane and middle pane header</p>
+        <p className="text-2xs text-muted">The queue on the left, and the strip above the open record.</p>
       </div>
 
       <div className="space-y-3 p-3">
         <div>
-          <label className="label">Main heading</label>
-          <p className="mb-1.5 text-2xs text-muted">Choose which field appears as the large name at the top. Leave it as “Record name” to use the module’s normal label.</p>
+          <label className="label">Left pane — the line under each name</label>
+          <p className="mb-1.5 text-2xs text-muted">The facts on each card in the queue, in this order. The contact type, price and follow-up stay in their own positions.</p>
+          <div className="flex flex-wrap gap-1.5">
+            {queueFields.map((name, index) => (
+              <span key={name} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs dark:border-slate-700">
+                <button type="button" disabled={index === 0} aria-label={`Move ${labelOf(name)} left in queue`} onClick={() => {
+                  const next = [...queueFields];
+                  [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                  onQueueChange(next);
+                }}><ChevronUp className="h-3 w-3 -rotate-90" /></button>
+                {labelOf(name)}
+                <button type="button" aria-label={`Remove ${labelOf(name)} from queue`} onClick={() => onQueueChange(queueFields.filter((field) => field !== name))}><X className="h-3 w-3" /></button>
+              </span>
+            ))}
+          </div>
+          <Select value="" placeholder="Add a field…" onChange={(name) => name && onQueueChange([...queueFields, name])}
+            options={options.filter((option) => !queueFields.includes(option.value))} className="mt-2 w-56 py-1.5 text-xs" />
+        </div>
+        <div>
+          <label className="label">Middle pane header — main heading</label>
+          <p className="mb-1.5 text-2xs text-muted">The large name at the top of the open record. Leave it as “Record name” to use the module’s normal label.</p>
           <Select value={headerTitleField} onChange={onHeaderTitleFieldChange} placeholder="Record name" options={options} className="w-56 py-1.5 text-xs" />
         </div>
         <div>
-          <label className="label">Summary fields</label>
+          <label className="label">Middle pane header — key fields</label>
           <p className="mb-1.5 text-2xs text-muted">
-            Shown as chips beside the record name, in this order. A field with no value on a
+            The strip under the open record’s name, in this order. A field with no value on a
             record shows as a dash rather than disappearing, so what you pick here is what
             every record shows.
           </p>
@@ -753,25 +796,6 @@ function HeaderStripEditor({
           )}
         </div>
 
-        <div>
-          <label className="label">Left pane record fields</label>
-          <p className="mb-1.5 text-2xs text-muted">Choose and order the facts below each record name. The contact type, price and follow-up stay in their own positions.</p>
-          <div className="flex flex-wrap gap-1.5">
-            {queueFields.map((name, index) => (
-              <span key={name} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs dark:border-slate-700">
-                <button type="button" disabled={index === 0} aria-label={`Move ${labelOf(name)} left in queue`} onClick={() => {
-                  const next = [...queueFields];
-                  [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                  onQueueChange(next);
-                }}><ChevronUp className="h-3 w-3 -rotate-90" /></button>
-                {labelOf(name)}
-                <button type="button" aria-label={`Remove ${labelOf(name)} from queue`} onClick={() => onQueueChange(queueFields.filter((field) => field !== name))}><X className="h-3 w-3" /></button>
-              </span>
-            ))}
-          </div>
-          <Select value="" placeholder="Add a field…" onChange={(name) => name && onQueueChange([...queueFields, name])}
-            options={options.filter((option) => !queueFields.includes(option.value))} className="mt-2 w-56 py-1.5 text-xs" />
-        </div>
 
         {/*
           Two switches were here — "show the status chip beside the name" and
@@ -783,7 +807,7 @@ function HeaderStripEditor({
         */}
 
         <div>
-          <label className="label">Detail tabs</label>
+          <label className="label">Middle pane — tabs</label>
           <p className="mb-1.5 text-2xs text-muted">
             Rename, reorder, hide and restore Overview, Timeline, Calls, Files and related sections.
           </p>
