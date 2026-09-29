@@ -10,14 +10,19 @@
  * Top to bottom: who is next, live controls, disposition and chase date, then
  * the three ways out. The shared comments composer below is the only notes box.
  *
- * It appears only while a call is up on this record; team notes remain visible.
+ * It is permanently fixed above team notes. At rest it says plainly that no
+ * call is running; while the handset reports activity it follows that state;
+ * and during a CRM call it expands into the full working controls.
  */
 import { type JSX, useEffect, useState } from 'react';
 import {
   CalendarDays, ChevronDown, Pause, PhoneCall, PhoneOff, SkipForward, Volume2, VolumeX,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useLiveCall } from '../lib/liveCall';
-import { useCallDeckState, type CallDeckState } from './LiveCallDeck';
+import {
+  returnToCallUrl, useCallDeckState, usePhoneReport, type CallDeckState,
+} from './LiveCallDeck';
 import { quickFollowUpDates } from '../lib/followUpDates';
 import { Spinner } from './ui';
 import { cn } from '../lib/utils';
@@ -25,16 +30,16 @@ import { useApp } from '../lib/store';
 import { relativeDueDay } from '@ipropy/shared';
 
 /**
- * Nothing at all unless this very record is the one being called.
- *
- * The check is here rather than inside, because `useCallDeckState` assumes a
- * call exists — and because a deck drawn on a record that is not the one
- * ringing is how a note gets written against the wrong person.
+ * One permanent home for calling, directly above Notes & Comments.
  */
-export function CallDeckPanel({ module, recordId }: { module: string; recordId: string }): JSX.Element | null {
+export function CallDeckPanel({ module, recordId }: { module: string; recordId: string }): JSX.Element {
   const onThisRecord = useCallIsOn(module, recordId);
-  if (!onThisRecord) return null;
-  return <Panel />;
+  const call = useLiveCall((state) => state.call);
+  const userId = useApp((state) => state.user?.id ?? null);
+  const report = usePhoneReport();
+  if (onThisRecord) return <ActivePanel />;
+  const ownedCall = call && userId && call.userId === userId ? call : null;
+  return <StandbyPanel call={ownedCall} report={report} />;
 }
 
 /**
@@ -50,7 +55,7 @@ export function useCallIsOn(module: string, recordId: string): boolean {
   return Boolean(call && userId && call.userId === userId && call.module === module && call.recordId === recordId);
 }
 
-function Panel(): JSX.Element {
+function ActivePanel(): JSX.Element {
   const deck = useCallDeckState();
   // While this pane is up, the shell hides its return-to-call strip.
   const setInPane = useLiveCall((state) => state.setInPane);
@@ -69,6 +74,64 @@ function Panel(): JSX.Element {
         </div>
       </div>
       <WaysOut deck={deck} />
+    </section>
+  );
+}
+
+/**
+ * The deck at rest. It never disappears after Save & Exit, Save & Next or Not
+ * Called, so there is always one reliable place to answer “am I on a call?”.
+ * A handset can still report a call that did not start from this browser; that
+ * activity is shown too, rather than incorrectly claiming the phone is idle.
+ */
+function StandbyPanel({
+  call,
+  report,
+}: {
+  call: ReturnType<typeof useLiveCall.getState>['call'];
+  report: ReturnType<typeof usePhoneReport>;
+}): JSX.Element {
+  const phoneLive = report?.state === 'dialling'
+    || report?.state === 'ringing'
+    || report?.state === 'active'
+    || report?.state === 'held';
+  const label = call
+    ? `Call active · ${call.number}`
+    : phoneLive
+      ? report.state === 'active' ? 'Phone call connected'
+        : report.state === 'held' ? 'Phone call on hold'
+          : report.state === 'ringing' ? 'Phone is ringing'
+            : 'Phone is dialling'
+      : 'No call in progress';
+  const detail = call
+    ? 'This call belongs to another record. Return to it to save the outcome.'
+    : phoneLive
+      ? 'Live activity reported by your phone.'
+      : 'Press the Call button on this record when you are ready.';
+
+  return (
+    <section className="card h-fit overflow-hidden" data-testid="call-deck-panel">
+      <header className="border-b border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2">
+        <span className="text-sm font-semibold text-[var(--text)]">Call deck</span>
+      </header>
+      <div className="flex items-center gap-2.5 p-3" data-testid="call-panel-status">
+        <span className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+          phoneLive || call ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300',
+        )}>
+          <PhoneCall className="h-4 w-4" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-[var(--text)]">{label}</span>
+          <span className="block text-xs text-muted">{detail}</span>
+        </span>
+        {call && (
+          <Link className="btn-secondary btn-sm shrink-0" to={returnToCallUrl(call)}>
+            Open call
+          </Link>
+        )}
+      </div>
     </section>
   );
 }
@@ -323,7 +386,7 @@ function WaysOut({ deck }: { deck: CallDeckState }): JSX.Element {
         type="button"
         onClick={() => deck.onSave(false)}
         disabled={deck.saving}
-        title="Save this call and close the deck"
+        title="Save this call and keep the call deck ready"
         className="btn-secondary btn-sm min-w-0 flex-1"
       >
         {deck.saving && <Spinner className="h-3 w-3" />}

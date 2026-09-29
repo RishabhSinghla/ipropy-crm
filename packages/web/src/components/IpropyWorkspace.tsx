@@ -410,7 +410,7 @@ export function IpropyWorkspace({
   // A list row carries no `can`, so the module's own permission stands in
   // until the record itself arrives and answers for this row.
   const canEdit = active?.can?.edit ?? module.permissions.edit;
-  // While a call is up on the open record, the deck takes the notes box's place.
+  // Light the Call action while this record owns the permanent deck's live call.
   const onCall = useCallIsOn(module.name, active?.id ?? '');
   const allChecked = rows.length > 0 && rows.every((row) => selected.has(row.id));
 
@@ -743,77 +743,27 @@ export function IpropyWorkspace({
           </div>
 
           {/*
-            The face in the middle, everything you do to the record on the
-            right — 27 September 2026: *"The Call and whatsapp icon move to
-            adjoining of Tag and Star icon."* A three-column grid rather than
-            `justify-between`, so the face stays in the middle of the panel
-            however many controls sit beside it.
+            **29 September 2026:** the face starts this row; every record
+            action sits at the right, and the three facts a call changes sit
+            directly below those actions. This keeps the operational side of
+            the header together and gives long translated labels room to wrap
+            without pushing the avatar back into the middle.
           */}
-          {/*
-            The face is centred on the panel, whatever sits beside it.
-
-            **28 September 2026, the owner:** *"Avtar shold be center align
-            always."* Two arrangements had already been tried and neither kept
-            that promise: `1fr auto 1fr` centres the face by giving both sides
-            the same width — and the right side holds five circles, so the left
-            was pinned to their width and the third chip wrapped onto a line of
-            its own. `minmax(0,1fr) auto auto` freed the chips and moved the
-            face off centre, which is what he is looking at.
-
-            So the face is taken out of the row entirely and pinned to the
-            panel's own middle. The chips and the controls then take exactly
-            what they need, and neither can move it. The row carries the
-            face's height itself, since an absolutely positioned child
-            contributes none.
-          */}
-          <div className="relative flex min-h-[5.5rem] w-full items-center justify-between gap-2 px-2">
-            {/*
-              The facts a call changes — *"Move Overdue (11D), Visit Scheduled
-              & Busy in to left side from Avtar"*. They were a full-width band
-              under the face, which is the row this hero has stopped spending.
-            */}
-            <HeroStatusChips
-              module={module}
-              row={active}
-              canEdit={canEdit}
-              statusField={statusField}
-              followUpField={followUpField}
-              /*
-                It may not reach the middle of the panel, because that is where
-                the face is and the face is positioned absolutely — so nothing
-                pushes it out of the way. Carrying its field names (28 September
-                2026) made this group wide enough to matter: the third chip slid
-                under the avatar and was unreadable.
-
-                Half the panel, less the face's own half-width and a gap. It
-                wraps inside that rather than overflowing.
-              */
-              className="max-w-[calc(50%-3.25rem)]"
-            />
-
-            {/*
-              Not `aria-hidden`: the wrapper only exists to centre the face,
-              and the face carries a real button — replacing the photo — plus
-              the label a screen reader reads the record by. It stops taking
-              pointer events so the chips and controls behind it stay
-              clickable, and hands them back to the face itself.
-            */}
-            <span className="pointer-events-none absolute inset-x-0 flex justify-center">
-              <span data-testid="record-avatar" className="pointer-events-auto">
-                <RecordAvatar
-                  module={module.name}
-                  recordId={active.id}
-                  name={active.label}
-                  percent={recordStrength(module.fields, active.values).percent}
-                  canEdit={canEdit}
-                  size={84}
-                />
-              </span>
+          <div className="flex min-h-[5.5rem] w-full items-center gap-3 px-2" data-testid="split-hero-layout">
+            <span className="shrink-0" data-testid="split-hero-avatar">
+              <RecordAvatar
+                module={module.name}
+                recordId={active.id}
+                name={active.label}
+                percent={recordStrength(module.fields, active.values).percent}
+                canEdit={canEdit}
+                size={84}
+              />
             </span>
 
-
-            {/* Right: everything you do to the record, in one group. */}
-            <span className="z-10 flex min-w-0 items-center justify-end gap-2">
+            <div className="ml-auto flex min-w-0 flex-1 flex-col items-end gap-2" data-testid="split-hero-actions-status">
+              {/* Right: everything you do to the record, in one group. */}
+              <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {/*
                 Tags first — *"move tag from left top to beside of icons of
                 whatsapp and call, The tag alignment should be Before whatsapp
@@ -828,6 +778,7 @@ export function IpropyWorkspace({
                 canEdit={canEdit}
                 className={cn(
                   ACTION_CIRCLE,
+                  'hover:bg-brand-600',
                   active.tags?.length && 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-200',
                 )}
               />
@@ -839,14 +790,14 @@ export function IpropyWorkspace({
                 can send mail directly from icon"* (28 September 2026).
 
                 **Only when there is an address to write to.** An icon that
-                opens a dialog which can only say "no email on this record"
-                is one a rep learns to ignore, and this bar already carries
-                five. Which field holds it is `useRecordPanes`, found by
-                uitype, so no screen names a field.
+                opens a dialog which can only say "no email on this record" is
+                one a rep learns to ignore, and this bar already carries five.
+                Which field holds it is `useRecordPanes`, found by uitype, so
+                no screen names a field.
 
                 It opens the CRM's own composer rather than `mailto:` — the
-                reply threads back onto the record, and a rep on a phone has
-                no desktop mail client to hand it to.
+                reply threads back onto the record, and a rep on a phone has no
+                desktop mail client to hand it to.
               */}
               {emailValue && (
                 <button
@@ -916,7 +867,27 @@ export function IpropyWorkspace({
                   </>
                 )}
               </Dropdown>
-            </span>
+              </span>
+
+              {/*
+                **No rule above this row** — *"Remove Separator Line in Middle
+                Pane header between Icons and Button Of Follow-up, Status, Call
+                Disposition from All modules"* (28 September 2026). The two
+                groups already share a right edge and sit a row apart, which is
+                the separation; a hairline across the panel on top of that read
+                as a second header.
+              */}
+              <div className="flex w-full justify-end pt-1.5" data-testid="split-hero-status-row">
+                <HeroStatusChips
+                  module={module}
+                  row={active}
+                  canEdit={canEdit}
+                  statusField={statusField}
+                  followUpField={followUpField}
+                  className="justify-end"
+                />
+              </div>
+            </div>
           </div>
 
         </header>
@@ -977,11 +948,11 @@ export function IpropyWorkspace({
           {/*
             The deck and the notes are one pane now — 27 September 2026, the
             owner: *"call deck merge in to Note/Comment pane/Box"*. The deck
-            only exists while a call is up on this very record; the notes and
-            the activity below it are always there, which is the half that was
-            being taken away every time somebody pressed Call.
+            is always present above notes: at rest it says no call is running,
+            and it expands into the working controls during a call. Saving a
+            call returns it to that ready state instead of hiding the deck.
           */}
-          {onCall && <CallDeckPanel module={module.name} recordId={active.id} />}
+          <CallDeckPanel module={module.name} recordId={active.id} />
           <NotesPanel module={module.name} record={active} flush />
         </aside>
       )}

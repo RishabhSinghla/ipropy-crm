@@ -20,7 +20,13 @@ import {
 const day = (offset: number): string => {
   const d = new Date();
   d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
+  // The CRM compares date-only values in the user's local day. Converting a
+  // local early-morning value to UTC can move it back one calendar date and
+  // make "today" look overdue in India.
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const date = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${date}`;
 };
 
 describe('record header chip', () => {

@@ -72,13 +72,32 @@ test('each header chip is introduced by its own field name', async ({ page }) =>
   await expect(chipGroup.getByText(/^Pipeline Status$/i)).toBeVisible();
   await expect(chipGroup.getByText(/^Call Log$/i)).toBeVisible();
 
-  // And they may never run under the face, which is positioned absolutely and
-  // so pushes nothing out of its way. Measured, because the overlap is the
-  // whole reason this cap exists.
+  // And they may never run under the face. Measured rather than assumed,
+  // because the hero has been rearranged twice and an overlap is the failure
+  // mode each time.
   const chipBox = await chipGroup.boundingBox();
-  const faceBox = await page.locator('[data-testid="record-avatar"]').boundingBox();
+  const faceBox = await page.locator('[data-testid="split-hero-avatar"]').boundingBox();
   expect(chipBox, 'the chip group should be on screen').not.toBeNull();
-  if (chipBox && faceBox) expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(faceBox.x + 1);
+  if (chipBox && faceBox) expect(chipBox.x).toBeGreaterThanOrEqual(faceBox.x + faceBox.width - 1);
+});
+
+test('no hairline sits between the icons and the three call chips', async ({ page }) => {
+  const made = await makeLead(page);
+  await page.goto(`/leads?open=${made.id}`);
+  await expect(page.getByRole('heading', { name: new RegExp(made.name) })).toBeVisible({ timeout: 30_000 });
+
+  /*
+    *"Remove Separator Line in Middle Pane header between Icons and Button Of
+    Follow-up, Status, Call Disposition from All modules"* — 28 September 2026.
+
+    Measured off the computed style, not read off a class list: a `border-t`
+    that is present while `border-top-width` is 0 would pass a class check and
+    still be the thing on screen.
+  */
+  const row = page.locator('[data-testid="split-hero-status-row"]');
+  await expect(row).toBeVisible();
+  const rule = await row.evaluate((el) => getComputedStyle(el).borderTopWidth);
+  expect(rule, 'the hero still draws a rule above the call chips').toBe('0px');
 });
 
 test('an email icon appears only when there is an address to write to', async ({ page }) => {

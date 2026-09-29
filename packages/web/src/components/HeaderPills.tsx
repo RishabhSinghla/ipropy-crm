@@ -22,7 +22,6 @@
  */
 import { type JSX } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { PhoneCall } from 'lucide-react';
 import type { FieldMeta, RecordEnvelope } from '@ipropy/shared';
 import { Dropdown, DropdownItem } from './ui';
 import { api } from '../lib/api';
@@ -147,7 +146,6 @@ function CallAgainPill({ module, followUp, row, canEdit, size = 'row' }: {
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
         >
-          <PhoneCall className={cn('shrink-0', size === 'hero' ? 'h-3 w-3' : 'h-4 w-4')} aria-hidden />
           <span className="truncate">{label}</span>
         </button>
       }

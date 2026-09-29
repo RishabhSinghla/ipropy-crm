@@ -18,8 +18,7 @@ import { type JSX, useState } from 'react';
  */
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, FileQuestion, SendHorizontal, ShieldCheck } from 'lucide-react';
-import { nameFieldName, phoneFieldName, VERIFY_POLL_ATTEMPTS, VERIFY_POLL_INTERVAL_MS } from '../lib/truecaller';
+import { CheckCircle2, FileQuestion, SendHorizontal } from 'lucide-react';
 import { api } from '../lib/api';
 import { Skeleton, Spinner } from '../components/ui';
 
@@ -61,106 +60,12 @@ function safeRedirect(url: string | null): string | null {
   return /^(https?:\/\/|\/)/.test(url) ? url : null;
 }
 
-/**
- * "Verify with Truecaller" — the visitor proving their own number.
- *
- * Only rendered when an admin has switched the card on, so a form with no
- * provider looks exactly as it did before this existed.
- *
- * The browser never decides anything here. It opens Truecaller, then asks our
- * own server whether the verification landed; the server holds the number that
- * was proven and uses that one when the form is submitted, whatever is typed
- * in the box. The nonce travelling back with the form is what ties the two.
- */
-function VerifyWithTruecaller({ fields, onVerified }: {
-  fields: FormField[];
-  onVerified: (found: { name: string | null; phone: string | null; nonce: string }) => void;
-}): JSX.Element {
-  const [state, setState] = useState<'idle' | 'waiting' | 'done' | 'unavailable'>('idle');
-
-  const verify = async (): Promise<void> => {
-    setState('waiting');
-
-    let started: { nonce: string; deepLink: string };
-    try {
-      started = await api.startTruecaller();
-    } catch {
-      setState('unavailable');
-      return;
-    }
-
-    // A custom scheme this phone cannot handle leaves a blank window standing,
-    // which is the only way to tell "Truecaller is not installed" from "the
-    // person has not finished yet".
-    const opened = window.open(started.deepLink);
-    window.setTimeout(() => {
-      try {
-        if (opened && opened.location.href === 'about:blank') {
-          opened.close();
-          setState('unavailable');
-        }
-      } catch {
-        // Reading the location threw, which means it navigated somewhere —
-        // the good case.
-      }
-    }, 800);
-
-    for (let attempt = 0; attempt < VERIFY_POLL_ATTEMPTS; attempt += 1) {
-      await new Promise((resolve) => { window.setTimeout(resolve, VERIFY_POLL_INTERVAL_MS); });
-      const result = await api.truecallerResult(started.nonce).catch(() => null);
-      if (result?.status === 'verified') {
-        onVerified({ name: result.name, phone: result.phone, nonce: started.nonce });
-        setState('done');
-        return;
-      }
-      if (result?.status === 'failed') break;
-    }
-    setState('unavailable');
-  };
-
-  if (state === 'done') {
-    return (
-      <p className="mb-4 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-        <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
-        Your number is verified. Just add anything else we should know.
-      </p>
-    );
-  }
-
-  return (
-    <div className="mb-4">
-      <button
-        type="button"
-        onClick={() => { void verify(); }}
-        disabled={state === 'waiting'}
-        className="btn-secondary w-full justify-center"
-      >
-        {state === 'waiting' ? <Spinner /> : <ShieldCheck className="h-4 w-4" aria-hidden="true" />}
-        {state === 'waiting' ? 'Waiting for Truecaller…' : 'Verify with Truecaller'}
-      </button>
-      {state === 'unavailable' && (
-        <p className="mt-2 text-xs text-muted">
-          Truecaller could not verify you on this device. Please fill the form in below —
-          it works exactly the same.
-        </p>
-      )}
-      {state === 'idle' && (
-        <p className="mt-2 text-xs text-muted">
-          One tap instead of typing. {fields.length > 0 && 'We only ever see your name and number.'}
-        </p>
-      )}
-    </div>
-  );
-}
-
 export default function PublicFormPage(): JSX.Element {
   const { publicKey } = useParams<{ publicKey: string }>();
   const [values, setValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ message: string; redirect: string | null } | null>(null);
-  /** Proof that a verification happened. The server re-reads it; this is only the handle. */
-  const [truecallerNonce, setTruecallerNonce] = useState<string | null>(null);
 
   const { data: form, isLoading, isError } = useQuery({
     queryKey: ['public-form', publicKey],
@@ -177,7 +82,6 @@ export default function PublicFormPage(): JSX.Element {
     try {
       const payload: Record<string, unknown> = { ...utmFromLocation() };
       for (const f of form.fields) payload[f.name] = values[f.name]?.trim() ?? '';
-      if (truecallerNonce) payload.truecallerNonce = truecallerNonce;
       const res = await api.submitPublicForm(publicKey!, payload);
       const redirect = safeRedirect(res.redirectUrl);
       setDone({ message: res.message, redirect });
@@ -235,25 +139,6 @@ export default function PublicFormPage(): JSX.Element {
       <form onSubmit={(e) => void submit(e)} className="card mt-4 w-full max-w-md p-5 sm:p-6">
         <h1 className="mb-4 text-lg font-semibold tracking-tight">{form.name}</h1>
 
-        {form.truecaller && (
-          <VerifyWithTruecaller
-            fields={form.fields}
-            onVerified={({ name, phone, nonce }) => {
-              setTruecallerNonce(nonce);
-              // Which boxes these are is read off the form an admin built, so
-              // no field is named here and a form without one simply fills
-              // nothing while the server still keeps the proven number.
-              const nameBox = nameFieldName(form.fields);
-              const phoneBox = phoneFieldName(form.fields);
-              setValues((v) => ({
-                ...v,
-                ...(nameBox && name ? { [nameBox]: name } : {}),
-                ...(phoneBox && phone ? { [phoneBox]: phone } : {}),
-              }));
-            }}
-          />
-        )}
-
         <div className="space-y-3.5">
           {form.fields.map((f) => {
             const id = `field-${f.name}`;
@@ -294,4 +179,3 @@ export default function PublicFormPage(): JSX.Element {
     </div>
   );
 }
-

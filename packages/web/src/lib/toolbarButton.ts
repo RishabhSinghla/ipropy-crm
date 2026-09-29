@@ -11,9 +11,9 @@
  * do not, so the same toolbar reads as two toolbars. The shape and both states
  * live here; each caller supplies its own icon, label and count.
  *
- * Dark purple is the brand's own step 800, which is a fill rather than a tint —
- * so the count chip on top is white at a low opacity, never a slate step that
- * would read grey on purple.
+ * **29 September 2026:** these are pale controls with a darker brand stroke.
+ * The active filter gains one tint step rather than turning into a solid block,
+ * so the toolbar remains calm while still making its state obvious.
  */
 import { cn } from './utils';
 
@@ -41,7 +41,15 @@ export function toolbarButton(on: boolean, extra?: string): string {
   );
 }
 
-/** The number beside the label, on the same fill. */
+/**
+ * The number beside the label, on the same fill.
+ *
+ * A plain step, never an opacity modifier: every brand step resolves to a bare
+ * `var(--brand-…)`, and Tailwind can only apply `/80` to a colour whose
+ * channels it can see — so `dark:bg-brand-900/80` compiles to nothing at all
+ * and the chip loses its background on a dark page. That is only visible in a
+ * browser, in dark mode, and this repo has already paid for it once.
+ */
 export function toolbarCount(extra?: string): string {
   return cn('rounded-full bg-brand-700 px-1.5 py-px text-[10px] font-semibold tabular-nums text-white', extra);
 }
