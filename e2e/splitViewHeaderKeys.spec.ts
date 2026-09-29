@@ -72,6 +72,20 @@ test('each header chip is introduced by its own field name', async ({ page }) =>
   await expect(chipGroup.getByText(/^Pipeline Status$/i)).toBeVisible();
   await expect(chipGroup.getByText(/^Call Log$/i)).toBeVisible();
 
+  /*
+    **The name sits above the value, not beside it** — the owner's own samples,
+    29 September 2026: *"Next Follow Up / Overdue (11D)"*. Measured as two
+    boxes rather than read off a `flex-col`, because a class that is present
+    while the pair still reads side by side is exactly the bug.
+  */
+  const stacked = await chipGroup.evaluate((group) => {
+    const pair = group.children[group.children.length - 1] as HTMLElement;
+    const [label, value] = [...pair.children].map((c) => c.getBoundingClientRect());
+    return { labelBottom: label.bottom, valueTop: value.top, labelLeft: label.left, valueLeft: value.left };
+  });
+  expect(stacked.valueTop, 'the value should sit below its field name').toBeGreaterThanOrEqual(stacked.labelBottom - 1);
+  expect(Math.abs(stacked.valueLeft - stacked.labelLeft), 'the two should share a left edge').toBeLessThan(6);
+
   // And they may never run under the face. Measured rather than assumed,
   // because the hero has been rearranged twice and an overlap is the failure
   // mode each time.

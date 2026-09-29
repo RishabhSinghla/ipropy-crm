@@ -70,6 +70,21 @@ const CHIP_PLAIN = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slat
  * "Associate Status" says so and a rename in the Field Manager reaches this
  * header the same afternoon. No screen names a field.
  */
+/**
+ * One key and its value, stacked.
+ *
+ * **29 September 2026, the owner**, with three samples of his own — *"Next
+ * Follow Up / Overdue (11D)"*, *"Property Status / New"*, *"Call Log /
+ * Busy"*. Side by side, a label and a chip on one line made each pair as wide
+ * as both of them, so three pairs filled the header; stacked, each is as wide
+ * as its widest half and the row reads as three columns.
+ *
+ * `items-start` so a short value does not stretch its chip to the label's
+ * width, and `justify-between` so every value sits on the same baseline
+ * however long the label above it wrapped.
+ */
+const PAIR = 'inline-flex min-w-0 flex-col items-start justify-between gap-0.5';
+
 function KeyLabel({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -112,22 +127,29 @@ export function HeroStatusChips({ module, row, canEdit, statusField, followUpFie
     <span
       data-testid="hero-chips"
       className={cn(
-        'flex min-w-0 flex-wrap items-center divide-x divide-slate-300 dark:divide-slate-600',
-        '[&>*]:px-2 [&>*:first-child]:pl-0 [&>*:last-child]:pr-0',
+        /*
+          `items-stretch`, not `items-center` — **29 September 2026, the
+          owner:** *"please Move Key Value Below Key Fields in Middle Pane
+          header … Next Follow Up / Overdue (11D)"*. Each pair is two lines
+          tall now, and a centred row would leave the rules between them
+          floating at the height of the shortest one.
+        */
+        'flex min-w-0 flex-wrap items-stretch divide-x divide-slate-300 dark:divide-slate-600',
+        '[&>*]:px-2.5 [&>*:first-child]:pl-0 [&>*:last-child]:pr-0',
         className,
       )}
     >
       {followUpField && (
         // No wrapper tint: the chip inside carries its own, and a tint under a
         // tint is how "overdue" stopped reading as overdue once already.
-        <span className="inline-flex min-w-0 items-center gap-1" title={followUpField.label}>
+        <span className={PAIR} title={followUpField.label}>
           <KeyLabel>{followUpField.label}</KeyLabel>
           <FollowUpChipCell module={module} row={row} field={followUpField} canEdit={canEdit} size="hero" />
         </span>
       )}
 
       {statusField && (
-        <span className="inline-flex min-w-0 items-center gap-1">
+        <span className={PAIR}>
         <KeyLabel>{statusField.label}</KeyLabel>
         <span
           // `badge-tinted`, not `badge`: the base class carries its own padding
@@ -149,7 +171,7 @@ export function HeroStatusChips({ module, row, canEdit, statusField, followUpFie
         </span>
       )}
 
-      <span className="inline-flex min-w-0 items-center gap-1">
+      <span className={PAIR}>
         {/* The call pill's own word. It is not a field on the module — an
             outcome lives on `ipy_call` — so this is the one label here that
             is not read from metadata, and it is the owner's own wording for

@@ -985,6 +985,14 @@ exactly as it did — this is wording and order, not a migration.
   a group that wraps to a second line carries its left rule with it.
 * **The form's field names are grey** (`--key-label`). `--text-muted` is a dark
   plum at 7.6:1, which reads as a second heading beside the fact it labels.
+* **And the header's key sits *above* its value**, added hours later with three
+  samples of his own — *"Next Follow Up / Overdue (11D)"*, *"Property Status /
+  New"*, *"Call Log / Busy"*. Side by side, a label and a chip on one line made
+  each pair as wide as both halves, so three pairs filled the header; stacked,
+  each is as wide as its widest half and the row reads as three columns. The
+  row became `items-stretch` at the same time, or the rules between the pairs
+  would float at the height of the shortest one. `PAIR` is one string, so the
+  three cannot drift into three layouts.
 
 **Two things the tests caught that a screenshot would not have.**
 
