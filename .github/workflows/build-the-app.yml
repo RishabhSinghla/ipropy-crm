@@ -256,4 +256,7 @@ jobs:
           git add "$OUT"
           git diff --cached --quiet && { echo "Identical to what is already published."; exit 0; }
           git commit -m "build(app): ${{ steps.apk.outputs.name }} (code ${{ steps.apk.outputs.code }})"
+          # A build takes minutes and main can move meanwhile; without this the
+          # finished APK is refused as out of date and nothing is published.
+          git pull --rebase origin main
           git push
