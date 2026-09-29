@@ -22,34 +22,60 @@ export function toolbarButton(on: boolean, extra?: string): string {
   return cn(
     // Fully round, on the owner's prototype of 27 September 2026 — a row of
     // pills rather than a row of tabs.
-    'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-white shadow-xs transition-colors',
+    // Fully round, on the owner's prototype of 27 September 2026 — a row of
+    // pills rather than a row of tabs.
+    'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-xs transition-colors',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1',
     /*
-      **28 September 2026, the owner:** *"Active Button Should Darker as Theme
-      Colour in Tool bar in All modules."* It was the other way round — the
-      button that was on went *lighter* and took a ring — and he is right that
-      the darker one reads as the pressed one.
+      **29 September 2026, the owner:** *"we need Normal Toolbar Button in
+      Light Color when button not selected or inactive but if we we Select or
+      active a button or filter on a Button Then Theme Dark Color in toolbar
+      and text colour also change to white or lighter."*
 
-      Still one row of purple pills, so the difference is depth rather than
-      hue: the resting pills are the mid step, the one that is on is the
-      darkest there is and keeps its ring.
+      So the row is quiet until something is narrowing the list, and the one
+      that is reads as a solid brand pill with white on it. That is the third
+      arrangement of this row in three days — a dark row throughout, then the
+      active one darkest, now this — and it is the one where "on" and "off"
+      are different *kinds* of thing rather than two shades of one.
+
+      **Plain steps only, never an opacity modifier.** Every brand step here
+      resolves to a bare `var(--brand-…)`, and Tailwind can only apply `/40`
+      to a colour whose channels it can see — so `dark:bg-brand-900/70`
+      compiles to nothing at all, the light rule is the only one left, and the
+      row keeps its light fill on a dark page. That is visible only in a
+      browser, in dark mode, and this repo has paid for it once already.
     */
     on
-      ? 'bg-brand-950 ring-2 ring-brand-400 dark:ring-brand-600'
-      : 'bg-brand-700 hover:bg-brand-800',
+      ? 'border-brand-700 bg-brand-700 text-white shadow-sm hover:bg-brand-800 dark:border-brand-500 dark:bg-brand-600'
+      : 'border-brand-200 bg-brand-50 text-brand-800 hover:border-brand-300 hover:bg-brand-100'
+        + ' dark:border-brand-800 dark:bg-brand-950 dark:text-brand-200 dark:hover:bg-brand-900',
     extra,
   );
 }
 
 /**
- * The number beside the label, on the same fill.
+ * The number beside the label. It sits on whichever fill the button wears, so
+ * it moves with it — and a count that is a warning gets its own red.
  *
- * A plain step, never an opacity modifier: every brand step resolves to a bare
+ * Plain steps, never an opacity modifier: every brand step resolves to a bare
  * `var(--brand-…)`, and Tailwind can only apply `/80` to a colour whose
- * channels it can see — so `dark:bg-brand-900/80` compiles to nothing at all
- * and the chip loses its background on a dark page. That is only visible in a
- * browser, in dark mode, and this repo has already paid for it once.
+ * channels it can see, so `dark:bg-brand-900/80` compiles to nothing at all.
  */
-export function toolbarCount(extra?: string): string {
-  return cn('rounded-full bg-brand-700 px-1.5 py-px text-[10px] font-semibold tabular-nums text-white', extra);
+export function toolbarCount(on = false, warning = false): string {
+  return cn(
+    'rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums',
+    /*
+      **One whole string per state, never a tint layered on top.** `cn` is
+      plain clsx with no tailwind-merge, so a caller passing `bg-red-600
+      text-white` beside this function's own `text-brand-800` leaves both in
+      the class list and Tailwind's stylesheet order picks the winner. That is
+      how the overdue count came out dark red on red in dark mode — caught by
+      the contrast scan, and by nothing else.
+    */
+    warning
+      ? 'bg-red-600 text-white'
+      : on
+        ? 'bg-brand-900 text-white dark:bg-brand-800'
+        : 'bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-100',
+  );
 }

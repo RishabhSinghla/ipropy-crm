@@ -496,6 +496,47 @@ export default function ListView(): JSX.Element {
     placeholderData: (prev, previousQuery) => (previousQuery?.queryKey[1] === moduleName ? prev : undefined),
   });
 
+  /*
+    Left and right arrows turn the page.
+
+    **29 September 2026, the owner:** *"Arrow Key doesn't Work for Next record
+    or Back Record"*, then, correcting himself: *"Sorry its arrow key from
+    laptop for next page and back page."* So this is the pager at the top
+    right — the ‹ 1 / 10 › — which until now could only be clicked. It works on
+    every module, because every module's list is this component.
+
+    **Left and right, never up and down.** Up and down scroll a page, and a rep
+    reading down a long form would be thrown onto another page mid-sentence.
+    Left and right mean nothing on a vertical page, so taking them costs
+    nothing.
+
+    Three things it must never do, and each has a real caller behind it: fire
+    while somebody is typing (every box on this screen), fire while a dialog or
+    a dropdown has the screen, and eat ⌘← which is the browser's own Back. The
+    split view's divider is a `separator` that takes arrows itself while it has
+    focus, so it stands down for that too.
+  */
+  const lastPage = data?.totalPages ?? 1;
+  useEffect(() => {
+    function onKey(event: KeyboardEvent): void {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+
+      const where = event.target as HTMLElement | null;
+      const tag = where?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (where?.isContentEditable) return;
+      if (where?.closest('[role="dialog"], [role="listbox"], [role="menu"], [role="separator"]')) return;
+
+      const back = event.key === 'ArrowLeft';
+      if (back ? page <= 1 : page >= lastPage) return;
+      event.preventDefault();
+      setPage((current) => (back ? Math.max(1, current - 1) : Math.min(lastPage, current + 1)));
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [page, lastPage]);
+
   const commitPageInput = (): void => {
     const next = Number(pageInput);
     if (Number.isInteger(next) && next >= 1 && next <= (data?.totalPages ?? 1)) {

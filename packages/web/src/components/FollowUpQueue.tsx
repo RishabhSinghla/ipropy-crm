@@ -116,7 +116,7 @@ export function FollowUpQueue({
             Task
             {/* Something overdue stays red on the purple: it is the one count
                 in this row that is a warning rather than a size. */}
-            <span className={toolbarCount(counts.pending > 0 ? 'bg-red-600' : undefined)}>
+            <span className={toolbarCount(Boolean(active), counts.pending > 0)}>
               {total.toLocaleString('en-IN')}
             </span>
           </button>

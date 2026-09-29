@@ -40,12 +40,31 @@ for (const module of MODULES) {
       const disposition = page.getByTestId('call-disposition-filter');
       await expect(disposition).toBeVisible();
 
-      // Dark purple, on his instruction. The exact step is the brand's own, so
-      // this asserts the button is *filled* rather than a pale outline — which
-      // is what it was and what he asked to change.
-      const fill = await disposition.evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(fill).not.toBe('rgba(0, 0, 0, 0)');
-      expect(await disposition.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(255, 255, 255)');
+      /*
+        **Light at rest, filled and reversed to white once it is narrowing the
+        list** — the owner, 29 September 2026. This used to assert white text
+        at rest, which was his instruction of the 27th; the later one stands.
+
+        Measured as *different*, not as two exact colours: the brand is an
+        admin's to change, so pinning `rgb(76, 29, 149)` would make this a test
+        of one theme rather than of the rule.
+      */
+      const rest = await disposition.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { fill: style.backgroundColor, text: style.color };
+      });
+      expect(rest.fill, 'a resting pill should still carry a light fill').not.toBe('rgba(0, 0, 0, 0)');
+      expect(rest.text, 'a resting pill should not be reversed out to white').not.toBe('rgb(255, 255, 255)');
+
+      // Turn it on: pick "never called", which every module can answer.
+      await disposition.click();
+      await page.getByText(/Never called/i).first().click();
+      await expect.poll(
+        async () => disposition.evaluate((el) => getComputedStyle(el).color),
+        { timeout: 15_000, message: 'an active filter should reverse to white' },
+      ).toBe('rgb(255, 255, 255)');
+      const on = await disposition.evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(on, 'an active filter should change fill, not just text').not.toBe(rest.fill);
     });
 
     test('the sort menu is the eight he named, and nothing is chosen to begin with', async ({ page }) => {

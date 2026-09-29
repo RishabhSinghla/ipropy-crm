@@ -1,6 +1,6 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Filter, Link2,
@@ -277,12 +277,27 @@ export function IpropyWorkspace({
     enabled: Boolean(activeId),
     staleTime: 15_000,
   });
+  const navigate = useNavigate();
   const openRecord = useCallback((id: string) => {
     setActiveId(id);
     const next = new URLSearchParams(window.location.search);
     next.set('open', id);
     setSearchParams(next, { replace: true });
   }, [setSearchParams]);
+  /*
+    A move that lands on a different page of the queue.
+
+    Never `window.location.assign`: that reloads the whole CRM, which is what
+    the owner reported on 28 September 2026 about Save & next. The destination
+    is usually the same `/leads` route with a different page, and React Router
+    keeps one `ListView` mounted across that — so the stamp tells `ListRoute`
+    in `App.tsx` to remount, which hydrates the new page exactly as a reload
+    did and downloads nothing.
+  */
+  const goToPage = useCallback((url: string) => {
+    navigate(url, { state: { callDeckHandoff: Date.now() } });
+  }, [navigate]);
+
   const openNeighbour = useCallback((id: string, estimatedPosition: number) => {
     if (rows.some((row) => row.id === id)) {
       openRecord(id);
@@ -296,11 +311,11 @@ export function IpropyWorkspace({
       ...(sortBy ? { sort: sortBy } : {}),
       ...(sortDir ? { dir: sortDir } : {}),
     }).then(({ position }) => {
-      window.location.assign(queueRecordUrl(callQueueUrl, module.name, id, position ?? estimatedPosition));
+      goToPage(queueRecordUrl(callQueueUrl, module.name, id, position ?? estimatedPosition));
     }).catch(() => {
-      window.location.assign(queueRecordUrl(callQueueUrl, module.name, id, estimatedPosition));
+      goToPage(queueRecordUrl(callQueueUrl, module.name, id, estimatedPosition));
     });
-  }, [rows, openRecord, module.name, neighbourContext, sortBy, sortDir, callQueueUrl]);
+  }, [rows, openRecord, module.name, neighbourContext, sortBy, sortDir, callQueueUrl, goToPage]);
 
   const resize = useCallback((delta: number) => {
     const [min, max] = QUEUE_LIMITS;
@@ -1156,8 +1171,23 @@ function QueueCard({
             rather than a fill, so the name and the price on it keep their
             contrast without being reversed out to white.
           */
+          /*
+            **29 September 2026, the owner:** *"we need Normal View of record
+            in left pane of split view but if we we Select or active a record
+            Then Theme Dark Color … and text colour also change to white or
+            lighter."*
+
+            So an unopened row is an ordinary white card and the open one is a
+            solid brand fill with white on it — the same rule as the toolbar
+            above, and the same reason: "open" and "not open" read faster as
+            two different *kinds* of thing than as two shades of one wash.
+
+            Plain brand steps, never an opacity modifier — those compile to
+            nothing on a bare `var()` and the row would keep its light fill on
+            a dark page.
+          */
           active
-            ? 'bg-brand-100 dark:bg-brand-900'
+            ? 'bg-brand-700 dark:bg-brand-600'
             : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
         )}
       >
@@ -1171,7 +1201,7 @@ function QueueCard({
             title={canEdit && nameField ? 'Double-click to rename' : undefined}
             className={cn(
               'truncate text-[15px] font-extrabold tracking-tight',
-              active ? 'text-brand-900 dark:text-brand-50' : 'text-slate-900 dark:text-slate-100',
+              active ? 'text-white' : 'text-slate-900 dark:text-slate-100',
             )}
           >
             {row.label}
@@ -1187,7 +1217,10 @@ function QueueCard({
         {/* 2. Which unit, cut short with "…" rather than wrapped. */}
         <span className={cn(
           'mt-1 block min-w-0 truncate text-xs',
-          active ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400',
+          // `brand-100` on the fill rather than a slate step: slate on brand
+          // is the pair that lands around 2–3:1, which is the whole reason
+          // `lib/color.ts` exists.
+          active ? 'font-semibold text-brand-100' : 'text-slate-500 dark:text-slate-400',
         )}>
           {[unit, description].filter(Boolean).join(', ') || '—'}
         </span>
@@ -1201,14 +1234,21 @@ function QueueCard({
           {price && (
             <span className={cn(
               'shrink-0 whitespace-nowrap text-base font-extrabold tabular-nums',
-              active ? 'text-brand-900 dark:text-brand-50' : 'text-slate-900 dark:text-slate-100',
+              active ? 'text-white' : 'text-slate-900 dark:text-slate-100',
             )}>
               {price}
             </span>
           )}
           {/* `text-muted` and not a slate step: the token is the one that
               carries a contrast guarantee in both themes. */}
-          {area && <span className="truncate text-xs font-medium text-muted">• {area}</span>}
+          {area && (
+            <span className={cn(
+              'truncate text-xs font-medium',
+              // `text-muted` is a guaranteed pair on the page's own surface
+              // and not on a brand fill, so the open row states its own.
+              active ? 'text-brand-100' : 'text-muted',
+            )}>• {area}</span>
+          )}
         </span>
       </button>
 
@@ -1280,7 +1320,9 @@ function TypeFlag({ label, strong }: { label: string; strong: boolean }): JSX.El
         */
         'inline-flex shrink-0 items-center py-0.5 pl-2.5 pr-1.5 text-[10px] uppercase tracking-wider',
         strong
-          ? 'bg-brand-200 font-bold text-brand-900 dark:bg-brand-800 dark:text-brand-50'
+          // On the open row the card itself is the brand, so the flag reverses
+          // out of it — a brand tint on a brand fill is invisible.
+          ? 'bg-white font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-100'
           : 'bg-brand-100 font-semibold text-brand-800 dark:bg-brand-950 dark:text-brand-200',
       )}
       style={{ clipPath: 'polygon(6px 0%, 100% 0%, 100% 100%, 6px 100%, 0% 50%)' }}

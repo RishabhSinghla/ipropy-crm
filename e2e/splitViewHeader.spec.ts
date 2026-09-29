@@ -56,8 +56,15 @@ test('the chips beside the face are one look, with the stage the only exception'
   await page.setViewportSize({ width: 1600, height: 900 });
   await splitView(page);
 
-  // The first column of the hero's grid: the chase date, the stage, the call.
-  const chipRow = recordPane(page).locator('header').first().locator('div.relative.flex > span').first();
+  /*
+    The chip group, by its own test id.
+
+    It used to be found by walking the hero's markup — `div.relative.flex >
+    span` — and the hero has now been rearranged three times in three days, so
+    that walk broke without a single chip changing. An element that a spec
+    measures carries a `data-testid`; the shape around it is free to move.
+  */
+  const chipRow = page.locator('[data-testid="hero-chips"]');
   await expect(chipRow).toBeVisible();
 
   const chips = await chipRow.evaluate((box) => [...box.children].map((wrap) => {

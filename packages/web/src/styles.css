@@ -60,6 +60,25 @@
       asserts it against all three surfaces rather than trusting the palette.
     */
     --text-muted: #50434e;
+    /*
+      The small flag above a value on a form — "FULL NAME", "MOBILE".
+
+      **29 September 2026, the owner:** *"In The middle pane the Lead/
+      Information Form the Key Field Name will be in grey colour."*
+      `--text-muted` is a dark plum at 7.6:1, which reads as a second heading
+      beside the fact it labels; a true grey lets the value carry the row.
+
+      Its own token rather than a slate step written into `.key-label`,
+      because a page full of these has to keep clearing AA when an admin
+      changes the theme — `tests/color.test.ts` reads this value out of the
+      stylesheet and checks it against all three surfaces.
+
+      **The obvious grey does not clear AA and the test is what said so.**
+      Slate-500 (`#64748b`) is 4.76:1 on white and **4.31:1 on the canvas**,
+      which is under 4.5 — and a form of these is the smallest text on the
+      screen. `#5d6b7f` is the lightest grey that clears all three.
+    */
+    --key-label: #5d6b7f;
     --text-positive: #047857;
     --text-negative: #ba1a1a;
 
@@ -195,6 +214,7 @@
     --border: #334155;
     --text: #f1f5f9;
     --text-muted: #a8b3c4;
+    --key-label: #94a3b8;
     --text-positive: #34d399;
     --text-negative: #f87171;
 
@@ -442,7 +462,7 @@
   /* The prototype's structural flag above a fact: 11px, bold, wide-tracked. */
   .key-label {
     @apply block font-bold uppercase;
-    color: var(--text-muted);
+    color: var(--key-label);
     font-size: 11px;
     line-height: 15px;
     letter-spacing: 0.08em;

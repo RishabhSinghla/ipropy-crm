@@ -66,7 +66,7 @@ export function CallDispositionFilter({ pick, onPick }: {
           <PhoneOutgoing className="h-3.5 w-3.5 shrink-0" />
           {/* *"Call Disposition to Call Log"*, 28 September 2026. */}
           Call Log
-          <span className={toolbarCount()}>
+          <span className={toolbarCount(on)}>
             {pick.never ? 'Never called' : pick.outcomes.length ? `${pick.outcomes.length} picked` : outcomes.length}
           </span>
         </button>

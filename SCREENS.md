@@ -946,3 +946,63 @@ view, so its own three areas are the names now, in the order a rep meets them:
 **No stored shape changed.** The same four lists go to the same four keys in
 `ipy_layout.config`, so every arrangement an admin has already made reads back
 exactly as it did — this is wording and order, not a migration.
+
+## Five more, 29 September: arrows, two fills, a rule and a grey
+
+**Every one is on all modules**, because every one lives in a shared component
+— the toolbar helper, the queue card, the chip group, one CSS class.
+
+* **Left and right arrows turn the page.** He first wrote *"Arrow Key doesn't
+  Work for Next record or Back Record"*, then corrected himself: *"Sorry its
+  arrow key from laptop for next page and back page."* So it is the pager at
+  the top right — the ‹ 1 / 10 › — which until now could only be clicked.
+  **Left and right, never up and down**: up and down scroll, and a rep reading
+  down a long form would be thrown onto another page mid-sentence. It stands
+  down for any input, textarea, select or editable box, for anything inside a
+  dialog, listbox or menu, for the split view's divider (a `separator` that
+  takes arrows itself), and whenever a modifier is held — ⌘← is the browser's
+  own Back and must not be eaten. `e2e/arrowKeysTurnThePage.spec.ts` drives all
+  of that on both modules.
+  **A record-stepping version of this was built first and taken back out.**
+  Two meanings for one key is how neither gets learnt.
+* **The toolbar is light until something is filtering.** *"Normal Toolbar
+  Button in Light Color when button not selected or inactive but if we we
+  Select or active a button or filter on a Button Then Theme Dark Color … and
+  text colour also change to white."* That is the third arrangement of this row
+  in three days — dark throughout, then the active one darkest, now this — and
+  it is the one where on and off are different *kinds* of thing rather than two
+  shades of one.
+* **The open record in the queue is a solid brand fill with white on it**, and
+  an unopened one is an ordinary white card. Same instruction, same reasoning.
+  The name and the price go white, the middle line and the area go `brand-100`
+  (**not** a slate step — slate on brand is the 2–3:1 pair that `lib/color.ts`
+  exists to prevent), and the type flag reverses to white, because a brand tint
+  on a brand fill is invisible.
+* **Vertical rules between the header's key fields.** `divide-x` on the row
+  rather than a rule drawn per chip: the browser then puts a line *between*
+  pairs and never before the first or after the last, so a module with no chase
+  date cannot end up with a rule hanging off the end. One cost worth naming —
+  a group that wraps to a second line carries its left rule with it.
+* **The form's field names are grey** (`--key-label`). `--text-muted` is a dark
+  plum at 7.6:1, which reads as a second heading beside the fact it labels.
+
+**Two things the tests caught that a screenshot would not have.**
+
+`--key-label` started as slate-500 (`#64748b`), the obvious grey. It is 4.76:1
+on white and **4.31:1 on the canvas** — under AA, on the smallest text in the
+CRM. `tests/color.test.ts` reads the token out of the stylesheet and checks it
+against all three surfaces, so it failed immediately; `#5d6b7f` is the lightest
+grey that clears all three.
+
+And the overdue count on the Task button came out dark red on red in dark mode.
+`toolbarCount` was being handed `bg-red-600 text-white` as an *extra* on top of
+its own `text-brand-800`, and **`cn` is plain clsx with no tailwind-merge** — so
+both colours stayed in the class list and Tailwind's own stylesheet order picked
+the winner. It takes a `warning` flag now and returns one whole string per
+state. Caught by the a11y contrast scan and by nothing else.
+
+**A spec that had become a measurement of the markup, not of the promise.**
+`splitViewHeader.spec.ts` found the chip group by walking `div.relative.flex >
+span`, and the hero has been rearranged three times in three days — so it broke
+without a single chip changing. It reads `data-testid="hero-chips"` now: an
+element a spec measures carries an id, and the shape around it is free to move.

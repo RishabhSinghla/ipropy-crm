@@ -94,7 +94,29 @@ export function HeroStatusChips({ module, row, canEdit, statusField, followUpFie
   return (
     // A row that wraps rather than one that overflows: at a narrow pane the
     // third chip drops under the first two instead of leaving the panel.
-    <span data-testid="hero-chips" className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
+    /*
+      **29 September 2026, the owner:** *"We want to Vertical Separator for
+      Header Key Value/Fields for Next Follow-up, Lead Status. Call Log."*
+
+      `divide-x` on the row rather than a rule drawn per group: the browser
+      then puts a line *between* pairs and never before the first or after the
+      last, so a module with no chase date — or with no stage — cannot end up
+      with a rule hanging off the end. The padding lives on the children, which
+      is what `divide-x` needs to look like spacing rather than a squeeze.
+
+      `flex-wrap` stays, and it is the one cost worth naming: a group that
+      wraps to a second line carries its left rule with it. Three short chips
+      on a header strip rarely wrap, and a missing rule is easier to read past
+      than a chip sliding off the panel.
+    */
+    <span
+      data-testid="hero-chips"
+      className={cn(
+        'flex min-w-0 flex-wrap items-center divide-x divide-slate-300 dark:divide-slate-600',
+        '[&>*]:px-2 [&>*:first-child]:pl-0 [&>*:last-child]:pr-0',
+        className,
+      )}
+    >
       {followUpField && (
         // No wrapper tint: the chip inside carries its own, and a tint under a
         // tint is how "overdue" stopped reading as overdue once already.

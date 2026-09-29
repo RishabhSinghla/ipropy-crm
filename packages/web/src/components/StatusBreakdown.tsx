@@ -66,7 +66,7 @@ export function StatusBreakdown({
             already looking at the list of stages.
           */}
           Status
-          <span className={toolbarCount()}>
+          <span className={toolbarCount(on)}>
             {selected.length ? `${selected.length} picked` : `${field.options?.length ?? 0} stages`}
           </span>
         </button>

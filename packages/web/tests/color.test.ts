@@ -310,11 +310,16 @@ describe('the text tokens in styles.css', () => {
   const TOKENS = {
     light: {
       muted: token('root', 'text-muted'),
+      // The small grey flag above a value on a form (29 September 2026). It is
+      // the lightest text the CRM prints and therefore the one most likely to
+      // fall under AA when the palette moves, which is why it is in here.
+      keyLabel: token('root', 'key-label'),
       positive: token('root', 'text-positive'),
       negative: token('root', 'text-negative'),
     },
     dark: {
       muted: token('dark', 'text-muted'),
+      keyLabel: token('dark', 'key-label'),
       positive: token('dark', 'text-positive'),
       negative: token('dark', 'text-negative'),
     },
