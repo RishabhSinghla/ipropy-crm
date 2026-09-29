@@ -701,23 +701,67 @@ export function IpropyWorkspace({
               </span>
             )}
 
+          </div>
+
+          {/*
+            **29 September 2026:** the face starts this row; every record
+            action sits at the right, and the three facts a call changes sit
+            directly below those actions. This keeps the operational side of
+            the header together and gives long translated labels room to wrap
+            without pushing the avatar back into the middle.
+          */}
+          {/*
+            `flex-wrap` on the row itself, and that is the narrow-pane answer.
+
+            With everything on one line, a 1280px window left the name about
+            sixty pixels; letting the *chips* wrap instead stacked them three
+            deep and made the header 180px tall, each pair carrying its own
+            left rule down the side. Wrapping the whole right column drops the
+            controls and the three key pairs onto a full-width second row
+            where they still read as one line — and on a wide pane nothing
+            moves at all.
+          */}
+          <div className="flex min-h-[5.5rem] w-full flex-wrap items-center gap-3 px-2" data-testid="split-hero-layout">
+            <span className="shrink-0" data-testid="split-hero-avatar">
+              <RecordAvatar
+                module={module.name}
+                recordId={active.id}
+                name={active.label}
+                percent={recordStrength(module.fields, active.values).percent}
+                canEdit={canEdit}
+                size={84}
+              />
+            </span>
+
             {/*
-              The name and the number, a size down — *"decrease Font size of
-              Name and mobile number"*. Still the heading of the screen, and
-              still the first thing read; it simply no longer sets how tall
-              this row has to be.
+              **29 September 2026, the owner:** *"Move Full Name and Mobile
+              adjoining avtar … the name and Mobile should be in two row, first
+              row is Name then Below/Second Row is Mobile."*
+
+              They used to ride the row above, sharing it with the record's
+              position and its agent — so the one thing a rep says out loud
+              when they pick up was at the far end of the header from the face
+              it belongs to, and the two facts sat on one line divided by a
+              hairline.
+
+              Beside the face and stacked, they read as a name card: who this
+              is, and the number you are about to dial under it.
             */}
-            <span className="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden">
+            {/*
+              `min-w-[9rem]`, not `min-w-0`: with the controls and the three
+              key pairs both refusing to shrink, a narrow pane left the name
+              about sixty pixels and it read "Ally C…" — the one thing on this
+              screen that has to be readable. It holds nine rems and the chip
+              group wraps instead.
+            */}
+            <span className="flex min-w-[9rem] flex-1 flex-col justify-center gap-0.5 overflow-hidden">
               {/*
                 The heading, and you can change it where it stands — *"Full
                 Name should be Editable in Middle Pane"* (28 September 2026).
-                Renaming somebody meant opening a form for the one field this
-                pane exists to show.
 
                 **Which field carries the name is `module.labelFields`**, not
                 the word "full_name": Inventories names a record by its unit
-                and an admin may change either. With no editable label field
-                it stays the plain heading it was.
+                and an admin may change either.
               */}
               <h2 className="min-w-0 truncate text-base font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
                 {canEdit && nameField && isInlineEditable(nameField) ? (
@@ -733,50 +777,29 @@ export function IpropyWorkspace({
                   />
                 ) : active.label}
               </h2>
+              {/* No hairline between them now: they are two rows, and a rule
+                  belongs between things on one line. */}
               {phoneField && phoneValue && (
-                <>
-                  <span className="h-3.5 w-px shrink-0 bg-slate-300 dark:bg-slate-600" aria-hidden />
-                  <span className="shrink-0 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    {canEdit && isInlineEditable(phoneField) ? (
-                      <EditableField
-                        module={module.name}
-                        recordId={active.id}
-                        field={phoneField}
-                        value={active.values[phoneField.name]}
-                        display={active.display?.[phoneField.name]}
-                        compact
-                        siblings={active.values}
-                        onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                      />
-                    ) : (
-                      <FieldValue field={phoneField} value={active.values[phoneField.name]} display={active.display?.[phoneField.name]} compact />
-                    )}
-                  </span>
-                </>
+                <span className="min-w-0 truncate text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  {canEdit && isInlineEditable(phoneField) ? (
+                    <EditableField
+                      module={module.name}
+                      recordId={active.id}
+                      field={phoneField}
+                      value={active.values[phoneField.name]}
+                      display={active.display?.[phoneField.name]}
+                      compact
+                      siblings={active.values}
+                      onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                    />
+                  ) : (
+                    <FieldValue field={phoneField} value={active.values[phoneField.name]} display={active.display?.[phoneField.name]} compact />
+                  )}
+                </span>
               )}
             </span>
-          </div>
 
-          {/*
-            **29 September 2026:** the face starts this row; every record
-            action sits at the right, and the three facts a call changes sit
-            directly below those actions. This keeps the operational side of
-            the header together and gives long translated labels room to wrap
-            without pushing the avatar back into the middle.
-          */}
-          <div className="flex min-h-[5.5rem] w-full items-center gap-3 px-2" data-testid="split-hero-layout">
-            <span className="shrink-0" data-testid="split-hero-avatar">
-              <RecordAvatar
-                module={module.name}
-                recordId={active.id}
-                name={active.label}
-                percent={recordStrength(module.fields, active.values).percent}
-                canEdit={canEdit}
-                size={84}
-              />
-            </span>
-
-            <div className="ml-auto flex min-w-0 flex-1 flex-col items-end gap-2" data-testid="split-hero-actions-status">
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-2" data-testid="split-hero-actions-status">
               {/* Right: everything you do to the record, in one group. */}
               <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {/*

@@ -1014,3 +1014,45 @@ state. Caught by the a11y contrast scan and by nothing else.
 span`, and the hero has been rearranged three times in three days — so it broke
 without a single chip changing. It reads `data-testid="hero-chips"` now: an
 element a spec measures carries an id, and the shape around it is free to move.
+
+### The name card sits beside the face
+
+**29 September 2026, the owner:** *"Move Full Name and Mobile adjoining avtar,
+so that we can see Icon and Key value More Comfortable, the name and Mobile
+should be in two row, first row is Name then Below/Second Row is Mobile … The
+Key fileds and value should be center aligned in own seprator"*, and then, when
+asked what "centre aligned" applied to: *"not whole"* — each pair inside its own
+column, not the group as one block.
+
+The name and the number used to ride the row above, sharing it with the
+record's position and its agent, divided by a hairline. So the one thing a rep
+says out loud when they pick up was at the far end of the header from the face
+it belongs to. Beside the face and stacked, they read as a name card: who this
+is, and the number you are about to dial under it. The hairline went with the
+move — a rule belongs between two things on one line.
+
+The whole operational row now reads left to right: **who this is · what you do
+to them · what a call changes.**
+
+**Each key pair is centred in its own column** (`PAIR` is `items-center
+text-center`, one string for all three). The chip under a label is usually the
+shorter of the two, so left-aligned it sat off to one side and the row read as
+ragged.
+
+**What a narrow pane does, and why it is the third answer tried.** With
+everything on one line a 1280px window left the name about sixty pixels — it
+read *"Ally C…"*, which is the one thing on this screen that has to be readable.
+Letting the *chips* wrap instead stacked them three deep, made the header 180px
+tall and gave each pair its own left rule down the side. So the **row** wraps:
+below about 1400px the controls and the three key pairs drop onto a full-width
+second line where they still read as one row, and above it nothing moves at all.
+The name also holds a `min-w-[9rem]` floor.
+
+**Four specs had to be rewritten, and every one of them was pinning a layout
+rather than a promise.** `compactHero` asserted the name sits *above* the face
+(it is beside it now) and that a chip row is under 34px (each pair is two lines
+now); `listDefaultView` asserted the star sits below the name (they share a
+row); `splitViewHeaderKeys` compared the label's and the value's *left* edges
+(they share a centre). The promises underneath — the hero stays compact, the
+three pairs read as one row, the controls stay on the face's row, the value sits
+under its name — are all still measured, and measured on the elements' own boxes.

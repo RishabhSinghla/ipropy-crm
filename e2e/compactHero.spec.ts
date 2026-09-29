@@ -19,6 +19,10 @@ import { test, expect, type Page } from '@playwright/test';
 const MODULES = ['leads', 'properties'] as const;
 
 async function openFirstRecord(page: Page, module: string): Promise<void> {
+  // A width a rep actually works at. Below about 1400 the hero deliberately
+  // wraps its controls onto a second row, which is the graceful answer and not
+  // the promise these measure.
+  await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto(`/${module}`);
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
   await page.locator('[data-testid="ipropy-workspace"] button').first().click().catch(() => {});
@@ -39,14 +43,22 @@ for (const module of MODULES) {
     // padding does not fail the build while the band coming back does.
     expect(headerBox!.height).toBeLessThan(180);
 
-    const avatar = header.locator('img, [class*="rounded-full"]').first();
-    const avatarBox = await avatar.boundingBox();
+    const avatarBox = await header.getByTestId('split-hero-avatar').boundingBox();
 
-    // The name sits above the face now, not under it.
+    /*
+      **The name sits beside the face, with the number under it** — the owner,
+      29 September 2026: *"Move Full Name and Mobile adjoining avtar … the name
+      and Mobile should be in two row, first row is Name then Below/Second Row
+      is Mobile."* They used to ride the row above, at the far end of the
+      header from the face they belong to.
+    */
     const name = header.getByRole('heading').first();
     const nameBox = await name.boundingBox();
     expect(nameBox, 'no name in the hero').not.toBeNull();
-    if (avatarBox) expect(nameBox!.y).toBeLessThan(avatarBox.y);
+    expect(avatarBox, 'no face in the hero').not.toBeNull();
+    expect(nameBox!.x, 'the name should start after the face').toBeGreaterThan(avatarBox!.x);
+    expect(nameBox!.y, 'the name should sit level with the face, not above it')
+      .toBeGreaterThan(avatarBox!.y - 4);
   });
 }
 
@@ -69,31 +81,22 @@ test('the chase date, stage and call outcome sit below the actions on the right'
   expect(chipBox!.y).toBeGreaterThanOrEqual(actionRowBox!.y + actionRowBox!.height);
 });
 
-test('the three chips read as one row, not a column', async ({ page }) => {
-  // A width a rep actually works at. At a narrow pane the third chip wraps on
-  // purpose, which is the graceful answer rather than one that leaves the
-  // panel — so the promise is pinned where it is a promise.
-  await page.setViewportSize({ width: 1600, height: 900 });
+test('the three key pairs read as one row, side by side', async ({ page }) => {
   await openFirstRecord(page, 'leads');
 
-  const header = page.locator('section header').first();
-  const chipRow = header.getByTestId('split-hero-status-row').locator('> span');
-
   /*
-    The row's own height, not each chip's top. They are centred against one
-    another and differ by a pixel or two, so comparing tops reports the
-    alignment rather than the wrapping — which is how this assertion first
-    failed against a row that was plainly one line on screen.
+    Each pair is **two lines now** — the field's name above its value, on the
+    owner's instruction of 29 September 2026 — so a height of one small chip
+    is no longer the measurement. What is still a promise is that the three
+    pairs sit *beside* one another rather than stacking into a column, which
+    is what they do when the pane runs out of room.
   */
-  const box = await chipRow.boundingBox();
-  expect(box, 'no chips beside the face').not.toBeNull();
+  const tops = await page.locator('[data-testid="hero-chips"]').evaluate((group) =>
+    [...group.children].map((child) => Math.round(child.getBoundingClientRect().top)));
 
-  const count = await chipRow.evaluate((el) => el.children.length);
-  expect(count, 'nothing to lay out').toBeGreaterThan(1);
-
-  // One row of small chips is 24px. A second line would be about 28 more.
-  expect(box!.height, `the chips are ${box!.height}px tall — that is more than one row`)
-    .toBeLessThan(34);
+  expect(tops.length, 'nothing to lay out').toBeGreaterThan(1);
+  expect(Math.max(...tops) - Math.min(...tops), `the pairs start at ${tops.join(', ')} — that is a column`)
+    .toBeLessThan(4);
 });
 
 /**

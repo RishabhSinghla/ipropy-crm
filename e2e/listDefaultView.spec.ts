@@ -200,28 +200,33 @@ test('the queue is faces and facts, with the completeness bar off it', async ({ 
   await expect(queue.locator('svg.lucide-chevron-right')).toHaveCount(0);
 });
 
-test('the controls sit beside the face, with the name on the row above', async ({ page }) => {
+test('the face, the name and the controls share one row', async ({ page }) => {
   await forgetTheChoice(page, '/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
 
   /*
-    **28 September 2026** moved the name and the number up beside the page
-    number, and left the controls in the row with the face — *"Actually we need
-    this space compact so that below that much visible to my Team."*
+    **29 September 2026, the owner:** *"Move Full Name and Mobile adjoining
+    avtar, so that we can see Icon and Key value More Comfortable."*
 
-    Measured rather than read off a class: the star has to be to the *right* of
-    the face and *below* the name, which together are the only thing that says
-    the header is two rows rather than the three it used to be.
+    On the 28th the name had gone *up*, onto the row with the page number, and
+    this spec pinned that. It is now beside the face it belongs to, with the
+    number under it — so the whole operational row reads left to right: who
+    this is, then everything you do to them.
+
+    Measured rather than read off a class: the name to the right of the face,
+    the star to the right of the name, and all three within one row's height
+    of each other.
   */
   const header = recordPane(page).locator('header').first();
   const name = header.getByRole('heading').first();
   const star = header.locator('button[title$="starred"], button[title^="Star "]').first();
+  const faceBox = (await header.getByTestId('split-hero-avatar').boundingBox())!;
   const nameBox = (await name.boundingBox())!;
   const starBox = (await star.boundingBox())!;
 
-  expect(starBox.y, 'the star is on the name\'s own row').toBeGreaterThan(nameBox.y + nameBox.height - 4);
-  // And still on the face's row rather than stacked under everything.
-  expect(starBox.y, 'the star has fallen a long way below the name').toBeLessThan(nameBox.y + 140);
+  expect(nameBox.x, 'the name should start after the face').toBeGreaterThan(faceBox.x);
+  expect(starBox.x, 'the controls should sit after the name').toBeGreaterThan(nameBox.x);
+  expect(Math.abs(starBox.y - faceBox.y), 'the controls have left the face\'s row').toBeLessThan(90);
 });
 
 test('the queue can be ticked in bulk and sorted from its own header', async ({ page }) => {

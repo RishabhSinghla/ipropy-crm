@@ -81,10 +81,18 @@ test('each header chip is introduced by its own field name', async ({ page }) =>
   const stacked = await chipGroup.evaluate((group) => {
     const pair = group.children[group.children.length - 1] as HTMLElement;
     const [label, value] = [...pair.children].map((c) => c.getBoundingClientRect());
-    return { labelBottom: label.bottom, valueTop: value.top, labelLeft: label.left, valueLeft: value.left };
+    return {
+      labelBottom: label.bottom,
+      valueTop: value.top,
+      labelMid: label.left + label.width / 2,
+      valueMid: value.left + value.width / 2,
+    };
   });
   expect(stacked.valueTop, 'the value should sit below its field name').toBeGreaterThanOrEqual(stacked.labelBottom - 1);
-  expect(Math.abs(stacked.valueLeft - stacked.labelLeft), 'the two should share a left edge').toBeLessThan(6);
+  // Centres, not left edges — *"The Key fileds and value should be center
+  // aligned in own seprator"* (29 September 2026), and the chip is usually the
+  // shorter of the two, so a shared left edge would leave it off to one side.
+  expect(Math.abs(stacked.valueMid - stacked.labelMid), 'the two should share a centre').toBeLessThan(4);
 
   // And they may never run under the face. Measured rather than assumed,
   // because the hero has been rearranged twice and an overlap is the failure

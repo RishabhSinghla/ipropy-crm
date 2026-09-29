@@ -71,7 +71,7 @@ const CHIP_PLAIN = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slat
  * header the same afternoon. No screen names a field.
  */
 /**
- * One key and its value, stacked.
+ * One key and its value, stacked and centred in their own column.
  *
  * **29 September 2026, the owner**, with three samples of his own — *"Next
  * Follow Up / Overdue (11D)"*, *"Property Status / New"*, *"Call Log /
@@ -79,11 +79,15 @@ const CHIP_PLAIN = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slat
  * as both of them, so three pairs filled the header; stacked, each is as wide
  * as its widest half and the row reads as three columns.
  *
- * `items-start` so a short value does not stretch its chip to the label's
- * width, and `justify-between` so every value sits on the same baseline
- * however long the label above it wrapped.
+ * **`items-center`, on the owner's instruction of 29 September 2026** — *"The
+ * Key fileds and value should be center aligned in own seprator."* The chip
+ * under a label is usually the shorter of the two, so left-aligned it sat off
+ * to one side of its own column and the row read as ragged.
+ *
+ * `justify-between` so every value sits on the same baseline however long the
+ * label above it wrapped.
  */
-const PAIR = 'inline-flex min-w-0 flex-col items-start justify-between gap-0.5';
+const PAIR = 'inline-flex min-w-0 flex-col items-center justify-between gap-0.5 text-center';
 
 function KeyLabel({ children }: { children: React.ReactNode }): JSX.Element {
   return (
