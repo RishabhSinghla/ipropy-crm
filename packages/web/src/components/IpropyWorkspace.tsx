@@ -31,6 +31,7 @@ import { activeSortOption, sortOptions } from '../lib/listSort';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
 import { queueRecordUrl } from '../lib/saveNextUrl';
+import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
 
 type DeskTabKey = 'overview' | 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
 
@@ -990,6 +991,7 @@ export function IpropyWorkspace({
             and it expands into the working controls during a call. Saving a
             call returns it to that ready state instead of hiding the deck.
           */}
+          <ProgressiveDialerPanel module={module.name} recordId={active.id} />
           <CallDeckPanel module={module.name} recordId={active.id} />
           <NotesPanel module={module.name} record={active} flush />
         </aside>

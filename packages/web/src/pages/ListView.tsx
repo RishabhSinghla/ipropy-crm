@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
 import {
   ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
-  Pencil, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, Users, X,
+  Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -34,6 +34,7 @@ import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
 import { callQueueUrl } from '../lib/callQueueUrl';
+import { useProgressiveDialer } from '../lib/progressiveDialer';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 export default function ListView(): JSX.Element {
@@ -567,6 +568,51 @@ export default function ListView(): JSX.Element {
   */
   const rows = data?.rows ?? [];
 
+  /**
+   * A progressive session is deliberately built from explicit ticks, in the
+   * same order the rep sees them. "Select all 22,000" is useful for exports,
+   * but it is not a safe phone queue: a human must choose the calls they are
+   * about to make and confirm each one before Android receives it.
+   */
+  const startProgressiveDialer = (): void => {
+    if (!user?.id || !moduleName || !meta) return;
+    if (selectedAll) {
+      toast.error('Choose a smaller calling queue', 'Untick Select all, then tick the records you want to call in this session.');
+      return;
+    }
+    const phoneField = meta.fields.find((field) => field.uitype === 'phone');
+    if (!phoneField) {
+      toast.error('This module has no phone field');
+      return;
+    }
+    const chosen = rows.flatMap((row) => {
+      if (!selected.has(row.id)) return [];
+      const number = row.display?.[phoneField.name] ?? row.values[phoneField.name];
+      return number ? [{ id: row.id, label: row.label, number: String(number) }] : [];
+    });
+    if (!chosen.length) {
+      toast.error('No callable records selected', 'Select records that have a mobile number.');
+      return;
+    }
+    const missing = selected.size - chosen.length;
+    useProgressiveDialer.getState().start({
+      userId: user.id,
+      module: moduleName,
+      items: chosen,
+      sourceUrl: callQueueSnapshot,
+    });
+    const next = new URLSearchParams(searchParams);
+    next.set('open', chosen[0]!.id);
+    next.delete('dial');
+    setSearchParams(next);
+    setSelected(new Set());
+    setSelectedAll(false);
+    toast.success(
+      `Progressive queue ready · ${chosen.length}`,
+      missing ? `${missing} record${missing === 1 ? '' : 's'} without a phone number were skipped.` : 'Confirm Call current before every call.',
+    );
+  };
+
   const deleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.massDelete(moduleName!, ids),
     onSuccess: (result) => {
@@ -1071,6 +1117,14 @@ export default function ListView(): JSX.Element {
             </button>
           )}
           <div className="ml-auto flex gap-2">
+            <button
+              className="btn-primary btn-sm"
+              disabled={selectedAll}
+              title={selectedAll ? 'Choose individual records for a safe calling queue' : 'Create a progressive calling queue from these records'}
+              onClick={startProgressiveDialer}
+            >
+              <PhoneForwarded className="h-3.5 w-3.5" /> Progressive Dialer
+            </button>
             <button
               className="btn-secondary btn-sm"
               onClick={() => { setSelected(new Set()); setSelectedAll(false); }}

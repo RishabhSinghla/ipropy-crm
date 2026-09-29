@@ -397,10 +397,12 @@ function WaysOut({ deck }: { deck: CallDeckState }): JSX.Element {
           type="button"
           onClick={() => deck.onSave(true)}
           disabled={deck.saving}
-          title={`Save this call and ring ${deck.nextLabel}`}
+          title={deck.confirmNext
+            ? `Save this call and prepare ${deck.nextLabel}; you will confirm before it rings`
+            : `Save this call and ring ${deck.nextLabel}`}
           className="btn-primary btn-sm shrink-0"
         >
-          Save &amp; Next →
+          {deck.confirmNext ? 'Save & Prepare Next →' : 'Save & Next →'}
         </button>
       )}
     </footer>

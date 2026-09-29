@@ -15,6 +15,7 @@ import {
 import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
 import { useApp } from '../lib/store';
+import { progressiveRecordUrl, useProgressiveDialer } from '../lib/progressiveDialer';
 
 const NOT_THE_CALLING_APP =
   'On the phone, open iPropy → This phone → "Control calls from the CRM" to switch these from here.';
@@ -79,6 +80,8 @@ export interface CallDeckState {
   onFollowUp: (day: string | null | undefined) => void;
   saving: boolean;
   nextLabel: string | null;
+  /** Progressive queues open the next record but wait for a deliberate call confirmation. */
+  confirmNext: boolean;
   onSave: (andDialNext: boolean) => void;
   /** The one way out that forgets the call — nobody was spoken to. */
   onDiscard: () => void;
@@ -90,6 +93,7 @@ export function useCallDeckState(): CallDeckState {
   const { update, finish } = useLiveCall.getState();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const progressive = useProgressiveDialer((state) => state.session);
   const outcomes = useCallDispositionOptions();
   const outcome = call.outcome && outcomes.some((option) => option.value === call.outcome)
     ? call.outcome
@@ -113,14 +117,24 @@ export function useCallDeckState(): CallDeckState {
     enabled: call.queueNextId === undefined,
     staleTime: 60_000,
   });
-  const nextId = call.queueNextId !== undefined ? call.queueNextId : fallbackNeighbours?.nextId ?? null;
+  const progressiveMatches = Boolean(
+    progressive
+    && progressive.userId === call.userId
+    && progressive.module === call.module
+    && progressive.items[progressive.index]?.id === call.recordId
+    && progressive.status === 'waiting',
+  );
+  const progressiveNext = progressiveMatches ? progressive!.items[progressive!.index + 1] ?? null : null;
+  const nextId = progressiveMatches
+    ? progressiveNext?.id ?? null
+    : call.queueNextId !== undefined ? call.queueNextId : fallbackNeighbours?.nextId ?? null;
   const { data: nextRecord } = useQuery({
     queryKey: ['record', call.module, nextId],
     queryFn: () => api.record(call.module, nextId!),
     enabled: Boolean(nextId),
   });
   const who = String(record?.label ?? call.number);
-  const nextLabel = nextRecord ? String(nextRecord.label ?? 'the next record') : null;
+  const nextLabel = progressiveNext?.label ?? (nextRecord ? String(nextRecord.label ?? 'the next record') : null);
 
   /*
     A click here changes what the phone does, and the phone's own report is
@@ -161,7 +175,7 @@ export function useCallDeckState(): CallDeckState {
   const save = async (andDialNext: boolean): Promise<void> => {
     if (saving) return;
     setSaving(true);
-    const goTo = andDialNext ? nextId : null;
+    const goTo = progressiveMatches ? progressiveNext?.id ?? null : andDialNext ? nextId : null;
     try {
       /*
         How long they talked: the phone's own figure when it reported one,
@@ -191,7 +205,7 @@ export function useCallDeckState(): CallDeckState {
       // the default Recently Updated sort. Refresh the saved neighbor's ordinal
       // after that write so the handoff page remains the page containing it.
       let nextPosition = call.queuePosition;
-      if (goTo && call.queueUrl && call.queuePosition) {
+      if (!progressiveMatches && goTo && call.queueUrl && call.queuePosition) {
         try {
           const source = new URL(call.queueUrl, window.location.origin);
           const params = source.searchParams;
@@ -212,6 +226,9 @@ export function useCallDeckState(): CallDeckState {
       toast.success('Call logged', chaseOn ? 'Follow-up scheduled.' : 'One conversation moved forward.');
       const { module, recordId } = call;
       finish();
+      const advanced = progressiveMatches
+        ? useProgressiveDialer.getState().advance(!andDialNext)
+        : null;
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record-calls', recordId] }),
         queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }),
@@ -222,7 +239,7 @@ export function useCallDeckState(): CallDeckState {
       // Keep the exact view/filter/sort/page context captured when the rep
       // pressed Call. Recompute the destination page from the next row's
       // ordinal in that queue; a record id is not a page number.
-      if (goTo) {
+      if (goTo && (!progressiveMatches || andDialNext)) {
         /*
           An ordinary in-app move, never `window.location.assign`. That
           reloaded the whole CRM between one call and the next — sign-in,
@@ -236,7 +253,11 @@ export function useCallDeckState(): CallDeckState {
           remount. That gives the clean hydration the reload was there for,
           and costs nothing.
         */
-        navigate(saveNextUrl(call.queueUrl, module, goTo, nextPosition), {
+        const progressiveSession = useProgressiveDialer.getState().session;
+        const destination = progressiveMatches && advanced && progressiveSession
+          ? progressiveRecordUrl(progressiveSession, advanced)
+          : saveNextUrl(call.queueUrl, module, goTo, nextPosition);
+        navigate(destination, {
           state: { callDeckHandoff: Date.now() },
         });
       }
@@ -272,10 +293,14 @@ export function useCallDeckState(): CallDeckState {
     onFollowUp: (day) => update({ chaseOverride: day }),
     saving,
     nextLabel,
+    confirmNext: progressiveMatches,
     onSave: (andNext) => void save(andNext),
     // Nobody was spoken to, so nothing is written — the one way out that
     // forgets, and the reason Save & Exit is not the only button.
-    onDiscard: () => finish(),
+    onDiscard: () => {
+      finish();
+      if (progressiveMatches) useProgressiveDialer.getState().advance(true);
+    },
   };
 }
 
