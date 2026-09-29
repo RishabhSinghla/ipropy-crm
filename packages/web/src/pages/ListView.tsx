@@ -15,7 +15,7 @@ import { FieldInput } from '../components/FieldRenderer';
 import { assignmentField, byLabel, pipelineFieldOf, withQueueSubtitle } from '../lib/fields';
 import { queueCardFields, withQueueCardColumns } from '../lib/queueCard';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
-import { FilterBuilder, countConditions } from '../components/FilterBuilder';
+import { countConditions } from '../components/FilterBuilder';
 import {
   ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
 } from '../components/ui';
@@ -33,6 +33,7 @@ import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
+import { QuickFilterOverlay } from '../components/QuickFilterOverlay';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 
@@ -1372,20 +1373,39 @@ export default function ListView(): JSX.Element {
         confirmLabel="Delete view"
         danger
       />
-      <Modal
+      <QuickFilterOverlay
         open={showFilters}
         onClose={() => setShowFilters(false)}
-        title={`Filter ${meta.label}`}
-        size="lg"
-        footer={
-          <>
-            <button className="btn-ghost" onClick={() => { setFilter(EMPTY_FILTER); setPage(1); }}>Clear all</button>
-            <button className="btn-primary" onClick={() => { setShowFilters(false); setPage(1); }}>Apply</button>
-          </>
-        }
-      >
-        <FilterBuilder module={meta} value={filter} onChange={setFilter} />
-      </Modal>
+        module={meta}
+        views={(views ?? []).map((view) => ({ id: view.id, name: view.name, isDefault: view.isDefault }))}
+        activeViewId={activeView?.id}
+        onChooseView={(id) => { setTagPick(null); chooseView(id); }}
+        ownerField={ownerField}
+        agent={agentPick}
+        onAgent={(id) => { setAgentPick(id); setPage(1); }}
+        stageField={stageField}
+        stages={stagePick}
+        onStages={(values) => { setStagePick(values); setPage(1); }}
+        taskEnabled={taskQueuesEnabled}
+        task={taskQueue}
+        onTask={(value) => { setTaskQueue(value); setPage(1); }}
+        disposition={dispositionPick}
+        onDisposition={(value) => { setDispositionPick(value); setPage(1); }}
+        typeField={typeField}
+        types={typePick}
+        onTypes={(values) => { setTypePick(values); setPage(1); }}
+        filter={filter}
+        onFilter={(value) => { setFilter(value); setPage(1); }}
+        onClear={() => {
+          setAgentPick(null);
+          setStagePick([]);
+          setTaskQueue(null);
+          setDispositionPick(NO_DISPOSITION_PICK);
+          setTypePick([]);
+          setFilter(EMPTY_FILTER);
+          setPage(1);
+        }}
+      />
 
       <ExportWizard
         open={showExport}

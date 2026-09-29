@@ -103,7 +103,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
       aria-valuemin={QUEUE_LIMITS[0]}
       aria-valuemax={QUEUE_LIMITS[1]}
       tabIndex={0}
-      className="group relative hidden w-1.5 shrink-0 cursor-col-resize touch-none bg-slate-200 transition-colors hover:bg-brand-400 focus:bg-brand-400 focus:outline-none dark:bg-slate-800 xl:block"
+      className="group relative hidden w-px shrink-0 cursor-col-resize touch-none bg-slate-200 transition-colors hover:w-1 hover:bg-brand-400 focus:w-1 focus:bg-brand-400 focus:outline-none dark:bg-slate-800 xl:block"
       onPointerDown={(event) => {
         from.current = event.clientX;
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -473,7 +473,7 @@ export function IpropyWorkspace({
     */}
     <div
       ref={shell}
-      className="flex min-h-[calc(100vh-13rem)] flex-col gap-2 p-2 xl:h-[var(--pane-h)] xl:min-h-0 xl:flex-row"
+      className="flex min-h-[calc(100vh-13rem)] flex-col bg-white xl:h-[var(--pane-h)] xl:min-h-0 xl:flex-row dark:bg-slate-950"
       style={{
         ['--queue-w' as string]: `${queueWidth}px`,
         ['--pane-h' as string]: paneTop ? `calc(100vh - ${paneTop}px)` : 'calc(100vh - 13rem)',
@@ -482,7 +482,7 @@ export function IpropyWorkspace({
       {/* ---------------------------------------------------------------- */}
       {/* Pane 1 — the queue.                                              */}
       {/* ---------------------------------------------------------------- */}
-      <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)]">
+      <aside className="flex w-full shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)]">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
           <span className="flex min-w-0 items-center gap-1.5">
             {/* Beside the module's own name, because that is what it selects:
@@ -648,14 +648,14 @@ export function IpropyWorkspace({
       {/* ---------------------------------------------------------------- */}
       {/* Pane 2 — the record.                                             */}
       {/* ---------------------------------------------------------------- */}
-      {active && <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+      {active && <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white dark:bg-slate-900">
         {/*
           The hero, as the owner drew it on 27 September 2026: where this
           record sits in the queue and who owns it on one line, the face in the
           middle of its own completeness ring, the controls either side of it,
           and the facts a rep changes on a call along the bottom.
         */}
-        <header className="shrink-0 border-b border-slate-200/80 bg-gradient-to-b from-sage-50/70 via-cream-50 to-white p-3.5 dark:border-slate-800 dark:from-slate-800/60 dark:via-slate-900 dark:to-slate-900">
+        <header className="shrink-0 border-b border-slate-200/80 bg-white px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900">
           {/*
             **29 September 2026, the owner:** *"move Assigned to and Updated
             towards left … right next to where that arrow key ends"*, and
@@ -743,7 +743,7 @@ export function IpropyWorkspace({
             where they still read as one line — and on a wide pane nothing
             moves at all.
           */}
-          <div className="flex min-h-[5.5rem] w-full flex-wrap items-center gap-3 px-2" data-testid="split-hero-layout">
+          <div className="flex min-h-[3.75rem] w-full flex-wrap items-center gap-3 px-1" data-testid="split-hero-layout">
             <span className="shrink-0" data-testid="split-hero-avatar">
               <RecordAvatar
                 module={module.name}
@@ -751,7 +751,7 @@ export function IpropyWorkspace({
                 name={active.label}
                 percent={recordStrength(module.fields, active.values).percent}
                 canEdit={canEdit}
-                size={84}
+                size={56}
               />
             </span>
 
@@ -974,7 +974,8 @@ export function IpropyWorkspace({
           owner: *"only bringing mouse to a certain place scroll is working."*
         */}
         <div className={cn(
-          'min-w-0 flex-1 bg-[#fafbfa] dark:bg-slate-950/40',
+          'min-w-0 flex-1 dark:bg-slate-950/40',
+          shownTab === 'timeline' || shownTab === 'whatsapp' ? 'workspace-activity-canvas' : 'bg-[#fafbfa]',
           shownTab === 'whatsapp' ? 'flex min-h-0 flex-col overflow-hidden' : 'space-y-5 overflow-y-auto p-5',
         )}>
           {shownTab === 'overview' && blocks.map((block) => (
@@ -1002,7 +1003,7 @@ export function IpropyWorkspace({
       {active && (
         <aside
           data-testid="activity-pane"
-          className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900 xl:w-96"
+          className="flex w-full shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[22.5rem]"
         >
           {/*
             The deck and the notes are one pane now — 27 September 2026, the
@@ -1190,7 +1191,7 @@ function QueueCard({
         onClick={onSelect}
         aria-current={active ? 'true' : undefined}
         className={cn(
-          'relative block w-full cursor-pointer px-3 py-2.5 text-left transition-colors',
+          'relative block w-full cursor-pointer py-2.5 pl-16 pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1232,10 +1233,13 @@ function QueueCard({
             a dark page.
           */
           active
-            ? 'bg-brand-700 dark:bg-brand-600'
+            ? 'bg-brand-50 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-brand-600 dark:bg-brand-950/45'
             : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
         )}
       >
+        <span className="absolute left-3 top-1/2 -translate-y-1/2">
+          <Avatar name={row.label} size={40} />
+        </span>
         {/*
           1. Who, and what kind of contact — the line a rep scans, so it is the
           heaviest thing on the card.
@@ -1246,7 +1250,7 @@ function QueueCard({
             title={canEdit && nameField ? 'Double-click to rename' : undefined}
             className={cn(
               'truncate text-[15px] font-extrabold tracking-tight',
-              active ? 'text-white' : 'text-slate-900 dark:text-slate-100',
+              active ? 'text-brand-900 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100',
             )}
           >
             {row.label}
@@ -1265,7 +1269,7 @@ function QueueCard({
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
-          active ? 'font-semibold text-brand-100' : 'text-slate-500 dark:text-slate-400',
+          active ? 'font-semibold text-brand-700 dark:text-brand-200' : 'text-slate-500 dark:text-slate-400',
         )}>
           {[unit, description].filter(Boolean).join(', ') || '—'}
         </span>
@@ -1279,7 +1283,7 @@ function QueueCard({
           {price && (
             <span className={cn(
               'shrink-0 whitespace-nowrap text-base font-extrabold tabular-nums',
-              active ? 'text-white' : 'text-slate-900 dark:text-slate-100',
+              active ? 'text-brand-800 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100',
             )}>
               {price}
             </span>
@@ -1291,7 +1295,7 @@ function QueueCard({
               'truncate text-xs font-medium',
               // `text-muted` is a guaranteed pair on the page's own surface
               // and not on a brand fill, so the open row states its own.
-              active ? 'text-brand-100' : 'text-muted',
+              active ? 'text-brand-700 dark:text-brand-200' : 'text-muted',
             )}>• {area}</span>
           )}
         </span>
