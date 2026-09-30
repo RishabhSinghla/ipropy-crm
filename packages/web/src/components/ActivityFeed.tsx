@@ -14,17 +14,18 @@
  * scrolled to the newest.
  */
 import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime, type TimelineEntry } from '@ipropy/shared';
-import { Activity, Check, CheckCheck, Lock, Mail, Paperclip, PhoneIncoming, PhoneMissed, PhoneOutgoing, RefreshCw } from 'lucide-react';
+import { Activity, Check, CheckCheck, History, Mail, MessageSquare, Paperclip, Pencil, Trash2, PhoneIncoming, PhoneMissed, PhoneOutgoing, RefreshCw } from 'lucide-react';
 import { api } from '../lib/api';
+import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, Skeleton } from './ui';
 
 /** The chips above the stream. `all` asks the server for every kind at once. */
 const FEED_FILTERS = [
   { key: 'all', label: 'All' },
-  { key: 'comment', label: 'Notes' },
+  { key: 'comment', label: 'Comments' },
   { key: 'message', label: 'Messages' },
   { key: 'call', label: 'Calls' },
   { key: 'audit', label: 'Changes' },
@@ -107,7 +108,7 @@ export function ActivityFeed({ module, recordId, customerName, find = '' }: {
           entries.map((entry, index) => (
             <div key={entry.id}>
               {!sameDay(entry.at, entries[index - 1]?.at) && <DayChip at={entry.at} />}
-              <FeedItem entry={entry} customerName={customerName} />
+              <FeedItem entry={entry} customerName={customerName} module={module} recordId={recordId} />
             </div>
           ))
         )}
@@ -117,7 +118,7 @@ export function ActivityFeed({ module, recordId, customerName, find = '' }: {
   );
 }
 
-function FeedItem({ entry, customerName }: { entry: TimelineEntry; customerName: string }): JSX.Element {
+function FeedItem({ entry, customerName, module, recordId }: { entry: TimelineEntry; customerName: string; module: string; recordId: string }): JSX.Element {
   const time = clock(entry.at);
   switch (entry.type) {
     case 'message':
@@ -138,11 +139,7 @@ function FeedItem({ entry, customerName }: { entry: TimelineEntry; customerName:
       );
     }
     case 'comment':
-      return (
-        <Bubble side="right" tone="note" who={entry.actorName} time={time} label={<><Lock className="h-3 w-3" /> Internal note</>}>
-          {entry.body || entry.title}
-        </Bubble>
-      );
+      return <CommentBubble entry={entry} time={time} module={module} recordId={recordId} />;
     case 'call':
       return <CallCard entry={entry} time={time} />;
     case 'attachment':
@@ -201,6 +198,143 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * A comment, editable where it stands by the person who wrote it (or an admin).
+ *
+ * The owner, 3 October 2026: *"make our notes/comments editable … and on hover
+ * show edit versions and what edit was on each message"*. The server has kept
+ * every earlier wording since notes became editable (`edit_history`); this puts
+ * it on screen. An edited comment says so, and hovering "Edited" lists what it
+ * said before and when it changed — an edit is honest when the old words stay
+ * readable.
+ */
+function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry; time: string; module: string; recordId: string }): JSX.Element {
+  const me = useApp((s) => s.user);
+  const queryClient = useQueryClient();
+  const commentId = typeof entry.meta.commentId === 'string' ? entry.meta.commentId : null;
+  const history = Array.isArray(entry.meta.editHistory) ? entry.meta.editHistory as { body: string; at: string }[] : [];
+  const mayEdit = Boolean(commentId && me && (me.id === entry.actorId || me.isAdmin));
+  // Deleting is admins only by default (the owner, 3 October 2026); the server decides, this only hides the button.
+  const mayDelete = Boolean(commentId && me && (me.isAdmin || me.capabilities?.includes('comments.delete')));
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const save = async (): Promise<void> => {
+    if (!commentId || draft === null || !draft.trim()) return;
+    setSaving(true);
+    try {
+      await api.editComment(module, recordId, commentId, draft.trim());
+      setDraft(null);
+      await queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] });
+    } catch (err) {
+      toast.error('Could not save the comment', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (): Promise<void> => {
+    if (!commentId || !window.confirm('Delete this comment for everybody? This cannot be undone.')) return;
+    try {
+      await api.deleteComment(module, recordId, commentId);
+      await queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] });
+    } catch (err) {
+      toast.error('Could not delete the comment', (err as Error).message);
+    }
+  };
+
+  const label = (
+    <>
+      <MessageSquare className="h-3 w-3" /> Comment
+      {history.length > 0 && <EditedMarker history={history} current={entry.body ?? ''} />}
+    </>
+  );
+
+  return (
+    <div className="group/comment relative">
+      <Bubble side="right" tone="note" who={entry.actorName} time={time} label={label}>
+        {draft === null ? (entry.body || entry.title) : (
+          <span className="block">
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void save(); }
+                if (event.key === 'Escape') setDraft(null);
+              }}
+              aria-label="Edit this comment"
+              autoFocus
+              rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+              className="input w-72 max-w-full resize-y p-2 text-xs"
+            />
+            <span className="mt-1.5 flex justify-end gap-1.5">
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setDraft(null)} disabled={saving}>Cancel</button>
+              <button type="button" className="btn-primary btn-sm" onClick={() => void save()} disabled={saving || !draft.trim()}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </span>
+          </span>
+        )}
+      </Bubble>
+      {(mayEdit || mayDelete) && draft === null && (
+        <span className="absolute -top-2 right-1 flex gap-1 opacity-0 transition focus-within:opacity-100 group-hover/comment:opacity-100">
+          {mayEdit && (
+            <button
+              type="button"
+              onClick={() => setDraft(entry.body ?? '')}
+              title="Edit this comment"
+              aria-label="Edit this comment"
+              className="rounded-full border border-slate-200 bg-white p-1 text-slate-600 shadow-xs hover:text-brand-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
+          {mayDelete && (
+            <button
+              type="button"
+              onClick={() => void remove()}
+              title="Delete this comment"
+              aria-label="Delete this comment"
+              className="rounded-full border border-slate-200 bg-white p-1 text-slate-600 shadow-xs hover:text-red-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** "Edited", and on hover (or focus) every earlier wording, oldest first. */
+function EditedMarker({ history, current }: { history: { body: string; at: string }[]; current: string }): JSX.Element {
+  return (
+    <span className="group/edited relative ml-1 font-normal">
+      <button type="button" className="inline-flex items-center gap-0.5 text-slate-500 underline decoration-dotted underline-offset-2 dark:text-slate-400" aria-label={`Edited ${history.length} time${history.length === 1 ? '' : 's'} — show earlier versions`}>
+        <History className="h-3 w-3" /> Edited
+      </button>
+      <span
+        role="tooltip"
+        className="popover invisible absolute bottom-full right-0 z-20 mb-1 w-72 max-w-[80vw] space-y-2 p-2.5 text-left opacity-0 transition group-focus-within/edited:visible group-focus-within/edited:opacity-100 group-hover/edited:visible group-hover/edited:opacity-100"
+      >
+        <span className="block text-[10px] font-bold uppercase tracking-wide text-muted">Earlier versions</span>
+        {history.map((version, index) => (
+          <span key={`${version.at}-${index}`} className="block border-l-2 border-slate-200 pl-2 dark:border-slate-600">
+            <span className="block text-[10px] text-muted">
+              Version {index + 1} · changed {new Date(version.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+            </span>
+            <span className="block whitespace-pre-wrap break-words text-[11px] font-normal text-slate-700 line-through decoration-slate-400/70 dark:text-slate-200">{version.body}</span>
+          </span>
+        ))}
+        <span className="block border-l-2 border-brand-400 pl-2">
+          <span className="block text-[10px] text-muted">Now</span>
+          <span className="block whitespace-pre-wrap break-words text-[11px] font-normal text-slate-800 dark:text-slate-100">{current}</span>
+        </span>
+      </span>
+    </span>
   );
 }
 

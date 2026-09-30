@@ -200,6 +200,8 @@ export const CAPABILITIES = [
   'records.view_lower_hierarchy',
   'records.view_upper_hierarchy',
   'records.view_same_hierarchy',
+  // Admins only unless a profile is given it (the owner, 3 October 2026).
+  'comments.delete',
   'dashboards.share',
   'ai.use',
   'ai.configure',

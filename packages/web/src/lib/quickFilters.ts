@@ -210,6 +210,28 @@ export function topValues<T extends { value: string }>(all: T[], ticked: string[
 }
 
 /** Round a slider's ends to a step a person would type. */
+/**
+ * A number somebody typed into a price or size box, as a number.
+ *
+ * Nobody types fourteen million five hundred thousand; they type "1.45 cr" or
+ * "45 lakh" or "12,00,000". So the Indian units are read — crore, lakh,
+ * thousand, in their usual short forms — and commas in either grouping are
+ * ignored. Anything else that is not a number answers `undefined`, which the
+ * box treats as "no limit" rather than as zero.
+ */
+export function parseTypedAmount(typed: string): number | undefined {
+  const text = typed.trim().toLowerCase().replace(/,/g, '').replace(/₹|rs\.?/g, '').trim();
+  if (!text) return undefined;
+  const match = /^(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lacs|lakh|lakhs|k|thousand)?$/.exec(text);
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  const unit = match[2] ?? '';
+  if (unit.startsWith('c')) return Math.round(amount * 10_000_000);
+  if (unit.startsWith('l')) return Math.round(amount * 100_000);
+  if (unit === 'k' || unit === 'thousand') return Math.round(amount * 1_000);
+  return amount;
+}
+
 export function sliderStep(min: number, max: number): number {
   const span = Math.max(1, max - min);
   const magnitude = 10 ** Math.floor(Math.log10(span / 100));

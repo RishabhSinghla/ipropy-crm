@@ -23,9 +23,9 @@ import {
   ChevronDown, ChevronUp, GripVertical, MoreHorizontal, Plus, RefreshCw, RotateCcw, Save, Trash2,
 } from 'lucide-react';
 import type { RecordEnvelope } from '@ipropy/shared';
-import { byLabel, pipelineFieldOf } from '../../lib/fields';
+import { assignmentField, byLabel, pipelineFieldOf } from '../../lib/fields';
 import { queueCardFields } from '../../lib/queueCard';
-import { allSplitTabs, heroFieldNames, splitTabsFor, type SplitTab } from '../../lib/splitViewLayout';
+import { allSplitTabs, CALL_LOG_ROW, heroFieldNames, OWNER_ROW, rightPaneRowNames, splitTabsFor, type SplitTab } from '../../lib/splitViewLayout';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -47,6 +47,7 @@ interface DesignerConfig {
   queueFields?: string[];
   heroFields?: string[];
   splitTabs?: SplitTab[];
+  rightPane?: string[];
   capture?: CapturePanelConfig;
 }
 
@@ -101,6 +102,7 @@ export default function LayoutDesigner(): JSX.Element {
   const [queueFields, setQueueFields] = useState<string[] | undefined>();
   const [heroFields, setHeroFields] = useState<string[] | undefined>();
   const [splitTabs, setSplitTabs] = useState<SplitTab[] | undefined>();
+  const [rightPane, setRightPane] = useState<string[] | undefined>();
   const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -170,6 +172,7 @@ export default function LayoutDesigner(): JSX.Element {
       setHeaderFields([...new Set([...saved, ...implicit])]);
       setQueueFields(layout.config.queueFields);
       setHeroFields(layout.config.heroFields);
+      setRightPane(layout.config.rightPane);
       setSplitTabs(layout.config.splitTabs ? splitTabsFor(moduleName, layout.config.splitTabs) : undefined);
       setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
@@ -224,6 +227,28 @@ export default function LayoutDesigner(): JSX.Element {
       : [];
   })();
   const heroShown = heroFieldNames(heroFields, followUpName, statusName);
+  /*
+    The right pane's top rows — every one of them, owner and call log
+    included, the owner's ask of 3 October 2026. `useRecordPanes` reads the
+    same function, so the preview and the pane cannot disagree.
+  */
+  const ownerName = meta ? assignmentField(meta.fields)?.name : undefined;
+  const phoneName = meta?.fields.find((f) => f.uitype === 'phone')?.name;
+  const rightPaneShown = rightPaneRowNames(
+    rightPane, heroShown, ownerName, phoneName,
+    new Set(blocks.flatMap((block) => block.fields)),
+  );
+  const rightPaneOptions = [
+    { value: OWNER_ROW, label: 'Assigned to' },
+    { value: CALL_LOG_ROW, label: 'Call Log' },
+    ...fieldOptions.filter((option) => option.value !== ownerName),
+  ];
+  const rightPaneLabel = (name: string): string =>
+    rightPaneOptions.find((option) => option.value === name)?.label ?? labelOf(name);
+  const rightPaneSample = (name: string): string => {
+    if (name === CALL_LOG_ROW) return 'the last call\'s outcome';
+    return sampleOf(name === OWNER_ROW ? ownerName ?? '' : name);
+  };
   const tabsShown = splitTabs ?? allSplitTabs(moduleName);
   const labelOf = (name: string): string => fieldMap.get(name)?.label ?? name;
 
@@ -335,7 +360,7 @@ export default function LayoutDesigner(): JSX.Element {
         own default improves, this module keeps the old one for ever.
       */
       if (layoutType === 'detail') {
-        for (const [key, chosen] of [['queueFields', queueFields], ['heroFields', heroFields], ['splitTabs', splitTabs]] as const) {
+        for (const [key, chosen] of [['queueFields', queueFields], ['heroFields', heroFields], ['splitTabs', splitTabs], ['rightPane', rightPane]] as const) {
           if (chosen === undefined) delete config[key];
           else config[key] = chosen;
         }
@@ -510,21 +535,21 @@ export default function LayoutDesigner(): JSX.Element {
                   <div className="space-y-3">
                     <Zone
                       step={2}
-                      title="Right pane — pinned facts"
-                      hint="The facts at the top of the right pane, under the call deck, each editable where it stands. Who owns the record comes first and the call log last."
-                      onReset={heroFields ? () => { setHeroFields(undefined); touch(); } : undefined}
+                      title="Right pane — top rows"
+                      hint="Every row at the top of the right pane, under the call deck, in this order — who it is assigned to and the call log included. Add, drag, or take any of them out; each is editable where it stands."
+                      onReset={rightPane || heroFields ? () => { setRightPane(undefined); setHeroFields(undefined); touch(); } : undefined}
                       testId="zone-header"
                     >
                       <Preview>
-                        <HeaderFactsPreview facts={heroShown.map((name) => ({ label: labelOf(name), value: sampleOf(name) }))} />
+                        <HeaderFactsPreview facts={rightPaneShown.map((name) => ({ label: rightPaneLabel(name), value: rightPaneSample(name) }))} />
                       </Preview>
                       <OrderedFieldList
-                        label="Pinned facts"
-                        value={heroShown}
-                        options={fieldOptions}
-                        sampleOf={sampleOf}
-                        onChange={(next) => { setHeroFields(next); touch(); }}
-                        emptyText="No facts — only the owner and the call log are pinned."
+                        label="Right pane rows"
+                        value={rightPaneShown}
+                        options={rightPaneOptions}
+                        sampleOf={rightPaneSample}
+                        onChange={(next) => { setRightPane(next); touch(); }}
+                        emptyText="No rows — the right pane starts straight with the sections below."
                       />
                     </Zone>
 

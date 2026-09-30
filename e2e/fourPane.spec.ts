@@ -43,7 +43,7 @@ test('a note written in the box under the timeline appears in it', async ({ page
   await waitForRecords(page);
   const text = `Four pane note ${Date.now()}`;
   await page.getByTestId('note-dock').getByLabel('Add a note for the team').fill(text);
-  await page.getByTestId('note-dock').getByRole('button', { name: 'Internal Note' }).click();
+  await page.getByTestId('note-dock').getByRole('button', { name: 'Comment', exact: true }).click();
   await expect(page.getByTestId('activity-feed').getByText(text)).toBeVisible({ timeout: 15_000 });
 });
 
@@ -58,10 +58,10 @@ test('the tabs are icons with names for a screen reader, and the timeline comes 
   await expect(page.getByTestId('activity-feed')).toBeVisible();
 });
 
-test('the quick filters open from the call pane and close on Escape', async ({ page }) => {
+test('the quick filters open from the button over the queue and close on Escape', async ({ page }) => {
   await page.goto('/leads');
   await waitForRecords(page);
-  await page.getByTestId('quick-filter-bar').click();
+  await page.getByTestId('quick-filter-button').click();
   await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('quick-filter-overlay')).toHaveCount(0);

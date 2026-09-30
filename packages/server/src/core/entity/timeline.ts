@@ -47,7 +47,7 @@ export async function buildTimeline(
 
       want('comment')
         ? conn.query<CommentRow>(
-            `SELECT c.id::text, c.body, c.created_at, c.user_id, c.is_private,
+            `SELECT c.id::text, c.body, c.created_at, c.user_id, c.is_private, c.edit_history,
                     trim(u.first_name || ' ' || u.last_name) AS user_name
              FROM ipy_comment c JOIN ipy_user u ON u.id = c.user_id
              WHERE c.record_id = $1 ORDER BY c.created_at DESC LIMIT $2`,
@@ -163,7 +163,9 @@ export async function buildTimeline(
       actorId: r.user_id, actorName: r.user_name,
       title: r.is_private ? 'Private note' : 'Comment',
       body: r.body, icon: 'message-square',
-      meta: { isPrivate: r.is_private },
+      // The id and the earlier wordings, so the feed can edit a note in place
+      // and show what it said before when somebody hovers over it.
+      meta: { isPrivate: r.is_private, commentId: r.id, editHistory: r.edit_history ?? [] },
     });
   }
 
@@ -266,7 +268,7 @@ function empty<T>(): Promise<{ rows: T[]; rowCount: number }> {
 
 // --- row shapes ------------------------------------------------------------
 interface AuditRow { id: string; action: string; changes: unknown[]; created_at: string; source: string; user_id: string | null; user_name: string | null }
-interface CommentRow { id: string; body: string; created_at: string; user_id: string; user_name: string; is_private: boolean }
+interface CommentRow { id: string; body: string; created_at: string; user_id: string; user_name: string; is_private: boolean; edit_history: { body: string; at: string }[] | null }
 interface MessageRow { id: string; direction: string; channel: string; type: string; body: string | null; status: string; is_ai_generated: boolean; created_at: string; sent_by: string | null; user_name: string | null; media: unknown; wa_number: string | null; wa_agent: string | null }
 interface CallRow { id: string; direction: string; status: string; duration_seconds: number; disposition: string | null; recording_url: string | null; ai_summary: string | null; ai_sentiment: string | null; started_at: string; user_id: string | null; user_name: string | null; from_number: string; to_number: string; transcript: string | null }
 interface EmailRow { id: string; subject: string | null; direction: string; status: string; to_addresses: unknown; opened_at: string | null; open_count: number; created_at: string; sent_by: string | null; user_name: string | null }

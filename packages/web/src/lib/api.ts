@@ -824,7 +824,8 @@ export const api = {
     get<{ id: string; label: string; recordNumber: string | null }[]>(`/api/records/${module}/lookup${qs({ q, filter })}`),
   /** A field's most common values, for a quick filter's top five and its search. */
   facet: (module: string, field: string, search?: string, limit?: number) =>
-    get<{ values: { value: string; label: string; count: number; color: string | null }[] }>(
+    // `blank`: records with no value at all — "Never called", for the call outcome.
+    get<{ values: { value: string; label: string; count: number; color: string | null }[]; blank: number }>(
       `/api/records/${module}/facet${qs({ field, search: search || undefined, limit })}`,
     ),
   /** A number field's lowest and highest value — the ends of its slider. */
@@ -837,8 +838,14 @@ export const api = {
   addComment: (module: string, id: string, body: string, mentions: string[] = []) =>
     post(`/api/records/${module}/${id}/comments`, { body, mentions }),
   /** Fix a note after posting — the author only; the old text is kept as history. */
-  editComment: (module: string, id: string, commentId: string, body: string, mentions: string[] = []) =>
-    patch<{ ok: boolean; edited: boolean }>(`/api/records/${module}/${id}/comments/${commentId}`, { body, mentions }),
+  // Without `mentions` the server keeps the ones the note already had.
+  editComment: (module: string, id: string, commentId: string, body: string, mentions?: string[]) =>
+    patch<{ ok: boolean; edited: boolean }>(`/api/records/${module}/${id}/comments/${commentId}`, mentions ? { body, mentions } : { body }),
+  /** Admins, and any profile given "Delete comments". */
+  deleteComment: (module: string, id: string, commentId: string) =>
+    del(`/api/records/${module}/${id}/comments/${commentId}`),
+  /** A note rewritten so it reads nicely. Nothing is saved; `rewritten: false` means no model ran. */
+  rewriteNote: (text: string) => post<{ note: string; rewritten: boolean }>('/api/ai/rewrite-note', { text }),
   related: (module: string, id: string, relation: string, page = 1) =>
     get<ListResult & { relation: Record<string, unknown> }>(`/api/records/${module}/${id}/related/${relation}${qs({ page })}`),
   linkRelated: (module: string, id: string, relation: string, targetId: string) =>

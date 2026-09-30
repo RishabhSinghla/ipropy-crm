@@ -40,6 +40,22 @@ describe('quick filter facets', () => {
     expect([...counts].sort((a, b) => b - a)).toEqual(counts);
   });
 
+  it('counts how the last call went, and how many were never called', async () => {
+    // Record-level ideas every module has — the call outcome and who owns it —
+    // are counted too, so every quick filter can show its numbers.
+    const res = await request(app).get('/api/records/leads/facet')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ field: 'last_call_disposition', limit: 50 })
+      .expect(200);
+    expect(Array.isArray(res.body.values)).toBe(true);
+    expect(typeof res.body.blank).toBe('number');
+    const owners = await request(app).get('/api/records/leads/facet')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ field: 'owner_id', limit: 50 })
+      .expect(200);
+    expect(Array.isArray(owners.body.values)).toBe(true);
+  });
+
   it('narrows to values containing the words typed', async () => {
     const res = await request(app).get('/api/records/leads/facet')
       .query({ field: 'status', search: 'zzz-no-such-value' })

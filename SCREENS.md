@@ -1277,3 +1277,66 @@ changed, and the one thing worth knowing about each:
   `175` gave it).
 * **The logo is a circle** with a soft ring, and a logo the browser cannot load falls back to the first
   letter of the organisation's name instead of a broken-image box.
+
+## Eleven more, 3 October 2026 — comments, the right pane, and counts
+
+Eight asks in one message, then three more while they were being built. All on
+Contacts and Inventories alike.
+
+* **The notes box says *Comment*, not *Internal Note*** — the button, the feed's
+  label and its filter chip. The lock icon is gone from every bubble.
+* **An emoji button** beside the mic (`components/EmojiPicker.tsx`): forty
+  hand-picked emoji in four rows — reactions, faces, property, work. An emoji
+  lands where the cursor is. Any other emoji can still be typed from the
+  keyboard; a picker of three thousand is one nobody scans.
+* **Rewrite with AI** (`POST /api/ai/rewrite-note`, `ai/rewriteNote.ts`). It
+  keeps the language the rep typed in — English, Hindi or Hinglish — and fixes
+  the spelling and the run-on sentence, friendly rather than corporate. **The
+  rewrite is shown, never swapped in**: *Use this* or *Keep mine*, and nothing
+  is posted until Comment is pressed. With no AI provider (or the switch off in
+  Admin → Settings → AI features, migration `181`) it still answers, with a
+  plain tidy of spaces and capitals, and **says so** — "AI is not set up".
+* **Comments are editable in place**, by whoever wrote them or an admin — the
+  pencil on hover. Every earlier wording was already kept (`edit_history`,
+  migration `107`); an edited bubble now says *Edited*, and hovering it lists
+  each version and when it changed. The timeline hands the feed the comment's
+  id and its history (`meta.commentId`, `meta.editHistory`).
+* **Deleting a comment is admins only by default** — *"delete be allowed but to
+  admins only by default"*. A new capability, `comments.delete`, under
+  Roles & Profiles → Working with records, held by nobody until an admin ticks
+  it. **This takes away something reps had**: until today the author could
+  delete their own note. An edit keeps the old words; a delete does not.
+* **The chat wallpaper** is a tile of "IPROPY" and small property doodles
+  (house, key, chat bubble, star, window) drawn a few shades off the canvas,
+  like WhatsApp's own — texture, not text. Its own colour in dark mode.
+* **The price and size sliders take typed numbers too** — Min and Max boxes
+  under the slider, committed on Enter or when the box loses focus. They read
+  "50 lakh", "1.45 cr", "80k" and "12,00,000" (`parseTypedAmount`), may go past
+  either end of the slider, and moving either control moves the other.
+* **Call sits right after the record's name** in the middle pane's header.
+* **The right pane's top rows are all the Layout Designer's now.** Who it is
+  assigned to, the call log and the phone number were fixed in code, with only
+  the facts between them choosable. Now every row is one entry in one ordered
+  list — `rightPane` on the detail layout, with `@owner` and `@call_log` for
+  the two rows that are not fields (`@` cannot begin a field name, so they
+  cannot collide). Unsaved, it reads exactly as before (`rightPaneRowNames`).
+  Admin → Layout Designer, zone 2, *Right pane — top rows*.
+* **The right pane folds away** — a small tab on its left edge slides it to a
+  thin strip marked *Details*, and a tap slides it back. The width animates and
+  the content keeps its own width while it does, so nothing reflows mid-slide;
+  a folded pane is `inert`. Remembered per browser. The Quick & Live Filters
+  panel still opens inside it, so an open panel unfolds the pane while it shows.
+* **The *Quick & Live Filters* bar left the right pane** — the filter button
+  over the queue opens the same panel. That button's badge now counts every
+  quick filter that is on, not only the advanced conditions, because it is the
+  one place that says so now.
+* **Every quick filter shows its counts** — the stage, who it is assigned to,
+  how the last call went (with *Never called*), the saved lists, the chase
+  queues and the date chips, as Lost Reason always did. The facet endpoint
+  counts the record-level ideas too (`owner_id`, `last_call_disposition`) and
+  answers `blank` — how many hold no value at all. Chips are counted with a
+  one-row list query each, only when their section is open.
+
+**Not proved:** a real model's rewrite — no AI provider is configured on the
+development database, so what was driven in a browser is the fallback. On
+production it depends on which provider Admin → Integrations has switched on.

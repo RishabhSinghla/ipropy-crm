@@ -49,6 +49,12 @@ export const AI_FEATURES = {
     fallback: true,
     description: 'A microphone on the notes panel. Speak in Hinglish, it writes the note.',
   },
+  noteRewrite: {
+    key: 'ai_features.note_rewrite',
+    label: 'Rewrite a note with AI',
+    fallback: true,
+    description: 'A button on the notes box that rewrites what somebody typed so it reads nicely, in the same language. Nothing is posted until they press Comment.',
+  },
   duplicateSuggestions: {
     key: 'ai_features.duplicate_suggestions',
     label: 'Spot the same person twice',

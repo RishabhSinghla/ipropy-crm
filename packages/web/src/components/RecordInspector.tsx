@@ -7,11 +7,11 @@
  * where it stands — so a whole record fits the height of the pane beside the
  * call instead of needing a tab of its own.
  *
- * The three facts a call changes sit first, pinned: **who owns it, the key
- * facts the Layout Designer puts in the header (the chase date and the stage
- * unless an admin chose otherwise), and how the last call went**. Then the
- * Layout Designer's own sections, in its order. No screen names a field: all
- * of it is `useRecordPanes`, the same answer the rest of the CRM reads.
+ * The rows at the top — who owns it, the key facts, how the last call went,
+ * the number — are **one ordered list from the Layout Designer** (`rows`,
+ * since 3 October 2026; see `rightPaneRowNames`). Then the Layout Designer's
+ * own sections, in its order. No screen names a field: all of it is
+ * `useRecordPanes`, the same answer the rest of the CRM reads.
  */
 import { type JSX, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -26,21 +26,20 @@ import { invalidateRecordQueries } from '../lib/invalidate';
 import { badgeVars } from '../lib/color';
 import { cn, restrictionForField } from '../lib/utils';
 import type { DescribedModule, FieldBlockSpec } from '../lib/recordPanes';
+import { CALL_LOG_ROW, OWNER_ROW } from '../lib/splitViewLayout';
 
-export function RecordInspector({ module, row, canEdit, blocks, pinned, assignedField, assignedName, statusField, followUpField, phoneField, find = '' }: {
+export function RecordInspector({ module, row, canEdit, blocks, rows, assignedField, assignedName, statusField, followUpField, find = '' }: {
   module: DescribedModule;
   row: RecordEnvelope;
   canEdit: boolean;
   blocks: FieldBlockSpec[];
-  /** The header's key facts, in the Layout Designer's order. */
-  pinned: FieldMeta[];
+  /** The top rows, in the Layout Designer's order: field names, `@owner` and `@call_log`. */
+  rows: string[];
   assignedField?: FieldMeta;
   /** The owner's name, which the record's own display does not always carry. */
   assignedName?: string;
   statusField?: FieldMeta;
   followUpField?: FieldMeta;
-  /** The number moved off the header, so it is still editable somewhere. */
-  phoneField?: FieldMeta;
   /** Words typed into the header's search: only the fields whose name or value mention them. */
   find?: string;
 }): JSX.Element {
@@ -51,14 +50,15 @@ export function RecordInspector({ module, row, canEdit, blocks, pinned, assigned
     const text = Array.isArray(value) ? value.join(' ') : value == null ? '' : String(value);
     return `${field.label} ${text}`.toLocaleLowerCase().includes(needle);
   };
-  const top = [
-    ...(assignedField ? [assignedField] : []),
-    ...pinned.filter((field) => field.name !== assignedField?.name),
-  ].filter(mentions);
-  const shownAbove = new Set(top.map((field) => field.name));
-  const inBlocks = new Set(blocks.flatMap((block) => block.fields.map((field) => field.name)));
-  // The number is not in the header any more, so it must be here if no section has it.
-  const extra = phoneField && !inBlocks.has(phoneField.name) && !shownAbove.has(phoneField.name) && mentions(phoneField) ? [phoneField] : [];
+  const fieldMap = new Map(module.fields.map((field) => [field.name, field]));
+  // Each row as a field (the owner row is the assignment field), or the call log.
+  const top = rows.flatMap((name): Array<FieldMeta | typeof CALL_LOG_ROW> => {
+    if (name === CALL_LOG_ROW) return !needle || 'call log'.includes(needle) ? [CALL_LOG_ROW] : [];
+    const field = name === OWNER_ROW ? assignedField : fieldMap.get(name);
+    if (!field || !field.isActive || field.displayType === 'hidden') return [];
+    return mentions(field) ? [field] : [];
+  });
+  const shownAbove = new Set(top.flatMap((item) => (item === CALL_LOG_ROW ? [] : [item.name])));
   const sections = blocks
     .map((block) => ({ ...block, fields: block.fields.filter((field) => !shownAbove.has(field.name) && mentions(field)) }))
     .filter((block, index) => index === 0 || block.fields.length > 0);
@@ -72,34 +72,24 @@ export function RecordInspector({ module, row, canEdit, blocks, pinned, assigned
             {block.label}
           </h3>
           <div className="space-y-1.5">
-            {index === 0 && (
-              <>
-                {top.map((field) => (
-                  <Row key={field.name} label={field.label} mandatory={field.isMandatory}>
-                    <PinnedValue
-                      module={module}
-                      row={field.name === assignedField?.name && assignedName ? { ...row, display: { ...row.display, [field.name]: assignedName } } : row}
-                      field={field}
-                      canEdit={canEdit}
-                      statusField={statusField}
-                      followUpField={followUpField}
-                    />
-                  </Row>
-                ))}
-                {/* Not a field: an outcome lives on the call, so its label is the
-                    owner's own word for the toolbar button that filters on it. */}
-                {(!needle || 'call log'.includes(needle)) && (
-                  <Row label="Call Log">
-                    <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
-                  </Row>
-                )}
-                {extra.map((field) => (
-                  <Row key={field.name} label={field.label} mandatory={field.isMandatory} after={<WhatsAppBeside row={row} field={field} />}>
-                    <PlainValue module={module} row={row} field={field} canEdit={canEdit} />
-                  </Row>
-                ))}
-              </>
-            )}
+            {index === 0 && top.map((item) => (item === CALL_LOG_ROW ? (
+              // Not a field: an outcome lives on the call, so its label is the
+              // owner's own word for the toolbar button that filters on it.
+              <Row key={CALL_LOG_ROW} label="Call Log">
+                <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
+              </Row>
+            ) : (
+              <Row key={item.name} label={item.label} mandatory={item.isMandatory} after={<WhatsAppBeside row={row} field={item} />}>
+                <PinnedValue
+                  module={module}
+                  row={item.name === assignedField?.name && assignedName ? { ...row, display: { ...row.display, [item.name]: assignedName } } : row}
+                  field={item}
+                  canEdit={canEdit}
+                  statusField={statusField}
+                  followUpField={followUpField}
+                />
+              </Row>
+            )))}
             {block.fields.map((field) => (
               <Row key={field.name} label={field.label} mandatory={field.isMandatory} after={<WhatsAppBeside row={row} field={field} />}>
                 <PlainValue module={module} row={row} field={field} canEdit={canEdit} />

@@ -367,7 +367,7 @@ test('a quick filter narrows the whole list, not just the page', async ({ page }
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('queue-type-filter')).toHaveCount(0);
 
-  await page.getByTestId('quick-filter-bar').click();
+  await page.getByTestId('quick-filter-button').click();
   const panel = page.getByTestId('quick-filter-overlay');
   const count = panel.getByTestId('quick-filter-count');
   await expect(count).toHaveText(/^[\d,]+ records$/, { timeout: 20_000 });

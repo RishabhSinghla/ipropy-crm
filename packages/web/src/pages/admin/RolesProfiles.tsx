@@ -205,6 +205,7 @@ const CAPABILITY_INFO: Record<string, { label: string; hint: string }> = {
   'records.move_between_modules': { label: 'Move between Leads and Inventory', hint: 'Lets this role move a record between Leads and Inventory while retaining matching data and history.' },
   'records.mass_edit': { label: 'Bulk edit records', hint: 'Edit a field across many selected records at once.' },
   'records.mass_delete': { label: 'Bulk delete records', hint: 'Delete many selected records at once.' },
+  'comments.delete': { label: 'Delete comments', hint: 'Remove a comment from a record, anybody\'s. Off for everybody but admins until ticked here.' },
   'records.export': { label: 'Export records', hint: 'Download records to a file.' },
   'records.import': { label: 'Import records', hint: 'Bring records in from a file.' },
   'records.view_all': { label: 'See all records', hint: 'See every record regardless of owner and role hierarchy.' },
@@ -262,7 +263,7 @@ const CAP_GROUPS: { id: string; title: string; blurb: string; caps: string[]; cl
     caps: [
       'records.transfer_ownership', 'records.move_between_modules', 'records.mass_edit', 'records.mass_delete',
       'records.export', 'records.import', 'records.view_all', 'records.view_lower_hierarchy',
-      'records.view_upper_hierarchy', 'records.view_same_hierarchy',
+      'records.view_upper_hierarchy', 'records.view_same_hierarchy', 'comments.delete',
     ],
   },
   {

@@ -149,7 +149,7 @@ recordsRouter.get('/:module/facet', asyncHandler(async (req, res) => {
     search: z.string().max(100).optional(),
     limit: z.coerce.number().int().min(1).max(50).optional(),
   }).parse(req.query);
-  res.json({ values: await fieldFacets(scope, req.params.module, field, { search, limit }) });
+  res.json(await fieldFacets(scope, req.params.module, field, { search, limit }));
 }));
 
 recordsRouter.get('/:module/facet-range', asyncHandler(async (req, res) => {
@@ -662,11 +662,19 @@ recordsRouter.patch('/:module/:id/comments/:commentId', asyncHandler(async (req,
   res.json({ ok: true, edited: changed });
 }));
 
+/**
+ * Delete a comment. Admins only by default — the owner, 3 October 2026 — and
+ * any profile an admin ticks "Delete comments" on. Writing one's own note no
+ * longer means being able to take it back: an edit keeps the old words, a
+ * delete does not.
+ */
 recordsRouter.delete('/:module/:id/comments/:commentId', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'comments.delete');
+  if (!(await canAccessRecord(getScope(req), req.params.module, req.params.id, 'view'))) throw new ForbiddenError();
   const result = await db.query(
-    `DELETE FROM ipy_comment WHERE id = $1 AND record_id = $2 ${user.isAdmin ? '' : 'AND user_id = $3'}`,
-    user.isAdmin ? [req.params.commentId, req.params.id] : [req.params.commentId, req.params.id, user.id],
+    `DELETE FROM ipy_comment WHERE id = $1 AND record_id = $2`,
+    [req.params.commentId, req.params.id],
   );
   if (!result.rowCount) throw new NotFoundError('Comment not found');
   res.json({ ok: true });

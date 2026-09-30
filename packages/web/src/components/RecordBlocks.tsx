@@ -1,7 +1,7 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { picklistOptionForValue, relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
-import { FileText, LayoutList, Lock, Mic, Send } from 'lucide-react';
+import { FileText, LayoutList, MessageSquare, Mic, Send, Sparkles } from 'lucide-react';
 import { Avatar } from './ui';
 import { FieldValue } from './FieldRenderer';
 import { EditableField, isInlineEditable } from './EditableField';
@@ -17,6 +17,7 @@ import { HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE, headerChipTone } 
 import { badgeVars } from '../lib/color';
 import { FollowUpBadge } from './FollowUpChip';
 import { useWhatsAppComposer } from './WhatsAppComposer';
+import { EmojiPicker } from './EmojiPicker';
 
 /**
  * A record's field card and its notes, shared by every screen that shows a
@@ -222,7 +223,8 @@ export function NotesPanel({ module, record, flush = false }: {
  * Three looks, one set of rules. `card` and `pane` are the Chats screen and the
  * old right-hand notes pane; `dock` is the bottom of the split view's middle
  * pane, **30 September 2026, the owner's prototype**: the quick-tag phrases in a
- * row above the box, and two ways out — *Internal Note*, which posts a comment,
+ * row above the box, and two ways out — *Comment* (it said "Internal Note"
+ * until 3 October 2026), which posts a comment,
  * and *Send WhatsApp*, which opens the WhatsApp composer with the same words
  * already in it. A second copy of the box would be a second place the mic, the
  * phrases and ⌘↵ could quietly stop working.
@@ -240,8 +242,36 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
   const whatsApp = useWhatsAppComposer();
   const add = useMutation({
     mutationFn: () => api.addComment(module, recordId, note.trim()),
-    onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }); toast.success('Note added'); },
-    onError: (error: Error) => toast.error('Could not add note', error.message),
+    onSuccess: () => { setNote(''); setRewrite(null); void queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }); toast.success('Comment added'); },
+    onError: (error: Error) => toast.error('Could not add the comment', error.message),
+  });
+
+  /*
+    An emoji lands where the cursor is, not tacked on the end — somebody
+    reaching for 👍 halfway through a sentence means it there.
+  */
+  const textBox = useRef<HTMLTextAreaElement>(null);
+  const addEmoji = (emoji: string): void => {
+    const field = textBox.current;
+    const start = field?.selectionStart ?? note.length;
+    const end = field?.selectionEnd ?? note.length;
+    setNote(note.slice(0, start) + emoji + note.slice(end));
+    requestAnimationFrame(() => {
+      field?.focus();
+      field?.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
+  };
+
+  /*
+    "Rewrite with AI" — the owner, 3 October 2026. The rewrite is shown, never
+    swapped in silently: the rep reads it and chooses it or keeps their own.
+    With no AI provider the server still answers with a plain tidy, and says so.
+  */
+  const [rewrite, setRewrite] = useState<{ note: string; rewritten: boolean } | null>(null);
+  const rewriting = useMutation({
+    mutationFn: () => api.rewriteNote(note.trim()),
+    onSuccess: (answer) => setRewrite(answer),
+    onError: (error: Error) => toast.error('Could not rewrite that', error.message),
   });
   /*
     Speak the note instead of typing it — back in the split view, where it went
@@ -298,7 +328,21 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
         ? 'rounded-xl border border-slate-300/80 bg-slate-50 p-2 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
         : cn('rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs dark:border-slate-700 dark:bg-slate-800', look === 'card' && 'border-0 p-4 shadow-none dark:bg-transparent'),
     )}>
+      {rewrite && (
+        <div className="mb-2 rounded-lg border border-brand-200 bg-brand-50 p-2 dark:border-brand-800 dark:bg-slate-900" data-testid="note-rewrite">
+          <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-brand-700 dark:text-brand-300">
+            <Sparkles className="h-3 w-3" />
+            {rewrite.rewritten ? 'Rewritten — use it, or keep yours' : 'AI is not set up, so only the spacing and capitals were tidied'}
+          </p>
+          <p className="whitespace-pre-wrap break-words text-xs text-slate-800 dark:text-slate-100">{rewrite.note}</p>
+          <div className="mt-1.5 flex justify-end gap-1.5">
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setRewrite(null)}>Keep mine</button>
+            <button type="button" className="btn-primary btn-sm" onClick={() => { setNote(rewrite.note); setRewrite(null); textBox.current?.focus(); }}>Use this</button>
+          </div>
+        </div>
+      )}
       <textarea
+        ref={textBox}
         value={note}
         onChange={(event) => setNote(event.target.value)}
         // The hint under the box has always promised this; now it does it.
@@ -306,7 +350,7 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); post(); }
         }}
         placeholder={docked && whatsAppTo
-          ? 'Add an internal note or send a WhatsApp message… type @ to notify someone'
+          ? 'Write a comment or a WhatsApp message… type @ to notify someone'
           : 'Add a note for the team… type @ to notify someone'}
         aria-label="Add a note for the team"
         className={cn('w-full resize-none text-xs text-slate-800 placeholder-slate-400 dark:text-slate-100', look === 'card' ? 'input min-h-24 p-3' : 'border-none bg-transparent p-0 focus:ring-0')}
@@ -337,6 +381,22 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
               <Mic className="h-3.5 w-3.5" />
             </button>
           )}
+          <EmojiPicker
+            onPick={addEmoji}
+            className={docked ? 'rounded p-1 text-amber-600 transition hover:bg-slate-200 dark:text-amber-400 dark:hover:bg-slate-700' : 'btn-secondary btn-sm px-2'}
+          />
+          <button
+            type="button"
+            onClick={() => rewriting.mutate()}
+            disabled={!note.trim() || rewriting.isPending || add.isPending}
+            title="Rewrite what you typed so it reads nicely — same language, your call whether to use it"
+            className={cn(
+              'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:text-brand-300 dark:hover:bg-slate-700',
+            )}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {rewriting.isPending ? 'Rewriting…' : 'Rewrite with AI'}
+          </button>
           <span className="min-w-0 truncate text-2xs text-muted" aria-live="polite">
             {voice.recording
               ? 'Listening — tap the mic again when you have finished'
@@ -349,8 +409,8 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
             onClick={post}
             className={docked ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'}
           >
-            {docked ? <Lock className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
-            {add.isPending ? 'Posting…' : docked ? 'Internal Note' : 'Post'}
+            {docked ? <MessageSquare className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+            {add.isPending ? 'Posting…' : docked ? 'Comment' : 'Post'}
           </button>
           {/*
             Only where WhatsApp can actually go: a number on the record and a

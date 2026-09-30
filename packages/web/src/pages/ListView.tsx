@@ -853,6 +853,11 @@ export default function ListView(): JSX.Element {
     against its button, not drawn in a portal, and a sideways-scrolling row
     would clip the panel it opens.
   */
+  // Every quick and live filter that is on — the badge on the filter button
+  // over the queue, which is the one way into the panel since 3 October 2026.
+  const quickFilterCount = countActiveQuickFilters({
+    filter, stages: stagePick, agent: agentPick, task: taskQueue, disposition: dispositionPick, picks,
+  });
   const queueTools = (
     <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
       <div className="flex flex-wrap items-center gap-1 bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
@@ -968,13 +973,15 @@ export default function ListView(): JSX.Element {
         </div>
             <button
               onClick={() => setShowFilters((value) => !value)}
-              className={cn('btn-secondary btn-sm px-2', countConditions(filter) > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
+              className={cn('btn-secondary btn-sm px-2', quickFilterCount > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
               aria-label="Quick and live filters"
+              aria-expanded={showFilters}
               title="Quick and live filters"
+              data-testid="quick-filter-button"
             >
               <Filter className="h-3.5 w-3.5" />
-              {countConditions(filter) > 0 && (
-                <span className="rounded-full bg-brand-600 px-1.5 text-2xs text-white">{countConditions(filter)}</span>
+              {quickFilterCount > 0 && (
+                <span className="rounded-full bg-brand-600 px-1.5 text-2xs text-white">{quickFilterCount}</span>
               )}
             </button>
 
@@ -1045,9 +1052,6 @@ export default function ListView(): JSX.Element {
   ) : null;
 
   /** How many of the quick filters are narrowing the list right now. */
-  const quickFilterCount = countActiveQuickFilters({
-    filter, stages: stagePick, agent: agentPick, task: taskQueue, disposition: dispositionPick, picks,
-  });
   const clearQuickFilters = (): void => {
     setAgentPick(null);
     setStagePick([]);
@@ -1075,7 +1079,7 @@ export default function ListView(): JSX.Element {
       sections={quickSections}
       count={data?.total}
       counting={isFetching}
-      views={(views ?? []).map((view) => ({ id: view.id, name: view.name, isDefault: view.isDefault }))}
+      views={(views ?? []).map((view) => ({ id: view.id, name: view.name, isDefault: view.isDefault, count: view.count }))}
       activeViewId={activeView?.id}
       onChooseView={(id) => { setTagPick(null); chooseView(id); }}
       ownerField={ownerField}
@@ -1286,10 +1290,10 @@ export default function ListView(): JSX.Element {
             queueTools={queueTools}
             queueFooter={queueFooter}
             filterBar={{
-              count: quickFilterCount,
-              onOpen: () => setShowFilters((value) => !value),
-              onReset: clearQuickFilters,
-              // Drawn inside the right-hand pane, in its exact shape.
+              open: showFilters,
+              // Drawn inside the right-hand pane, in its exact shape. It is
+              // opened by the filter button over the queue; the pane's own bar
+              // for it went on 3 October 2026 as a duplicate of that button.
               panel: quickFilterPanel('pane'),
             }}
             onDelete={meta.permissions.delete

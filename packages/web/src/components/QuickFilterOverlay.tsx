@@ -19,7 +19,7 @@
  * list the moment it is made — there is no Apply to forget to press.
  */
 import { type JSX, type ReactNode, useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { formatIndianPrice, type FieldMeta, type FilterGroup, type ModuleMeta, type QuickFilterSection } from '@ipropy/shared';
 import {
   CalendarDays, Check, ChevronDown, Clock3, Filter, Hash, ListFilter, PhoneOutgoing,
@@ -28,17 +28,54 @@ import {
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { api } from '../lib/api';
 import {
-  DATE_PRESETS, countActiveQuickFilters, pickIsActive, sectionLabel, sliderStep, topValues,
+  DATE_PRESETS, countActiveQuickFilters, pickIsActive, quickPickConditions, sectionLabel, parseTypedAmount, sliderStep, topValues,
   type DatePreset, type QuickPick, type QuickPicks,
 } from '../lib/quickFilters';
 import { cn } from '../lib/utils';
 import type { DispositionPick } from './CallDispositionFilter';
 import { FilterBuilder, countConditions } from './FilterBuilder';
-import type { TaskQueue } from './FollowUpQueue';
+import { followUpFilters, type TaskQueue } from './FollowUpQueue';
 import { Spinner } from './ui';
 
-type ViewChoice = { id: string; name: string; isDefault?: boolean };
+type ViewChoice = { id: string; name: string; isDefault?: boolean; count?: number };
 type Option = { value: string; label: string; color?: string | null; count?: number };
+
+/*
+  Every filter says how many records each choice holds — the owner, 3 October
+  2026: *"I need count displayed all where in all filters"*. Counted over the
+  whole module, the way Lost Reason always was, and only once a section is
+  opened, so a folded heading costs nothing.
+*/
+function useFacetCounts(module: string, field: string | undefined): { counts: Map<string, number>; blank: number | undefined; loading: boolean } {
+  const { data, isLoading } = useQuery({
+    queryKey: ['facet', module, field],
+    queryFn: () => api.facet(module, field!, undefined, 50),
+    enabled: Boolean(field),
+    staleTime: 60_000,
+  });
+  return {
+    counts: new Map((data?.values ?? []).map((row) => [row.value, row.count])),
+    blank: data?.blank,
+    loading: Boolean(field) && isLoading,
+  };
+}
+
+/** How many records each chip's filter matches — one small count per chip. */
+function useChipCounts<T extends string>(module: string, filters: Array<[T, FilterGroup]>): Partial<Record<T, number>> {
+  const results = useQueries({
+    queries: filters.map(([key, filter]) => ({
+      queryKey: ['chip-count', module, key, JSON.stringify(filter)],
+      queryFn: () => api.list(module, { filter, page: 1, pageSize: 1 }),
+      staleTime: 60_000,
+    })),
+  });
+  const counts: Partial<Record<T, number>> = {};
+  filters.forEach(([key], index) => {
+    const total = results[index]?.data?.total;
+    if (total !== undefined) counts[key] = total;
+  });
+  return counts;
+}
 
 const TASK_CHOICES: Array<[TaskQueue, string]> = [
   ['pending', 'Overdue'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['upcoming', 'Upcoming'],
@@ -189,13 +226,13 @@ function SectionFor({ section, title, props, fields }: {
   switch (section.kind) {
     case 'agent':
       return props.ownerField ? (
-        <AgentSection section={section} title={title} top={top} agent={props.agent} onAgent={props.onAgent} />
+        <AgentSection section={section} title={title} top={top} module={props.module.name} ownerField={props.ownerField.name} agent={props.agent} onAgent={props.onAgent} />
       ) : null;
     case 'list':
       return (
         <FoldingState section={section} title={title} icon={<ListFilter className="h-3.5 w-3.5" />} active={0}>
           <ChoiceList
-            options={props.views.map((view) => ({ value: view.id, label: view.name }))}
+            options={props.views.map((view) => ({ value: view.id, label: view.name, count: view.count }))}
             ticked={props.activeViewId ? [props.activeViewId] : []}
             top={top}
             onTick={(id) => props.onChooseView(id)}
@@ -205,16 +242,11 @@ function SectionFor({ section, title, props, fields }: {
     case 'stage':
       return props.stageField ? (
         <FoldingState section={section} title={title} icon={<span className="h-2.5 w-2.5 rounded-full bg-brand-500" />} active={props.stages.length}>
-          <ChoiceList
-            options={(props.stageField.options ?? []).map((option) => ({ value: option.value, label: option.label || option.value, color: option.color }))}
-            ticked={props.stages}
-            top={top}
-            onTick={(value) => props.onStages(toggle(props.stages, value))}
-          />
+          <StageChoices module={props.module.name} field={props.stageField} ticked={props.stages} top={top} onTick={(value) => props.onStages(toggle(props.stages, value))} />
         </FoldingState>
       ) : null;
     case 'calls':
-      return <CallsSection section={section} title={title} top={top} disposition={props.disposition} onDisposition={props.onDisposition} />;
+      return <CallsSection section={section} title={title} top={top} module={props.module.name} disposition={props.disposition} onDisposition={props.onDisposition} />;
     case 'task':
       return props.taskField ? (
         <TaskSection section={section} title={title} props={props} field={props.taskField} />
@@ -338,33 +370,66 @@ function Choice({ option, checked, onClick }: { option: Option; checked: boolean
   );
 }
 
-function AgentSection({ section, title, top, agent, onAgent }: {
-  section: QuickFilterSection; title: string; top: number; agent: string | null; onAgent: (id: string | null) => void;
+/** The stage's own options, in the dropdown's order, each with its count. */
+function StageChoices({ module, field, ticked, top, onTick }: {
+  module: string; field: FieldMeta; ticked: string[]; top: number; onTick: (value: string) => void;
+}): JSX.Element {
+  const { counts, loading } = useFacetCounts(module, field.name);
+  const options = (field.options ?? []).map((option) => ({
+    value: option.value, label: option.label || option.value, color: option.color, count: loading ? undefined : counts.get(option.value) ?? 0,
+  }));
+  return <ChoiceList options={options} ticked={ticked} top={top} onTick={onTick} />;
+}
+
+function AgentSection({ section, title, top, module, ownerField, agent, onAgent }: {
+  section: QuickFilterSection; title: string; top: number; module: string; ownerField: string; agent: string | null; onAgent: (id: string | null) => void;
+}): JSX.Element {
+  return (
+    <FoldingState section={section} title={title} icon={<UserRound className="h-3.5 w-3.5" />} active={agent ? 1 : 0}>
+      <AgentChoices top={top} module={module} ownerField={ownerField} agent={agent} onAgent={onAgent} />
+    </FoldingState>
+  );
+}
+
+/** Everybody a record can be assigned to, most records first. */
+function AgentChoices({ top, module, ownerField, agent, onAgent }: {
+  top: number; module: string; ownerField: string; agent: string | null; onAgent: (id: string | null) => void;
 }): JSX.Element {
   const { data: rawUsers = [], isLoading } = useQuery({
     queryKey: ['users', 'assignable'],
     queryFn: () => api.users(false, false, true),
     staleTime: 5 * 60_000,
   });
+  const { counts, loading } = useFacetCounts(module, ownerField);
   const users = rawUsers
-    .map((user) => ({ value: String(user.id ?? ''), label: String(user.fullName ?? '') }))
-    .filter((user) => user.value && user.label);
-  return (
-    <FoldingState section={section} title={title} icon={<UserRound className="h-3.5 w-3.5" />} active={agent ? 1 : 0}>
-      <ChoiceList options={users} ticked={agent ? [agent] : []} top={top} loading={isLoading} onTick={(id) => onAgent(agent === id ? null : id)} />
-    </FoldingState>
-  );
+    .map((user) => ({ value: String(user.id ?? ''), label: String(user.fullName ?? ''), count: loading ? undefined : counts.get(String(user.id ?? '')) ?? 0 }))
+    .filter((user) => user.value && user.label)
+    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
+  return <ChoiceList options={users} ticked={agent ? [agent] : []} top={top} loading={isLoading} onTick={(id) => onAgent(agent === id ? null : id)} />;
 }
 
 const NEVER_CALLED = '__never__';
 
-function CallsSection({ section, title, top, disposition, onDisposition }: {
-  section: QuickFilterSection; title: string; top: number; disposition: DispositionPick; onDisposition: (value: DispositionPick) => void;
+function CallsSection({ section, title, top, module, disposition, onDisposition }: {
+  section: QuickFilterSection; title: string; top: number; module: string; disposition: DispositionPick; onDisposition: (value: DispositionPick) => void;
+}): JSX.Element {
+  const ticked = disposition.never ? [NEVER_CALLED] : disposition.outcomes;
+  return (
+    <FoldingState section={section} title={title} icon={<PhoneOutgoing className="h-3.5 w-3.5" />} active={ticked.length}>
+      <CallsChoices top={top} module={module} disposition={disposition} onDisposition={onDisposition} />
+    </FoldingState>
+  );
+}
+
+/** How each record's last call went — the same `last_call_disposition` the filter asks. */
+function CallsChoices({ top, module, disposition, onDisposition }: {
+  top: number; module: string; disposition: DispositionPick; onDisposition: (value: DispositionPick) => void;
 }): JSX.Element {
   const outcomes = useCallDispositionOptions();
+  const { counts, blank, loading } = useFacetCounts(module, 'last_call_disposition');
   const options: Option[] = [
-    { value: NEVER_CALLED, label: 'Never called' },
-    ...outcomes.map((outcome) => ({ value: outcome.value, label: outcome.label })),
+    { value: NEVER_CALLED, label: 'Never called', count: loading ? undefined : blank ?? 0 },
+    ...outcomes.map((outcome) => ({ value: outcome.value, label: outcome.label, count: loading ? undefined : counts.get(outcome.value) ?? 0 })),
   ];
   const ticked = disposition.never ? [NEVER_CALLED] : disposition.outcomes;
   const tick = (value: string): void => {
@@ -377,11 +442,7 @@ function CallsSection({ section, title, top, disposition, onDisposition }: {
       : [...disposition.outcomes, value];
     onDisposition({ never: false, outcomes: chosen });
   };
-  return (
-    <FoldingState section={section} title={title} icon={<PhoneOutgoing className="h-3.5 w-3.5" />} active={ticked.length}>
-      <ChoiceList options={options} ticked={ticked} top={top} onTick={tick} />
-    </FoldingState>
-  );
+  return <ChoiceList options={options} ticked={ticked} top={top} onTick={tick} />;
 }
 
 /**
@@ -397,13 +458,7 @@ function ValuesSection({ section, title, module, field, top, props }: {
   const pick = props.picks[field.name];
   const ticked = pick?.kind === 'values' ? pick.values : [];
   const [open, setOpen] = useState(Boolean(section.open) || ticked.length > 0);
-  const { data, isLoading } = useQuery({
-    queryKey: ['facet', module, field.name],
-    queryFn: () => api.facet(module, field.name, undefined, 50),
-    enabled: open,
-    staleTime: 60_000,
-  });
-  const counts = new Map((data?.values ?? []).map((row) => [row.value, row.count]));
+  const { counts, loading: isLoading } = useFacetCounts(module, open ? field.name : undefined);
   const options: Option[] = (field.options ?? [])
     .filter((option) => option.isActive !== false)
     .map((option) => ({ value: option.value, label: option.label || option.value, color: option.color, count: counts.get(option.value) ?? 0 }))
@@ -459,20 +514,64 @@ const THUMB = 'pointer-events-none absolute inset-x-0 top-1/2 h-1 w-full -transl
   + '[&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-brand-600';
 
 /**
- * Two thumbs on one track. The list is asked again only when a thumb is let
- * go, not on every pixel of a drag — each step would be a query.
+ * Two thumbs on one track, and two boxes to type into beneath them.
+ *
+ * The list is asked again only when a thumb is let go, not on every pixel of a
+ * drag — each step would be a query. The boxes are the owner's ask of
+ * 3 October 2026 (*"input capability along with slider … both slider thing is
+ * functional plus this inputting number"*): a box commits on Enter or when it
+ * loses focus, reads "1.45 cr" and "45 lakh" (`parseTypedAmount`), and may go
+ * past either end of the slider — a buyer's budget is not limited to the
+ * prices already in the list. Slider and boxes are one pick; moving either
+ * moves the other.
  */
 function RangeSlider({ low, high, money, min, max, onChange }: {
   low: number; high: number; money: boolean; min?: number; max?: number;
   onChange: (min: number | undefined, max: number | undefined) => void;
 }): JSX.Element {
   const step = sliderStep(low, high);
-  const [from, setFrom] = useState(min ?? low);
-  const [to, setTo] = useState(max ?? high);
-  useEffect(() => { setFrom(min ?? low); setTo(max ?? high); }, [min, max, low, high]);
+  const clamp = (value: number): number => Math.min(high, Math.max(low, value));
+  const [from, setFrom] = useState(clamp(min ?? low));
+  const [to, setTo] = useState(clamp(max ?? high));
+  const [minText, setMinText] = useState(min != null ? String(min) : '');
+  const [maxText, setMaxText] = useState(max != null ? String(max) : '');
+  useEffect(() => {
+    setFrom(clamp(min ?? low)); setTo(clamp(max ?? high));
+    setMinText(min != null ? String(min) : ''); setMaxText(max != null ? String(max) : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [min, max, low, high]);
   const show = (value: number): string => (money ? formatIndianPrice(value) : value.toLocaleString('en-IN'));
   const commit = (): void => onChange(from > low ? from : undefined, to < high ? to : undefined);
+  const commitTyped = (): void => {
+    let typedMin = parseTypedAmount(minText);
+    let typedMax = parseTypedAmount(maxText);
+    if (typedMin != null && typedMax != null && typedMin > typedMax) [typedMin, typedMax] = [typedMax, typedMin];
+    if (typedMin === min && typedMax === max) return;
+    onChange(typedMin, typedMax);
+  };
   const percent = (value: number): number => ((value - low) / (high - low)) * 100;
+  const typedHint = (text: string): string | null => {
+    const value = parseTypedAmount(text);
+    if (!text.trim()) return null;
+    return value == null ? 'Not a number' : show(value);
+  };
+  const box = (label: string, text: string, setText: (value: string) => void, placeholder: string): JSX.Element => (
+    <label className="min-w-0 flex-1">
+      <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted">{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={text}
+        placeholder={placeholder}
+        aria-label={`${label} ${money ? 'amount' : 'size'}`}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commitTyped}
+        onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitTyped(); } }}
+        className="input mt-0.5 h-7 w-full px-2 py-0 text-[11px] tabular-nums"
+      />
+      <span className="mt-0.5 block h-3.5 truncate text-[10px] text-muted">{typedHint(text)}</span>
+    </label>
+  );
   return (
     <div className="px-4 pb-1 pt-2" data-testid="range-slider">
       <div className="relative h-5">
@@ -482,7 +581,7 @@ function RangeSlider({ low, high, money, min, max, onChange }: {
           type="range" min={low} max={high} step={step} value={from}
           aria-label="Lowest"
           className={THUMB}
-          onChange={(event) => setFrom(Math.min(Number(event.target.value), to))}
+          onChange={(event) => { const value = Math.min(Number(event.target.value), to); setFrom(value); setMinText(value > low ? String(value) : ''); }}
           onPointerUp={commit}
           onKeyUp={commit}
         />
@@ -490,7 +589,7 @@ function RangeSlider({ low, high, money, min, max, onChange }: {
           type="range" min={low} max={high} step={step} value={to}
           aria-label="Highest"
           className={THUMB}
-          onChange={(event) => setTo(Math.max(Number(event.target.value), from))}
+          onChange={(event) => { const value = Math.max(Number(event.target.value), from); setTo(value); setMaxText(value < high ? String(value) : ''); }}
           onPointerUp={commit}
           onKeyUp={commit}
         />
@@ -500,8 +599,13 @@ function RangeSlider({ low, high, money, min, max, onChange }: {
         <span className="text-muted">to</span>
         <span>{show(to)}</span>
       </div>
-      {(from > low || to < high) && (
-        <button type="button" onClick={() => { setFrom(low); setTo(high); onChange(undefined, undefined); }} className="mt-1 text-[10px] font-semibold text-brand-700 hover:underline dark:text-brand-300">
+      <div className="mt-1.5 flex items-start gap-2">
+        {box('Min', minText, setMinText, money ? 'e.g. 50 lakh' : show(low))}
+        <span className="mt-5 text-[11px] text-muted">–</span>
+        {box('Max', maxText, setMaxText, money ? 'e.g. 1.5 cr' : show(high))}
+      </div>
+      {(min != null || max != null) && (
+        <button type="button" onClick={() => { setFrom(low); setTo(high); setMinText(''); setMaxText(''); onChange(undefined, undefined); }} className="mt-1 text-[10px] font-semibold text-brand-700 hover:underline dark:text-brand-300">
           Any {money ? 'amount' : 'size'}
         </button>
       )}
@@ -513,8 +617,10 @@ function RangeSlider({ low, high, money, min, max, onChange }: {
 /* Dates: presets and a day on the calendar                                  */
 /* ------------------------------------------------------------------------ */
 
-function PresetChips<T extends string>({ choices, active, onPick }: {
+function PresetChips<T extends string>({ choices, active, onPick, counts = {} }: {
   choices: Array<[T, string]>; active: T | undefined; onPick: (value: T | undefined) => void;
+  /** How many records each chip would show; absent while counting. */
+  counts?: Partial<Record<T, number>>;
 }): JSX.Element {
   return (
     <div className="flex flex-wrap gap-1.5 px-4 pt-1">
@@ -532,6 +638,9 @@ function PresetChips<T extends string>({ choices, active, onPick }: {
           )}
         >
           {label}
+          {counts[value] !== undefined && (
+            <span className={cn('ml-1 tabular-nums', active === value ? 'text-white/85' : 'font-normal text-muted')}>{counts[value]!.toLocaleString('en-IN')}</span>
+          )}
         </button>
       ))}
     </div>
@@ -554,6 +663,28 @@ function DayPicker({ value, onChange }: { value: string | undefined; onChange: (
   );
 }
 
+/** The date presets, each with how many records it would show. */
+function DatePresetChips({ module, fieldName, active, onPick }: {
+  module: ModuleMeta; fieldName: string; active: DatePreset | undefined; onPick: (preset: DatePreset | undefined) => void;
+}): JSX.Element {
+  const fields = useMemo(() => new Map(module.fields.map((field) => [field.name, field])), [module.fields]);
+  const filters = DATE_PRESETS.map(([preset]): [DatePreset, FilterGroup] => [preset, {
+    logic: 'AND',
+    conditions: quickPickConditions({ [fieldName]: { kind: 'date', preset } }, fields),
+  }]);
+  const counts = useChipCounts(module.name, filters);
+  return <PresetChips<DatePreset> choices={DATE_PRESETS} active={active} onPick={onPick} counts={counts} />;
+}
+
+/** The chase queues, each with how many records wait in it. */
+function TaskPresetChips({ module, fieldName, active, onPick }: {
+  module: string; fieldName: string; active: TaskQueue | undefined; onPick: (queue: TaskQueue | undefined) => void;
+}): JSX.Element {
+  const queues = followUpFilters(fieldName);
+  const counts = useChipCounts(module, TASK_CHOICES.map(([queue]): [TaskQueue, FilterGroup] => [queue, queues[queue]]));
+  return <PresetChips<TaskQueue> choices={TASK_CHOICES} active={active} onPick={onPick} counts={counts} />;
+}
+
 function DateSection({ section, title, fieldName, props }: {
   section: QuickFilterSection; title: string; fieldName: string; props: QuickFilterPanelProps;
 }): JSX.Element {
@@ -561,8 +692,9 @@ function DateSection({ section, title, fieldName, props }: {
   const chosen = pick?.kind === 'date' ? pick : undefined;
   return (
     <FoldingState section={section} title={title} icon={<CalendarDays className="h-3.5 w-3.5" />} active={pickIsActive(pick) ? 1 : 0}>
-      <PresetChips<DatePreset>
-        choices={DATE_PRESETS}
+      <DatePresetChips
+        module={props.module}
+        fieldName={fieldName}
         active={chosen?.preset}
         onPick={(preset) => props.onPick(fieldName, preset ? { kind: 'date', preset } : null)}
       />
@@ -583,8 +715,9 @@ function TaskSection({ section, title, props, field }: {
   const on = pick?.kind === 'date' ? pick.on : undefined;
   return (
     <FoldingState section={section} title={title} icon={<Clock3 className="h-3.5 w-3.5" />} active={props.task || on ? 1 : 0}>
-      <PresetChips<TaskQueue>
-        choices={TASK_CHOICES}
+      <TaskPresetChips
+        module={props.module.name}
+        fieldName={field.name}
         active={props.task ?? undefined}
         onPick={(queue) => { props.onPick(field.name, null); props.onTask(queue ?? null); }}
       />

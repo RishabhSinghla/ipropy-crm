@@ -72,9 +72,9 @@ test('they leave a note for whoever picks this up next', async ({ page }) => {
   await page.goto(recordUrl);
 
   // The box at the foot of the timeline since 30 September 2026. Its button
-  // says "Internal Note" there, beside Send WhatsApp.
+  // says "Comment" there, beside Send WhatsApp.
   await page.getByLabel('Add a note for the team').first().fill(note);
-  await page.getByRole('button', { name: /^(post|internal note)$/i }).first().click();
+  await page.getByRole('button', { name: /^(post|comment)$/i }).first().click();
 
   await expect(page.getByText(note)).toBeVisible({ timeout: 15_000 });
 

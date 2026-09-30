@@ -69,3 +69,21 @@ describe('queueLinePreview', () => {
       .toBe('4 BHK, Builder Floor, Greenfields Colony');
   });
 });
+
+describe('rightPaneRowNames', () => {
+  it('unsaved, shows what the pane always has: owner, header facts, call log, then the number', async () => {
+    const { rightPaneRowNames, OWNER_ROW, CALL_LOG_ROW } = await import('../src/lib/splitViewLayout');
+    expect(rightPaneRowNames(undefined, ['next_followup_at', 'status'], 'owner_id', 'mobile', new Set()))
+      .toEqual([OWNER_ROW, 'next_followup_at', 'status', CALL_LOG_ROW, 'mobile']);
+  });
+  it('leaves the number out when a section already holds it', async () => {
+    const { rightPaneRowNames } = await import('../src/lib/splitViewLayout');
+    expect(rightPaneRowNames(undefined, [], 'owner_id', 'mobile', new Set(['mobile']))).not.toContain('mobile');
+  });
+  it('saved, is exactly the admin list — owner and call log can move or go', async () => {
+    const { rightPaneRowNames, CALL_LOG_ROW } = await import('../src/lib/splitViewLayout');
+    expect(rightPaneRowNames([CALL_LOG_ROW, 'status', 'status'], ['next_followup_at'], 'owner_id', 'mobile', new Set()))
+      .toEqual([CALL_LOG_ROW, 'status']);
+    expect(rightPaneRowNames([], ['status'], 'owner_id', 'mobile', new Set())).toEqual([]);
+  });
+});

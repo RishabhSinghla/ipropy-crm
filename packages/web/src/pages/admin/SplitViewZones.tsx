@@ -148,11 +148,11 @@ export function QueueCardPreview({ name, values }: { name: string; values: strin
   );
 }
 
-/** Zone 2's preview: the pinned facts as the right pane draws them, one row each, then the call log. */
+/** Zone 2's preview: the right pane's top rows as it draws them, one row each. */
 export function HeaderFactsPreview({ facts }: { facts: { label: string; value: string }[] }): JSX.Element {
   return (
     <div className="space-y-1 rounded-lg bg-white px-3 py-2 dark:bg-slate-900">
-      {[...facts, { label: 'Call Log', value: 'last outcome' }].map((fact) => (
+      {facts.map((fact) => (
         <div key={fact.label} className="flex items-center gap-2">
           <span className="w-24 shrink-0 truncate text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{fact.label}</span>
           <span className="min-w-0 flex-1 truncate rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">{fact.value || '—'}</span>

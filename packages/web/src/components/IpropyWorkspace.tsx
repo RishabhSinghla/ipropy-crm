@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText,
-  Mail, MessageCircle, MessagesSquare, MoreHorizontal, Phone, RotateCcw, Search, SlidersHorizontal, Sparkles, Star, Trash2, Users, X,
+  Mail, MessageCircle, MessagesSquare, MoreHorizontal, Phone, Search, Sparkles, Star, Trash2, Users, X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { FieldValue } from './FieldRenderer';
@@ -190,7 +190,8 @@ export function IpropyWorkspace({
    * Whether the list's quick filters are on, how to open or clear them, and
    * the panel itself — drawn inside the right-hand pane, in its exact shape.
    */
-  filterBar?: { count: number; onOpen: () => void; onReset: () => void; panel?: ReactNode };
+  /** The Quick & Live Filters panel, drawn in the right pane; `open` unfolds a folded pane while it shows. */
+  filterBar?: { open: boolean; panel?: ReactNode };
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey | null>(null);
@@ -357,6 +358,16 @@ export function IpropyWorkspace({
     });
   }, [rows, openRecord, module.name, neighbourContext, sortBy, sortDir, callQueueUrl, goToPage]);
 
+  // Folded or not is this browser's choice, remembered like the divider.
+  const [paneFolded, setPaneFoldedState] = useState(() => {
+    try { return localStorage.getItem(`${SPLIT_KEY}.detailsFolded`) === '1'; } catch { return false; }
+  });
+  const setPaneFolded = useCallback((folded: boolean) => {
+    setPaneFoldedState(folded);
+    try { localStorage.setItem(`${SPLIT_KEY}.detailsFolded`, folded ? '1' : '0'); } catch { /* see loadSplit */ }
+  }, []);
+  const paneOpen = !paneFolded || Boolean(filterBar?.open);
+
   const resize = useCallback((delta: number) => {
     const [min, max] = QUEUE_LIMITS;
     setQueueWidth((current) => {
@@ -375,7 +386,7 @@ export function IpropyWorkspace({
     reasoning is the mistake this repo keeps finding months later.
   */
   const {
-    queueFields, blocks, heroFields, tabs,
+    queueFields, blocks, tabs, rightPaneRows,
     assignedField, statusField, followUpField, phoneField, emailField,
   } = useRecordPanes(module);
   // Nothing picked yet, or a tab the designer has since hidden: the first tab.
@@ -714,6 +725,9 @@ export function IpropyWorkspace({
                 />
               ) : active.label}
             </h2>
+            {/* Call sits right after the name — *"the call icon should come right
+                after the name of the record"* (3 October 2026). */}
+            {phoneValue && <span className="shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
             {/* Which module this record is, at a glance — *"just a small …
                 leads or whether inventories or associate"* (2 October 2026).
                 The module's own label, so a rename in Settings shows here. */}
@@ -781,7 +795,6 @@ export function IpropyWorkspace({
                 )}
               />
               {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
-              {phoneValue && <CallButton to={phoneValue} iconOnly round active={onCall} />}
               {/*
                 Write to them without leaving the pane — *"show email Icon in
                 Icon bar of middle pane, If Record have a Email Id, so that we
@@ -909,9 +922,54 @@ export function IpropyWorkspace({
       {active && (
         <aside
           data-testid="activity-pane"
-          className="relative flex w-full shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[22.5rem]"
+          data-folded={paneOpen ? undefined : 'true'}
+          className={cn(
+            'relative flex w-full shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white transition-[width,max-height] duration-300 ease-in-out dark:border-slate-800 dark:bg-slate-900',
+            paneOpen ? 'xl:w-[22.5rem]' : 'max-h-11 xl:max-h-none xl:w-11',
+          )}
         >
           {filterBar?.panel}
+          {/*
+            Fold the whole pane away and back — the owner, 3 October 2026:
+            *"fold/unfold on the click of a little button … nice transition"*.
+            The content keeps its own width while the pane narrows round it, so
+            nothing reflows mid-slide; it fades, and `inert` keeps a folded
+            pane out of the Tab order. The Quick & Live Filters panel still
+            opens here, so a folded pane opens itself while it shows.
+          */}
+          {paneOpen ? (
+            <button
+              type="button"
+              onClick={() => setPaneFolded(true)}
+              title="Fold the details away"
+              aria-label="Fold the details pane"
+              aria-expanded
+              className="absolute left-0 top-1/2 z-20 hidden h-10 w-3.5 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-slate-200 bg-white text-slate-500 shadow-xs transition hover:w-5 hover:bg-brand-600 hover:text-white xl:flex dark:border-slate-700 dark:bg-slate-800"
+              data-testid="fold-details"
+            >
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPaneFolded(false)}
+              title="Show the details"
+              aria-label="Show the details pane"
+              aria-expanded={false}
+              className="absolute inset-0 z-20 flex items-center justify-center gap-2 text-slate-500 transition hover:bg-brand-50 hover:text-brand-700 xl:flex-col xl:justify-start xl:pt-3 dark:hover:bg-slate-800"
+              data-testid="unfold-details"
+            >
+              <ChevronLeft className="h-4 w-4 shrink-0 max-xl:-rotate-90" />
+              <span className="text-[11px] font-bold uppercase tracking-widest xl:[writing-mode:vertical-rl] xl:rotate-180">Details</span>
+            </button>
+          )}
+          <div
+            inert={!paneOpen}
+            className={cn(
+              'flex min-h-0 w-full flex-1 flex-col transition-opacity duration-200 xl:w-[22.5rem] xl:flex-none xl:h-full',
+              paneOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
+            )}
+          >
           {/*
             The deck and the notes are one pane now — 27 September 2026, the
             owner: *"call deck merge in to Note/Comment pane/Box"*. The deck
@@ -922,30 +980,6 @@ export function IpropyWorkspace({
           <ProgressiveDialerPanel module={module.name} recordId={active.id} />
           <CallDeckPanel module={module.name} recordId={active.id} />
           {/*
-            The quick and live filters, one tap from the record — *"The Quick &
-            Live filter overlay engine open/Hide … by clicking a icon of
-            Filter"*. The panel itself is the list's (it narrows the queue on
-            the left), so this bar only says whether any are on and opens it.
-          */}
-          {filterBar && (
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 dark:bg-slate-800/60">
-              <button type="button" onClick={filterBar.onOpen} className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-800 hover:text-brand-700 dark:text-slate-100" data-testid="quick-filter-bar">
-                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-brand-600" />
-                <span className="truncate">Quick &amp; Live Filters</span>
-                {filterBar.count > 0 && (
-                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-                    {filterBar.count} active
-                  </span>
-                )}
-              </button>
-              {filterBar.count > 0 && (
-                <button type="button" onClick={filterBar.onReset} className="flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300">
-                  Reset <RotateCcw className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          )}
-          {/*
             The record's own fields — *"the overview details form move to in
             replacement of Note/Comment pane below call deck"*. One line each,
             the three a call changes pinned first.
@@ -955,14 +989,14 @@ export function IpropyWorkspace({
             row={active}
             canEdit={canEdit}
             blocks={blocks}
-            pinned={heroFields}
+            rows={rightPaneRows}
             assignedField={assignedField}
             assignedName={assignedName}
             statusField={statusField}
             followUpField={followUpField}
-            phoneField={phoneField}
             find={findText}
           />
+          </div>
         </aside>
       )}
     </div>

@@ -105,6 +105,41 @@ export function heroFieldNames(
   return [followUpField, statusField].filter((name): name is string => Boolean(name));
 }
 
+/*
+  The right pane's top rows, as the Layout Designer arranges them.
+
+  The owner, 3 October 2026: *"mostly things towards very right pane of split
+  that is that info pane I want fully customisable via layout designer only"*.
+  Until then three rows were fixed in code — who owns the record first, the
+  call log last, and the phone number added whenever no section held it — and
+  only the facts between them could be chosen. Now every row is one entry in
+  one ordered list (`rightPane`), and the two rows that are not fields have a
+  name of their own. `@` cannot begin a field name (`quoteIdent` refuses it),
+  so these can never collide with a real field.
+*/
+export const OWNER_ROW = '@owner';
+export const CALL_LOG_ROW = '@call_log';
+
+/**
+ * The rows at the top of the right pane, in order.
+ *
+ * Saved, it is exactly the admin's list. Unsaved, it is what the pane has
+ * always shown: the owner, the header facts, the call log, then the phone
+ * number when no section below already holds it.
+ */
+export function rightPaneRowNames(
+  saved: string[] | undefined,
+  heroNames: string[],
+  ownerField: string | undefined,
+  phoneField: string | undefined,
+  inSections: Set<string>,
+): string[] {
+  if (saved) return [...new Set(saved)];
+  const rows = [OWNER_ROW, ...heroNames.filter((name) => name !== ownerField), CALL_LOG_ROW];
+  if (phoneField && !inSections.has(phoneField) && !rows.includes(phoneField)) rows.push(phoneField);
+  return rows;
+}
+
 /**
  * The words a queue card's middle line would show for one record, joined the
  * way the card joins them — so the designer's preview and the queue cannot

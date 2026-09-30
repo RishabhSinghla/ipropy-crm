@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
 import { assignmentField, pipelineFieldOf, subtitleFieldsOf } from './fields';
-import { heroFieldNames, splitTabsFor, type SplitTab } from './splitViewLayout';
+import { heroFieldNames, rightPaneRowNames, splitTabsFor, type SplitTab } from './splitViewLayout';
 
 /**
  * Which fields a record's panes show, decided once for every screen that
@@ -46,6 +46,8 @@ export interface DetailLayout {
   heroFields?: string[];
   /** The split view's tabs, in order; the first is the one a record opens on. */
   splitTabs?: { key: string; label?: string }[];
+  /** The right pane's top rows, fields and `@owner`/`@call_log`; see `rightPaneRowNames`. */
+  rightPane?: string[];
 }
 
 export interface FieldBlockSpec {
@@ -108,6 +110,8 @@ export interface RecordPanes {
   heroFields: FieldMeta[];
   /** The split view's tabs; the first is the one a record opens on. */
   tabs: SplitTab[];
+  /** The right pane's top rows: field names, plus `@owner` and `@call_log`. */
+  rightPaneRows: string[];
 }
 
 export function useRecordPanes(module: DescribedModule): RecordPanes {
@@ -240,10 +244,20 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
     [layout.heroFields, followUpField, statusField, fieldMap],
   );
   const tabs = useMemo(() => splitTabsFor(module.name, layout.splitTabs), [module.name, layout.splitTabs]);
+  const rightPaneRows = useMemo(
+    () => rightPaneRowNames(
+      layout.rightPane,
+      heroFields.map((field) => field.name),
+      assignedField?.name,
+      phoneField?.name,
+      new Set(blocks.flatMap((block) => block.fields.map((field) => field.name))),
+    ),
+    [layout.rightPane, heroFields, assignedField, phoneField, blocks],
+  );
 
   return {
     headerFields, queueFields, blocks, subtitleFields,
     assignedField, statusField, followUpField, phoneField, emailField,
-    heroFields, tabs,
+    heroFields, tabs, rightPaneRows,
   };
 }

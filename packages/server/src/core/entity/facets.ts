@@ -10,6 +10,7 @@
 import type { FilterGroup } from '@ipropy/shared';
 import { runWidget } from '../analytics/widgets.js';
 import { registry } from '../metadata/registry.js';
+import { isSystemField } from '../query/builder.js';
 import { getFieldPermissions, type ScopeContext } from '../permissions/index.js';
 import { BadRequestError, ForbiddenError } from '../../utils/errors.js';
 
@@ -21,15 +22,17 @@ export interface FacetValue {
 }
 
 /** The field, provided this person may read it. */
-async function readableField(ctx: ScopeContext, moduleName: string, fieldName: string) {
+async function readableField(ctx: ScopeContext, moduleName: string, fieldName: string): Promise<void> {
   const module = await registry.requireModule(moduleName);
   const field = module.fields.find((candidate) => candidate.name === fieldName);
+  // The record-level ideas every module has — who it is assigned to, how the
+  // last call went — are counted too; no profile hides them.
+  if (!field && isSystemField(fieldName)) return;
   if (!field) throw new BadRequestError(`${moduleName} has no field called ${fieldName}`);
   if (!ctx.user.isAdmin) {
     const permissions = await getFieldPermissions(ctx.user, moduleName);
     if (permissions.get(fieldName) === 'hidden') throw new ForbiddenError('That field is hidden from you');
   }
-  return field;
 }
 
 /**
@@ -37,13 +40,15 @@ async function readableField(ctx: ScopeContext, moduleName: string, fieldName: s
  *
  * `search` narrows to values containing the words typed — the way into a
  * field with a thousand localities, where only the top five are listed.
+ * `blank` is how many records hold no value at all — "Never called", for the
+ * call outcome.
  */
 export async function fieldFacets(
   ctx: ScopeContext,
   moduleName: string,
   fieldName: string,
   options: { search?: string; limit?: number } = {},
-): Promise<FacetValue[]> {
+): Promise<{ values: FacetValue[]; blank: number }> {
   await readableField(ctx, moduleName, fieldName);
   const search = options.search?.trim();
   const filter: FilterGroup | undefined = search
@@ -56,9 +61,13 @@ export async function fieldFacets(
     limit: Math.min(Math.max(options.limit ?? 5, 1), 50),
     filter,
   });
-  return (result.series ?? [])
-    .filter((row) => row.key !== '')
-    .map((row) => ({ value: row.key, label: row.label, count: row.value, color: row.color ?? null }));
+  const series = result.series ?? [];
+  return {
+    values: series
+      .filter((row) => row.key !== '')
+      .map((row) => ({ value: row.key, label: row.label, count: row.value, color: row.color ?? null })),
+    blank: series.find((row) => row.key === '')?.value ?? 0,
+  };
 }
 
 /** The lowest and highest value a number field holds — the ends of its slider. */

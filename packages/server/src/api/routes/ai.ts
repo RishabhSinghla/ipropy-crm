@@ -687,6 +687,23 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
 }));
 
 /**
+ * "Rewrite with AI" on the notes box. Nothing is saved: the rewrite comes back
+ * for the rep to read and post, or not. With no provider — or the switch off —
+ * the note still comes back, tidied by a plain rule, and `rewritten: false`
+ * says so.
+ */
+aiRouter.post('/rewrite-note', modelLimiter, asyncHandler(async (req, res) => {
+  const { text } = z.object({ text: z.string().trim().min(1, 'Write something first').max(4_000) }).parse(req.body);
+  const { featureOn } = await import('../../core/settings/aiFeatures.js');
+  const { rewriteNote, tidyNote } = await import('../../ai/rewriteNote.js');
+  if (!await featureOn('noteRewrite')) {
+    res.json({ note: tidyNote(text), rewritten: false });
+    return;
+  }
+  res.json(await rewriteNote(text, getUser(req).id));
+}));
+
+/**
  * What comparable units of yours were listed at — answered while the record is
  * still being typed, so it takes the shape rather than an id.
  */

@@ -127,3 +127,27 @@ describe('the top few of a long list', () => {
     expect(topValues(options, ['g'], 5).map((o) => o.value)).toEqual(['g', 'a', 'b', 'c', 'd']);
   });
 });
+
+describe('parseTypedAmount', () => {
+  it('reads plain numbers with either comma grouping', async () => {
+    const { parseTypedAmount } = await import('../src/lib/quickFilters');
+    expect(parseTypedAmount('1450')).toBe(1450);
+    expect(parseTypedAmount('12,00,000')).toBe(1_200_000);
+    expect(parseTypedAmount('1,200,000')).toBe(1_200_000);
+    expect(parseTypedAmount('₹ 5000')).toBe(5000);
+  });
+  it('reads crore, lakh and thousand the way people type them', async () => {
+    const { parseTypedAmount } = await import('../src/lib/quickFilters');
+    expect(parseTypedAmount('1.45 cr')).toBe(14_500_000);
+    expect(parseTypedAmount('2 Crore')).toBe(20_000_000);
+    expect(parseTypedAmount('45L')).toBe(4_500_000);
+    expect(parseTypedAmount('45 lakh')).toBe(4_500_000);
+    expect(parseTypedAmount('80k')).toBe(80_000);
+  });
+  it('treats an empty or unreadable box as no limit, never as zero', async () => {
+    const { parseTypedAmount } = await import('../src/lib/quickFilters');
+    expect(parseTypedAmount('')).toBeUndefined();
+    expect(parseTypedAmount('  ')).toBeUndefined();
+    expect(parseTypedAmount('about two')).toBeUndefined();
+  });
+});
