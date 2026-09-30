@@ -404,6 +404,7 @@ export function IpropyWorkspace({
   */
   const choices = useMemo(() => sortOptions(followUpField?.name), [followUpField?.name]);
   const chosen = activeSortOption(choices, sortBy);
+  const firstSortable = choices.find((option) => option.by);
   // A column heading clicked in the table view is not one of the eight, so the
   // button says which field it is rather than claiming one of them.
   const sortedByColumn = chosen ? null : module.fields.find((field) => field.name === sortBy);
@@ -592,9 +593,9 @@ export function IpropyWorkspace({
                       <button
                         key={dir}
                         type="button"
-                        disabled={!chosen?.by && !sortBy}
+                        disabled={!chosen?.by && !sortBy && !firstSortable?.by}
                         title={dir === 'asc' ? (chosen?.ascHint ?? 'A–Z') : (chosen?.descHint ?? 'Z–A')}
-                        onClick={() => onSort(sortBy, dir)}
+                        onClick={() => onSort(sortBy ?? chosen?.by ?? firstSortable?.by, dir)}
                         className={cn(
                           'rounded px-1.5 py-0.5 text-2xs font-bold transition-colors',
                           sortDir === dir && (chosen?.by || sortBy)
@@ -609,6 +610,7 @@ export function IpropyWorkspace({
                   {choices.map((option) => (
                     <DropdownItem
                       key={option.key}
+                      ariaLabel={option.key === 'task' ? 'Sort by task' : undefined}
                       icon={<Check className={cn('h-3.5 w-3.5', chosen?.key === option.key ? 'text-brand-600' : 'invisible')} />}
                       onClick={() => { onSort(option.by, sortDir ?? 'desc'); close(); }}
                     >
@@ -1233,7 +1235,7 @@ function QueueCard({
             a dark page.
           */
           active
-            ? 'bg-brand-50 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-brand-600 dark:bg-brand-950/45'
+            ? 'bg-brand-50 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-brand-600 dark:bg-brand-700'
             : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
         )}
       >
@@ -1250,7 +1252,7 @@ function QueueCard({
             title={canEdit && nameField ? 'Double-click to rename' : undefined}
             className={cn(
               'truncate text-[15px] font-extrabold tracking-tight',
-              active ? 'text-brand-900 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100',
+              active ? 'text-brand-900 dark:text-white' : 'text-slate-900 dark:text-slate-100',
             )}
           >
             {row.label}
@@ -1269,7 +1271,7 @@ function QueueCard({
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
-          active ? 'font-semibold text-brand-700 dark:text-brand-200' : 'text-slate-500 dark:text-slate-400',
+          active ? 'font-semibold text-brand-700 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400',
         )}>
           {[unit, description].filter(Boolean).join(', ') || '—'}
         </span>
@@ -1283,7 +1285,7 @@ function QueueCard({
           {price && (
             <span className={cn(
               'shrink-0 whitespace-nowrap text-base font-extrabold tabular-nums',
-              active ? 'text-brand-800 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100',
+              active ? 'text-brand-800 dark:text-white' : 'text-slate-900 dark:text-slate-100',
             )}>
               {price}
             </span>
@@ -1295,7 +1297,7 @@ function QueueCard({
               'truncate text-xs font-medium',
               // `text-muted` is a guaranteed pair on the page's own surface
               // and not on a brand fill, so the open row states its own.
-              active ? 'text-brand-700 dark:text-brand-200' : 'text-muted',
+              active ? 'text-brand-700 dark:text-brand-100' : 'text-muted',
             )}>• {area}</span>
           )}
         </span>

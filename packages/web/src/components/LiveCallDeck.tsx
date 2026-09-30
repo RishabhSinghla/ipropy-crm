@@ -256,9 +256,13 @@ export function useCallDeckState(): CallDeckState {
         const progressiveSession = useProgressiveDialer.getState().session;
         const destination = progressiveMatches && advanced && progressiveSession
           ? progressiveRecordUrl(progressiveSession, advanced)
-          : saveNextUrl(call.queueUrl, module, goTo, nextPosition);
+          // The old `dial=1` URL was visible until an effect ran, which made a
+          // refresh capable of placing a duplicate call. Carry the one-shot
+          // instruction in router state instead; `CallDispositionProvider`
+          // consumes it before the next record is drawn.
+          : saveNextUrl(call.queueUrl, module, goTo, nextPosition).replace(/([?&])dial=1&?/, '$1').replace(/[?&]$/, '');
         navigate(destination, {
-          state: { callDeckHandoff: Date.now() },
+          state: { callDeckHandoff: Date.now(), autoDialRecordId: goTo },
         });
       }
     } catch (err) {

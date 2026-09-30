@@ -344,11 +344,12 @@ export function Dropdown({
 }
 
 export function DropdownItem({
-  children, onClick, danger, icon, disabled,
-}: { children: ReactNode; onClick?: () => void; danger?: boolean; icon?: ReactNode; disabled?: boolean }): JSX.Element {
+  children, onClick, danger, icon, disabled, ariaLabel,
+}: { children: ReactNode; onClick?: () => void; danger?: boolean; icon?: ReactNode; disabled?: boolean; ariaLabel?: string }): JSX.Element {
   return (
     <button
       type="button"
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={onClick}
       className={cn(

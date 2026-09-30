@@ -1,7 +1,7 @@
 import {
-  createContext, type JSX, type ReactNode, useContext, useEffect, useRef,
+  createContext, type JSX, type ReactNode, useContext, useEffect, useRef, useState,
 } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Phone } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -74,17 +74,51 @@ export function CallDispositionProvider({
   children: ReactNode;
 }): JSX.Element {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const live = useLiveCall((state) => state.call);
   const userId = useApp((state) => state.user?.id ?? null);
   const placingRef = useRef(false);
+
+  /*
+    Save & Next names the next record in `open` before this provider has
+    received that record from the workspace. Preserve that addressed id while
+    the pane catches up, and remove the one-shot URL flag immediately. This
+    prevents a refresh from ringing the same person twice without losing the
+    pending dial while the record and its phone field load.
+  */
+  const dialParam = params.get('dial');
+  const addressedRecordId = params.get('open') || recordId;
+  const handoff = location.state as { autoDialRecordId?: string; callDeckHandoff?: number } | null;
+  const [pendingAutoDial, setPendingAutoDial] = useState<string | null>(null);
+  useEffect(() => {
+    const target = dialParam === '1' ? addressedRecordId : handoff?.autoDialRecordId;
+    if (!target) return;
+    setPendingAutoDial(target);
+    if (dialParam === '1') {
+      const next = new URLSearchParams(window.location.search);
+      next.delete('dial');
+      setParams(next, { replace: true });
+      return;
+    }
+    // The navigation state transfers a one-shot request without exposing it in
+    // the address bar. Replace it immediately so a browser refresh cannot dial
+    // the next person a second time.
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: { callDeckHandoff: handoff?.callDeckHandoff },
+    });
+  }, [dialParam, addressedRecordId, handoff?.autoDialRecordId, handoff?.callDeckHandoff, location.pathname, location.search, navigate, setParams]);
 
   /*
     The record itself, asked for only when arriving from Save & Next with
     `?dial=1`, so the number to ring is known. Without it the flag sat in the
     address bar for ever and nobody was rung — which had happened.
   */
-  const dialParam = params.get('dial');
-  const { module: described, record } = useChatRecord(dialParam === '1' ? module : null, dialParam === '1' ? recordId : null);
+  const { module: described, record } = useChatRecord(
+    pendingAutoDial ? module : null,
+    pendingAutoDial,
+  );
 
   const startCall = async (number: string, from: 'phone' | 'desk' = 'phone'): Promise<void> => {
     if (placingRef.current) return;
@@ -167,17 +201,13 @@ export function CallDispositionProvider({
   */
   const phoneField = described?.fields.find((f) => f.uitype === 'phone');
   const autoNumber = phoneField ? (record?.display?.[phoneField.name] ?? record?.values?.[phoneField.name]) : null;
-  const namedInTheAddress = params.get('open');
-  const isForThisRecord = !namedInTheAddress || namedInTheAddress === recordId;
   useEffect(() => {
-    if (dialParam !== '1' || !isForThisRecord || live || !autoNumber) return;
-    const next = new URLSearchParams(window.location.search);
-    next.delete('dial');
-    setParams(next, { replace: true });
+    if (!pendingAutoDial || pendingAutoDial !== recordId || live || !autoNumber) return;
+    setPendingAutoDial(null);
     void startCall(String(autoNumber));
     // `startCall` is recreated on every render and guards itself with a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dialParam, autoNumber, live, isForThisRecord]);
+  }, [pendingAutoDial, recordId, autoNumber, live]);
 
   return (
     <CallDispositionContext.Provider value={{ startCall }}>
