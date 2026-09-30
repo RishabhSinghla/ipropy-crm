@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
 import {
   ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
-  Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, Users, X,
+  Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -1177,13 +1177,6 @@ export default function ListView(): JSX.Element {
                   allCount={data?.total ?? 0}
                   onDone={() => { setSelected(new Set()); setSelectedAll(false); void refetch(); }}
                 />
-                <MassOwnerButton
-                  module={moduleName}
-                  ids={[...selected]}
-                  allQuery={selectedAll ? query : null}
-                  allCount={data?.total ?? 0}
-                  onDone={() => { setSelected(new Set()); setSelectedAll(false); void refetch(); }}
-                />
               </>
             )}
             {meta.permissions.delete && !selectedAll && (
@@ -1616,76 +1609,6 @@ function ExportWizard({ open, onClose, module, fields, filter, selectedIds, allS
   </Modal>;
 }
 
-function MassOwnerButton({
-  module, ids, allQuery, allCount, onDone,
-}: {
-  module: string;
-  ids: string[];
-  /** Set when "select all in this view" is on — the action then runs on the whole result set. */
-  allQuery: ListQuery | null;
-  allCount: number;
-  onDone: () => void;
-}): JSX.Element {
-  const [open, setOpen] = useState(false);
-  const [ownerId, setOwnerId] = useState('');
-  // Exactly the people the server will accept as a target — see the
-  // assignableOnly note on GET /admin/users.
-  const { data: users } = useQuery({ queryKey: ['users', 'assignable'], queryFn: () => api.users(false, false, true) });
-  const [busy, setBusy] = useState(false);
-  const countLabel = allQuery ? allCount.toLocaleString('en-IN') : String(ids.length);
-
-  return (
-    <>
-      <button className="btn-secondary btn-sm" onClick={() => setOpen(true)}>
-        <Users className="h-3.5 w-3.5" /> Reassign
-      </button>
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title={`Reassign ${countLabel} record${countLabel === '1' ? '' : 's'}`}
-        size="sm"
-        footer={
-          <>
-            <button className="btn-secondary" onClick={() => setOpen(false)}>Cancel</button>
-            <button
-              className="btn-primary"
-              disabled={!ownerId || busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  const result = allQuery
-                    ? await api.transferAll(module, allQuery as unknown as Record<string, unknown>, ownerId)
-                    : await api.transfer(module, ids, ownerId);
-                  toast.success(`${result.transferred.toLocaleString('en-IN')} records reassigned`);
-                  setOpen(false);
-                  onDone();
-                } catch (err) {
-                  toast.error('Reassign failed', (err as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy && <Spinner />} Reassign
-            </button>
-          </>
-        }
-      >
-        <label className="label">Assign to</label>
-        <Select
-          value={ownerId}
-          onChange={setOwnerId}
-          placeholder="— Select a user —"
-          options={(users ?? []).map((u) => ({
-            value: String((u as { id: string }).id),
-            label: String((u as { fullName: string }).fullName),
-          }))}
-        />
-      </Modal>
-    </>
-  );
-}
-
 /**
  * Bulk edit any column: pick a field, type the new value once, apply it to the
  * selection (or to the whole view when "select all" is on).
@@ -1723,9 +1646,9 @@ function BulkEditButton({
       && f.displayType !== 'readonly' && f.displayType !== 'create_only'
       && !f.isReadonly
       && f.massEditable
-      // Reassignment has its own button, and that is the one that enforces
-      // who a record may be handed to. Offering it here as a plain field
-      // edit would route the same write around that check.
+      // Assigned To is not bulk-edited: the Reassign button that did it was
+      // removed on 2 October 2026 ("not needed"), and a record is handed over
+      // one at a time from its own Assigned To field.
       && f.uitype !== 'owner'),
     [fieldMap],
   );

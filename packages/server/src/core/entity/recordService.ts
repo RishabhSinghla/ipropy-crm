@@ -49,7 +49,6 @@ import {
   assertRecordAccess,
   filterWritableFields,
   getFieldPermissions,
-  getSubordinateUserIds,
   recordScopeSql,
   type ScopeContext,
 } from '../permissions/index.js';
@@ -1654,15 +1653,10 @@ export async function transferOwnership(
       throw new ValidationError('Choose an active team member');
     }
 
-    // An administrator may allocate work across the organisation. Everyone
-    // else can only allocate inside their own reporting branch: themselves or
-    // a role below them — never a peer or manager.
-    if (!ctx.user.isAdmin) {
-      const permitted = new Set([ctx.user.id, ...await getSubordinateUserIds(ctx.user)]);
-      if (!permitted.has(newOwnerId)) {
-        throw new ForbiddenError('You can only assign records to yourself or someone below you in the team hierarchy');
-      }
-    }
+    // Anyone may hand a record to anyone active, whatever the reporting line
+    // (the owner, 1 October 2026: *"anyone no matter hierarchy can do
+    // assignment"*). Whether the caller may change this record at all is
+    // still decided by updateRecord below, like any other edit.
   }
   let count = 0;
   for (const id of recordIds) {
@@ -1672,9 +1666,16 @@ export async function transferOwnership(
   return count;
 }
 
-/** Bump last_activity_at — called whenever a call/message/visit touches a record. */
+/**
+ * Something happened on a record — a note, a call, a file, a tag, a message.
+ *
+ * It moves "last updated" as well as "last activity": the owner, 1 October
+ * 2026, *"any sort of small to big activity inside that record its last
+ * updated be changed and not just on form"*. So the queue's "2h ago" and the
+ * Updated date filter both count a call as much as an edit.
+ */
 export async function touchActivity(recordId: string, conn: Tx = db): Promise<void> {
-  await conn.query(`UPDATE ipy_record SET last_activity_at = now() WHERE id = $1`, [recordId]);
+  await conn.query(`UPDATE ipy_record SET last_activity_at = now(), updated_at = now() WHERE id = $1`, [recordId]);
 }
 
 /** Lightweight lookup for reference pickers and AI tools. */

@@ -396,6 +396,8 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
       `/api/files/${key}`, req.body.category ?? null, user.id,
     ],
   );
+  // A file added is activity on the record, so it counts as an update.
+  await recordService.touchActivity(recordId);
 
   // Opt-in replace, for callers that re-send the same file.
   //

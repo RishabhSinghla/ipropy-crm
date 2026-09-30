@@ -820,11 +820,6 @@ export const api = {
   remove: (module: string, id: string) => del(`/api/records/${module}/${id}`),
   move: (module: string, id: string, targetModule: 'leads' | 'properties') =>
     post<RecordEnvelope>(`/api/records/${module}/${id}/move`, { targetModule }),
-  recordShares: (module: string, id: string) =>
-    get<{ subject_type: 'user' | 'group' | 'role'; subject_id: string; access: 'read' | 'read_write'; created_at: string }[]>(`/api/records/${module}/${id}/shares`),
-  saveRecordShares: (module: string, id: string, subjects: {
-    type: 'user' | 'group' | 'role'; id: string; access: 'read' | 'read_write';
-  }[]) => post<{ ok: true }>(`/api/records/${module}/${id}/share`, { subjects }),
   lookup: (module: string, q: string, filter?: unknown) =>
     get<{ id: string; label: string; recordNumber: string | null }[]>(`/api/records/${module}/lookup${qs({ q, filter })}`),
   /** A field's most common values, for a quick filter's top five and its search. */
@@ -869,10 +864,6 @@ export const api = {
     ),
   massDelete: (module: string, ids: string[]) =>
     post<{ deleted: number }>(`/api/records/${module}/mass-delete`, { ids }),
-  transfer: (module: string, ids: string[], ownerId: string) =>
-    post<{ transferred: number }>(`/api/records/${module}/transfer`, { ids, ownerId }),
-  transferAll: (module: string, query: Record<string, unknown>, ownerId: string) =>
-    post<{ transferred: number; matched: number }>(`/api/records/${module}/transfer-all`, { query, ownerId }),
   merge: (module: string, primaryId: string, duplicateIds: string[], fieldChoices: Record<string, string> = {}) =>
     post(`/api/merge/${module}`, { primaryId, duplicateIds, fieldChoices }),
   star: (module: string, id: string, starred: boolean) => post(`/api/records/${module}/${id}/star`, { starred }),

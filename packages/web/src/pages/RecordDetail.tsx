@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, Users, X,
+  Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -110,7 +110,6 @@ function FullRecordPage(): JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
   const [sharing, setSharing] = useState(false);
-  const [collaborators, setCollaborators] = useState(false);
   const [compose, setCompose] = useState<'email' | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summarising, setSummarising] = useState(false);
@@ -339,7 +338,7 @@ function FullRecordPage(): JSX.Element {
 
   const availableTabs = [
     { key: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
-    { key: 'timeline', label: 'Timeline', icon: <Activity className="h-3.5 w-3.5" /> },
+    { key: 'timeline', label: 'Activity', icon: <Activity className="h-3.5 w-3.5" /> },
     ...(moduleName === 'leads' || moduleName === 'properties' ? [{
       key: 'matching',
       // The owner asked for these two labels by name: on a contact, the units
@@ -510,14 +509,6 @@ function FullRecordPage(): JSX.Element {
                       keep working, and they are still listed and revocable on
                       the record.
                     */}
-                    {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && (
-                      <DropdownItem
-                        icon={<Users className="h-3.5 w-3.5" />}
-                        onClick={() => { setCollaborators(true); close(); }}
-                      >
-                        Share with team
-                      </DropdownItem>
-                    )}
                     {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && record.can?.delete && (
                       <DropdownItem
                         icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
@@ -656,9 +647,6 @@ function FullRecordPage(): JSX.Element {
                       {updatedChip}
                     </span>
                   )}
-                  {/* "Team" was a second button here, opening the same panel
-                      as "Share with team" in the ⋯ menu — same handler, same
-                      condition, same icon. One door, and it is the menu. */}
                   {/* Nothing to hang it on — a module with no assignment field. */}
                   {!assignedField && updatedChip}
                 </div>
@@ -743,13 +731,6 @@ function FullRecordPage(): JSX.Element {
         <ShareLinksPanel module={moduleName!} recordId={id!} />
       </Modal>
 
-      <Modal
-        open={collaborators}
-        onClose={() => setCollaborators(false)}
-        title={`Share ${meta.singularLabel} with team`}
-      >
-        <RecordCollaboratorsPanel module={moduleName!} recordId={id!} />
-      </Modal>
 
       <Modal
         open={Boolean(aiSummary)}
@@ -799,94 +780,6 @@ function FullRecordPage(): JSX.Element {
     </div>
     </WhatsAppComposerProvider>
     </CallDispositionProvider>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-type RecordShare = {
-  subject_type: 'user' | 'group' | 'role';
-  subject_id: string;
-  access: 'read' | 'read_write';
-  created_at: string;
-};
-
-export function RecordCollaboratorsPanel({ module, recordId }: { module: string; recordId: string }): JSX.Element {
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [access, setAccess] = useState<'read' | 'read_write'>('read_write');
-  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
-  const { data: shares = [], isLoading, refetch } = useQuery({
-    queryKey: ['record-shares', module, recordId],
-    queryFn: () => api.recordShares(module, recordId),
-  });
-
-  const activeUsers = users as { id: string; fullName: string }[];
-  const collaborators = shares as RecordShare[];
-  const userName = (id: string): string => activeUsers.find((person) => person.id === id)?.fullName ?? id;
-  const save = useMutation({
-    mutationFn: (next: RecordShare[]) => api.saveRecordShares(module, recordId, next.map((share) => ({
-      type: share.subject_type, id: share.subject_id, access: share.access,
-    }))),
-    onSuccess: () => {
-      void refetch();
-      setSelectedUserId('');
-      toast.success('Team access updated');
-    },
-    onError: (error: Error) => toast.error('Could not update sharing', error.message),
-  });
-
-  const add = (): void => {
-    if (!selectedUserId || collaborators.some((share) => share.subject_type === 'user' && share.subject_id === selectedUserId)) return;
-    save.mutate([...collaborators, {
-      subject_type: 'user', subject_id: selectedUserId, access, created_at: new Date().toISOString(),
-    }]);
-  };
-
-  const availableUsers = activeUsers.filter((person) => !collaborators.some(
-    (share) => share.subject_type === 'user' && share.subject_id === person.id,
-  ));
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted">
-        Add teammates who should work on this record. They keep access even though the owner stays the same.
-      </p>
-      <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto]">
-        <select className="input" aria-label="Teammate" value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)}>
-          <option value="">Select a teammate</option>
-          {availableUsers.map((person) => <option key={person.id} value={person.id}>{person.fullName}</option>)}
-        </select>
-        <select className="input" aria-label="Access level" value={access} onChange={(event) => setAccess(event.target.value as 'read' | 'read_write')}>
-          <option value="read_write">Can view & edit</option>
-          <option value="read">View only</option>
-        </select>
-        <button type="button" className="btn-primary" disabled={!selectedUserId || save.isPending} onClick={add}>
-          {save.isPending ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Add
-        </button>
-      </div>
-      <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
-        {isLoading ? <div className="p-3"><Skeleton className="h-8 w-full" /></div> : collaborators.length === 0 ? (
-          <p className="p-4 text-sm text-muted">Only the owner can access this record right now.</p>
-        ) : collaborators.map((share) => (
-          <div key={`${share.subject_type}-${share.subject_id}`} className="flex items-center gap-3 p-3">
-            <Avatar name={share.subject_type === 'user' ? userName(share.subject_id) : share.subject_type} size={28} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{share.subject_type === 'user' ? userName(share.subject_id) : `${share.subject_type}: ${share.subject_id}`}</p>
-              <p className="text-2xs text-muted">{share.access === 'read_write' ? 'Can view and edit' : 'Can view'}</p>
-            </div>
-            <button
-              type="button"
-              className="btn-ghost p-1.5 text-negative"
-              aria-label="Remove access"
-              disabled={save.isPending}
-              onClick={() => save.mutate(collaborators.filter((candidate) => candidate !== share))}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

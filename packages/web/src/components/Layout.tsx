@@ -3,9 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime, type HeaderTab } from '@ipropy/shared';
 import {
-  AtSign, Bell, Cake, Check, Facebook, Flame, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
-  MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, Upload, X, Youtube,
-  BarChart3, MessagesSquare, LayoutDashboard, MapPin, Building2, PhoneCall, Plus, ChevronDown,
+  AtSign, Bell, Cake, Check, Flame, Lock, LogOut, Menu, Moon, Search, Settings, Shield, Sparkles, Sun, Upload, X, MessagesSquare, MapPin, Plus, ChevronDown,
 } from 'lucide-react';
 import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
@@ -80,8 +78,6 @@ export default function Layout(): JSX.Element {
     [modules],
   );
 
-  const socialPosition = user?.ui?.socialPosition ?? 'right';
-
   return (
     <PeekProvider>
       <div className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)]">
@@ -105,24 +101,12 @@ export default function Layout(): JSX.Element {
             <Menu className="h-4.5 w-4.5" />
           </button>
 
-          <Link to="/dashboard" className="flex shrink-0 items-center gap-2 overflow-hidden" aria-label={brand?.orgName ?? 'iPropy'}>
-            {brand?.logoUrl ? (
-              // A CRM-hosted logo is permission-checked, and an <img> cannot
-              // send the session header — so the token rides in the query
-              // string. An external https logo passes through untouched.
-              <img src={authedFileUrl(brand.logoUrl)} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain" />
-            ) : (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
-                <Building2 className="h-4.5 w-4.5" />
-              </div>
-            )}
+          <Link to="/dashboard" className="flex shrink-0 items-center gap-2.5 overflow-hidden" aria-label={brand?.orgName ?? 'iPropy'}>
+            <BrandMark logoUrl={brand?.logoUrl ?? null} name={brand?.orgName ?? 'iPropy'} />
             <span className="hidden truncate text-base font-semibold leading-tight tracking-tight sm:block">
               {brand?.orgName ?? 'iPropy'}
             </span>
           </Link>
-
-          {/* Social beside the brand — the admin's choice of where they sit. */}
-          {socialPosition === 'brand' && <div className="hidden shrink-0 lg:block"><SocialBar /></div>}
 
           {/*
             The module switcher and the green WhatsApp button stood here until
@@ -176,8 +160,6 @@ export default function Layout(): JSX.Element {
             <GlobalSearch />
 
             <div className="flex shrink-0 items-center gap-1">
-              {socialPosition === 'right' && <SocialBar />}
-
               <NotificationBell />
 
               <button
@@ -585,81 +567,34 @@ function BottomTabs({
 }
 
 /**
- * One-click links to the company's own social accounts.
+ * The organisation's logo, in a circle, beside its name.
  *
- * Admin-editable (Admin → Brand & Social), so a wrong or dead handle is a
- * text field to fix, not a deploy.
+ * **2 October 2026, the owner:** on many laptops it did not show at all, and
+ * where it did it did not look good. Two causes, both handled here: a logo the
+ * browser cannot load (an expired sign-in token in its address, or a file that
+ * has gone) left a broken-image box, so a failed load now falls back to the
+ * first letter of the name; and a square logo squeezed into a rounded square
+ * read as cropped, so it is a circle with a soft ring now, the picture covering
+ * it edge to edge.
  */
-function SocialBar(): JSX.Element | null {
-  const { data: brand } = useQuery({
-    queryKey: ['brand'],
-    queryFn: () => api.brand(),
-    staleTime: 10 * 60_000,
-  });
-
-  const links = brand?.socialLinks ?? [];
-  if (!links.length) return null;
-
-  return (
-    /*
-      Stacked, each tucked under the next, and lifting out when pointed at —
-      *"set in a much closer and may overlap … on hover just pop out a bit"*
-      (1 October 2026). Five icons in the width of two and a half.
-    */
-    <div className="mr-1 hidden items-center border-r border-slate-200 pr-2 md:flex dark:border-slate-700">
-      {links.map((link, index) => (
-        <a
-          key={link.url}
-          href={link.url}
-          target="_blank"
-          rel="noreferrer noopener"
-          title={`${link.label} — opens in a new tab`}
-          aria-label={link.label}
-          style={{ color: SOCIAL_COLOURS[link.platform] ?? undefined, zIndex: links.length - index }}
-          className={cn(
-            'relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm transition-transform duration-150',
-            'hover:z-50 hover:-translate-y-0.5 hover:scale-125 focus-visible:z-50 focus-visible:scale-125 dark:border-slate-900 dark:bg-slate-800',
-            index > 0 && '-ml-2.5',
-            !SOCIAL_COLOURS[link.platform] && 'text-slate-400 hover:text-brand-600 dark:hover:text-brand-400',
-          )}
-        >
-          <SocialIcon platform={link.platform} />
-        </a>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Each platform's own brand colour, so the row is scannable by hue rather
- * than by squinting at five near-identical grey glyphs.
- *
- * Two are not the official brand value on purpose. X's brand colour is pure
- * black, which disappears against the dark theme, and Instagram's is a gradient
- * a single `color` cannot express — so those use the nearest legible solid.
- */
-const SOCIAL_COLOURS: Record<string, string> = {
-  instagram: '#E4405F', // the magenta the gradient resolves to at a small size
-  facebook: '#1877F2',
-  x: '#71767B', // brand is #000; that is invisible on dark, so X's own grey
-  twitter: '#1DA1F2',
-  linkedin: '#0A66C2',
-  youtube: '#FF0000',
-  whatsapp: '#25D366',
-};
-
-function SocialIcon({ platform }: { platform: string }): JSX.Element {
-  const className = 'h-4 w-4';
-  switch (platform) {
-    case 'instagram': return <Instagram className={className} />;
-    case 'facebook': return <Facebook className={className} />;
-    case 'x':
-    case 'twitter': return <Twitter className={className} />;
-    case 'linkedin': return <Linkedin className={className} />;
-    case 'youtube': return <Youtube className={className} />;
-    case 'whatsapp': return <MessageCircle className={className} />;
-    default: return <Globe className={className} />;
+function BrandMark({ logoUrl, name }: { logoUrl: string | null; name: string }): JSX.Element {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [logoUrl]);
+  const circle = 'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-brand-100 shadow-sm dark:ring-brand-900';
+  if (logoUrl && !failed) {
+    return (
+      <span className={`${circle} bg-white`}>
+        {/* A CRM-hosted logo is permission-checked, and an <img> cannot send
+            the session header — so the token rides in the query string. */}
+        <img src={authedFileUrl(logoUrl)} alt="" className="h-full w-full object-cover" onError={() => setFailed(true)} />
+      </span>
+    );
   }
+  return (
+    <span className={`${circle} bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white`} aria-hidden>
+      {name.trim().charAt(0).toUpperCase() || 'i'}
+    </span>
+  );
 }
 
 /** One line per kind, so the panel can lead with a picture rather than text. */

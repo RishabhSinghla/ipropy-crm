@@ -14,6 +14,7 @@
  *  * **Opt-out is final.** Somebody who asked not to be messaged is not
  *    messaged, whoever is asking and whatever the template says.
  */
+import { touchActivity } from '../../../core/entity/recordService.js';
 import { db, onCommit, transaction } from '../../../db/pool.js';
 import { bus } from '../../../core/events/bus.js';
 import { BadRequestError } from '../../../utils/errors.js';
@@ -288,6 +289,8 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
         : null,
     ],
   );
+  // A message sent from the CRM is activity on the record it is about.
+  if (input.recordId) await touchActivity(input.recordId);
 
   try {
     const outcome = input.template

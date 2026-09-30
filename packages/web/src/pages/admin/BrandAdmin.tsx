@@ -1,45 +1,17 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 /**
- * Brand line and the company's own social accounts.
+ * The organisation's name, logo, brand line and theme colour.
  *
- * These are settings rather than constants in the code for a specific reason:
- * the seeded URLs were found by public search, not supplied by the business,
- * and more than one plausible iPropy account exists. Somebody has to be able to
- * correct a wrong handle in ten seconds, not in a deploy.
+ * Settings rather than constants, so a rename or a new logo is not a deploy.
+ * The social links that were edited here went on 2 October 2026 with the icons
+ * they drew in the header — *"get rid of them from CRM and from admin panel"*.
+ * The saved `social.links` row is left as it was; nothing in the CRM reads it.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Camera, Globe, GripVertical, Link2, MessageCircle, Play, Plus, Save, Trash2, X,
-} from 'lucide-react';
+import { Save } from 'lucide-react';
 import { api, authedFileUrl } from '../../lib/api';
 import { applyBrandColour, toast } from '../../lib/store';
-import { Select, Skeleton, Spinner } from '../../components/ui';
-
-interface SocialLink { platform: string; label: string; url: string }
-
-const PLATFORMS = [
-  { value: 'website', label: 'Website' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'x', label: 'X (Twitter)' },
-  { value: 'linkedin', label: 'LinkedIn' },
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'link', label: 'Other' },
-];
-
-function PlatformIcon({ platform }: { platform: string }): JSX.Element {
-  const c = 'h-4 w-4';
-  switch (platform) {
-    case 'instagram': return <Camera className={c} />;
-    case 'facebook': return <Globe className={c} />;
-    case 'x': return <X className={c} />;
-    case 'linkedin': return <Link2 className={c} />;
-    case 'youtube': return <Play className={c} />;
-    case 'whatsapp': return <MessageCircle className={c} />;
-    default: return <Globe className={c} />;
-  }
-}
+import { Skeleton, Spinner } from '../../components/ui';
 
 export default function BrandAdmin(): JSX.Element {
   const queryClient = useQueryClient();
@@ -54,7 +26,6 @@ export default function BrandAdmin(): JSX.Element {
 
   const [orgName, setOrgName] = useState('');
   const [tagline, setTagline] = useState('');
-  const [links, setLinks] = useState<SocialLink[]>([]);
   /** The whole CRM's accent colour — buttons, links, chips, focus rings. */
   const [primaryColor, setPrimaryColor] = useState('#6366f1');
   const [saving, setSaving] = useState(false);
@@ -69,13 +40,7 @@ export default function BrandAdmin(): JSX.Element {
     setOrgName(String(brand?.orgName ?? byKey.get('org.name') ?? ''));
     setTagline(String(byKey.get('brand.tagline') ?? ''));
     setPrimaryColor(String(byKey.get('org.primary_color') ?? '#6366f1'));
-    const raw = byKey.get('social.links');
-    setLinks(Array.isArray(raw) ? raw as SocialLink[] : []);
   }, [settings]);
-
-  const update = (index: number, patch: Partial<SocialLink>): void => {
-    setLinks((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
-  };
 
   /** The logo goes to the file store, then its URL into a setting — the same
    *  path an avatar takes, so permissions and serving are already handled. */
@@ -119,14 +84,6 @@ export default function BrandAdmin(): JSX.Element {
   };
 
   const save = async (): Promise<void> => {
-    // Reject anything that isn't http(s) here as well as on the server: these
-    // values end up in an href, where `javascript:` would run in our origin.
-    const bad = links.find((l) => l.url.trim() && !/^https?:\/\//i.test(l.url.trim()));
-    if (bad) {
-      toast.error('Links must start with http:// or https://', bad.url);
-      return;
-    }
-
     setSaving(true);
     try {
       await api.saveSettings({
@@ -135,9 +92,6 @@ export default function BrandAdmin(): JSX.Element {
         'org.name': orgName.trim(),
         'brand.tagline': tagline.trim(),
         'org.primary_color': primaryColor,
-        'social.links': links
-          .filter((l) => l.url.trim())
-          .map((l) => ({ platform: l.platform, label: l.label.trim() || l.platform, url: l.url.trim() })),
       });
       toast.success('Brand settings saved');
       await Promise.all([
@@ -157,9 +111,9 @@ export default function BrandAdmin(): JSX.Element {
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-4">
-        <h1 className="text-lg font-semibold tracking-tight">Brand &amp; social</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Brand</h1>
         <p className="text-sm text-muted">
-          How iPropy presents itself inside the CRM, and where the team jumps to your own accounts.
+          How iPropy presents itself inside the CRM.
         </p>
       </div>
 
@@ -272,74 +226,6 @@ export default function BrandAdmin(): JSX.Element {
           <p className="mt-1 text-2xs text-muted">
             Buttons, links, chips and focus rings across the CRM follow this colour.
           </p>
-        </div>
-
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <label className="label mb-0">Social links</label>
-            <button
-              className="btn-secondary btn-sm"
-              onClick={() => setLinks((prev) => [...prev, { platform: 'instagram', label: 'Instagram', url: '' }])}
-            >
-              <Plus className="h-3.5 w-3.5" /> Add link
-            </button>
-          </div>
-
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-            The links below were found by a public web search, not supplied by you — check each
-            one opens the right account before the team relies on it. Two iPropy Instagram
-            accounts exist (<code>@ipropy_official</code> and <code>@ipropy.floors</code>); only
-            the first is seeded.
-          </div>
-
-          <ul className="mt-2 space-y-2">
-            {links.length === 0 && (
-              <li className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-muted dark:border-slate-700">
-                No links yet.
-              </li>
-            )}
-            {links.map((link, i) => (
-              <li key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2 dark:border-slate-700">
-                <GripVertical className="hidden h-4 w-4 shrink-0 text-slate-300 sm:block" />
-                <span className="shrink-0 text-slate-500"><PlatformIcon platform={link.platform} /></span>
-                <div className="w-36 shrink-0">
-                  <Select
-                    value={link.platform}
-                    onChange={(v) => update(i, {
-                      platform: v,
-                      // Keep the label in step unless it has been customised.
-                      label: PLATFORMS.find((p) => p.value === link.platform)?.label === link.label
-                        ? PLATFORMS.find((p) => p.value === v)?.label ?? link.label
-                        : link.label,
-                    })}
-                    options={PLATFORMS}
-                  />
-                </div>
-                <input
-                  className="input min-w-[8rem] flex-1"
-                  value={link.url}
-                  onChange={(e) => update(i, { url: e.target.value })}
-                  placeholder="https://www.instagram.com/…"
-                />
-                <a
-                  href={/^https?:\/\//i.test(link.url) ? link.url : undefined}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="btn-ghost btn-sm shrink-0 aria-disabled:pointer-events-none aria-disabled:opacity-30"
-                  aria-disabled={!/^https?:\/\//i.test(link.url)}
-                >
-                  Open ↗
-                </a>
-                <button
-                  className="btn-ghost btn-sm shrink-0 text-negative"
-                  onClick={() => setLinks((prev) => prev.filter((_, j) => j !== i))}
-                  aria-label={`Remove ${link.label}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
         </div>
 
         <div className="flex justify-end">

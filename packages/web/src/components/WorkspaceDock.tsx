@@ -13,20 +13,23 @@
  * list reads on arrival — the same queue the Task button there opens.
  *
  * From `lg` up. Below that the app's drawer carries the same destinations.
+ *
+ * No Settings gear and no account circle at its foot since 2 October 2026 —
+ * *"get rid of both of it"*. Settings is still in the menu under the avatar
+ * at the top right, which is where it always was.
  */
 import { type JSX, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { CheckCircle2, LayoutDashboard, Megaphone, MessagesSquare, PhoneIncoming, Settings } from 'lucide-react';
+import { CheckCircle2, LayoutDashboard, Megaphone, MessagesSquare, PhoneIncoming } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { ModuleIcon } from './Layout';
-import { Avatar } from './ui';
 
 export function WorkspaceDock({ unseen }: {
   /** Records nobody has opened yet, per module — the switcher's old badge. */
   unseen?: Record<string, number>;
 }): JSX.Element {
-  const { modules, user } = useApp();
+  const { modules } = useApp();
   const location = useLocation();
   const entityModules = modules.filter((module) => module.isEntity);
   const here = location.pathname.split('/')[1] ?? '';
@@ -34,7 +37,7 @@ export function WorkspaceDock({ unseen }: {
   const onTasks = new URLSearchParams(location.search).get('task') === 'today';
   return (
     <aside
-      className="hidden w-14 shrink-0 flex-col items-center justify-between overflow-y-auto border-r border-slate-200 bg-[#f0f2f5] py-3 no-scrollbar dark:border-slate-800 dark:bg-slate-900 lg:flex"
+      className="hidden w-14 shrink-0 flex-col items-center overflow-y-auto border-r border-slate-200 bg-[#f0f2f5] py-3 no-scrollbar dark:border-slate-800 dark:bg-slate-900 lg:flex"
       aria-label="Workspace toolbar"
       data-testid="workspace-dock"
     >
@@ -64,7 +67,7 @@ export function WorkspaceDock({ unseen }: {
             to={onTasks ? `/${taskModule.name}` : `/${taskModule.name}?task=today`}
             title={onTasks ? 'Show every record again' : "Today's tasks"}
             aria-label="Today's tasks"
-            aria-pressed={onTasks}
+            aria-current={onTasks ? 'page' : undefined}
             className={dockLook(onTasks)}
           >
             <CheckCircle2 className="h-[18px] w-[18px]" />
@@ -73,16 +76,6 @@ export function WorkspaceDock({ unseen }: {
         <DockLink to="/whatsapp/campaigns" label="Campaigns">
           <Megaphone className="h-[18px] w-[18px]" />
         </DockLink>
-      </div>
-      <div className="mt-3 flex flex-col items-center gap-3">
-        <DockLink to="/settings" label="Settings">
-          <Settings className="h-[18px] w-[18px]" />
-        </DockLink>
-        {user && (
-          <NavLink to="/settings" title={user.fullName} aria-label={`Your profile, ${user.fullName}`}>
-            <Avatar name={user.fullName} size={32} />
-          </NavLink>
-        )}
       </div>
     </aside>
   );

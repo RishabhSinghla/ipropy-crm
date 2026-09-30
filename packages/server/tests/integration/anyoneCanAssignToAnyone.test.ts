@@ -1,22 +1,15 @@
 /**
- * Who a record may be handed to.
+ * Who a record may be handed to: anyone active, whatever the reporting line.
  *
- * Reassignment used to be refused for everyone but an Administrator, and the
- * picker in the list view filtered itself to match — which is why a team of a
- * dozen saw a "reassign to" list of two, and why handing a lead to the rep
- * sitting next to you was impossible.
+ * It followed the hierarchy until 1 October 2026 — a rep could hand a record
+ * only to themselves or somebody below them. The owner: *"all times all
+ * agents of CRM be displayed and anyone no matter hierarchy can do
+ * assignment."* So a peer and a manager are both fine now, and only the
+ * automation account is refused, because a record parked on it is one nobody
+ * is chasing.
  *
- * The rule now follows the reporting line, which is the same tree that decides
- * who can *see* whose records:
- *
- *   - an administrator allocates anywhere in the organisation;
- *   - everyone else allocates inside their own branch — themselves or somebody
- *     below them — and never to a peer or to their own manager.
- *
- * Worth a real database rather than a mock: the rule is enforced by a role-tree
- * walk in SQL (`getSubordinateUserIds`), and the seeded cast is what gives it a
- * hierarchy with a real shape. A hand-built context would assert against the
- * test's own idea of who reports to whom rather than the product's.
+ * Worth a real database: the seeded cast is what gives the test a hierarchy
+ * with a real shape, so "sideways" and "upwards" mean what they mean.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
@@ -58,26 +51,33 @@ describe('reassigning a record', () => {
     expect(row?.owner_id).toBe(executive.id);
   });
 
-  it('refuses to hand it sideways to a peer', async () => {
+  it('lets a rep hand it sideways to a peer', async () => {
     const executive = await contextFor(SEEDED.executiveA);
     const peer = await authUser(SEEDED.executiveB);
 
-    await expect(
-      recordService.transferOwnership(executive, 'leads', [recordId], peer.id),
-    ).rejects.toThrow(/below you in the team hierarchy/i);
+    const moved = await recordService.transferOwnership(executive, 'leads', [recordId], peer.id);
+
+    expect(moved).toBe(1);
+    const row = await db.queryOne<{ owner_id: string }>(
+      `SELECT owner_id FROM ipy_record WHERE id = $1`, [recordId],
+    );
+    expect(row?.owner_id).toBe(peer.id);
   });
 
-  it('refuses to hand it upwards to a manager', async () => {
+  it('lets a rep hand it upwards to a manager', async () => {
     const executive = await contextFor(SEEDED.executiveA);
     const manager = await authUser(SEEDED.salesManager);
+    // Back with the rep first, so the rep is the one allowed to edit it.
+    await db.query(`UPDATE ipy_record SET owner_id = $1 WHERE id = $2`, [executive.user.id, recordId]);
 
-    await expect(
-      recordService.transferOwnership(executive, 'leads', [recordId], manager.id),
-    ).rejects.toThrow(/below you in the team hierarchy/i);
+    const moved = await recordService.transferOwnership(executive, 'leads', [recordId], manager.id);
+
+    expect(moved).toBe(1);
   });
 
   it('lets anyone take a record back for themselves', async () => {
     const executive = await contextFor(SEEDED.executiveA);
+    await db.query(`UPDATE ipy_record SET owner_id = $1 WHERE id = $2`, [executive.user.id, recordId]);
 
     const moved = await recordService.transferOwnership(
       executive, 'leads', [recordId], executive.user.id,

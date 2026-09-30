@@ -5,7 +5,7 @@ import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, getSubordinateUserIds, invalidatePermissions } from '../../core/permissions/index.js';
+import { assertCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { registry } from '../../core/metadata/registry.js';
 import { AUTOMATION_USER_ID } from '../../core/auth/systemAccounts.js';
 import {
@@ -35,22 +35,13 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
   const includeInactive = req.query.includeInactive === 'true';
   const adminOnly = req.query.adminOnly === 'true';
   /*
-    Who this caller may hand a record to.
-
-    Reassignment used to offer Administrators only, which is why a team of
-    several showed a picker of two. The rule now matches the hierarchy:
-    an administrator allocates anywhere, everyone else allocates within their
-    own branch — themselves or someone below them, never a peer or a manager.
-
-    Applied here as well as in recordService's transferOwnership on purpose:
-    the picker must offer exactly the people the write will accept, or the
-    first a rep hears of the rule is a red toast.
+    `assignableOnly` is still accepted and no longer narrows anything: since
+    1 October 2026 anyone may assign a record to anyone active, whatever the
+    reporting line (the owner: *"all times all agents of CRM be displayed"*).
+    The picker offers exactly the people `transferOwnership` accepts — all of
+    them — so nobody meets the rule as a red toast.
   */
-  const assignableOnly = req.query.assignableOnly === 'true';
   const caller = getUser(req);
-  const assignable = assignableOnly && !caller.isAdmin
-    ? [caller.id, ...await getSubordinateUserIds(caller)]
-    : null;
   const rows = await db.query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone,
             u.is_admin, u.is_active, u.role_id, u.profile_id, u.last_login_at,
@@ -64,10 +55,7 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
        -- a picker or the Users screen (27 September 2026, the owner).
        AND u.id <> '${AUTOMATION_USER_ID}'
        ${adminOnly ? 'AND (u.is_admin = true OR r.depth = 0)' : ''}
-       ${assignable ? 'AND u.id = ANY($1::uuid[])' : ''}
      ORDER BY u.first_name, u.last_name`,
-    // Rule 8: bind exactly what the statement references, never a spare.
-    assignable ? [assignable] : [],
   );
   /*
     Two shapes: the directory everyone needs, and the record only an admin does.

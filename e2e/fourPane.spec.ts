@@ -51,10 +51,10 @@ test('the tabs are icons with names for a screen reader, and the timeline comes 
   await page.goto('/leads');
   await waitForRecords(page);
   const nav = page.getByRole('navigation', { name: 'Record workspace sections' });
-  await expect(nav.getByRole('button').first()).toHaveAccessibleName(/^Timeline/);
+  await expect(nav.getByRole('button').first()).toHaveAccessibleName(/^Activity/);
   await nav.getByRole('button', { name: /^Files/ }).click();
   await expect(page.getByTestId('activity-feed')).toHaveCount(0);
-  await nav.getByRole('button', { name: /^Timeline/ }).click();
+  await nav.getByRole('button', { name: /^Activity/ }).click();
   await expect(page.getByTestId('activity-feed')).toBeVisible();
 });
 

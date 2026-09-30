@@ -911,6 +911,8 @@ recordsRouter.post('/:module/:id/tags', asyncHandler(async (req, res) => {
         ]);
       }
     }
+    // Tagging is activity on the record, so it counts as an update.
+    await recordService.touchActivity(req.params.id, tx);
   });
   res.json({ ok: true, tags });
 }));

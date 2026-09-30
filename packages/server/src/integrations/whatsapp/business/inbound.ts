@@ -21,6 +21,7 @@
  *    event emitted inside an open transaction deadlocks against the workflow
  *    that answers it, and this codebase has already paid for that lesson.
  */
+import { touchActivity } from '../../../core/entity/recordService.js';
 import { db, onCommit, transaction, type Tx } from '../../../db/pool.js';
 import { bus } from '../../../core/events/bus.js';
 import { logger } from '../../../utils/logger.js';
@@ -266,6 +267,8 @@ export async function receiveInbound(
         message.sentAt,
       ],
     );
+    // A customer writing in is activity on their record.
+    if (recordId) await touchActivity(recordId, conn);
 
     await conn.query(
       /*

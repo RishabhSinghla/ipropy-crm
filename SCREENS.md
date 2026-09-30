@@ -1247,3 +1247,33 @@ changed, and the one thing worth knowing about each:
   hover.
 * **Ask AI is a draggable circle** (`components/AiBubble.tsx`) — a tap opens
   it, a drag moves it and does not; where it was left is this browser's.
+
+## Fourteen more, 2 October 2026
+
+* **Anyone may assign a record to anyone active.** The picker (`GET /api/admin/users?assignableOnly=true`)
+  no longer narrows to the caller's branch, and `transferOwnership` no longer refuses a peer or a
+  manager. Only the automation account is refused. Whether somebody may change a record at all is
+  still `updateRecord`'s ordinary edit check. Pinned by `tests/integration/anyoneCanAssignToAnyone.test.ts`
+  (it was `assignmentFollowsTheHierarchy`).
+* **The record tabs say their names beside their icons**, and **Timeline is "Activity"** — on the split
+  view and on the full record page. A layout saved with the old shipped word "Timeline" reads as
+  "Activity" (`savedLabel` in `lib/splitViewLayout.ts`); a name somebody actually chose is kept.
+* **Any activity moves "last updated".** `touchActivity` now stamps `updated_at` as well as
+  `last_activity_at`, and is called for notes, files, tags and WhatsApp messages in and out; a synced
+  phone call moves it too. So the queue's "2h ago", the Updated date filter and "Recently updated"
+  all count a call as much as an edit (`tests/integration/anyActivityMovesLastUpdated.test.ts`).
+* **The record header** shows the record's tags where "Updated …" was, and a small label saying which
+  module it is (the module's own label, so a rename in Settings shows there).
+* **The left list**: no contact-type chip beside the name, a soft shadow under the open record, and
+  **↑ / ↓ move through the records** like WhatsApp's chat list — ignored while typing in a box, inside
+  the Activity feed, or with a dialog or menu open (`isTypingOrInAPopup`).
+* **Removed**: the Settings gear and the account circle at the foot of the left toolbar (Settings is
+  still in the avatar menu, top right); **Share with team** from the ⋯ menus and its panel; the
+  **Reassign** button on the selection bar; the **social icons** in the header and the social links in
+  Admin → Brand (now just "Brand"). What stayed, on purpose: records already shared with somebody stay
+  shared — no data was deleted — and the saved `social.links` row, which the public website's
+  `/api/public/brand` still reads.
+* **Associates wear a building icon** (migration `180`, only where the icon is still the one migration
+  `175` gave it).
+* **The logo is a circle** with a soft ring, and a logo the browser cannot load falls back to the first
+  letter of the organisation's name instead of a broken-image box.

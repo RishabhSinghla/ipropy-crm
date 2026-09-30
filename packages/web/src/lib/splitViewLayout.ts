@@ -40,7 +40,8 @@ function hasMatching(moduleName: string): boolean {
 /** Every tab the split view can draw for this module, in its shipped order and wording. */
 export function allSplitTabs(moduleName: string): SplitTab[] {
   const tabs: SplitTab[] = [
-    { key: 'timeline', label: 'Timeline' },
+    // "Activity" since 1 October 2026, the owner's word for it.
+    { key: 'timeline', label: 'Activity' },
   ];
   if (hasMatching(moduleName)) {
     tabs.push({ key: 'matching', label: moduleName === 'leads' ? 'Matching inventory' : 'Matching leads' });
@@ -51,6 +52,18 @@ export function allSplitTabs(moduleName: string): SplitTab[] {
     { key: 'whatsapp', label: 'WhatsApp' },
   );
   return tabs;
+}
+
+/**
+ * A saved tab name, unless it is only the old shipped wording.
+ *
+ * The Layout Designer saves every tab's name, renamed or not, so a layout
+ * saved before "Timeline" became "Activity" still says "Timeline" — which is
+ * the old default, not a choice somebody made.
+ */
+function savedLabel(label: string | undefined): string | undefined {
+  const trimmed = label?.trim();
+  return trimmed && trimmed !== 'Timeline' ? trimmed : undefined;
 }
 
 /**
@@ -71,7 +84,7 @@ export function splitTabsFor(
   for (const item of saved) {
     const known = all.find((tab) => tab.key === item.key);
     if (!known || chosen.some((tab) => tab.key === known.key)) continue;
-    chosen.push({ key: known.key, label: item.label?.trim() || known.label });
+    chosen.push({ key: known.key, label: savedLabel(item.label) || known.label });
   }
   return chosen.length ? chosen : all;
 }

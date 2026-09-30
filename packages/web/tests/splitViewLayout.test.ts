@@ -15,8 +15,17 @@ describe('splitTabsFor', () => {
     expect(tabs).toEqual([
       { key: 'calls', label: 'Phone' },
       // A blank name falls back to the shipped one rather than an empty tab.
-      { key: 'timeline', label: 'Timeline' },
+      { key: 'timeline', label: 'Activity' },
     ]);
+  });
+
+  it('reads the old shipped name "Timeline" as the new one, "Activity"', () => {
+    // The Layout Designer saves every tab's name, renamed or not, so a layout
+    // saved before 2 October 2026 says "Timeline" without anybody choosing it.
+    expect(splitTabsFor('leads', [{ key: 'timeline', label: 'Timeline' }]))
+      .toEqual([{ key: 'timeline', label: 'Activity' }]);
+    expect(splitTabsFor('leads', [{ key: 'timeline', label: 'History' }]))
+      .toEqual([{ key: 'timeline', label: 'History' }]);
   });
 
   it('drops the overview a saved list may still name — it lives in the right pane now', () => {

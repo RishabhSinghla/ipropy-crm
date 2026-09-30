@@ -281,7 +281,9 @@ export async function syncCalls(device: AuthedDevice, entries: DeviceCallEntry[]
       if (match?.recordId) {
         await db.query(
           `UPDATE ipy_record
-           SET last_activity_at = GREATEST(COALESCE(last_activity_at, $2), $2)
+           SET last_activity_at = GREATEST(COALESCE(last_activity_at, $2), $2),
+               -- A call is activity, so it moves "last updated" too.
+               updated_at = GREATEST(updated_at, $2)
            WHERE id = $1`,
           [match.recordId, started],
         );

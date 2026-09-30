@@ -89,7 +89,7 @@ export function ActivityFeed({ module, recordId, customerName, find = '' }: {
 
       {/* Focusable, so the stream can be scrolled from the keyboard — a region
           that scrolls and cannot be reached is one a keyboard user cannot read. */}
-      <div className="workspace-activity-canvas min-h-0 flex-1 space-y-3 overflow-y-auto p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400" tabIndex={0} role="log" aria-label="Timeline">
+      <div className="workspace-activity-canvas min-h-0 flex-1 space-y-3 overflow-y-auto p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400" tabIndex={0} role="log" aria-label="Activity">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-14 w-2/3" />)
         ) : isError ? (

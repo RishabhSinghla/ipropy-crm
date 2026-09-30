@@ -71,7 +71,7 @@ test('the record\'s own tabs open inside the desk, not on another page', async (
     which is the trip the desk exists to save. So the assertion is not only
     that each tab renders — it is that the URL never moved.
   */
-  for (const tab of ['Timeline', 'Matching', 'Files', 'Calls', 'WhatsApp']) {
+  for (const tab of ['Activity', 'Matching', 'Files', 'Calls', 'WhatsApp']) {
     await page.getByRole('button', { name: new RegExp(`^${tab}`) }).first().click();
     await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
     expect(page.url(), `${tab} navigated away from the list`).toBe(listUrl);

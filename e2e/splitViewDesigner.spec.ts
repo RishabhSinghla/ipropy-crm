@@ -68,5 +68,5 @@ test('tabs and header facts arranged in the designer appear in the split view', 
 
   await page.goto('/leads');
   const nav = page.getByRole('navigation', { name: 'Record workspace sections' });
-  await expect(nav.getByRole('button').first()).toHaveAccessibleName(/^Timeline/, { timeout: 20_000 });
+  await expect(nav.getByRole('button').first()).toHaveAccessibleName(/^Activity/, { timeout: 20_000 });
 });

@@ -14,7 +14,7 @@ import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
-import { CallsTab, FilesTab, RecordCollaboratorsPanel } from '../pages/RecordDetail';
+import { CallsTab, FilesTab } from '../pages/RecordDetail';
 import ComposeModal from './ComposeModal';
 import { EditableField, isInlineEditable } from './EditableField';
 import { NoteComposer } from './RecordBlocks';
@@ -303,6 +303,27 @@ export function IpropyWorkspace({
     next.set('open', id);
     setSearchParams(next, { replace: true });
   }, [setSearchParams]);
+
+  /*
+    Up and down arrows move through the queue, the way they move through
+    chats in WhatsApp (the owner, 2 October 2026). Not while somebody is
+    typing, and not while a dialog or a menu is open — there the arrows belong
+    to what has the focus.
+  */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (isTypingOrInAPopup(event.target)) return;
+      const at = rows.findIndex((row) => row.id === activeId);
+      const next = rows[event.key === 'ArrowDown' ? at + 1 : at - 1];
+      if (!next) return;
+      event.preventDefault();
+      openRecord(next.id);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [rows, activeId, openRecord]);
   /*
     A move that lands on a different page of the queue.
 
@@ -458,7 +479,6 @@ export function IpropyWorkspace({
   */
   const [summarising, setSummarising] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
-  const [sharingWithTeam, setSharingWithTeam] = useState(false);
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
 
   const move = useMutation({
@@ -679,6 +699,7 @@ export function IpropyWorkspace({
               word "full_name": Inventories names a record by its unit and an
               admin may change either.
             */}
+            <span className="flex min-w-0 items-center gap-2">
             <h2 className="min-w-0 truncate text-sm font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
               {canEdit && nameField && isInlineEditable(nameField) ? (
                 <EditableField
@@ -693,14 +714,19 @@ export function IpropyWorkspace({
                 />
               ) : active.label}
             </h2>
-            <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted">
-              {active.updatedAt && (
-                <span className="shrink-0 whitespace-nowrap" title={new Date(active.updatedAt).toLocaleString('en-IN')}>
-                  Updated {relativeTime(active.updatedAt)}
-                </span>
-              )}
-              <TagChips module={module.name} tags={active.tags} className="min-w-0 overflow-hidden" />
+            {/* Which module this record is, at a glance — *"just a small …
+                leads or whether inventories or associate"* (2 October 2026).
+                The module's own label, so a rename in Settings shows here. */}
+            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300" data-testid="record-module-label">
+              {module.label}
             </span>
+            </span>
+            {/* The record's tags, where "Updated …" used to be — *"remove that
+                updated thing and instead of it show just the tag if any"*
+                (2 October 2026). The queue still says how recently it moved. */}
+            {(active.tags?.length ?? 0) > 0 && (
+              <TagChips module={module.name} tags={active.tags} className="min-w-0 overflow-hidden" />
+            )}
           </span>
 
           <span className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5" data-testid="split-hero-actions-status">
@@ -818,11 +844,6 @@ export function IpropyWorkspace({
                     >
                       {summarising ? 'Summarising…' : 'Summarise with AI'}
                     </DropdownItem>
-                    {canEdit && (
-                      <DropdownItem icon={<Users className="h-3.5 w-3.5" />} onClick={() => { setSharingWithTeam(true); close(); }}>
-                        Share with team
-                      </DropdownItem>
-                    )}
                     {canEdit && onDelete && (module.name === 'leads' || module.name === 'properties') && (
                       <DropdownItem
                         icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
@@ -952,14 +973,6 @@ export function IpropyWorkspace({
       opened, and each closes itself when it is done.
     */}
     <Modal
-      open={sharingWithTeam && Boolean(active)}
-      onClose={() => setSharingWithTeam(false)}
-      title={`Share ${module.singularLabel ?? module.label} with team`}
-    >
-      {active && <RecordCollaboratorsPanel module={module.name} recordId={active.id} />}
-    </Modal>
-
-    <Modal
       open={Boolean(summary)}
       onClose={() => setSummary(null)}
       title={`Summary of ${active?.label ?? ''}`}
@@ -1060,10 +1073,9 @@ function QueueCard({
     reach the inner one — and an inline editor is several buttons. So for the
     moment somebody is typing, the row is a plain box with one editor in it.
   */
-  const [editing, setEditing] = useState<'name' | 'type' | null>(null);
-  const editField = editing === 'name' ? nameField : editing === 'type' ? card.type : undefined;
+  const [editing, setEditing] = useState<'name' | null>(null);
+  const editField = editing === 'name' ? nameField : undefined;
   const read = (field: FieldMeta): string => displayOf(row, field);
-  const type = card.type ? read(card.type) : '';
   const unit = card.unit ? read(card.unit) : '';
   const description = queueFields
     ? queueFields.map((field) => read(field)).filter((value) => value && value !== '—').join(', ')
@@ -1104,7 +1116,7 @@ function QueueCard({
   }
 
   /** A double-click opens that field, and only when this rep may edit. */
-  const openEditor = (which: 'name' | 'type') => (event: React.MouseEvent) => {
+  const openEditor = (which: 'name') => (event: React.MouseEvent) => {
     if (!canEdit) return;
     event.stopPropagation();
     event.preventDefault();
@@ -1112,7 +1124,17 @@ function QueueCard({
   };
 
   return (
-    <div ref={self} data-testid="queue-card" className="group relative border-b border-[var(--border)]">
+    <div
+      ref={self}
+      data-testid="queue-card"
+      className={cn(
+        'group relative border-b border-[var(--border)]',
+        /* A soft shadow under the open record, lifted above the card after it
+           so the shadow is not painted over — *"a down shadow sort of not at
+           all uncomfortable to eyes"* (2 October 2026). */
+        active && 'z-[1] shadow-[0_6px_10px_-6px_rgba(15,23,42,0.28)]',
+      )}
+    >
       <button
         type="button"
         onClick={onSelect}
@@ -1182,11 +1204,8 @@ function QueueCard({
           >
             {row.label}
           </span>
-          {type && (
-            <span onDoubleClick={openEditor('type')} title={canEdit && card.type ? `Double-click to change ${card.type.label}` : undefined}>
-              <TypeFlag label={type} strong={active} />
-            </span>
-          )}
+          {/* No contact-type chip beside the name since 2 October 2026 —
+              *"I don't need to see it there"*. It is in the fields pane. */}
           {attention && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Needs attention" />}
           {/* How stale it is, top right — the prototype's "6h ago". */}
           {row.updatedAt && (
@@ -1266,36 +1285,6 @@ function QueueCard({
   );
 }
 
-/**
- * The kind of record, as the prototype's notched flag.
- *
- * A clip-path rather than a rounded chip, which is what tells the two apart at
- * a glance down a queue: the stage chip at the other end of the card is round,
- * this one is a tag. The point is cut off the *left* edge, so the flag reads
- * as pinned to the name it follows.
- */
-function TypeFlag({ label, strong }: { label: string; strong: boolean }): JSX.Element {
-  return (
-    <span
-      className={cn(
-        /*
-          Brand tints, not a fixed sky: *"The Theme colour Changed from Admin
-          so please set all button/Chip/Text colour … accordingly."* These
-          resolve to the CSS variables Brand settings rewrites.
-        */
-        'inline-flex shrink-0 items-center py-0.5 pl-2.5 pr-1.5 text-[10px] uppercase tracking-wider',
-        strong
-          // On the open row the card itself is the brand, so the flag reverses
-          // out of it — a brand tint on a brand fill is invisible.
-          ? 'bg-white font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-100'
-          : 'bg-brand-100 font-semibold text-brand-800 dark:bg-brand-950 dark:text-brand-200',
-      )}
-      style={{ clipPath: 'polygon(6px 0%, 100% 0%, 100% 100%, 6px 100%, 0% 50%)' }}
-    >
-      {label}
-    </span>
-  );
-}
 
 /**
  * One block of the record's fields, editable where they stand.
@@ -1317,13 +1306,25 @@ function DeskTab({ active = false, onClick, label, count, children }: { active?:
       aria-current={active ? 'page' : undefined}
       title={label}
       className={cn(
-        'flex shrink-0 items-center gap-1 border-b-2 px-1.5 py-2 text-xs font-semibold transition-colors',
+        'flex shrink-0 items-center gap-1.5 border-b-2 px-1.5 py-2 text-xs font-semibold transition-colors',
         active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200',
       )}
     >
       {children}
+      {/* The name beside the icon — *"team is unable to understand just from
+          icon"* (1 October 2026). */}
+      <span className="whitespace-nowrap">{label}</span>
       {count && <span className="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-bold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">{count}</span>}
     </button>
   );
 }
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
+
+/** Whether a key press belongs to a text box, a dialog or a menu rather than to the queue. */
+function isTypingOrInAPopup(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return true;
+  return Boolean(target.closest('[role="dialog"], [role="menu"], [role="listbox"], [role="log"]'))
+    || Boolean(document.querySelector('[role="dialog"][aria-modal="true"]'));
+}

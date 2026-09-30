@@ -1475,7 +1475,9 @@ the screen a rep lives in.
 > instruction — *"delete those leads dropdown sections and whatsapp tab as we
 > know they came to left toolbar"*. The green button stays below `lg`, where
 > there is no toolbar. Ask AI left the bar too: it is `AiBubble`, a circle that
-> can be dragged anywhere. See `SCREENS.md`, *1 October 2026*.
+> can be dragged anywhere. See `SCREENS.md`, *1 October 2026*. **2 October 2026:** the social
+> icons are gone from the header and from Admin → Brand, and the toolbar has no Settings gear or
+> account circle at its foot — see `SCREENS.md`, *Fourteen more*.
 
 **Reports is folded into that page, on the same instruction** — *"merge this
 reports module into this whatsapp module only"*. It is the same `Reports`
