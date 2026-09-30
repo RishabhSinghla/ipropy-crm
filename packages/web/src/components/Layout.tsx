@@ -11,7 +11,8 @@ import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 import { LiveCallDeck } from './LiveCallDeck';
-import { arrangeHeaderTabs } from '../lib/headerTabs';
+import { WorkspaceDock } from './WorkspaceDock';
+import { AiBubble } from './AiBubble';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -79,23 +80,6 @@ export default function Layout(): JSX.Element {
     [modules],
   );
 
-  /*
-    The header's tab order is admin property (Admin → Header Tabs). The
-    arrangement names tabs by kind — module name, fixed page, or a link — and
-    the same entry can rename a tab. Anything the admin has not placed is
-    appended, so a module created after the arrangement still appears; the
-    arrangement can only reorder and rename, never orphan.
-
-    `arrangedCapture` says whether the Site visit tab is here because the
-    admin placed it (then it renders at every width) or only from the shipped
-    default (then the desktop bar drops it — see the capture branch below).
-  */
-  const arrangedCapture = Boolean(user?.ui?.headerTabs?.some((t) => t.kind === 'capture'));
-  const headerTabs = useMemo(
-    () => arrangeHeaderTabs(user?.ui?.headerTabs ?? null, menuModules.map((m) => m.name)),
-    [user?.ui?.headerTabs, menuModules],
-  );
-
   const socialPosition = user?.ui?.socialPosition ?? 'right';
 
   return (
@@ -141,24 +125,13 @@ export default function Layout(): JSX.Element {
           {socialPosition === 'brand' && <div className="hidden shrink-0 lg:block"><SocialBar /></div>}
 
           {/*
-            One switcher rather than a row of tabs.
-
-            The tabs stretched across the header and grew with every module,
-            pushing search and the actions right and turning the bar into a
-            queue of destinations. The switcher says where you are and opens
-            everywhere you could go, in the space of one tab.
-
-            It is built from exactly the same `headerTabs` the row was, so the
-            admin's arrangement — order, renames, extra links, Admin → Header
-            Tabs — still decides what is in it.
+            The module switcher and the green WhatsApp button stood here until
+            1 October 2026. The left toolbar carries both now, on every page —
+            *"delete those leads dropdown sections and whatsapp tab as we know
+            they came to left toolbar"*. The toolbar is `lg:` and up; below
+            that the drawer carries every destination, and the WhatsApp button
+            below stays for a phone, where the drawer is a tap further away.
           */}
-          <ModuleSwitcher
-            tabs={headerTabs}
-            modules={menuModules}
-            unseen={unseenCounts}
-            arrangedCapture={arrangedCapture}
-          />
-
           {/*
             WhatsApp, out of the menu and onto the bar.
 
@@ -178,7 +151,7 @@ export default function Layout(): JSX.Element {
             to="/whatsapp"
             title="WhatsApp — the team's chats, campaigns and templates"
             className={({ isActive }) => cn(
-              'flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-semibold transition-colors',
+              'flex shrink-0 items-center gap-1.5 lg:hidden rounded-lg border px-2.5 py-1.5 text-sm font-semibold transition-colors',
               /*
                 A soft green pill everywhere else, and solid green while you
                 are in WhatsApp — the way a selected tab looks, so the change
@@ -204,16 +177,6 @@ export default function Layout(): JSX.Element {
 
             <div className="flex shrink-0 items-center gap-1">
               {socialPosition === 'right' && <SocialBar />}
-              {aiAvailable !== undefined && (
-                <button
-                  onClick={() => setAiOpen(true)}
-                  className="btn-ghost gap-1.5 px-2.5"
-                  title="Ask iPropy AI"
-                >
-                  <Sparkles className="h-4 w-4 text-brand-500" />
-                  <span className="hidden text-xs font-medium sm:inline">Ask AI</span>
-                </button>
-              )}
 
               <NotificationBell />
 
@@ -246,6 +209,13 @@ export default function Layout(): JSX.Element {
         {/* A wide list belongs to its own grid scroller. `min-w-0` prevents a
             table's minimum width from widening this page-level flex item and
             bypassing the list's frozen-column behaviour. */}
+        {/*
+          The left toolbar on every page, not only the lists — *"it needs to be
+          fixed throughout the CRM all time"* (1 October 2026). Opening Calls
+          used to take it away, which is exactly when a rep wants a way back.
+        */}
+        <div className="flex min-h-0 min-w-0 flex-1">
+        <WorkspaceDock unseen={unseenCounts} />
         <main id="main" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-16 lg:pb-0">
           {/* Per-page net. Keyed on the path so a crashed page clears itself
               when the user navigates away — without the key the boundary stays
@@ -255,6 +225,11 @@ export default function Layout(): JSX.Element {
             <Outlet />
           </ErrorBoundary>
         </main>
+        </div>
+
+        {/* Ask AI, as a small circle that can be dragged anywhere — the way an
+            iPhone's AssistiveTouch floats — rather than a button in the bar. */}
+        {aiAvailable !== undefined && <AiBubble onOpen={() => setAiOpen(true)} />}
 
         <AiAssistant open={aiOpen} onClose={() => setAiOpen(false)} />
       </div>
@@ -394,165 +369,7 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
   );
 }
 
-/**
- * Where you are, and everywhere you could go, in one control.
- *
- * Built from the same `headerTabs` the old row of tabs was built from, so the
- * admin's arrangement still decides the order, the names, and any extra links
- * (Admin → Header Tabs). Nothing here is a list of destinations compiled into
- * this file.
- *
- * Desktop only. A phone already has the drawer and the bottom bar, and putting
- * a third way to change screen on a 360px header is how a header stops fitting.
- */
-function ModuleSwitcher({
-  tabs, modules, unseen, arrangedCapture,
-}: {
-  tabs: HeaderTab[];
-  modules: ModuleSummary[];
-  unseen: Record<string, number> | undefined;
-  arrangedCapture: boolean;
-}): JSX.Element {
-  const location = useLocation();
-
-  /** One entry per destination, in the admin's order, with the extras filtered out. */
-  const entries = tabs.flatMap((t, i) => {
-    const key = `${t.kind}-${t.value ?? ''}-${i}`;
-    if (t.kind === 'dashboard') {
-      return [{
-        key, to: '/dashboard', label: t.label ?? 'Dashboard',
-        icon: <LayoutDashboard className="h-4 w-4" />, badge: undefined as number | undefined, external: false,
-      }];
-    }
-    if (t.kind === 'capture') {
-      // Same rule as the row it replaces: at a desk the capture form is two
-      // clicks from Properties, so it only appears when an admin places it.
-      if (!arrangedCapture) return [];
-      return [{
-        key, to: '/capture', label: t.label ?? 'Site visit',
-        icon: <MapPin className="h-4 w-4" />, badge: undefined, external: false,
-      }];
-    }
-    /*
-      WhatsApp is not in here. It has its own green button beside this
-      switcher, on the owner's instruction — a destination the team is in all
-      day should not be one click inside a menu, and the colour is what says
-      at a glance which button is the chat system. Reports went with it: it is
-      a tab on that page now, so a second entry here would be a second door to
-      one room.
-    */
-    if (t.kind === 'whatsapp') return [];
-    if (t.kind === 'calls') {
-      return [{
-        key, to: '/calls', label: t.label ?? 'Calls',
-        icon: <PhoneCall className="h-4 w-4" />, badge: undefined, external: false,
-      }];
-    }
-    if (t.kind === 'link') {
-      return [{
-        key, to: t.value ?? '#', label: t.label ?? t.value ?? '',
-        icon: <Globe className="h-4 w-4" />, badge: undefined, external: true,
-      }];
-    }
-    const m = modules.find((x) => x.name === t.value);
-    // A module the admin hid, or one this user cannot open, is not offered —
-    // the arrangement only names what would appear anyway.
-    if (!m) return [];
-    return [{
-      key, to: `/${m.name}`, label: t.label ?? m.label,
-      icon: <ModuleIcon name={m.icon} />, badge: unseen?.[m.name], external: false,
-    }];
-  });
-
-  /*
-    Longest path first. `/leads` is a prefix of nothing here, but a future
-    `/leads/import` under a tab of its own would match `/leads` too, and the
-    switcher naming the wrong place is worse than naming none.
-  */
-  const current = [...entries]
-    .filter((e) => !e.external)
-    .sort((a, b) => b.to.length - a.to.length)
-    .find((e) => location.pathname === e.to || location.pathname.startsWith(`${e.to}/`));
-
-  /*
-    The bubble on the button is the count of the screen you are on, so it reads
-    the same as that screen's row in the menu. It used to be the total waiting
-    on the *other* screens, which put Inventories' 17 beside the word "Leads"
-    while the menu said Leads 99+ — correct, and read by everybody as a bug.
-    The other screens' counts are in the menu itself, one per row.
-  */
-  const total = entries.reduce((sum, e) => sum + (e.badge ?? 0), 0);
-  const here = current ? (current.badge ?? 0) : total;
-
-  return (
-    <div className="hidden shrink-0 lg:block">
-      <Dropdown
-        align="left"
-        className="w-56"
-        trigger={(
-          <button
-            type="button"
-            aria-label="Switch module"
-            title="Switch module"
-            className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800"
-          >
-            <span className="text-brand-600 dark:text-brand-400">{current?.icon ?? <LayoutDashboard className="h-4 w-4" />}</span>
-            <span className="max-w-[10rem] truncate">{current?.label ?? 'Dashboard'}</span>
-            {here > 0 && (
-              <span
-                className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
-                title={`${here} new on this screen`}
-              >
-                {here > 99 ? '99+' : here}
-              </span>
-            )}
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          </button>
-        )}
-      >
-        {(close) => (
-          /* A landmark, like the row of tabs it replaces: this is still the
-             app's main navigation, it is just folded up until asked for. */
-          <nav aria-label="Modules" className="py-0.5">
-            {entries.map((entry) => (
-              entry.external ? (
-                <a
-                  key={entry.key}
-                  href={entry.to}
-                  target={entry.to.startsWith('http') ? '_blank' : undefined}
-                  rel="noreferrer"
-                  onClick={close}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  {entry.icon}
-                  <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-                </a>
-              ) : (
-                <NavLink
-                  key={entry.key}
-                  to={entry.to}
-                  onClick={close}
-                  className={({ isActive }) => cn(
-                    'flex items-center gap-2 px-3 py-1.5 text-sm transition-colors',
-                    isActive
-                      ? 'bg-brand-50 font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-300'
-                      : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800',
-                  )}
-                >
-                  {entry.icon}
-                  <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-                  {entry.badge ? <UnseenBadge count={entry.badge} module={entry.to.slice(1)} /> : null}
-                </NavLink>
-              )
-            ))}
-          </nav>
-        )}
-      </Dropdown>
-    </div>
-  );
-}
-
-function UnseenBadge({ count, module }: { count: number; module: string }): JSX.Element {
+export function UnseenBadge({ count, module }: { count: number; module: string }): JSX.Element {
   return (
     <span
       className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
@@ -784,8 +601,13 @@ function SocialBar(): JSX.Element | null {
   if (!links.length) return null;
 
   return (
-    <div className="mr-1 hidden items-center gap-0.5 border-r border-slate-200 pr-2 md:flex dark:border-slate-700">
-      {links.map((link) => (
+    /*
+      Stacked, each tucked under the next, and lifting out when pointed at —
+      *"set in a much closer and may overlap … on hover just pop out a bit"*
+      (1 October 2026). Five icons in the width of two and a half.
+    */
+    <div className="mr-1 hidden items-center border-r border-slate-200 pr-2 md:flex dark:border-slate-700">
+      {links.map((link, index) => (
         <a
           key={link.url}
           href={link.url}
@@ -793,9 +615,11 @@ function SocialBar(): JSX.Element | null {
           rel="noreferrer noopener"
           title={`${link.label} — opens in a new tab`}
           aria-label={link.label}
-          style={{ color: SOCIAL_COLOURS[link.platform] ?? undefined }}
+          style={{ color: SOCIAL_COLOURS[link.platform] ?? undefined, zIndex: links.length - index }}
           className={cn(
-            'rounded-md p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800',
+            'relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm transition-transform duration-150',
+            'hover:z-50 hover:-translate-y-0.5 hover:scale-125 focus-visible:z-50 focus-visible:scale-125 dark:border-slate-900 dark:bg-slate-800',
+            index > 0 && '-ml-2.5',
             !SOCIAL_COLOURS[link.platform] && 'text-slate-400 hover:text-brand-600 dark:hover:text-brand-400',
           )}
         >

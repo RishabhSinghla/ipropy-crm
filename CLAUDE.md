@@ -1469,6 +1469,14 @@ its own `NavLink` beside it, in WhatsApp's own green. It is deliberately **not**
 destination living only in the switcher is invisible below 1024px, and this is
 the screen a rep lives in.
 
+> **1 October 2026: the switcher is gone and this button is phone-only.** The
+> left toolbar (`WorkspaceDock`, in `Layout.tsx`, on every page from `lg` up)
+> carries WhatsApp, the modules, Calls, Tasks and Campaigns, on the owner's
+> instruction — *"delete those leads dropdown sections and whatsapp tab as we
+> know they came to left toolbar"*. The green button stays below `lg`, where
+> there is no toolbar. Ask AI left the bar too: it is `AiBubble`, a circle that
+> can be dragged anywhere. See `SCREENS.md`, *1 October 2026*.
+
 **Reports is folded into that page, on the same instruction** — *"merge this
 reports module into this whatsapp module only"*. It is the same `Reports`
 component, still carrying its own Records / Messaging split, and `/reports`

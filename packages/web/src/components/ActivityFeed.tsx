@@ -45,18 +45,22 @@ export function useActivityEntries(module: string, recordId: string, filter: Fee
   });
 }
 
-export function ActivityFeed({ module, recordId, customerName }: {
+export function ActivityFeed({ module, recordId, customerName, find = '' }: {
   module: string;
   recordId: string;
   /** Initials on the customer's own bubbles. */
   customerName: string;
+  /** Words typed into the header's search: only entries that mention them. */
+  find?: string;
 }): JSX.Element {
   const [filter, setFilter] = useState<FeedFilter>('all');
   const { data, isLoading, isError, refetch } = useActivityEntries(module, recordId, filter);
-  const entries = useMemo(
-    () => [...(data ?? [])].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime()),
-    [data],
-  );
+  const entries = useMemo(() => {
+    const needle = find.trim().toLocaleLowerCase();
+    return [...(data ?? [])]
+      .filter((entry) => !needle || `${entry.title} ${entry.body ?? ''} ${entry.actorName ?? ''}`.toLocaleLowerCase().includes(needle))
+      .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  }, [data, find]);
 
   // Open on the newest, the way a chat does — and stay there when a note is posted.
   const bottom = useRef<HTMLDivElement>(null);
@@ -96,8 +100,8 @@ export function ActivityFeed({ module, recordId, customerName }: {
         ) : entries.length === 0 ? (
           <div className="py-16 text-center">
             <Activity className="mx-auto h-8 w-8 text-slate-400" />
-            <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Nothing here yet</p>
-            <p className="mt-1 text-xs text-muted">Notes, messages, calls and changes to this record appear here.</p>
+            <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">{find.trim() ? `Nothing mentions “${find.trim()}”` : 'Nothing here yet'}</p>
+            <p className="mt-1 text-xs text-muted">{find.trim() ? 'Try other words, or clear the search above.' : 'Notes, messages, calls and changes to this record appear here.'}</p>
           </div>
         ) : (
           entries.map((entry, index) => (

@@ -130,7 +130,8 @@ for (const module of MODULES) {
       await page.getByRole('button', { name: 'Never called' }).click();
       await page.keyboard.press('Escape');
       await expect.poll(() => sentFilter, { timeout: 15_000 }).toBe(true);
-      await expect(page.getByTestId('call-disposition-filter')).toContainText('Never called');
+      // The chip is an icon and a count now; lit, it counts the one choice.
+      await expect(page.getByTestId('call-disposition-filter')).toContainText('1');
     });
   });
 }

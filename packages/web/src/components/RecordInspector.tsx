@@ -27,7 +27,7 @@ import { badgeVars } from '../lib/color';
 import { cn, restrictionForField } from '../lib/utils';
 import type { DescribedModule, FieldBlockSpec } from '../lib/recordPanes';
 
-export function RecordInspector({ module, row, canEdit, blocks, pinned, assignedField, assignedName, statusField, followUpField, phoneField }: {
+export function RecordInspector({ module, row, canEdit, blocks, pinned, assignedField, assignedName, statusField, followUpField, phoneField, find = '' }: {
   module: DescribedModule;
   row: RecordEnvelope;
   canEdit: boolean;
@@ -41,17 +41,26 @@ export function RecordInspector({ module, row, canEdit, blocks, pinned, assigned
   followUpField?: FieldMeta;
   /** The number moved off the header, so it is still editable somewhere. */
   phoneField?: FieldMeta;
+  /** Words typed into the header's search: only the fields whose name or value mention them. */
+  find?: string;
 }): JSX.Element {
+  const needle = find.trim().toLocaleLowerCase();
+  const mentions = (field: FieldMeta): boolean => {
+    if (!needle) return true;
+    const value = row.display?.[field.name] ?? row.values[field.name];
+    const text = Array.isArray(value) ? value.join(' ') : value == null ? '' : String(value);
+    return `${field.label} ${text}`.toLocaleLowerCase().includes(needle);
+  };
   const top = [
     ...(assignedField ? [assignedField] : []),
     ...pinned.filter((field) => field.name !== assignedField?.name),
-  ];
+  ].filter(mentions);
   const shownAbove = new Set(top.map((field) => field.name));
   const inBlocks = new Set(blocks.flatMap((block) => block.fields.map((field) => field.name)));
   // The number is not in the header any more, so it must be here if no section has it.
-  const extra = phoneField && !inBlocks.has(phoneField.name) && !shownAbove.has(phoneField.name) ? [phoneField] : [];
+  const extra = phoneField && !inBlocks.has(phoneField.name) && !shownAbove.has(phoneField.name) && mentions(phoneField) ? [phoneField] : [];
   const sections = blocks
-    .map((block) => ({ ...block, fields: block.fields.filter((field) => !shownAbove.has(field.name)) }))
+    .map((block) => ({ ...block, fields: block.fields.filter((field) => !shownAbove.has(field.name) && mentions(field)) }))
     .filter((block, index) => index === 0 || block.fields.length > 0);
 
   return (
@@ -79,9 +88,11 @@ export function RecordInspector({ module, row, canEdit, blocks, pinned, assigned
                 ))}
                 {/* Not a field: an outcome lives on the call, so its label is the
                     owner's own word for the toolbar button that filters on it. */}
-                <Row label="Call Log">
-                  <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
-                </Row>
+                {(!needle || 'call log'.includes(needle)) && (
+                  <Row label="Call Log">
+                    <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
+                  </Row>
+                )}
                 {extra.map((field) => (
                   <Row key={field.name} label={field.label} mandatory={field.isMandatory} after={<WhatsAppBeside row={row} field={field} />}>
                     <PlainValue module={module} row={row} field={field} canEdit={canEdit} />

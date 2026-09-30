@@ -1,39 +1,40 @@
 /**
- * The slim vertical toolbar at the left of the split view.
+ * The slim vertical toolbar down the left of every page.
  *
  * **30 September 2026, the owner's prototype:** *"the toolbar and Icons move in
- * new vertical toolbar"* — a WhatsApp-style dock of round icons, so the record
- * pane beside it keeps its whole width for the queue. WhatsApp first, in its
- * own green, then the modules, the call log, the tasks and campaigns; settings and who
- * you are at the foot.
+ * new vertical toolbar"* — a WhatsApp-style dock of round icons. **1 October
+ * 2026:** *"it needs to be fixed throughout the CRM all time"* — it lived only
+ * on the lists, so opening Calls took it away. It is part of the app's frame
+ * now (`Layout.tsx`), and it replaces the module switcher and the WhatsApp
+ * button that used to sit in the top bar.
  *
- * Every icon is a place that already exists, or the Task filter the list
- * already has. Nothing here is a second copy of a screen — the dock only moves
- * the doors closer.
+ * Every icon is a place that already exists. Tasks opens the module you are in
+ * (or the first one) on today's follow-ups, through `?task=today`, which the
+ * list reads on arrival — the same queue the Task button there opens.
  *
- * Only on a wide screen (`xl`), where the four panes sit side by side. Below
- * that the panes stack and the app's own header and drawer carry the same
- * destinations.
+ * From `lg` up. Below that the app's drawer carries the same destinations.
  */
 import { type JSX, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
-import { CheckCircle2, Megaphone, MessagesSquare, PhoneIncoming, Settings } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { CheckCircle2, LayoutDashboard, Megaphone, MessagesSquare, PhoneIncoming, Settings } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { ModuleIcon } from './Layout';
 import { Avatar } from './ui';
 
-export function WorkspaceDock({ tasksOn, onTasks }: {
-  /** Whether the list is narrowed to today's tasks right now. */
-  tasksOn?: boolean;
-  /** Absent where the module has no follow-up date, so there is no Tasks icon. */
-  onTasks?: () => void;
+export function WorkspaceDock({ unseen }: {
+  /** Records nobody has opened yet, per module — the switcher's old badge. */
+  unseen?: Record<string, number>;
 }): JSX.Element {
   const { modules, user } = useApp();
+  const location = useLocation();
   const entityModules = modules.filter((module) => module.isEntity);
+  const here = location.pathname.split('/')[1] ?? '';
+  const taskModule = entityModules.find((module) => module.name === here) ?? entityModules[0];
+  const onTasks = new URLSearchParams(location.search).get('task') === 'today';
   return (
     <aside
-      className="hidden w-14 shrink-0 flex-col items-center justify-between border-r border-slate-200 bg-[#f0f2f5] py-3 dark:border-slate-800 dark:bg-slate-900 xl:flex"
+      className="hidden w-14 shrink-0 flex-col items-center justify-between overflow-y-auto border-r border-slate-200 bg-[#f0f2f5] py-3 no-scrollbar dark:border-slate-800 dark:bg-slate-900 lg:flex"
       aria-label="Workspace toolbar"
       data-testid="workspace-dock"
     >
@@ -42,36 +43,38 @@ export function WorkspaceDock({ tasksOn, onTasks }: {
           to="/whatsapp"
           title="WhatsApp"
           aria-label="WhatsApp"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0B8043] text-white shadow-sm transition hover:opacity-95"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0B8043] text-white shadow-sm transition hover:opacity-95"
         >
           <MessagesSquare className="h-5 w-5" />
         </NavLink>
-        <span className="h-px w-7 bg-slate-300 dark:bg-slate-700" />
+        <span className="h-px w-7 shrink-0 bg-slate-300 dark:bg-slate-700" />
+        <DockLink to="/dashboard" label="Dashboard">
+          <LayoutDashboard className="h-[18px] w-[18px]" />
+        </DockLink>
         {entityModules.map((module) => (
-          <DockLink key={module.name} to={`/${module.name}`} label={module.label}>
+          <DockLink key={module.name} to={`/${module.name}`} label={module.label} exact badge={unseen?.[module.name]}>
             <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />
           </DockLink>
         ))}
         <DockLink to="/calls" label="Call log">
           <PhoneIncoming className="h-[18px] w-[18px]" />
         </DockLink>
-        {onTasks && (
-          <button
-            type="button"
-            onClick={onTasks}
-            aria-pressed={Boolean(tasksOn)}
-            title={tasksOn ? 'Show every record again' : "Today's tasks"}
+        {taskModule && (
+          <NavLink
+            to={onTasks ? `/${taskModule.name}` : `/${taskModule.name}?task=today`}
+            title={onTasks ? 'Show every record again' : "Today's tasks"}
             aria-label="Today's tasks"
-            className={dockLook(Boolean(tasksOn))}
+            aria-pressed={onTasks}
+            className={dockLook(onTasks)}
           >
             <CheckCircle2 className="h-[18px] w-[18px]" />
-          </button>
+          </NavLink>
         )}
         <DockLink to="/whatsapp/campaigns" label="Campaigns">
           <Megaphone className="h-[18px] w-[18px]" />
         </DockLink>
       </div>
-      <div className="flex flex-col items-center gap-3">
+      <div className="mt-3 flex flex-col items-center gap-3">
         <DockLink to="/settings" label="Settings">
           <Settings className="h-[18px] w-[18px]" />
         </DockLink>
@@ -85,10 +88,27 @@ export function WorkspaceDock({ tasksOn, onTasks }: {
   );
 }
 
-function DockLink({ to, label, children }: { to: string; label: string; children: ReactNode }): JSX.Element {
+function DockLink({ to, label, exact = false, badge, children }: {
+  to: string; label: string; exact?: boolean; badge?: number; children: ReactNode;
+}): JSX.Element {
+  const location = useLocation();
+  // A module's icon stays lit on its records too (`/leads/…`), but not while
+  // the Tasks icon is the one that is on.
+  const onTasks = new URLSearchParams(location.search).get('task') === 'today';
   return (
-    <NavLink to={to} end={false} title={label} aria-label={label} className={({ isActive }) => dockLook(isActive)}>
+    <NavLink
+      to={to}
+      end={false}
+      title={label}
+      aria-label={label}
+      className={({ isActive }) => cn(dockLook(isActive && !(exact && onTasks)), 'relative')}
+    >
       {children}
+      {badge ? (
+        <span className="absolute -right-1.5 -top-1.5 min-w-[1.1rem] rounded-full bg-brand-600 px-1 text-center text-[9px] font-bold leading-4 text-white ring-2 ring-[#f0f2f5] dark:ring-slate-900" title={`${badge} not opened yet`}>
+          {badge > 99 ? '99+' : badge}
+        </span>
+      ) : null}
     </NavLink>
   );
 }
@@ -96,7 +116,7 @@ function DockLink({ to, label, children }: { to: string; label: string; children
 /** The one look for a dock icon: a white tile when it is where you are, a quiet one when it is not. */
 function dockLook(on: boolean): string {
   return cn(
-    'flex h-9 w-9 items-center justify-center rounded-xl transition',
+    'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition',
     on
       ? 'border border-slate-200/80 bg-white text-brand-600 shadow-xs dark:border-slate-700 dark:bg-slate-800 dark:text-brand-300'
       : 'text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800',

@@ -27,7 +27,7 @@ function stages(page: Page) {
 async function openPanel(page: Page) {
   await page.goto('/leads');
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
-  const trigger = page.getByRole('button', { name: /\d+ stages|\d+ picked/ }).first();
+  const trigger = page.getByRole('button', { name: /^Status\b/ }).first();
   await trigger.click();
   await expect(page.getByRole('heading', { name: /breakdown$/i })).toBeVisible();
   return trigger;
@@ -64,7 +64,7 @@ test('one stage is one click, and it reaches the list as an `in`', async ({ page
   expect(stage, JSON.stringify(conditions)).toBeTruthy();
   expect(stage.value).toHaveLength(1);
 
-  await expect(page.getByRole('button', { name: /1 picked/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Status 1$/ })).toBeVisible();
 });
 
 test('several stages need the checkbox, then Apply', async ({ page }) => {
@@ -84,7 +84,7 @@ test('several stages need the checkbox, then Apply', async ({ page }) => {
   const stage = ((await search).postDataJSON().filter?.conditions ?? [])
     .find((c: { operator?: string }) => c.operator === 'in');
   expect(stage.value).toHaveLength(2);
-  await expect(page.getByRole('button', { name: /2 picked/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Status 2$/ })).toBeVisible();
 });
 
 test('picking an agent filters the list and reshapes the counts', async ({ page }) => {
@@ -113,9 +113,9 @@ test('picking an agent filters the list and reshapes the counts', async ({ page 
 test('all stages puts every record back', async ({ page }) => {
   await openPanel(page);
   await stages(page).first().click();
-  await expect(page.getByRole('button', { name: /1 picked/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Status 1$/ })).toBeVisible();
 
-  await page.getByRole('button', { name: /1 picked/ }).click();
+  await page.getByRole('button', { name: /^Status 1$/ }).click();
   await page.getByRole('button', { name: /^All stages/ }).click();
-  await expect(page.getByRole('button', { name: /\d+ stages/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Status \d+$/ })).toBeVisible();
 });

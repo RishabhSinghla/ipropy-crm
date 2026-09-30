@@ -827,6 +827,14 @@ export const api = {
   }[]) => post<{ ok: true }>(`/api/records/${module}/${id}/share`, { subjects }),
   lookup: (module: string, q: string, filter?: unknown) =>
     get<{ id: string; label: string; recordNumber: string | null }[]>(`/api/records/${module}/lookup${qs({ q, filter })}`),
+  /** A field's most common values, for a quick filter's top five and its search. */
+  facet: (module: string, field: string, search?: string, limit?: number) =>
+    get<{ values: { value: string; label: string; count: number; color: string | null }[] }>(
+      `/api/records/${module}/facet${qs({ field, search: search || undefined, limit })}`,
+    ),
+  /** A number field's lowest and highest value — the ends of its slider. */
+  facetRange: (module: string, field: string) =>
+    get<{ min: number | null; max: number | null }>(`/api/records/${module}/facet-range${qs({ field })}`),
   timeline: (module: string, id: string, types?: string[]) =>
     get<TimelineEntry[]>(`/api/records/${module}/${id}/timeline${qs({ types: types?.join(',') })}`),
   comments: (module: string, id: string) =>

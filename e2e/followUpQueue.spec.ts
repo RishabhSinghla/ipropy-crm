@@ -61,14 +61,14 @@ test('a card filters the list and puts the most overdue first', async ({ page })
   expect(body.sortDir).toBe('asc');
 
   // The panel closes on a pick, and what is filtering is named where it can be undone.
-  await expect(page.getByRole('button', { name: /^Overdue ✕$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Clear Overdue' })).toBeVisible();
 });
 
 test('the filter can be taken off again', async ({ page }) => {
   await openPanel(page);
   await page.getByRole('button', { name: /^Overdue/ }).click();
 
-  const clear = page.getByRole('button', { name: /^Overdue ✕$/ });
+  const clear = page.getByRole('button', { name: 'Clear Overdue' });
   await expect(clear).toBeVisible();
   await clear.click();
   await expect(clear).toHaveCount(0);

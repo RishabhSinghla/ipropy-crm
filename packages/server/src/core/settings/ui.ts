@@ -11,13 +11,14 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
-import type { HeaderTab, UiSettings } from '@ipropy/shared';
+import type { HeaderTab, QuickFilterSection, UiSettings } from '@ipropy/shared';
 
 const DEFAULTS: UiSettings = {
   inlineEdit: false,
   openInNewTab: true,
   headerTabs: null,
   socialPosition: 'right',
+  quickFilters: null,
 };
 
 let cached: UiSettings | null = null;
@@ -63,10 +64,31 @@ export async function uiSettings(): Promise<UiSettings> {
       socialPosition: position === 'brand' || position === 'right' || position === 'hidden'
         ? position
         : DEFAULTS.socialPosition,
+      quickFilters: readQuickFilters(map.get('ui.quick_filters')),
     };
     return cached;
   } catch (err) {
     logger.warn({ err }, 'could not read UI settings, using defaults');
     return DEFAULTS;
   }
+}
+
+const QUICK_KINDS = ['agent', 'list', 'stage', 'calls', 'task', 'values', 'range', 'date'];
+
+/**
+ * `{ module: sections[] }`, keeping only well-shaped sections. Anything else
+ * reads as "not arranged yet", and the panel falls back to the shipped one.
+ */
+function readQuickFilters(value: unknown): Record<string, QuickFilterSection[]> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const arranged: Record<string, QuickFilterSection[]> = {};
+  for (const [module, sections] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(sections)) continue;
+    const wellShaped = sections.filter((section): section is QuickFilterSection =>
+      Boolean(section) && typeof section === 'object'
+      && typeof (section as QuickFilterSection).key === 'string'
+      && QUICK_KINDS.includes((section as QuickFilterSection).kind));
+    if (wellShaped.length) arranged[module] = wellShaped;
+  }
+  return Object.keys(arranged).length ? arranged : null;
 }

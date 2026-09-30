@@ -28,12 +28,7 @@ const CANDIDATES = {
 } as const;
 
 export type CardFact = keyof typeof CANDIDATES;
-/*
-  `phone` is found by what the field *is* (its uitype), never by a name — a
-  module may call it Mobile or Contact Number. The card prints it under the
-  name since the owner's prototype of 30 September 2026.
-*/
-export type CardFields = Partial<Record<CardFact | 'phone', FieldMeta>>;
+export type CardFields = Partial<Record<CardFact, FieldMeta>>;
 
 /** The field behind each fact on this module, skipping any switched off. */
 export function queueCardFields(fields: FieldMeta[]): CardFields {
@@ -47,8 +42,6 @@ export function queueCardFields(fields: FieldMeta[]): CardFields {
       }
     }
   }
-  const phone = fields.find((field) => field.uitype === 'phone' && field.isActive && field.displayType !== 'hidden');
-  if (phone) found.phone = phone;
   return found;
 }
 

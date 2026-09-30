@@ -51,8 +51,7 @@ function watchConsole(page: Page): string[] {
 async function moduleRoutes(page: Page): Promise<string[]> {
   await page.goto('/dashboard');
   await waitForShell(page);
-  // The switcher holds the module links now and is closed by default, so the
-  // sweep has to open it before reading what is on screen.
+  // The left toolbar holds the module links, on every page.
   await openModuleSwitcher(page);
 
   const routes = await page.evaluate(() => {
@@ -65,13 +64,13 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 
       Chats has its own coverage in whatsappBusinessChats.spec.ts and the a11y sweep.
     */
-    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/portal', '/chats']);
+    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/portal', '/chats', '/whatsapp']);
     // Visible links only: the same href appears in three navs — the module
     // switcher's menu, the mobile drawer and the bottom bar — and the hidden
     // ones cannot be clicked. The Site visit tab is drawer/bottom-bar-only at
     // desktop width, so including invisible copies made this sweep click a
     // link that never appears on screen.
-    return [...document.querySelectorAll<HTMLAnchorElement>('nav a[href]')]
+    return [...document.querySelectorAll<HTMLAnchorElement>('nav a[href], [data-testid="workspace-dock"] a[href]')]
       .filter((a) => a.offsetParent !== null)
       .map((a) => new URL(a.href).pathname)
       .filter((p) => /^\/[a-z_]+$/.test(p) && !skip.has(p))
@@ -156,9 +155,7 @@ test('every module in the switcher opens without breaking', async ({ page }) => 
     // them cost well over a hundred API calls, and the suite as a whole then
     // trips the 600/min limiter in app.ts and fails with an empty shell that
     // looks like a render bug. Clicking is also what a user actually does.
-    // Through the switcher, which is where the module links live now. It
-    // closes on a choice, so it is reopened for each hop — which is also what
-    // a person does.
+    // Through the left toolbar, which is where the module links live now.
     await openModuleSwitcher(page);
     await page.locator(`a[href="${route}"]:visible`).first().click();
     // Match the *path*, not the end of the URL: a list restores its last view

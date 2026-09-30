@@ -355,56 +355,30 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
 });
 
 /**
- * The quick filter beside the record count narrows the list on the server.
+ * A quick filter narrows the whole list on the server, and says by how much.
  *
- * **27 September 2026, the owner:** *"A quick filter icon need in between
- * Lead/Inventory Record count and Sorting tab for Contact type, so that we
- * easy filter data from that icon."*
- *
- * The thing worth pinning is not that the button opens — it is that the
- * **total beside it moves**. A filter applied to the twenty-five rows already
- * on screen would narrow the queue, leave the count describing every record
- * in the business, and bring the filtered-out people back on page two. So
- * this reads the toolbar's own count before and after, which only the server
- * can change.
+ * The Contact Type button that stood beside the record count went on 1 October
+ * 2026; every field's filter is the Quick & Live Filters panel now, which
+ * carries the live count in its own header. The thing worth pinning is still
+ * that the **total moves** — only the server can change it.
  */
-test('the quick filter narrows the whole list, not just the page', async ({ page }) => {
+test('a quick filter narrows the whole list, not just the page', async ({ page }) => {
   await page.goto('/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('queue-type-filter')).toHaveCount(0);
 
-  const filter = page.getByTestId('queue-type-filter');
-  // A module with no kind field shows no button, which is the fallback
-  // working rather than the feature missing.
-  if (!(await filter.count())) test.skip(true, 'this module has no kind field');
+  await page.getByTestId('quick-filter-bar').click();
+  const panel = page.getByTestId('quick-filter-overlay');
+  const count = panel.getByTestId('quick-filter-count');
+  await expect(count).toHaveText(/^[\d,]+ records$/, { timeout: 20_000 });
+  const before = await count.innerText();
 
-  const counter = page.getByText(/\d[\d,]* records/).first();
-  await expect(counter).toBeVisible({ timeout: 30_000 });
-  const before = await counter.innerText();
+  // The stage section, by the word every module's heading ends in; its first
+  // stage is whichever the module lists first — no value is named here.
+  await panel.getByRole('button', { name: / wise$/ }).filter({ hasText: /Status/ }).first().click();
+  await panel.locator('button[aria-pressed="false"]').first().click();
+  await expect(count, 'ticking a value left the total where it was').not.toHaveText(before, { timeout: 20_000 });
 
-  await filter.click();
-  const rows = page.getByTestId('queue-filter-row');
-  // Row one is "Any …"; the first real option is the one to try.
-  const chosen = rows.nth(1);
-  const label = (await chosen.innerText()).trim();
-  await chosen.click();
-  await expect(counter, `picking ${label} left the total at ${before}`)
-    .not.toHaveText(before, { timeout: 20_000 });
-
-  /*
-    The panel stays open on a choice, deliberately: it is a multiple choice,
-    and closing after the first tick would mean reopening it for every kind
-    somebody wants. So clearing is the `Any …` row, not another click on the
-    button — which would shut the panel and leave nothing to click.
-
-    **Unless the choice matched nobody**, and that case is the one worth
-    pinning. A list with no rows is replaced by the page's empty state — the
-    whole workspace, queue header and filter with it — so the only control
-    that could undo the filter goes off the screen. The empty state offers it
-    instead; without that the rep is stuck on "No matching records" with no
-    way back but a reload.
-  */
-  const clear = page.getByRole('button', { name: /^Clear .* filter$/ });
-  if (await clear.count()) await clear.click();
-  else await rows.first().click();
-  await expect(counter).toHaveText(before, { timeout: 20_000 });
+  await panel.getByRole('button', { name: 'Clear all' }).click();
+  await expect(count).toHaveText(before, { timeout: 20_000 });
 });

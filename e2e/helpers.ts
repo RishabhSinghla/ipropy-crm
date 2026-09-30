@@ -268,35 +268,31 @@ export async function openCreateDialog(page: Page, singular: RegExp): Promise<Lo
 }
 
 /**
- * The header's module switcher.
+ * The toolbar down the left of every page, which holds the module links.
  *
- * The desktop header used to carry a visible link per module, and half a dozen
- * specs leaned on `a[href="/leads"]` being on screen — as a click target, and
- * as proof that module metadata had loaded at all. Both moved inside one
- * control, so both go through here.
+ * It replaced the header's module switcher on 1 October 2026. Specs lean on a
+ * module's link being on screen — as a click target, and as proof that module
+ * metadata loaded at all — so both go through here.
  */
 export function moduleSwitcher(page: Page): Locator {
-  return page.getByRole('button', { name: 'Switch module' });
+  return page.getByTestId('workspace-dock');
 }
 
 /**
  * Wait until the app has its modules.
  *
- * The switcher is named from module metadata, so it carrying a module's label
- * is the same proof the visible tab used to be — a shell that rendered without
- * its metadata shows no switcher at all.
+ * The toolbar's module links are drawn from module metadata, so one of them
+ * being there is the proof a visible tab used to be — a shell that rendered
+ * without its metadata has a toolbar with no modules in it.
  */
 export async function waitForShell(page: Page): Promise<void> {
-  await expect(moduleSwitcher(page)).toBeVisible({ timeout: 30_000 });
+  await expect(moduleSwitcher(page).locator('a[href^="/"]').nth(2)).toBeVisible({ timeout: 30_000 });
 }
 
-/** Open the switcher and hand back its menu links. */
+/** The toolbar's links — always on screen, so there is nothing to open. */
 export async function openModuleSwitcher(page: Page): Promise<Locator> {
   await waitForShell(page);
-  if (!(await page.getByRole('link', { name: /Dashboard/ }).count())) {
-    await moduleSwitcher(page).click();
-  }
-  return page.getByRole('link', { name: /\S/ });
+  return moduleSwitcher(page).getByRole('link');
 }
 
 

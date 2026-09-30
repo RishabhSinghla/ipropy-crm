@@ -1194,3 +1194,56 @@ not reachable by keyboard. About a dozen specs were measuring the old header or 
 Overview tab and were rewritten to measure the new panes — `e2e/fourPane.spec.ts` is
 the one written for this layout. The Layout Designer's zones are renamed to match:
 *Right pane — pinned facts* and *Right pane — field sections*.
+
+## Twenty asks, 1 October 2026 — the filters get a master
+
+**The owner, in one message**, after working the four panes for a day. What
+changed, and the one thing worth knowing about each:
+
+* **Quick & Live Filters is rebuilt** (`components/QuickFilterOverlay.tsx`,
+  rules in `lib/quickFilters.ts`, pure and node-tested):
+  * it slides in **over the right-hand pane, in its exact shape** — the pane is
+    `relative` and the list hands it the panel through `filterBar.panel`. With
+    no record open there is no pane, so it sits at the screen's right edge;
+  * its header carries the **live record count** (`data.total` of the list's
+    own query — there is no second count to disagree with it);
+  * **every section folds** and opens itself when something in it is chosen;
+  * a list longer than five shows its **top five, most used first, and a
+    search**. Counts come from `GET /api/records/:module/facet`, which runs
+    the reporting engine as the person asking and refuses a hidden field;
+  * money, sizes and numbers are a **min–max slider**
+    (`GET /api/records/:module/facet-range` for its ends). It asks the list
+    again only when a thumb is let go, not on every pixel;
+  * **Created date** and **Updated date** have Yesterday, Today, This week,
+    This month and a date picker. A picked day on a timestamp is **the whole
+    local day as two instants** (`localDayBounds`) — sending the bare date is
+    read as UTC and shifts every day by five and a half hours in India;
+  * **Task wise** is Overdue, Today, Tomorrow, **Upcoming** (new: anything
+    after today) and a date. The four are the Task button's own queues, so the
+    button and the panel cannot disagree.
+* **Admin → Quick Filters is the master** (`pages/admin/QuickFiltersAdmin.tsx`,
+  setting `ui.quick_filters`, migration `179`): show or hide each section, drag
+  or arrow to reorder, rename, open unfolded, and how many values show before
+  the search. **The live panel beside it is the real component.** A module
+  nobody has arranged is built from its own fields (`defaultQuickSections` —
+  no field is named in code), a section whose field has gone is dropped, and
+  a field added later is appended.
+* **The list chips are an icon and a count.** The words stay as `sr-only`
+  text, so every spec and screen reader still finds "Status", "Task",
+  "Call Log".
+* **The Contact Type button in the queue header is gone** — filtering on any
+  field is the panel's job.
+* **The queue card has no phone line**, and its text is one step larger.
+* **Search this record** — the magnifier before the tag icon narrows the
+  timeline and the fields pane to what mentions the words, and forgets them
+  when another record opens.
+* **"Quick tag" reads "Quick note".**
+* **The left toolbar is on every page** (`Layout.tsx`), from `lg` up, with a
+  Dashboard icon and the module's "not opened yet" count on each module. Tasks
+  links to `?task=today`, which the list now carries in its address both ways.
+  The header's **module switcher is removed** and its **WhatsApp button shows
+  only below `lg`**, where there is no toolbar.
+* **Social icons are stacked**, each tucked under the next and lifting out on
+  hover.
+* **Ask AI is a draggable circle** (`components/AiBubble.tsx`) — a tap opens
+  it, a drag moves it and does not; where it was left is this browser's.

@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Filter,
-  Mail, MessageCircle, MessagesSquare, MoreHorizontal, Phone, RotateCcw, SlidersHorizontal, Sparkles, Star, Trash2, Users,
+  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText,
+  Mail, MessageCircle, MessagesSquare, MoreHorizontal, Phone, RotateCcw, Search, SlidersHorizontal, Sparkles, Star, Trash2, Users, X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { FieldValue } from './FieldRenderer';
@@ -151,7 +151,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
  */
 export function IpropyWorkspace({
   module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
-  openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort, typePick, onTypePick,
+  openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
   queueTools, queueFooter, filterBar,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
@@ -176,20 +176,6 @@ export function IpropyWorkspace({
   callQueueUrl: string;
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
   /**
-   * The quick filter over the queue's own kind field — Contact Type.
-   *
-   * **27 September 2026, the owner:** *"A quick filter icon need in between
-   * Lead/Inventory Record count and Sorting tab for Contact type, so that we
-   * easy filter data from that icon."*
-   *
-   * The list owns it, not this pane: it has to reach the server with the rest
-   * of the query, or the queue would filter what is on screen and the count
-   * beside it would go on describing all 22,975. Which field it is is the
-   * module's own first subtitle field — no screen names it.
-   */
-  typePick?: string[];
-  onTypePick?: (values: string[]) => void;
-  /**
    * The list's own filter chips and search, drawn under the queue's header.
    *
    * **30 September 2026, the owner's prototype:** *"the list of All Leads,
@@ -200,11 +186,16 @@ export function IpropyWorkspace({
   queueTools?: ReactNode;
   /** The record range and the page arrows, at the foot of the queue. */
   queueFooter?: ReactNode;
-  /** Whether the list's quick filters are on, and how to open or clear them. */
-  filterBar?: { count: number; onOpen: () => void; onReset: () => void };
+  /**
+   * Whether the list's quick filters are on, how to open or clear them, and
+   * the panel itself — drawn inside the right-hand pane, in its exact shape.
+   */
+  filterBar?: { count: number; onOpen: () => void; onReset: () => void; panel?: ReactNode };
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [findText, setFindText] = useState('');
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
   const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -292,6 +283,8 @@ export function IpropyWorkspace({
   // The row stands in while the record loads, so the pane never blanks between
   // two selections. Its values are right, there are simply fewer of them.
   const active = fetched && fetched.id === activeId ? fetched : listRow;
+  // A search belongs to the record it was typed on.
+  useEffect(() => { setFindText(''); setFinding(false); }, [activeId]);
 
   const { data: neighbours } = useQuery({
     queryKey: ['record-neighbours', module.name, activeId, neighbourContext, sortBy, sortDir],
@@ -558,63 +551,10 @@ export function IpropyWorkspace({
             </span>
           </span>
           {/*
-            The quick filter, between the count and the sorting menu, exactly
-            where he asked for it. It is the queue's own kind field, and its
-            values are that field's dropdown — never a list written here.
+            A Contact Type filter button stood here until 1 October 2026 —
+            *"its no use to us at all"*, the owner. Filtering by any field,
+            that one included, is the Quick & Live Filters panel's job.
           */}
-          {onTypePick && cardFields.type && (cardFields.type.options?.length ?? 0) > 0 && (
-            <Dropdown
-              /*
-                Anchored to the button's *right* edge, so the panel grows back
-                towards the left of the queue and stays inside it. Left-anchored
-                it ran 46px past the pane (measured), which widens the pane's
-                scrollable area — and an `overflow-hidden` box still scrolls
-                when the browser reveals a focused item inside it, so tabbing
-                through the options slid every row sideways.
-              */
-              align="right"
-              trigger={(
-                <button
-                  type="button"
-                  data-testid="queue-type-filter"
-                  title={`Filter by ${cardFields.type.label}`}
-                  aria-label={`Filter by ${cardFields.type.label}`}
-                  className={cn(
-                    'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold transition-colors',
-                    typePick?.length
-                      ? 'bg-brand-600 text-white'
-                      : 'text-slate-500 hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-950',
-                  )}
-                >
-                  <Filter className="h-3.5 w-3.5 shrink-0" />
-                  {typePick?.length ? <span className="tabular-nums">{typePick.length}</span> : null}
-                </button>
-              )}
-            >
-              {() => (
-                <div className="max-h-[20rem] overflow-y-auto py-1">
-                  <QueueFilterRow
-                    label={`Any ${cardFields.type!.label.toLowerCase()}`}
-                    chosen={!typePick?.length}
-                    onClick={() => onTypePick([])}
-                  />
-                  {(cardFields.type!.options ?? []).map((option) => {
-                    const on = typePick?.includes(option.value) ?? false;
-                    return (
-                      <QueueFilterRow
-                        key={option.value}
-                        label={option.label || option.value}
-                        chosen={on}
-                        onClick={() => onTypePick(on
-                          ? (typePick ?? []).filter((value) => value !== option.value)
-                          : [...(typePick ?? []), option.value])}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </Dropdown>
-          )}
           {onSort && (
             <Dropdown
               align="right"
@@ -776,6 +716,33 @@ export function IpropyWorkspace({
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </span>
+              {/*
+                Search within this record — *"search icon … before tag icon and
+                after those record count"* (1 October 2026). It narrows the
+                timeline and the fields pane to what mentions the words, and
+                forgets them when another record opens.
+              */}
+              {finding ? (
+                <span className="relative inline-flex items-center">
+                  <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    autoFocus
+                    value={findText}
+                    onChange={(event) => setFindText(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === 'Escape') { setFindText(''); setFinding(false); } }}
+                    placeholder="Search this record…"
+                    aria-label="Search this record"
+                    className="h-8 w-44 rounded-full border border-slate-200 bg-white pl-7 pr-7 text-xs focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400 dark:border-slate-700 dark:bg-slate-800"
+                  />
+                  <button type="button" aria-label="Close record search" onClick={() => { setFindText(''); setFinding(false); }} className="absolute right-1.5 rounded p-0.5 text-slate-400 hover:text-slate-700">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ) : (
+                <button type="button" aria-label="Search this record" title="Search this record" onClick={() => setFinding(true)} className={cn(ACTION_CIRCLE, 'hover:bg-brand-600')}>
+                  <Search className="h-4 w-4" />
+                </button>
+              )}
               <TagButton
                 module={module.name}
                 recordId={active.id}
@@ -904,7 +871,7 @@ export function IpropyWorkspace({
         )}>
           {shownTab === 'timeline' && (
             <>
-              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} />
+              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} find={findText} />
               <NoteComposer module={module.name} recordId={active.id} look="dock" whatsAppTo={phoneValue || undefined} />
             </>
           )}
@@ -921,8 +888,9 @@ export function IpropyWorkspace({
       {active && (
         <aside
           data-testid="activity-pane"
-          className="flex w-full shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[22.5rem]"
+          className="relative flex w-full shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[22.5rem]"
         >
+          {filterBar?.panel}
           {/*
             The deck and the notes are one pane now — 27 September 2026, the
             owner: *"call deck merge in to Note/Comment pane/Box"*. The deck
@@ -972,6 +940,7 @@ export function IpropyWorkspace({
             statusField={statusField}
             followUpField={followUpField}
             phoneField={phoneField}
+            find={findText}
           />
         </aside>
       )}
@@ -1095,7 +1064,6 @@ function QueueCard({
   const editField = editing === 'name' ? nameField : editing === 'type' ? card.type : undefined;
   const read = (field: FieldMeta): string => displayOf(row, field);
   const type = card.type ? read(card.type) : '';
-  const phone = card.phone ? read(card.phone) : '';
   const unit = card.unit ? read(card.unit) : '';
   const description = queueFields
     ? queueFields.map((field) => read(field)).filter((value) => value && value !== '—').join(', ')
@@ -1208,7 +1176,7 @@ function QueueCard({
             onDoubleClick={openEditor('name')}
             title={canEdit && nameField ? 'Double-click to rename' : undefined}
             className={cn(
-              'truncate text-[13px] font-bold tracking-tight',
+              'truncate text-sm font-bold tracking-tight',
               active ? 'text-brand-900 dark:text-white' : 'text-slate-900 dark:text-slate-100',
             )}
           >
@@ -1222,24 +1190,19 @@ function QueueCard({
           {attention && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Needs attention" />}
           {/* How stale it is, top right — the prototype's "6h ago". */}
           {row.updatedAt && (
-            <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[10px] font-medium', active ? 'text-brand-700 dark:text-brand-100' : 'text-muted')}>
+            <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[11px] font-medium', active ? 'text-brand-700 dark:text-brand-100' : 'text-muted')}>
               {relativeTime(row.updatedAt)}
             </span>
           )}
         </span>
 
-        {/* The number, with WhatsApp's mark — the one a rep dials from here. */}
-        {phone && (
-          <span className={cn('mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold tracking-tight', active ? 'text-brand-900 dark:text-white' : 'text-slate-700 dark:text-slate-200')}>
-            <MessageCircle className="h-3 w-3 shrink-0 text-emerald-600" aria-hidden />
-            <span className="truncate tabular-nums">{phone}</span>
-          </span>
-        )}
+        {/* No number here — *"I dont want to see phone number there"* (1 October
+            2026). It is on the open record, beside its WhatsApp icon. */}
 
         {/* 2. Which unit, cut short with "…" rather than wrapped — and not
             drawn at all when there is nothing to say, rather than a dash. */}
         {(unit || description) && <span className={cn(
-          'mt-0.5 block min-w-0 truncate text-[11px]',
+          'mt-0.5 block min-w-0 truncate text-xs',
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
@@ -1253,11 +1216,11 @@ function QueueCard({
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        {(price || area) && <span className="mt-0.5 flex items-center gap-2 text-[11px]">
+        {(price || area) && <span className="mt-0.5 flex items-center gap-2 text-xs">
           {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.
-              'shrink-0 whitespace-nowrap text-xs font-bold tabular-nums text-emerald-700 dark:text-emerald-300',
+              'shrink-0 whitespace-nowrap text-[13px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300',
             )}>
               {price}
             </span>
@@ -1266,7 +1229,7 @@ function QueueCard({
               carries a contrast guarantee in both themes. */}
           {area && (
             <span className={cn(
-              'truncate text-xs font-medium',
+              'truncate text-[13px] font-medium',
               // `text-muted` is a guaranteed pair on the page's own surface
               // and not on a brand fill, so the open row states its own.
               active ? 'text-brand-700 dark:text-brand-100' : 'text-muted',
@@ -1300,27 +1263,6 @@ function QueueCard({
         />
       </span>
     </div>
-  );
-}
-
-/** One line of the queue's quick filter. Stays open — picking two is one visit. */
-function QueueFilterRow({ label, chosen, onClick }: { label: string; chosen: boolean; onClick: () => void }): JSX.Element {
-  return (
-    <button
-      type="button"
-      data-testid="queue-filter-row"
-      onClick={onClick}
-      aria-pressed={chosen}
-      className={cn(
-        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors',
-        chosen
-          ? 'bg-brand-50 font-bold text-brand-900 dark:bg-brand-950 dark:text-brand-100'
-          : 'font-medium text-slate-700 hover:bg-[var(--surface-muted)] dark:text-slate-200',
-      )}
-    >
-      <Check className={cn('h-3.5 w-3.5 shrink-0', chosen ? 'text-brand-600' : 'invisible')} />
-      <span className="truncate">{label}</span>
-    </button>
   );
 }
 

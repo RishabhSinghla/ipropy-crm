@@ -12,8 +12,8 @@ import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
 import { cn } from '../lib/utils';
 import { FieldInput } from '../components/FieldRenderer';
-import { assignmentField, byLabel, pipelineFieldOf, withQueueSubtitle } from '../lib/fields';
-import { queueCardFields, withQueueCardColumns } from '../lib/queueCard';
+import { assignmentField, byLabel, followUpFieldOf, pipelineFieldOf, withQueueSubtitle } from '../lib/fields';
+import { withQueueCardColumns } from '../lib/queueCard';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { countConditions } from '../components/FilterBuilder';
 import {
@@ -27,15 +27,17 @@ import { StatusBreakdown } from '../components/StatusBreakdown';
 import {
   CallDispositionFilter, LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
 } from '../components/CallDispositionFilter';
-import { toolbarButton } from '../lib/toolbarButton';
+import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import SiteCapture from './SiteCapture';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
-import { WorkspaceDock } from '../components/WorkspaceDock';
 import { QuickFilterOverlay } from '../components/QuickFilterOverlay';
-import { countActiveQuickFilters } from '../lib/quickFilters';
+import {
+  arrangeQuickSections, countActiveQuickFilters, defaultQuickSections, quickPickConditions,
+  type QuickPick, type QuickPicks,
+} from '../lib/quickFilters';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 
@@ -71,12 +73,13 @@ export default function ListView(): JSX.Element {
   const [tagPick, setTagPick] = useState<string | null>(null);
   const [dispositionPick, setDispositionPick] = useState<DispositionPick>(NO_DISPOSITION_PICK);
   /*
-    The split view's quick filter, beside the record count. It lives here and
-    not in the pane because it has to reach the *server* with the rest of the
-    query: a filter applied to the rows already on screen would narrow the
-    queue and leave the count beside it still describing all 22,975.
+    What is chosen in the Quick & Live Filters panel's field sections — a
+    field's values, a slider's ends, a date. It lives here and not in the panel
+    because it has to reach the *server* with the rest of the query: a filter
+    applied to the rows already on screen would narrow the queue and leave the
+    count beside it describing the whole list.
   */
-  const [typePick, setTypePick] = useState<string[]>([]);
+  const [picks, setPicks] = useState<QuickPicks>({});
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
@@ -163,8 +166,22 @@ export default function ListView(): JSX.Element {
     // A restored filter is already applied — don't pop the panel open on
     // arrival (dashboard drill-through lands on the records, not the builder).
     setShowFilters(false);
+    setTaskQueue(taskFromAddress(searchParams.get('task')));
     setHydratedFor(moduleName ?? null);
   }, [moduleName]);
+
+  /*
+    The toolbar's Tasks icon links to `?task=today` from anywhere, including
+    this list — so the address is read again whenever that one part changes,
+    and a link back without it switches the queue off.
+  */
+  const taskParam = searchParams.get('task');
+  useEffect(() => {
+    if (hydratedFor !== moduleName) return;
+    const wanted = taskFromAddress(taskParam);
+    setTaskQueue((current) => (current === wanted ? current : wanted));
+    setPage(1);
+  }, [taskParam]);
 
   useEffect(() => {
     setPageInput(String(page));
@@ -313,6 +330,9 @@ export default function ListView(): JSX.Element {
     if (page > 1) next.set('page', String(page));
     if (pageSize !== DEFAULT_PAGE_SIZE) next.set('pageSize', String(pageSize));
     if (countConditions(filter)) next.set('filter', JSON.stringify(filter));
+    // The follow-up queue is in the address so the toolbar's Tasks icon, on
+    // any page, can open a list on it — and a refresh keeps it.
+    if (taskQueue) next.set('task', taskQueue);
     /*
       **Carried, not rebuilt.** This effect writes the address from the list's
       own state, so anything it does not name is silently dropped — and `open`
@@ -336,7 +356,7 @@ export default function ListView(): JSX.Element {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, searchParams]);
+  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, taskQueue, searchParams]);
 
   /**
    * Owner defaults to whoever is adding the record. Status and stage come from
@@ -360,20 +380,13 @@ export default function ListView(): JSX.Element {
   */
   const stageField = meta ? pipelineFieldOf(meta) : undefined;
   const ownerField = meta ? assignmentField(meta.fields) : undefined;
-  /* The kind field the queue card already leads with — Contact Type on a
-     contact — so the quick filter and the chip beside the name are the same
-     fact, found the same way, and no screen names a field. */
-  const typeField = meta ? queueCardFields(meta.fields).type : undefined;
 
   // Next Follow-up is the CRM's task field. These are deliberately not saved
   // views: every person gets the same obvious work queues without an admin
   // having to create or maintain three more views for each module.
   // Older Inventory workspaces store the same business field as
-  // `next_follow_up` in JSON.  Prefer the canonical column, but keep that
-  // live data working rather than forcing a risky bulk rewrite before the
-  // task queues can be used.
-  const taskField = meta?.fields.find((field) => field.columnName === 'next_followup_at')
-    ?? meta?.fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up');
+  // `next_follow_up` in JSON — `followUpFieldOf` knows both.
+  const taskField = meta ? followUpFieldOf(meta.fields) : undefined;
   /*
     The field decides, never a list of module names.
 
@@ -388,6 +401,14 @@ export default function ListView(): JSX.Element {
   const taskFilters = useMemo(
     () => followUpFilters(taskField?.name ?? 'next_follow_up'),
     [taskField?.name],
+  );
+  const fieldsByName = useMemo(() => new Map((meta?.fields ?? []).map((field) => [field.name, field])), [meta?.fields]);
+  /* The panel's sections: the admin's arrangement laid over what this module has. */
+  const quickSections = useMemo(
+    () => (meta
+      ? arrangeQuickSections(user?.ui?.quickFilters?.[meta.name], defaultQuickSections(meta.fields, { ownerField, stageField, taskField }))
+      : []),
+    [meta, user?.ui?.quickFilters, ownerField, stageField, taskField],
   );
 
   const effectiveFilter = useMemo<FilterGroup>(() => {
@@ -404,9 +425,7 @@ export default function ListView(): JSX.Element {
       // `record_tags` is the builder's own name for the tags on a record; a tag
       // is not a field on the module, so it cannot be resolved as one.
       ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
-      ...(typePick.length && typeField
-        ? [{ field: typeField.name, operator: 'in' as const, value: typePick }]
-        : []),
+      ...quickPickConditions(picks, fieldsByName),
       /*
         How the last call went. `last_call_disposition` is a system field in the
         query builder, not a column on either module — a disposition lives on
@@ -421,7 +440,7 @@ export default function ListView(): JSX.Element {
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, typePick, typeField?.name, dispositionPick]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, picks, fieldsByName, dispositionPick]);
 
   /*
     What the breakdown counts is the view and the ad-hoc filter, but never the
@@ -847,12 +866,18 @@ export default function ListView(): JSX.Element {
                  it must not sit lit from the moment the page opens. */
               className={toolbarButton(Boolean(tagPick || (activeView && !activeView.isSystem)), 'max-w-[14rem]')}
               aria-label="Choose or manage list views"
+              title={tagPick ?? activeView?.name ?? `All ${meta.label}`}
             >
               {tagPick ? <Tag className="h-3.5 w-3.5 shrink-0" /> : <Filter className="h-3.5 w-3.5 shrink-0" />}
               {/* No chevron — *"remove arrow key from all Buttons, so that
                   we can See neet and clean Toolbar"* (28 September 2026).
                   The icon on the left already says what this opens. */}
-              <span className="truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
+              {/* Icon and count only — *"just icons … along with count"*
+                  (1 October 2026). The list's name is the tooltip. */}
+              <span className="sr-only">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
+              <span className={toolbarCount(Boolean(tagPick || (activeView && !activeView.isSystem)))}>
+                {(data?.total ?? 0).toLocaleString('en-IN')}
+              </span>
             </button>
           )}
         >
@@ -942,7 +967,7 @@ export default function ListView(): JSX.Element {
           )}
         </div>
             <button
-              onClick={() => setShowFilters(true)}
+              onClick={() => setShowFilters((value) => !value)}
               className={cn('btn-secondary btn-sm px-2', countConditions(filter) > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
               aria-label="Quick and live filters"
               title="Quick and live filters"
@@ -1021,17 +1046,56 @@ export default function ListView(): JSX.Element {
 
   /** How many of the quick filters are narrowing the list right now. */
   const quickFilterCount = countActiveQuickFilters({
-    filter, stages: stagePick, agent: agentPick, task: taskQueue, disposition: dispositionPick, types: typePick,
+    filter, stages: stagePick, agent: agentPick, task: taskQueue, disposition: dispositionPick, picks,
   });
   const clearQuickFilters = (): void => {
     setAgentPick(null);
     setStagePick([]);
     setTaskQueue(null);
     setDispositionPick(NO_DISPOSITION_PICK);
-    setTypePick([]);
+    setPicks({});
     setFilter(EMPTY_FILTER);
     setPage(1);
   };
+  const pickQuick = (field: string, pick: QuickPick | null): void => {
+    setPicks((current) => {
+      const next = { ...current };
+      if (pick) next[field] = pick; else delete next[field];
+      return next;
+    });
+    setPage(1);
+  };
+
+  const quickFilterPanel = (placement: 'pane' | 'floating'): JSX.Element => (
+    <QuickFilterOverlay
+      open={showFilters}
+      onClose={() => setShowFilters(false)}
+      placement={placement}
+      module={meta}
+      sections={quickSections}
+      count={data?.total}
+      counting={isFetching}
+      views={(views ?? []).map((view) => ({ id: view.id, name: view.name, isDefault: view.isDefault }))}
+      activeViewId={activeView?.id}
+      onChooseView={(id) => { setTagPick(null); chooseView(id); }}
+      ownerField={ownerField}
+      agent={agentPick}
+      onAgent={(id) => { setAgentPick(id); setPage(1); }}
+      stageField={stageField}
+      stages={stagePick}
+      onStages={(values) => { setStagePick(values); setPage(1); }}
+      taskField={taskField}
+      task={taskQueue}
+      onTask={(value) => { setTaskQueue(value); setPage(1); }}
+      disposition={dispositionPick}
+      onDisposition={(value) => { setDispositionPick(value); setPage(1); }}
+      picks={picks}
+      onPick={pickQuick}
+      filter={filter}
+      onFilter={(value) => { setFilter(value); setPage(1); }}
+      onClear={clearQuickFilters}
+    />
+  );
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -1137,15 +1201,10 @@ export default function ListView(): JSX.Element {
           then moved sideways and the frozen identity column naturally moved
           with it. Keep both axes inside this one scroll container. */}
       {/*
-        The four panes: the dock, then the record pane, the record and the
-        call pane inside the workspace. The dock stands outside the workspace
-        because it is about getting around the CRM, not about this list.
+        The record pane, the record and the call pane, inside the workspace.
+        The toolbar to their left is the app's own (`Layout.tsx`): it is
+        about getting around the CRM, not about this list.
       */}
-      <div className="flex min-h-0 min-w-0 flex-1">
-      <WorkspaceDock
-        onTasks={taskQueuesEnabled ? () => { setTaskQueue(taskQueue === 'today' ? null : 'today'); setPage(1); } : undefined}
-        tasksOn={taskQueue === 'today'}
-      />
       <div className="min-h-0 min-w-0 flex-1 overflow-auto">
         {isLoading && !data ? (
           <div className="space-y-2 p-4 sm:p-6">
@@ -1161,8 +1220,8 @@ export default function ListView(): JSX.Element {
               is alarming rather than helpful, and says nothing about the one
               thing that caused it.
             */
-            title={search || countConditions(filter) || typePick.length ? 'No matching records' : `No ${meta.label.toLowerCase()} yet`}
-            body={search || countConditions(filter) || typePick.length
+            title={search || countConditions(effectiveFilter) ? 'No matching records' : `No ${meta.label.toLowerCase()} yet`}
+            body={search || countConditions(effectiveFilter)
               ? 'Try adjusting your search or filters.'
               : `Create your first ${meta.singularLabel.toLowerCase()} to get started.`}
             /*
@@ -1173,9 +1232,9 @@ export default function ListView(): JSX.Element {
               longer there. Every other picker on this page is in the toolbar
               above, which stays; this one needs its own way back.
             */
-            action={typePick.length
-              ? <button className="btn-secondary btn-sm" onClick={() => { setTypePick([]); setPage(1); }}>
-                  Clear {typeField?.label.toLowerCase() ?? 'type'} filter
+            action={quickFilterCount
+              ? <button className="btn-secondary btn-sm" onClick={clearQuickFilters}>
+                  Clear filters
                 </button>
               : canCreate && !search && !countConditions(filter)
                 ? <button className="btn-primary btn-sm" onClick={() => setShowQuickCreate(true)}>
@@ -1231,18 +1290,20 @@ export default function ListView(): JSX.Element {
             }}
             callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
-            typePick={typePick}
-            onTypePick={(values) => { setTypePick(values); setPage(1); }}
             queueTools={queueTools}
             queueFooter={queueFooter}
-            filterBar={{ count: quickFilterCount, onOpen: () => setShowFilters(true), onReset: clearQuickFilters }}
+            filterBar={{
+              count: quickFilterCount,
+              onOpen: () => setShowFilters((value) => !value),
+              onReset: clearQuickFilters,
+              // Drawn inside the right-hand pane, in its exact shape.
+              panel: quickFilterPanel('pane'),
+            }}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
               : undefined}
           />
         )}
-      </div>
-
       </div>
 
       {/* Pagination */}
@@ -1356,39 +1417,9 @@ export default function ListView(): JSX.Element {
         confirmLabel="Delete view"
         danger
       />
-      <QuickFilterOverlay
-        open={showFilters}
-        onClose={() => setShowFilters(false)}
-        module={meta}
-        views={(views ?? []).map((view) => ({ id: view.id, name: view.name, isDefault: view.isDefault }))}
-        activeViewId={activeView?.id}
-        onChooseView={(id) => { setTagPick(null); chooseView(id); }}
-        ownerField={ownerField}
-        agent={agentPick}
-        onAgent={(id) => { setAgentPick(id); setPage(1); }}
-        stageField={stageField}
-        stages={stagePick}
-        onStages={(values) => { setStagePick(values); setPage(1); }}
-        taskEnabled={taskQueuesEnabled}
-        task={taskQueue}
-        onTask={(value) => { setTaskQueue(value); setPage(1); }}
-        disposition={dispositionPick}
-        onDisposition={(value) => { setDispositionPick(value); setPage(1); }}
-        typeField={typeField}
-        types={typePick}
-        onTypes={(values) => { setTypePick(values); setPage(1); }}
-        filter={filter}
-        onFilter={(value) => { setFilter(value); setPage(1); }}
-        onClear={() => {
-          setAgentPick(null);
-          setStagePick([]);
-          setTaskQueue(null);
-          setDispositionPick(NO_DISPOSITION_PICK);
-          setTypePick([]);
-          setFilter(EMPTY_FILTER);
-          setPage(1);
-        }}
-      />
+      {/* With no record open there is no right-hand pane to fill, so the
+          panel sits at the screen's own right edge instead. */}
+      {rows.length === 0 && quickFilterPanel('floating')}
 
       <ExportWizard
         open={showExport}
@@ -1882,4 +1913,11 @@ export function recordRange(page: number, pageSize: number, onThisPage: number, 
   const first = (page - 1) * pageSize + 1;
   const last = first + onThisPage - 1;
   return `${count(first)}–${count(last)} of ${count(total)} records`;
+}
+
+const TASK_QUEUES: TaskQueue[] = ['pending', 'today', 'tomorrow', 'upcoming', 'week', 'month'];
+
+/** A follow-up queue named in the address, or none — never a word it does not know. */
+function taskFromAddress(value: string | null): TaskQueue | null {
+  return TASK_QUEUES.includes(value as TaskQueue) ? (value as TaskQueue) : null;
 }

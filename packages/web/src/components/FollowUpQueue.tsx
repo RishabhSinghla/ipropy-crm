@@ -11,7 +11,7 @@ import { phoneOf } from '../mobile/rows';
 import { Avatar, Dropdown } from './ui';
 import { AgentPicker } from './AgentPicker';
 
-export type TaskQueue = 'pending' | 'today' | 'tomorrow' | 'week' | 'month';
+export type TaskQueue = 'pending' | 'today' | 'tomorrow' | 'upcoming' | 'week' | 'month';
 
 /** Date-only values are stored without a time, so keep task filters date-only too. */
 function todayIso(): string {
@@ -52,6 +52,8 @@ export function followUpFilters(fieldName: string): Record<TaskQueue, FilterGrou
     ] },
     today: { logic: 'AND', conditions: [{ field: fieldName, operator: 'today' }] },
     tomorrow: { logic: 'AND', conditions: [{ field: fieldName, operator: 'tomorrow' }] },
+    // Anything still ahead: tomorrow and every day after it.
+    upcoming: { logic: 'AND', conditions: [{ field: fieldName, operator: 'greater_than', value: today }] },
     week: { logic: 'AND', conditions: [{ field: fieldName, operator: 'this_week' }] },
     month: { logic: 'AND', conditions: [{ field: fieldName, operator: 'this_month' }] },
   };
@@ -79,7 +81,7 @@ const CARDS = [
 ];
 
 const QUEUE_LABEL: Record<TaskQueue, string> = {
-  pending: 'Overdue', today: 'Due today', tomorrow: 'Tomorrow', week: 'This week', month: 'This month',
+  pending: 'Overdue', today: 'Due today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', week: 'This week', month: 'This month',
 };
 
 export function FollowUpQueue({
@@ -137,8 +139,9 @@ export function FollowUpQueue({
             <Clock className="h-3.5 w-3.5 shrink-0" />
             {/* *"'Follow-ups' to Task"* — the owner's word for it, 28
                 September 2026. The field is still whatever the module calls
-                it; this is the button. */}
-            Task
+                it; this is the button. Icon and count only since 1 October
+               2026; the word stays for a screen reader and the tooltip. */}
+            <span className="sr-only">Task</span>
             {/* Something overdue stays red on the purple: it is the one count
                 in this row that is a warning rather than a size. */}
             <span className={toolbarCount(Boolean(active), counts.pending > 0)}>
@@ -168,10 +171,11 @@ export function FollowUpQueue({
         <button
           type="button"
           onClick={() => onPick(null)}
-          className="rounded-md bg-brand-600 px-2 py-1 text-xs font-semibold text-white hover:bg-brand-700"
-          title="Show every record again"
+          className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[11px] font-semibold text-white hover:bg-brand-700"
+          title={`${QUEUE_LABEL[active]} — show every record again`}
+          aria-label={`Clear ${QUEUE_LABEL[active]}`}
         >
-          {QUEUE_LABEL[active]} ✕
+          ✕
         </button>
       )}
     </div>

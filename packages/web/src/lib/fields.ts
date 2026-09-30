@@ -22,6 +22,17 @@ export function assignmentField(fields: FieldMeta[]): FieldMeta | undefined {
 }
 
 /**
+ * The chase date — the CRM's task field.
+ *
+ * Inventories on older workspaces keep the same fact as `next_follow_up` in
+ * JSON, so both spellings are recognised; the canonical column wins.
+ */
+export function followUpFieldOf(fields: FieldMeta[]): FieldMeta | undefined {
+  return fields.find((field) => field.columnName === 'next_followup_at')
+    ?? fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up');
+}
+
+/**
  * The field a module's pipeline is measured on — the kanban's columns and the
  * list's stage breakdown.
  *

@@ -14,6 +14,7 @@ import {
   getModulePermission,
 } from '../../core/permissions/index.js';
 import { buildTimeline } from '../../core/entity/timeline.js';
+import { fieldFacets, fieldRange } from '../../core/entity/facets.js';
 import { filterUnseen, markModuleSeen } from '../../core/entity/unseen.js';
 import { toCsv } from '../../utils/csv.js';
 import { notifyMany } from '../../core/notifications/index.js';
@@ -133,6 +134,29 @@ recordsRouter.get('/:module/lookup', asyncHandler(async (req, res) => {
     try { filter = JSON.parse(req.query.filter) as FilterGroup; } catch { /* ignore bad filter */ }
   }
   res.json(await recordService.lookupRecords(scope, req.params.module, term, limit, filter));
+}));
+
+/**
+ * What a quick filter shows: a field's top values (with a search for the
+ * long tail) and a number field's lowest and highest value for its slider.
+ * Registered before `/:module/:id`, which would otherwise take "facet" as an id.
+ */
+recordsRouter.get('/:module/facet', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  await assertModuleAccess(scope.user, req.params.module, 'view');
+  const { field, search, limit } = z.object({
+    field: z.string().min(1),
+    search: z.string().max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(50).optional(),
+  }).parse(req.query);
+  res.json({ values: await fieldFacets(scope, req.params.module, field, { search, limit }) });
+}));
+
+recordsRouter.get('/:module/facet-range', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  await assertModuleAccess(scope.user, req.params.module, 'view');
+  const { field } = z.object({ field: z.string().min(1) }).parse(req.query);
+  res.json(await fieldRange(scope, req.params.module, field));
 }));
 
 // ---------------------------------------------------------------------------

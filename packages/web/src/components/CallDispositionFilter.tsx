@@ -64,10 +64,11 @@ export function CallDispositionFilter({ pick, onPick }: {
           className={toolbarButton(on)}
         >
           <PhoneOutgoing className="h-3.5 w-3.5 shrink-0" />
-          {/* *"Call Disposition to Call Log"*, 28 September 2026. */}
-          Call Log
+          {/* *"Call Disposition to Call Log"*, 28 September 2026; icon and
+              count only since 1 October. */}
+          <span className="sr-only">Call Log</span>
           <span className={toolbarCount(on)}>
-            {pick.never ? 'Never called' : pick.outcomes.length ? `${pick.outcomes.length} picked` : outcomes.length}
+            {pick.never ? 1 : pick.outcomes.length || outcomes.length}
           </span>
         </button>
       }

@@ -66,9 +66,11 @@ export function StatusBreakdown({
             belongs — a rep who needs to know it is "Associate Status" is
             already looking at the list of stages.
           */}
-          Status
+          {/* An icon and its count — *"just icons … along with count"*, 1
+              October 2026. The word stays for a screen reader and the tooltip. */}
+          <span className="sr-only">Status</span>
           <span className={toolbarCount(on)}>
-            {selected.length ? `${selected.length} picked` : `${field.options?.length ?? 0} stages`}
+            {selected.length || (field.options?.length ?? 0)}
           </span>
         </button>
       }

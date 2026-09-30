@@ -162,7 +162,7 @@ test.describe('accessibility', () => {
   test('the pipeline breakdown panel has no violations', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
-    await page.getByRole('button', { name: /\d+ stages|\d+ picked/ }).first().click();
+    await page.getByRole('button', { name: /^Status\b/ }).first().click();
     await expect(page.getByRole('heading', { name: /breakdown$/i })).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);

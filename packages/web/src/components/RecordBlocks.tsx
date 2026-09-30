@@ -274,7 +274,7 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
   */
   const phrases = snippets.length > 0 && (
     <div className={cn('flex gap-1', docked ? 'items-center overflow-x-auto no-scrollbar' : 'mt-2 flex-wrap border-t border-slate-100 pt-2 dark:border-slate-700')}>
-      {docked && <span className="mr-1 shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-muted">Quick tag:</span>}
+      {docked && <span className="mr-1 shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-muted">Quick note:</span>}
       {snippets.map((phrase) => (
         <button
           key={phrase}
