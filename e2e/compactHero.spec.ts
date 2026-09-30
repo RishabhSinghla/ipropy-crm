@@ -38,10 +38,11 @@ for (const module of MODULES) {
     const headerBox = await header.boundingBox();
     expect(headerBox, 'the hero has no box at all').not.toBeNull();
 
-    // It was 253.5px with the chip band under the face. This is the promise
-    // that gave a third of it back; a generous ceiling, so an extra line of
-    // padding does not fail the build while the band coming back does.
-    expect(headerBox!.height).toBeLessThan(180);
+    // It was 253.5px with the chip band under the face, 145px after the first
+    // compact pass, and one line since the four panes of 30 September 2026. A
+    // generous ceiling, so padding does not fail the build while a band coming
+    // back does.
+    expect(headerBox!.height).toBeLessThan(120);
 
     const avatarBox = await header.getByTestId('split-hero-avatar').boundingBox();
 
@@ -62,41 +63,21 @@ for (const module of MODULES) {
   });
 }
 
-test('the chase date, stage and call outcome sit below the actions on the right', async ({ page }) => {
+/*
+  Two specs stood here — the chase date under the actions, and the three key
+  pairs in one row beside the face. **30 September 2026 moved those facts out
+  of the header** into the right pane, pinned above the record's fields
+  (\`RecordInspector\`), on the owner's four-pane prototype: *"The Header Have
+  only avtar with Profile strength, Name, Updated Time … then All actionable
+  icons."* So the promise is now that they are there, not beside the face.
+*/
+test('the chase date, stage and call log are pinned in the right pane', async ({ page }) => {
   await openFirstRecord(page, 'leads');
-  const header = page.locator('section header').first();
-
-  // The chase-date chip, by the words it prints rather than by a class.
-  const chip = header.getByText(/^(Today|Tomorrow|Pending|Overdue)/i).first();
-  if (await chip.count() === 0) test.skip(true, 'this record has no chase date to show');
-
-  const chipBox = await chip.boundingBox();
-  const avatarBox = await header.getByTestId('split-hero-avatar').boundingBox();
-  const actionRowBox = await header.getByTestId('split-hero-actions-status').locator('> span').first().boundingBox();
-  expect(chipBox, 'the chase date has no box').not.toBeNull();
-  expect(avatarBox, 'the avatar has no box').not.toBeNull();
-  expect(actionRowBox, 'the actions have no box').not.toBeNull();
-
-  expect(chipBox!.x).toBeGreaterThan(avatarBox!.x + avatarBox!.width);
-  expect(chipBox!.y).toBeGreaterThanOrEqual(actionRowBox!.y + actionRowBox!.height);
-});
-
-test('the three key pairs read as one row, side by side', async ({ page }) => {
-  await openFirstRecord(page, 'leads');
-
-  /*
-    Each pair is **two lines now** — the field's name above its value, on the
-    owner's instruction of 29 September 2026 — so a height of one small chip
-    is no longer the measurement. What is still a promise is that the three
-    pairs sit *beside* one another rather than stacking into a column, which
-    is what they do when the pane runs out of room.
-  */
-  const tops = await page.locator('[data-testid="hero-chips"]').evaluate((group) =>
-    [...group.children].map((child) => Math.round(child.getBoundingClientRect().top)));
-
-  expect(tops.length, 'nothing to lay out').toBeGreaterThan(1);
-  expect(Math.max(...tops) - Math.min(...tops), `the pairs start at ${tops.join(', ')} — that is a column`)
-    .toBeLessThan(4);
+  const inspector = page.getByTestId('record-inspector');
+  await expect(inspector).toBeVisible();
+  await expect(inspector.getByText(/^Call Log$/i)).toBeVisible();
+  // And none of them is back in the header.
+  await expect(page.locator('section header').first().locator('[data-testid="hero-chips"]')).toHaveCount(0);
 });
 
 /**
@@ -108,7 +89,7 @@ for (const width of [1600, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await openFirstRecord(page, 'leads');
 
-    const row = page.locator('section header').first().getByTestId('split-hero-layout');
+    const row = page.getByTestId('split-hero-layout');
     const avatar = await row.getByTestId('split-hero-avatar').boundingBox();
     const actions = await row.getByTestId('split-hero-actions-status').boundingBox();
     expect(avatar, 'the avatar has no box').not.toBeNull();

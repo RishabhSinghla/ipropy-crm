@@ -1,7 +1,7 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { picklistOptionForValue, relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
-import { FileText, LayoutList, Mic, Send } from 'lucide-react';
+import { FileText, LayoutList, Lock, Mic, Send } from 'lucide-react';
 import { Avatar } from './ui';
 import { FieldValue } from './FieldRenderer';
 import { EditableField, isInlineEditable } from './EditableField';
@@ -16,6 +16,7 @@ import { followUpChip } from '../lib/followUpDates';
 import { HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE, headerChipTone } from '../lib/headerChip';
 import { badgeVars } from '../lib/color';
 import { FollowUpBadge } from './FollowUpChip';
+import { useWhatsAppComposer } from './WhatsAppComposer';
 
 /**
  * A record's field card and its notes, shared by every screen that shows a
@@ -190,13 +191,56 @@ export function NotesPanel({ module, record, flush = false }: {
    */
   flush?: boolean;
 }): JSX.Element {
+  const { data: entries, isLoading } = useQuery({ queryKey: ['timeline', module, record.id, 'comment'], queryFn: () => api.timeline(module, record.id, ['comment']) });
+  const composer = <NoteComposer module={module} recordId={record.id} look={flush ? 'pane' : 'card'} />;
+  const stream = isLoading
+    ? <p className="text-sm text-muted">Loading notes…</p>
+    : entries?.length
+      ? entries.map((entry) => <NoteEntry key={entry.id} entry={entry} flush={flush} />)
+      : <div className="py-10 text-center"><FileText className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-semibold text-muted">No notes yet</p><p className="mt-1 text-xs text-muted">Internal team comments appear here.</p></div>;
+
+  if (flush) {
+    return <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3.5" data-testid="notes-panel">
+      {composer}
+      {/* `text-muted` and not `text-slate-500`: that step is 4.1:1 on a dark
+          panel, which the contrast scan catches on both modules. The token
+          carries a guarantee in both themes, which is why it exists. */}
+      <p className="mb-2 mt-4 text-[11px] font-bold uppercase tracking-wider text-muted">Activity &amp; comments</p>
+      <div className="space-y-3">{stream}</div>
+    </div>;
+  }
+  return <section className="card h-fit overflow-hidden" data-testid="notes-panel">
+    <header className="panel-head"><FileText className="h-4 w-4 text-brand-600" /><h3 className="text-sm font-semibold">Notes</h3></header>
+    {composer}
+    <div className="max-h-[25rem] space-y-4 overflow-y-auto border-t border-slate-100 p-5 dark:border-slate-800">{stream}</div>
+  </section>;
+}
+
+/**
+ * The box a note is written in — one box, whichever screen it sits on.
+ *
+ * Three looks, one set of rules. `card` and `pane` are the Chats screen and the
+ * old right-hand notes pane; `dock` is the bottom of the split view's middle
+ * pane, **30 September 2026, the owner's prototype**: the quick-tag phrases in a
+ * row above the box, and two ways out — *Internal Note*, which posts a comment,
+ * and *Send WhatsApp*, which opens the WhatsApp composer with the same words
+ * already in it. A second copy of the box would be a second place the mic, the
+ * phrases and ⌘↵ could quietly stop working.
+ */
+export function NoteComposer({ module, recordId, look, whatsAppTo }: {
+  module: string;
+  recordId: string;
+  look: 'card' | 'pane' | 'dock';
+  /** The number Send WhatsApp opens the composer on. Absent: no such button. */
+  whatsAppTo?: string;
+}): JSX.Element {
   const queryClient = useQueryClient();
   const [note, setNote] = useState('');
   const snippets = useNoteSnippets();
-  const { data: entries, isLoading } = useQuery({ queryKey: ['timeline', module, record.id, 'comment'], queryFn: () => api.timeline(module, record.id, ['comment']) });
+  const whatsApp = useWhatsAppComposer();
   const add = useMutation({
-    mutationFn: () => api.addComment(module, record.id, note.trim()),
-    onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, record.id] }); toast.success('Note added'); },
+    mutationFn: () => api.addComment(module, recordId, note.trim()),
+    onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }); toast.success('Note added'); },
     onError: (error: Error) => toast.error('Could not add note', error.message),
   });
   /*
@@ -220,8 +264,40 @@ export function NotesPanel({ module, record, flush = false }: {
     }
   }, { serverTranscription: sttAvailable, onTranscript: addWords });
   const post = (): void => { if (note.trim() && !add.isPending) add.mutate(); };
-  const composer = (
-    <div className={cn('rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs dark:border-slate-700 dark:bg-slate-800', !flush && 'border-0 p-4 shadow-none dark:bg-transparent')}>
+  const docked = look === 'dock';
+
+  /*
+    The phrases a rep types all day, one tap each — and **not a list written
+    here**. `note_snippet` is an ordinary dropdown in Admin → Dropdowns, so the
+    business owns the words. No chips at all when nobody has set any, rather
+    than a row of invented ones.
+  */
+  const phrases = snippets.length > 0 && (
+    <div className={cn('flex gap-1', docked ? 'items-center overflow-x-auto no-scrollbar' : 'mt-2 flex-wrap border-t border-slate-100 pt-2 dark:border-slate-700')}>
+      {docked && <span className="mr-1 shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-muted">Quick tag:</span>}
+      {snippets.map((phrase) => (
+        <button
+          key={phrase}
+          type="button"
+          title={`Add "${phrase}" to the note`}
+          onClick={() => setNote((current) => appendSnippet(current, phrase))}
+          className={cn(
+            'shrink-0 whitespace-nowrap rounded-md bg-slate-100 font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-brand-950 dark:hover:text-brand-200',
+            docked ? 'px-2 py-0.5 text-[11px]' : 'px-2 py-0.5 text-[10px]',
+          )}
+        >
+          + {phrase}
+        </button>
+      ))}
+    </div>
+  );
+
+  const box = (
+    <div className={cn(
+      docked
+        ? 'rounded-xl border border-slate-300/80 bg-slate-50 p-2 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-brand-500 dark:border-slate-700 dark:bg-slate-800'
+        : cn('rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs dark:border-slate-700 dark:bg-slate-800', look === 'card' && 'border-0 p-4 shadow-none dark:bg-transparent'),
+    )}>
       <textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
@@ -229,47 +305,22 @@ export function NotesPanel({ module, record, flush = false }: {
         onKeyDown={(event) => {
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); post(); }
         }}
-        /* The single notes composer, including while a call is active. The
-           deck above handles disposition and follow-up, not a second note. */
-        placeholder="Add a note for the team… type @ to notify someone"
+        placeholder={docked && whatsAppTo
+          ? 'Add an internal note or send a WhatsApp message… type @ to notify someone'
+          : 'Add a note for the team… type @ to notify someone'}
         aria-label="Add a note for the team"
-        className={cn('w-full resize-none text-xs text-slate-800 placeholder-slate-400 dark:text-slate-100', flush ? 'border-none bg-transparent p-0 focus:ring-0' : 'input min-h-24 p-3')}
-        rows={flush ? 3 : undefined}
+        className={cn('w-full resize-none text-xs text-slate-800 placeholder-slate-400 dark:text-slate-100', look === 'card' ? 'input min-h-24 p-3' : 'border-none bg-transparent p-0 focus:ring-0')}
+        rows={look === 'card' ? undefined : docked ? 2 : 3}
       />
-      {/*
-        The phrases a rep types all day, one tap each — and **not a list
-        written here**. `note_snippet` is an ordinary dropdown in
-        Admin → Dropdowns, so the business owns the words. No chips at all
-        when nobody has set any, rather than a row of invented ones.
-      */}
-      {snippets.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1 border-t border-slate-100 pt-2 dark:border-slate-700">
-          {snippets.map((phrase) => (
-            <button
-              key={phrase}
-              type="button"
-              title={`Add "${phrase}" to the note`}
-              onClick={() => setNote((current) => appendSnippet(current, phrase))}
-              className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-brand-950/60 dark:hover:text-brand-200"
-            >
-              + {phrase}
-            </button>
-          ))}
-        </div>
-      )}
+      {!docked && phrases}
       {/* What the browser has heard so far, so the rep can see it is listening. */}
       {voice.recording && voice.interim && (
         <p className="mt-2 rounded-md bg-slate-50 px-2 py-1 text-xs italic text-slate-600 dark:bg-slate-900 dark:text-slate-300" aria-live="polite">
           {voice.interim}
         </p>
       )}
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-2xs text-muted" aria-live="polite">
-          {voice.recording
-            ? 'Listening — tap the mic again when you have finished'
-            : voice.busy ? 'Writing that up…' : '⌘↵ to post'}
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5">
+      <div className={cn('mt-2 flex items-center justify-between gap-2', docked && 'mt-1 border-t border-slate-200/60 pt-1.5 dark:border-slate-700')}>
+        <span className="flex min-w-0 items-center gap-1.5">
           {voice.supported && (
             <button
               type="button"
@@ -279,42 +330,56 @@ export function NotesPanel({ module, record, flush = false }: {
               aria-label={voice.recording ? 'Stop recording' : 'Record a voice note'}
               aria-pressed={voice.recording}
               className={cn(
-                'btn-secondary btn-sm px-2',
+                docked ? 'rounded p-1 text-red-500 transition hover:bg-slate-200 dark:hover:bg-slate-700' : 'btn-secondary btn-sm px-2',
                 voice.recording && 'animate-pulse bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400',
               )}
             >
               <Mic className="h-3.5 w-3.5" />
             </button>
           )}
-          <button disabled={!note.trim() || add.isPending} onClick={post} className="btn-primary btn-sm">
-            <Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}
+          <span className="min-w-0 truncate text-2xs text-muted" aria-live="polite">
+            {voice.recording
+              ? 'Listening — tap the mic again when you have finished'
+              : voice.busy ? 'Writing that up…' : '⌘↵ to post'}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <button
+            disabled={!note.trim() || add.isPending}
+            onClick={post}
+            className={docked ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'}
+          >
+            {docked ? <Lock className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+            {add.isPending ? 'Posting…' : docked ? 'Internal Note' : 'Post'}
           </button>
+          {/*
+            Only where WhatsApp can actually go: a number on the record and a
+            business provider switched on (the composer context is null
+            without one). The words go with it; nothing is sent from here.
+          */}
+          {docked && whatsAppTo && whatsApp && (
+            <button
+              type="button"
+              onClick={() => { whatsApp.compose(whatsAppTo, note.trim()); setNote(''); }}
+              className="btn-sm inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 font-semibold text-white shadow-xs transition hover:bg-emerald-800"
+            >
+              Send WhatsApp <Send className="h-3.5 w-3.5" />
+            </button>
+          )}
         </span>
       </div>
     </div>
   );
-  const stream = isLoading
-    ? <p className="text-sm text-muted">Loading notes…</p>
-    : entries?.length
-      ? entries.map((entry) => <NoteEntry key={entry.id} entry={entry} flush={flush} />)
-      : <div className="py-10 text-center"><FileText className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-semibold text-muted">No notes yet</p><p className="mt-1 text-xs text-muted">Internal team comments appear here.</p></div>;
 
-  if (flush) {
-    return <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3.5" data-testid="notes-panel">
-      {composer}
-      {/* `text-muted` and not `text-slate-500`: that step is 4.1:1 on a dark
-          panel, which the contrast scan catches on both modules. The token
-          carries a guarantee in both themes, which is why it exists. */}
-      <p className="mb-2 mt-4 text-[11px] font-bold uppercase tracking-wider text-muted">Activity &amp; comments</p>
-      <div className="space-y-3">{stream}</div>
-    </div>;
-  }
-  return <section className="card h-fit overflow-hidden" data-testid="notes-panel">
-    <header className="panel-head"><FileText className="h-4 w-4 text-brand-600" /><h3 className="text-sm font-semibold">Notes</h3></header>
-    {composer}
-    <div className="max-h-[25rem] space-y-4 overflow-y-auto border-t border-slate-100 p-5 dark:border-slate-800">{stream}</div>
-  </section>;
+  if (!docked) return box;
+  return (
+    <div className="shrink-0 border-t border-[var(--border)] bg-white dark:bg-slate-900" data-testid="note-dock">
+      {phrases && <div className="border-b border-[var(--border)] px-3.5 py-1.5">{phrases}</div>}
+      <div className="p-3">{box}</div>
+    </div>
+  );
 }
+
 function NoteEntry({ entry, flush = false }: { entry: TimelineEntry; flush?: boolean }): JSX.Element {
   return <article className={cn(flush && 'rounded-xl border border-slate-200/70 bg-cream-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/60')}>
     {/* A div, not a p: the avatar is a div, and a div inside a p is invalid

@@ -4,19 +4,24 @@ import { allSplitTabs, heroFieldNames, queueLinePreview, splitTabsFor } from '..
 describe('splitTabsFor', () => {
   it('shows every tab in the shipped order until somebody chooses', () => {
     expect(splitTabsFor('leads', undefined).map((tab) => tab.key))
-      .toEqual(['overview', 'timeline', 'matching', 'files', 'calls', 'whatsapp']);
+      .toEqual(['timeline', 'matching', 'files', 'calls', 'whatsapp']);
   });
 
   it('keeps the admin’s order and names, and hides what was left out', () => {
     const tabs = splitTabsFor('leads', [
-      { key: 'timeline', label: 'History' },
-      { key: 'overview', label: '' },
+      { key: 'calls', label: 'Phone' },
+      { key: 'timeline', label: '' },
     ]);
     expect(tabs).toEqual([
-      { key: 'timeline', label: 'History' },
+      { key: 'calls', label: 'Phone' },
       // A blank name falls back to the shipped one rather than an empty tab.
-      { key: 'overview', label: 'Overview' },
+      { key: 'timeline', label: 'Timeline' },
     ]);
+  });
+
+  it('drops the overview a saved list may still name — it lives in the right pane now', () => {
+    expect(splitTabsFor('leads', [{ key: 'overview', label: 'Overview' }, { key: 'files', label: 'Files' }]))
+      .toEqual([{ key: 'files', label: 'Files' }]);
   });
 
   it('drops tabs this build cannot draw, duplicates, and matching where there is none', () => {

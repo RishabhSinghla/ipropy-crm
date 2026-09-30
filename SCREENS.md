@@ -1076,8 +1076,10 @@ What it is now (`pages/admin/LayoutDesigner.tsx`, `SplitViewZones.tsx`):
   *Full page form* — instead of "Detail view" and "Quick create".
 * **Numbered zones in the order a rep meets them**, each with a **preview drawn from
   a real record** (*Show another record* steps through the list) and a **Default**
-  button: ① the queue card's line of facts, ② the header's key facts, ③ the tabs,
-  ④ the Overview form, ⑤ the WhatsApp chat header (the one list here that is not the
+  button: ① the queue card's line of facts, ② the facts pinned at the top of the
+  right pane (the header's chips until 30 September), ③ the tabs, ④ the field
+  sections under those pinned facts (the Overview tab until 30 September), ⑤ the
+  WhatsApp chat header (the one list here that is not the
   split view, so it says so).
 * **Every list reorders by drag, by arrows, or from a menu.** A field on the form has a
   ⋯ menu — move up, move down, move to another section, take it off the form — because
@@ -1120,3 +1122,75 @@ fact, reorder and rename a tab, save, see both in the split view, press Default,
 them go. `callOutcome` *Save & Next*, `followUpQueue` *a sort … not taken away* and
 `noteSnippets` fail on a clean main as well as with this change; they predate it.
 
+
+## Four panes, like WhatsApp — 30 September 2026
+
+**The owner's prototype** (a screenshot, a `code.html` and four written points):
+*"make this UI/UX as comfortable like whatsapp UI/UX"*. A ChatGPT session started it
+and ran out of credit part-way; what reached `main` from it was the flatter panes, the
+face on each queue card and the **Quick & Live Filters** overlay
+(`QuickFilterOverlay.tsx`). The four-pane rebuild it described had not been pushed, so
+it was built here.
+
+The split view is now four panes, left to right:
+
+1. **The dock** (`WorkspaceDock.tsx`) — a slim column of round icons: WhatsApp in its
+   own green, each module, the call log, today's tasks (the list's own Task filter,
+   one tap), the dashboard and campaigns; settings and you at the foot. Every icon is a
+   place that already exists — the dock moves doors closer, it copies no screen.
+   `xl` and up only; below that the app's header and drawer carry the same places.
+2. **The record pane** — the queue. Its header keeps the select-all, the kind filter
+   and the sort menu; **the list's own chips** (All Leads, Status, Task, Call Log) sit
+   under it, wrapped rather than scrolling, then an always-open search box with the
+   filter and list-options buttons, then the cards, then the record range and page
+   arrows at the foot. They are the same components the toolbar above used to hold —
+   `ListView` builds them once as `queueTools` / `queueFooter` and hands them in.
+   **The chips wrap because `Dropdown` is not portalled**: a sideways-scrolling row
+   clips the panel it opens, and so does an `overflow-hidden` pane, which is why the
+   queue pane is `relative z-10` without it now. With no records the workspace is not
+   drawn at all, so the same chips are drawn above the empty state instead — a filter
+   that empties the list must never take the way back with it.
+   Each card: face, name and kind flag, *how long ago* at the top right, the number
+   with WhatsApp's mark, the Layout Designer's line of facts, and the price in green
+   with the size. `CardFields.phone` is found by uitype, never by name.
+3. **The record** — a header of the face in its completeness ring, the name (typed
+   into where it stands), *Updated …* and the tags on the left, and the queue position
+   and every action on the right. Under it the tabs are **icons with counts**
+   (`DeskTab`): Timeline, Matching, Files, Calls, WhatsApp — each badge reads the same
+   query key as the tab it labels, so opening a tab costs nothing more. **The Timeline
+   is a chat** (`ActivityFeed.tsx`): the day in a chip down the middle, the customer on
+   the left, us on the right in WhatsApp's green, internal notes in amber, calls as
+   cards with their recording, changes as quiet lines — oldest at the top, opening on
+   the newest. Under it, fixed, the notes box (`NoteComposer`, look `dock`) with the
+   quick-tag phrases above it, the mic, **Internal Note** and **Send WhatsApp** — which
+   opens the WhatsApp composer with the typed words already in it
+   (`compose(to, draft)`), and only where a provider is connected.
+4. **The call pane** — the call deck as one slim strip at rest (*CALL DECK · Ready · No
+   call in progress*), a **Quick & Live Filters** bar that opens the overlay and says
+   how many are on, then **the record's fields** (`RecordInspector.tsx`), one line
+   each, label left and value right, every one editable in place. Pinned first: who
+   owns it, the Layout Designer's header key facts (chase date and stage unless an
+   admin chose otherwise), and the call log. The number is here too when no section
+   holds it, because it left the header.
+
+**The Overview is no longer a tab** — it is the call pane. `SplitTabKey` lost
+`overview`; a saved `splitTabs` list that still names it drops it, and the timeline is
+the first tab. `HeroStatusChips.tsx` had no caller left and was deleted.
+
+Two things found on the way, both fixed: the Quick & Live Filters overlay **did not
+close on Escape**, so it held the whole screen until clicked; and a long word with no
+spaces ran off the edge of a chat bubble.
+
+Proved in a browser against a fresh database: the dock, the chips inside the record
+pane, a note posted from the bottom box appearing in the chat, tab switching, the Task
+panel opening on top of the record rather than under it, the filter bar opening the
+overlay, a field edited in the call pane, and the dock navigating.
+
+**What the full e2e run found, and fixed before this went live:** the pinned status
+and chase-date boxes did not open their editor when the empty part of the box was
+clicked (every other field box did) — they share one `FieldBox` now; the record
+count vanished when a filter emptied the list; and the timeline's scroll region was
+not reachable by keyboard. About a dozen specs were measuring the old header or the
+Overview tab and were rewritten to measure the new panes — `e2e/fourPane.spec.ts` is
+the one written for this layout. The Layout Designer's zones are renamed to match:
+*Right pane — pinned facts* and *Right pane — field sections*.

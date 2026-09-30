@@ -3,9 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Filter, Link2,
-  Mail, MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, Users,
+  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, Filter,
+  Mail, MessageCircle, MessagesSquare, MoreHorizontal, Phone, RotateCcw, SlidersHorizontal, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
@@ -13,10 +14,12 @@ import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
-import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
+import { CallsTab, FilesTab, RecordCollaboratorsPanel } from '../pages/RecordDetail';
 import ComposeModal from './ComposeModal';
 import { EditableField, isInlineEditable } from './EditableField';
-import { FieldBlock, NotesPanel } from './RecordBlocks';
+import { NoteComposer } from './RecordBlocks';
+import { ActivityFeed, FEED_LIMIT, useActivityEntries } from './ActivityFeed';
+import { RecordInspector } from './RecordInspector';
 import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
@@ -25,7 +28,6 @@ import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar } from './RecordAvatar';
-import { HeroStatusChips } from './HeroStatusChips';
 import type { SplitTabKey } from '../lib/splitViewLayout';
 import { api } from '../lib/api';
 import { activeSortOption, sortOptions } from '../lib/listSort';
@@ -36,13 +38,12 @@ import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
 
 type DeskTabKey = SplitTabKey;
 
-const TAB_ICON: Record<DeskTabKey, JSX.Element | null> = {
-  overview: null,
-  timeline: null,
-  matching: <Link2 className="h-3.5 w-3.5" />,
-  files: <FileText className="h-3.5 w-3.5" />,
-  calls: <Phone className="h-3.5 w-3.5" />,
-  whatsapp: <MessageCircle className="h-3.5 w-3.5" />,
+const TAB_ICON: Record<DeskTabKey, JSX.Element> = {
+  timeline: <MessagesSquare className="h-4 w-4" />,
+  matching: <Users className="h-4 w-4" />,
+  files: <FileText className="h-4 w-4" />,
+  calls: <Phone className="h-4 w-4" />,
+  whatsapp: <MessageCircle className="h-4 w-4" />,
 };
 
 /**
@@ -151,6 +152,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
 export function IpropyWorkspace({
   module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort, typePick, onTypePick,
+  queueTools, queueFooter, filterBar,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -187,6 +189,19 @@ export function IpropyWorkspace({
    */
   typePick?: string[];
   onTypePick?: (values: string[]) => void;
+  /**
+   * The list's own filter chips and search, drawn under the queue's header.
+   *
+   * **30 September 2026, the owner's prototype:** *"the list of All Leads,
+   * Status, Call Log etc button move to Below Filter & Sorting Icons of Left
+   * pane"*. They stay the list's components — they filter the query the list
+   * sends — and this pane only gives them a place.
+   */
+  queueTools?: ReactNode;
+  /** The record range and the page arrows, at the foot of the queue. */
+  queueFooter?: ReactNode;
+  /** Whether the list's quick filters are on, and how to open or clear them. */
+  filterBar?: { count: number; onOpen: () => void; onReset: () => void };
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey | null>(null);
@@ -394,6 +409,37 @@ export function IpropyWorkspace({
   });
 
   /*
+    The numbers on the icon tabs. Each asks the same question, on the same
+    key, as the tab it labels — so opening a tab shows what was already
+    counted, with no second request, and the badge and the list cannot
+    disagree. The timeline asks for its newest sixty; past that it says "60+".
+  */
+  const { data: feed } = useActivityEntries(module.name, active?.id ?? '', 'all');
+  const { data: fileRows } = useQuery({
+    queryKey: ['files', active?.id],
+    queryFn: () => api.files(active!.id),
+    enabled: Boolean(active?.id),
+    staleTime: 60_000,
+  });
+  const { data: callRows } = useQuery({
+    queryKey: ['record-calls', active?.id],
+    queryFn: () => api.calls({ recordId: active!.id, limit: 50 }),
+    enabled: Boolean(active?.id),
+    staleTime: 60_000,
+  });
+  const tabCount = (key: DeskTabKey): string | null => {
+    const shown = (count: number | undefined, cap: number): string | null => {
+      if (!count) return null;
+      return count >= cap ? `${cap}+` : String(count);
+    };
+    if (key === 'timeline') return shown(feed?.length, FEED_LIMIT);
+    if (key === 'matching') return shown(matchingCount, 50);
+    if (key === 'files') return shown(fileRows?.length, 1000);
+    if (key === 'calls') return shown(callRows?.length, 50);
+    return shown(feed?.filter((entry) => entry.type === 'message' && entry.meta.channel === 'whatsapp').length, FEED_LIMIT);
+  };
+
+  /*
     What the queue's one menu can do — eight questions and a direction, the
     same eight in both modules, none of them named in this file.
 
@@ -483,7 +529,14 @@ export function IpropyWorkspace({
       {/* ---------------------------------------------------------------- */}
       {/* Pane 1 — the queue.                                              */}
       {/* ---------------------------------------------------------------- */}
-      <aside className="flex w-full shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)]">
+      {/*
+        Not `overflow-hidden`: the chips in this pane open panels wider than the
+        pane (the Task queue is 27rem), and they are positioned against their
+        buttons rather than drawn in a portal, so a clipping pane would cut
+        them off. The list inside scrolls on its own. `z-10` keeps an open
+        panel above the record beside it.
+      */}
+      <aside className="relative z-10 flex w-full shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)]">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
           <span className="flex min-w-0 items-center gap-1.5">
             {/* Beside the module's own name, because that is what it selects:
@@ -622,6 +675,7 @@ export function IpropyWorkspace({
             </Dropdown>
           )}
         </div>
+        {queueTools}
         {/* Flush, because each row draws its own hairline — one separator
             between records, which is what the owner asked for. */}
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -643,6 +697,7 @@ export function IpropyWorkspace({
             />
           ))}
         </div>
+        {queueFooter}
       </aside>
 
       <SplitHandle label="Resize the list" width={queueWidth} onDrag={resize} />
@@ -657,175 +712,70 @@ export function IpropyWorkspace({
           middle of its own completeness ring, the controls either side of it,
           and the facts a rep changes on a call along the bottom.
         */}
-        <header className="shrink-0 border-b border-slate-200/80 bg-white px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900">
-          {/*
-            **29 September 2026, the owner:** *"move Assigned to and Updated
-            towards left … right next to where that arrow key ends"*, and
-            *"where current updated 4 hours ago is written there I need to see
-            tag"*. So the queue position, the agent and the age read as one
-            group from the left, and the record's tags take the right end —
-            where they have room, rather than squeezed beside the icons.
-          */}
-          <div className="mb-2 flex w-full items-center gap-3">
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200/60 bg-white/80 px-2 py-0.5 text-xs font-medium text-slate-500 shadow-2xs dark:border-slate-700 dark:bg-slate-800/80" aria-label="Record navigation">
+        {/*
+          **30 September 2026, the owner's prototype:** *"The Header Have only
+          avtar with Profile strength, Name, Updated Time … then All actionable
+          icons with tree dot."* So the left is who this is — the face in its
+          completeness ring, the name (still typed into where it stands) and
+          how stale the record is — and the right is everything you can do to
+          it. The agent, the stage, the chase date and the call log moved to
+          the right-hand pane under the call deck, one line each; the number is
+          on the queue card and in that pane too.
+        */}
+        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white px-3 py-2 shadow-2xs dark:border-slate-800 dark:bg-slate-900" data-testid="split-hero-layout">
+          <span className="shrink-0" data-testid="split-hero-avatar">
+            <RecordAvatar
+              module={module.name}
+              recordId={active.id}
+              name={active.label}
+              percent={recordStrength(module.fields, active.values).percent}
+              canEdit={canEdit}
+              size={56}
+            />
+          </span>
+          <span className="flex min-w-[8rem] flex-1 flex-col justify-center gap-0.5 overflow-hidden">
+            {/*
+              **Which field carries the name is `module.labelFields`**, not the
+              word "full_name": Inventories names a record by its unit and an
+              admin may change either.
+            */}
+            <h2 className="min-w-0 truncate text-sm font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+              {canEdit && nameField && isInlineEditable(nameField) ? (
+                <EditableField
+                  module={module.name}
+                  recordId={active.id}
+                  field={nameField}
+                  value={active.values[nameField.name]}
+                  display={active.label}
+                  compact
+                  siblings={active.values}
+                  onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                />
+              ) : active.label}
+            </h2>
+            <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted">
+              {active.updatedAt && (
+                <span className="shrink-0 whitespace-nowrap" title={new Date(active.updatedAt).toLocaleString('en-IN')}>
+                  Updated {relativeTime(active.updatedAt)}
+                </span>
+              )}
+              <TagChips module={module.name} tags={active.tags} className="min-w-0 overflow-hidden" />
+            </span>
+          </span>
+
+          <span className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5" data-testid="split-hero-actions-status">
+            {/* Where this record sits in the queue, and a step either way. */}
+            <span className="mr-1 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-slate-500" aria-label="Record navigation">
               <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="px-1 text-[11px] font-semibold tabular-nums text-slate-700 dark:text-slate-200" aria-live="polite">
+              <span className="px-0.5 text-[11px] font-semibold tabular-nums text-slate-700 dark:text-slate-200" aria-live="polite">
                 {neighbours?.position && neighbours.total ? `${neighbours.position} / ${neighbours.total.toLocaleString('en-IN')}` : '—'}
               </span>
               <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </span>
-            {/*
-              Who owns it, right beside where this record sits in the queue —
-              *"Move Agent name after Page Number 1/100"*. Two facts about
-              *where you are* rather than about the customer, so they read as
-              one group and leave the whole right half to the name.
-            */}
-            {assignedField && (
-              <span className="inline-flex min-w-0 shrink items-center gap-1.5 text-[11px]" title="Assigned to">
-                {assignedName && <Avatar name={assignedName} size={16} />}
-                {canEdit && isInlineEditable(assignedField) ? (
-                  <EditableField
-                    module={module.name}
-                    recordId={active.id}
-                    field={assignedField}
-                    value={active.values[assignedField.name]}
-                    display={assignedName}
-                    compact
-                    siblings={active.values}
-                    restrictTo={restrictionForField(module.picklistDependencies, active.values, assignedField.name)}
-                    onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                  />
-                ) : (
-                  <FieldValue field={assignedField} value={active.values[assignedField.name]} display={assignedName} compact />
-                )}
-              </span>
-            )}
-            {/*
-              When it was last touched, right after who owns it — *"Updated
-              Time also shown After Agent Name"* (28 September 2026). It rides
-              in the same group as the agent because both are facts about the
-              *record's* state rather than about the customer, and a rep
-              picking a record out of a queue wants to know how stale it is
-              before they dial.
-
-              `hidden sm:inline` — on a narrow pane the name is what has to
-              survive, and this is the first thing worth losing.
-            */}
-            {active.updatedAt && (
-              <span
-                className="hidden shrink-0 whitespace-nowrap text-[11px] text-muted sm:inline"
-                title={new Date(active.updatedAt).toLocaleString('en-IN')}
-              >
-                · Updated {relativeTime(active.updatedAt)}
-              </span>
-            )}
-            <TagChips module={module.name} tags={active.tags} className="ml-auto justify-end" />
-
-          </div>
-
-          {/*
-            **29 September 2026:** the face starts this row; every record
-            action sits at the right, and the three facts a call changes sit
-            directly below those actions. This keeps the operational side of
-            the header together and gives long translated labels room to wrap
-            without pushing the avatar back into the middle.
-          */}
-          {/*
-            `flex-wrap` on the row itself, and that is the narrow-pane answer.
-
-            With everything on one line, a 1280px window left the name about
-            sixty pixels; letting the *chips* wrap instead stacked them three
-            deep and made the header 180px tall, each pair carrying its own
-            left rule down the side. Wrapping the whole right column drops the
-            controls and the three key pairs onto a full-width second row
-            where they still read as one line — and on a wide pane nothing
-            moves at all.
-          */}
-          <div className="flex min-h-[3.75rem] w-full flex-wrap items-center gap-3 px-1" data-testid="split-hero-layout">
-            <span className="shrink-0" data-testid="split-hero-avatar">
-              <RecordAvatar
-                module={module.name}
-                recordId={active.id}
-                name={active.label}
-                percent={recordStrength(module.fields, active.values).percent}
-                canEdit={canEdit}
-                size={56}
-              />
-            </span>
-
-            {/*
-              **29 September 2026, the owner:** *"Move Full Name and Mobile
-              adjoining avtar … the name and Mobile should be in two row, first
-              row is Name then Below/Second Row is Mobile."*
-
-              They used to ride the row above, sharing it with the record's
-              position and its agent — so the one thing a rep says out loud
-              when they pick up was at the far end of the header from the face
-              it belongs to, and the two facts sat on one line divided by a
-              hairline.
-
-              Beside the face and stacked, they read as a name card: who this
-              is, and the number you are about to dial under it.
-            */}
-            {/*
-              `min-w-[9rem]`, not `min-w-0`: with the controls and the three
-              key pairs both refusing to shrink, a narrow pane left the name
-              about sixty pixels and it read "Ally C…" — the one thing on this
-              screen that has to be readable. It holds nine rems and the chip
-              group wraps instead.
-            */}
-            <span className="flex min-w-[9rem] flex-1 flex-col justify-center gap-0.5 overflow-hidden">
-              {/*
-                The heading, and you can change it where it stands — *"Full
-                Name should be Editable in Middle Pane"* (28 September 2026).
-
-                **Which field carries the name is `module.labelFields`**, not
-                the word "full_name": Inventories names a record by its unit
-                and an admin may change either.
-              */}
-              <h2 className="min-w-0 truncate text-base font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-                {canEdit && nameField && isInlineEditable(nameField) ? (
-                  <EditableField
-                    module={module.name}
-                    recordId={active.id}
-                    field={nameField}
-                    value={active.values[nameField.name]}
-                    display={active.label}
-                    compact
-                    siblings={active.values}
-                    onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                  />
-                ) : active.label}
-              </h2>
-              {/* No hairline between them now: they are two rows, and a rule
-                  belongs between things on one line. */}
-              {phoneField && phoneValue && (
-                <span className="min-w-0 truncate text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  {canEdit && isInlineEditable(phoneField) ? (
-                    <EditableField
-                      module={module.name}
-                      recordId={active.id}
-                      field={phoneField}
-                      value={active.values[phoneField.name]}
-                      display={active.display?.[phoneField.name]}
-                      compact
-                      siblings={active.values}
-                      onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                    />
-                  ) : (
-                    <FieldValue field={phoneField} value={active.values[phoneField.name]} display={active.display?.[phoneField.name]} compact />
-                  )}
-                </span>
-              )}
-            </span>
-
-            <div className="ml-auto flex shrink-0 flex-col items-end gap-2" data-testid="split-hero-actions-status">
-              {/* Right: everything you do to the record, in one group. */}
-              <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               <TagButton
                 module={module.name}
                 recordId={active.id}
@@ -922,49 +872,20 @@ export function IpropyWorkspace({
                   </>
                 )}
               </Dropdown>
-              </span>
-
-              {/*
-                **No rule above this row** — *"Remove Separator Line in Middle
-                Pane header between Icons and Button Of Follow-up, Status, Call
-                Disposition from All modules"* (28 September 2026). The two
-                groups already share a right edge and sit a row apart, which is
-                the separation; a hairline across the panel on top of that read
-                as a second header.
-              */}
-              <div className="flex w-full justify-end pt-1.5" data-testid="split-hero-status-row">
-                <HeroStatusChips
-                  module={module}
-                  row={active}
-                  canEdit={canEdit}
-                  fields={heroFields}
-                  statusField={statusField}
-                  followUpField={followUpField}
-                  className="justify-end"
-                />
-              </div>
-            </div>
-          </div>
-
+          </span>
         </header>
 
         {/*
-          27 September 2026: *"Overview and Timeline Menu should be Compact,
-          so the Left to right scroller now Showing."* Tighter type and less
-          air between them, so six tabs fit the middle pane at the width it
-          actually gets — the scroller stays as the honest answer on a phone
-          rather than as the everyday state.
+          **30 September 2026, the owner's prototype:** the tabs are icons, each
+          with its count — *"menu will be in icons instead of Text"*. The name
+          is still there for a screen reader and on hover; the order and the
+          names are the Layout Designer's, and the first is the one a record
+          opens on.
         */}
-        <nav className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900" aria-label="Record workspace sections">
-          {/*
-            The tabs, their order and their names are the Layout Designer's
-            (29 September 2026). The first is the one a record opens on.
-          */}
+        <nav className="flex shrink-0 items-center gap-4 overflow-x-auto border-b border-slate-200 bg-white px-4 text-slate-500 no-scrollbar dark:border-slate-800 dark:bg-slate-900" aria-label="Record workspace sections">
           {tabs.map((item) => (
-            <DeskTab key={item.key} active={shownTab === item.key} onClick={() => setTab(item.key)}>
+            <DeskTab key={item.key} active={shownTab === item.key} onClick={() => setTab(item.key)} label={item.label} count={tabCount(item.key)}>
               {TAB_ICON[item.key]}
-              {item.label}
-              {item.key === 'matching' && matchingCount ? <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{matchingCount}</span> : null}
             </DeskTab>
           ))}
         </nav>
@@ -974,24 +895,19 @@ export function IpropyWorkspace({
           scrolling message list; with this pane scrolling too, the wheel went
           to whichever happened to be under the mouse — 25 September 2026, the
           owner: *"only bringing mouse to a certain place scroll is working."*
+          The timeline is the same: the stream scrolls, the notes box under it
+          stays put.
         */}
         <div className={cn(
-          'min-w-0 flex-1 dark:bg-slate-950/40',
-          shownTab === 'timeline' || shownTab === 'whatsapp' ? 'workspace-activity-canvas' : 'bg-[#fafbfa]',
-          shownTab === 'whatsapp' ? 'flex min-h-0 flex-col overflow-hidden' : 'space-y-5 overflow-y-auto p-5',
+          'flex min-h-0 min-w-0 flex-1 flex-col',
+          shownTab === 'timeline' || shownTab === 'whatsapp' ? 'overflow-hidden' : 'space-y-5 overflow-y-auto bg-[#fafbfa] p-5 dark:bg-slate-950/40',
         )}>
-          {shownTab === 'overview' && blocks.map((block) => (
-            <FieldBlock
-              key={block.key}
-              module={module}
-              title={block.label}
-              columns={block.columns}
-              fields={block.fields}
-              row={active}
-              canEdit={canEdit}
-            />
-          ))}
-          {shownTab === 'timeline' && <TimelineTab module={module.name} id={active.id} />}
+          {shownTab === 'timeline' && (
+            <>
+              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} />
+              <NoteComposer module={module.name} recordId={active.id} look="dock" whatsAppTo={phoneValue || undefined} />
+            </>
+          )}
           {shownTab === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
           {shownTab === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownTab === 'calls' && <CallsTab recordId={active.id} />}
@@ -1016,7 +932,47 @@ export function IpropyWorkspace({
           */}
           <ProgressiveDialerPanel module={module.name} recordId={active.id} />
           <CallDeckPanel module={module.name} recordId={active.id} />
-          <NotesPanel module={module.name} record={active} flush />
+          {/*
+            The quick and live filters, one tap from the record — *"The Quick &
+            Live filter overlay engine open/Hide … by clicking a icon of
+            Filter"*. The panel itself is the list's (it narrows the queue on
+            the left), so this bar only says whether any are on and opens it.
+          */}
+          {filterBar && (
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 dark:bg-slate-800/60">
+              <button type="button" onClick={filterBar.onOpen} className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-800 hover:text-brand-700 dark:text-slate-100" data-testid="quick-filter-bar">
+                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-brand-600" />
+                <span className="truncate">Quick &amp; Live Filters</span>
+                {filterBar.count > 0 && (
+                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+                    {filterBar.count} active
+                  </span>
+                )}
+              </button>
+              {filterBar.count > 0 && (
+                <button type="button" onClick={filterBar.onReset} className="flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300">
+                  Reset <RotateCcw className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
+          {/*
+            The record's own fields — *"the overview details form move to in
+            replacement of Note/Comment pane below call deck"*. One line each,
+            the three a call changes pinned first.
+          */}
+          <RecordInspector
+            module={module}
+            row={active}
+            canEdit={canEdit}
+            blocks={blocks}
+            pinned={heroFields}
+            assignedField={assignedField}
+            assignedName={assignedName}
+            statusField={statusField}
+            followUpField={followUpField}
+            phoneField={phoneField}
+          />
         </aside>
       )}
     </div>
@@ -1139,6 +1095,7 @@ function QueueCard({
   const editField = editing === 'name' ? nameField : editing === 'type' ? card.type : undefined;
   const read = (field: FieldMeta): string => displayOf(row, field);
   const type = card.type ? read(card.type) : '';
+  const phone = card.phone ? read(card.phone) : '';
   const unit = card.unit ? read(card.unit) : '';
   const description = queueFields
     ? queueFields.map((field) => read(field)).filter((value) => value && value !== '—').join(', ')
@@ -1193,7 +1150,7 @@ function QueueCard({
         onClick={onSelect}
         aria-current={active ? 'true' : undefined}
         className={cn(
-          'relative block w-full cursor-pointer py-2.5 pl-16 pr-3 text-left transition-colors',
+          'relative block w-full cursor-pointer py-2.5 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1246,12 +1203,12 @@ function QueueCard({
           1. Who, and what kind of contact — the line a rep scans, so it is the
           heaviest thing on the card.
         */}
-        <span className="flex min-w-0 items-center gap-1.5 pr-8">
+        <span className="flex min-w-0 items-center gap-1.5">
           <span
             onDoubleClick={openEditor('name')}
             title={canEdit && nameField ? 'Double-click to rename' : undefined}
             className={cn(
-              'truncate text-[15px] font-extrabold tracking-tight',
+              'truncate text-[13px] font-bold tracking-tight',
               active ? 'text-brand-900 dark:text-white' : 'text-slate-900 dark:text-slate-100',
             )}
           >
@@ -1263,29 +1220,44 @@ function QueueCard({
             </span>
           )}
           {attention && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Needs attention" />}
+          {/* How stale it is, top right — the prototype's "6h ago". */}
+          {row.updatedAt && (
+            <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[10px] font-medium', active ? 'text-brand-700 dark:text-brand-100' : 'text-muted')}>
+              {relativeTime(row.updatedAt)}
+            </span>
+          )}
         </span>
 
-        {/* 2. Which unit, cut short with "…" rather than wrapped. */}
-        <span className={cn(
-          'mt-1 block min-w-0 truncate text-xs',
+        {/* The number, with WhatsApp's mark — the one a rep dials from here. */}
+        {phone && (
+          <span className={cn('mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold tracking-tight', active ? 'text-brand-900 dark:text-white' : 'text-slate-700 dark:text-slate-200')}>
+            <MessageCircle className="h-3 w-3 shrink-0 text-emerald-600" aria-hidden />
+            <span className="truncate tabular-nums">{phone}</span>
+          </span>
+        )}
+
+        {/* 2. Which unit, cut short with "…" rather than wrapped — and not
+            drawn at all when there is nothing to say, rather than a dash. */}
+        {(unit || description) && <span className={cn(
+          'mt-0.5 block min-w-0 truncate text-[11px]',
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
           active ? 'font-semibold text-brand-700 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400',
         )}>
-          {[unit, description].filter(Boolean).join(', ') || '—'}
-        </span>
+          {[unit, description].filter(Boolean).join(', ')}
+        </span>}
 
         {/*
           3. The money and the size. No rule above it — *"Remove Separator Line
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        <span className="mt-1 flex items-center gap-2 text-sm">
+        {(price || area) && <span className="mt-0.5 flex items-center gap-2 text-[11px]">
           {price && (
             <span className={cn(
-              'shrink-0 whitespace-nowrap text-base font-extrabold tabular-nums',
-              active ? 'text-brand-800 dark:text-white' : 'text-slate-900 dark:text-slate-100',
+              // The prototype's money green, a step dark enough for AA on both fills.
+              'shrink-0 whitespace-nowrap text-xs font-bold tabular-nums text-emerald-700 dark:text-emerald-300',
             )}>
               {price}
             </span>
@@ -1300,7 +1272,7 @@ function QueueCard({
               active ? 'text-brand-700 dark:text-brand-100' : 'text-muted',
             )}>• {area}</span>
           )}
-        </span>
+        </span>}
       </button>
 
       {/*
@@ -1315,7 +1287,7 @@ function QueueCard({
         The box only shows on hover or once ticked, so the row reads as a name
         and a price until somebody reaches for a bulk action.
       */}
-      <span className="absolute right-2.5 top-2.5 flex items-center gap-1">
+      <span className="absolute bottom-2.5 right-2.5 flex items-center gap-1">
         <input
           aria-label={`Select ${row.label}`}
           type="checkbox"
@@ -1394,5 +1366,22 @@ function TypeFlag({ label, strong }: { label: string; strong: boolean }): JSX.El
  * than on its own page. Gating it on that setting is what put an Edit button
  * here, which is the thing the owner asked to be rid of.
  */
-function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1 border-b-2 px-2 py-2 text-xs font-semibold transition-colors', active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200')}>{children}</button>; }
+function DeskTab({ active = false, onClick, label, count, children }: { active?: boolean; onClick: () => void; label: string; count?: string | null; children: React.ReactNode }): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={count ? `${label} (${count})` : label}
+      aria-current={active ? 'page' : undefined}
+      title={label}
+      className={cn(
+        'flex shrink-0 items-center gap-1 border-b-2 px-1.5 py-2 text-xs font-semibold transition-colors',
+        active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200',
+      )}
+    >
+      {children}
+      {count && <span className="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-bold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">{count}</span>}
+    </button>
+  );
+}
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }

@@ -222,10 +222,10 @@ export async function dashboardWithRecordRows(page: Page): Promise<string> {
  * broken" when search is fine and the test simply never opened it.
  */
 export async function searchList(page: Page, term: string): Promise<void> {
-  const box = page.getByTestId('list-search');
-  if (!(await box.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: /^Search / }).first().click();
-  }
+  // Always open since 30 September 2026 — it sits in the record pane under the
+  // list's chips — so the only thing to wait for is the list to draw it.
+  const box = page.getByTestId('list-search').first();
+  await expect(box).toBeVisible({ timeout: 20_000 });
   await box.fill(term);
 }
 
@@ -242,7 +242,9 @@ export async function searchList(page: Page, term: string): Promise<void> {
  * the field somebody asked for, and performs the gesture they perform.
  */
 export function fieldEditor(page: Page, label: RegExp) {
-  return page.locator('dd')
+  // `[data-field-box]` is the same box in the split view's call pane, where
+  // the record's fields sit one per line since 30 September 2026.
+  return page.locator('dd, [data-field-box]')
     .filter({ has: page.getByRole('button', { name: label }) })
     .first();
 }

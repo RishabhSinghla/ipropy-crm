@@ -148,15 +148,15 @@ export function QueueCardPreview({ name, values }: { name: string; values: strin
   );
 }
 
-/** Zone 2's preview: the header's key facts, label above value, then the call log. */
+/** Zone 2's preview: the pinned facts as the right pane draws them, one row each, then the call log. */
 export function HeaderFactsPreview({ facts }: { facts: { label: string; value: string }[] }): JSX.Element {
   return (
-    <div className="flex flex-wrap items-stretch divide-x divide-slate-300 rounded-lg bg-white px-3 py-2 dark:divide-slate-600 dark:bg-slate-900 [&>*]:px-2.5 [&>*:first-child]:pl-0">
+    <div className="space-y-1 rounded-lg bg-white px-3 py-2 dark:bg-slate-900">
       {[...facts, { label: 'Call Log', value: 'last outcome' }].map((fact) => (
-        <span key={fact.label} className="flex flex-col items-center gap-0.5 text-center">
-          <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{fact.label}</span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{fact.value || '—'}</span>
-        </span>
+        <div key={fact.label} className="flex items-center gap-2">
+          <span className="w-24 shrink-0 truncate text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{fact.label}</span>
+          <span className="min-w-0 flex-1 truncate rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">{fact.value || '—'}</span>
+        </div>
       ))}
     </div>
   );

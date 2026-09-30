@@ -409,6 +409,11 @@
     background-size: 30px 30px;
   }
 
+  /* A strip that scrolls sideways without a scrollbar eating its height — the
+     quick-tag row and the queue's filter chips. */
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
   .dark .workspace-activity-canvas {
     background-color: rgb(15 23 42 / 0.72);
     background-image: radial-gradient(rgb(100 116 139 / 0.22) 0.75px, transparent 0.75px);

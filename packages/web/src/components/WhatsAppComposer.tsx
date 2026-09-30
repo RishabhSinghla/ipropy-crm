@@ -37,8 +37,12 @@ import { readMessageMedia, WhatsAppMedia } from './WhatsAppMedia';
  */
 
 interface ComposerActions {
-  /** `to` is whatever the screen shows; the digits are taken from it. */
-  compose: (to: string) => void;
+  /**
+   * `to` is whatever the screen shows; the digits are taken from it. `draft`
+   * is text already typed somewhere else — the notes box's Send WhatsApp — so
+   * it arrives in the message box instead of being typed twice.
+   */
+  compose: (to: string, draft?: string) => void;
 }
 
 const WhatsAppComposerContext = createContext<ComposerActions | null>(null);
@@ -55,6 +59,7 @@ export function WhatsAppComposerProvider({ recordId, module, recordLabel, childr
   children: ReactNode;
 }): JSX.Element {
   const [to, setTo] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
   const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   /*
     A message being written belongs to the record it was opened on. This
@@ -76,7 +81,7 @@ export function WhatsAppComposerProvider({ recordId, module, recordLabel, childr
     the whole page underneath it.
   */
   return (
-    <WhatsAppComposerContext.Provider value={status?.connected ? { compose: setTo } : null}>
+    <WhatsAppComposerContext.Provider value={status?.connected ? { compose: (next, text) => { setDraft(text ?? ''); setTo(next); } } : null}>
       {children}
       {status?.connected && to && (
         <ComposerDialog
@@ -85,6 +90,7 @@ export function WhatsAppComposerProvider({ recordId, module, recordLabel, childr
           module={module}
           recordId={recordId}
           recordLabel={recordLabel}
+          draft={draft}
           onClose={() => setTo(null)}
         />
       )}
@@ -92,15 +98,16 @@ export function WhatsAppComposerProvider({ recordId, module, recordLabel, childr
   );
 }
 
-function ComposerDialog({ to, module, recordId, recordLabel, onClose }: {
+function ComposerDialog({ to, module, recordId, recordLabel, draft = '', onClose }: {
   to: string;
+  draft?: string;
   module: string;
   recordId: string;
   recordLabel: string;
   onClose: () => void;
 }): JSX.Element {
   const queryClient = useQueryClient();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(draft);
   const [templateId, setTemplateId] = useState('');
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);

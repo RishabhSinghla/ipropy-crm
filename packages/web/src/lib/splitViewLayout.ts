@@ -19,7 +19,13 @@
  * Pure, so a `node` test can read it without the app's store.
  */
 
-export type SplitTabKey = 'overview' | 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
+/*
+  No `overview`: since 30 September 2026 the record's fields live in the
+  right-hand pane under the call deck (the owner's prototype), so they are not
+  a tab any more. A saved list that still names it simply drops it, the same
+  way it drops anything else this build cannot draw.
+*/
+export type SplitTabKey = 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
 
 export interface SplitTab {
   key: SplitTabKey;
@@ -34,7 +40,6 @@ function hasMatching(moduleName: string): boolean {
 /** Every tab the split view can draw for this module, in its shipped order and wording. */
 export function allSplitTabs(moduleName: string): SplitTab[] {
   const tabs: SplitTab[] = [
-    { key: 'overview', label: 'Overview' },
     { key: 'timeline', label: 'Timeline' },
   ];
   if (hasMatching(moduleName)) {

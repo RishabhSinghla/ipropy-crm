@@ -109,25 +109,28 @@ function StandbyPanel({
       ? 'Live activity reported by your phone.'
       : 'Press the Call button on this record when you are ready.';
 
+  /*
+    **30 September 2026, the owner's prototype:** at rest the deck is one slim
+    strip — *CALL DECK · Ready · No call in progress* — so the record's fields
+    below it get the height. The longer sentence is the strip's tooltip, and
+    the moment anything is live it says so in the strip itself.
+  */
+  const busy = Boolean(call) || phoneLive;
   return (
-    <section className="card h-fit overflow-hidden" data-testid="call-deck-panel">
-      <header className="border-b border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2">
-        <span className="text-sm font-semibold text-[var(--text)]">Call deck</span>
-      </header>
-      <div className="flex items-center gap-2.5 p-3" data-testid="call-panel-status">
+    <section className="shrink-0 border-b border-[var(--border)] bg-[var(--surface-muted)] dark:bg-slate-800/60" data-testid="call-deck-panel">
+      <div className="flex items-center gap-2 px-3 py-1.5" data-testid="call-panel-status" title={detail}>
+        <PhoneCall className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-indigo-300" aria-hidden />
+        <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Call deck</span>
         <span className={cn(
-          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-          phoneLive || call ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300',
+          'inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold',
+          busy ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
         )}>
-          <PhoneCall className="h-4 w-4" aria-hidden />
+          <span className={cn('h-1.5 w-1.5 rounded-full', busy ? 'bg-amber-500' : 'animate-pulse bg-emerald-500')} />
+          {busy ? 'Live' : 'Ready'}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-[var(--text)]">{label}</span>
-          <span className="block text-xs text-muted">{detail}</span>
-        </span>
+        <span className="min-w-0 flex-1 truncate border-l border-slate-300 pl-2 text-[11px] text-slate-600 dark:border-slate-600 dark:text-slate-300">{label}</span>
         {call && (
-          <Link className="btn-secondary btn-sm shrink-0" to={returnToCallUrl(call)}>
+          <Link className="btn-secondary btn-sm shrink-0 py-0.5 text-[11px]" to={returnToCallUrl(call)}>
             Open call
           </Link>
         )}

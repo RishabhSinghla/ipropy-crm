@@ -8,8 +8,9 @@
  *    not in the split view, and the split view is where the team works;
  *  * every queue row carries its status under the follow-up date, so a list
  *    reads as "who, when, where they are up to" without opening anything;
- *  * Lost Reason, Contact Type and Unit Number are **off** the right-hand
- *    header and **in** Basic Information, editable in place.
+ *  * Lost Reason, Contact Type and Unit Number are **off** the header and
+ *    **in** the record's fields (the right pane since 30 September), editable
+ *    in place.
  *
  * The third is the one worth a browser. Demoting a field is two changes — take
  * it out of the header, put it in a block — and doing only the first deletes
@@ -70,7 +71,8 @@ for (const { module, demoted } of [
       expect(headerText, `${label} should be off the header`).not.toContain(`${label}:`);
     }
 
-    const body = workspace.locator('dl').first().locator('xpath=ancestor::div[1]');
+    // The record's fields live in the right pane since 30 September 2026.
+    const body = workspace.getByTestId('record-inspector');
     const bodyText = (await body.innerText()).replace(/\s+/g, ' ');
     for (const label of demoted) {
       // Field labels render uppercase in a block, so compare case-insensitively.

@@ -38,7 +38,8 @@ test("the chips are the admin's list, and one writes into the note", async ({ pa
 
   try {
     await page.reload();
-    const notes = page.getByTestId('notes-panel');
+    // The notes box sits at the foot of the timeline since 30 September 2026.
+    const notes = page.getByTestId('note-dock');
     await expect(notes).toBeVisible({ timeout: 40_000 });
 
     const chip = notes.getByRole('button', { name: `+ ${phrase}` });

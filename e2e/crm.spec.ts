@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { unique, waitForRecords, fillRequiredFields, openRecordTab, searchList, openCreateDialog, waitForShell, openFirstRecord } from './helpers';
+import { unique, waitForRecords, fillRequiredFields, searchList, openCreateDialog, waitForShell, openFirstRecord } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -56,9 +56,9 @@ test('inline-edits a text field on the record in the split view', async ({ page 
   // The record opens beside the queue; its fields edit where they stand.
   await openFirstRecord(page);
 
-  // Fields live on Overview, and which tab a record opens on is an admin
-  // setting — his own detail layout opens on Timeline. Ask for the tab.
-  await openRecordTab(page, 'Overview');
+  // Fields live in the right-hand pane since 30 September 2026, beside
+  // whichever tab is open, so there is no tab to ask for.
+  await expect(page.getByTestId('record-inspector')).toBeVisible({ timeout: 30_000 });
 
   const typed = unique('Co');
 
@@ -70,7 +70,7 @@ test('inline-edits a text field on the record in the split view', async ({ page 
   // an editor and what you type is still there after a reload. Any text field
   // demonstrates that; naming one only asserts on how this database is set up
   // today.
-  const triggers = page.locator('dd:visible').filter({ has: page.getByRole('button', { name: /^Change / }) });
+  const triggers = page.locator('[data-field-box]:visible').filter({ has: page.getByRole('button', { name: /^Change / }) });
   await expect(triggers.first()).toBeVisible({ timeout: 30_000 });
 
   let edited = false;
@@ -89,9 +89,18 @@ test('inline-edits a text field on the record in the split view', async ({ page 
       await page.keyboard.press('Escape');
       continue;
     }
+    // A dropdown's search box (the owner, the stage, the type — all in the
+    // right pane since 30 September 2026) also opens as a text box, and typing
+    // into it saves nothing. So a field counts as edited only once the record
+    // was actually written.
+    const saved = page.waitForResponse(
+      (res) => res.request().method() === 'PATCH' && res.url().includes('/api/records/') && res.ok(),
+      { timeout: 5_000 },
+    ).then(() => true).catch(() => false);
     await input.fill(typed);
     await input.press('Enter');
-    edited = true;
+    edited = await saved;
+    if (!edited) await page.keyboard.press('Escape');
   }
   expect(edited, 'no inline-editable text field on the record').toBe(true);
 
@@ -100,7 +109,7 @@ test('inline-edits a text field on the record in the split view', async ({ page 
   // The edit made this the most recently updated record, so it leads the queue.
   await page.reload();
   await openFirstRecord(page);
-  await openRecordTab(page, 'Overview');
+  await expect(page.getByTestId('record-inspector')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(typed).first()).toBeVisible({ timeout: 30_000 });
 });
 

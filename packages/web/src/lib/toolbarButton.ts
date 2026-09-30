@@ -24,7 +24,7 @@ export function toolbarButton(on: boolean, extra?: string): string {
     // pills rather than a row of tabs.
     // Fully round, on the owner's prototype of 27 September 2026 — a row of
     // pills rather than a row of tabs.
-    'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-xs transition-colors',
+    'inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium shadow-xs transition-colors',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1',
     /*
       **29 September 2026, the owner:** *"we need Normal Toolbar Button in

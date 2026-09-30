@@ -4,8 +4,9 @@
  * Three screens are arranged here, and the picker at the top names them by the
  * screen they change:
  *
- *   * **Split view** — the queue card, the record's header facts, its tabs and
- *     the Overview form. This is the screen the team works in all day, and
+ *   * **Split view** — the queue card, the facts pinned at the top of the
+ *     right pane, the record's tabs, and the field sections under the pinned
+ *     facts (the four-pane layout of 30 September 2026). This is the screen the team works in all day, and
  *     since 29 September 2026 every control for it is one the split view
  *     actually reads (`lib/splitViewLayout.ts`). Before that, the header's key
  *     fields, the tabs and "opens on" were saved and ignored.
@@ -382,7 +383,7 @@ export default function LayoutDesigner(): JSX.Element {
           <h1 className="text-lg font-semibold tracking-tight">Layout Designer</h1>
           <p className="text-sm text-muted">
             {layoutType === 'detail'
-              ? 'Arrange the split view: the queue card, the record header, its tabs and the Overview form.'
+              ? 'Arrange the split view: the queue card, the record’s tabs, and the pinned facts and field sections in the right pane.'
               : layoutType === 'quick_create'
                 ? 'Arrange the + New form, Capture on site and the phone app’s record screen.'
                 : 'Arrange the Inventories full page form.'}
@@ -509,8 +510,8 @@ export default function LayoutDesigner(): JSX.Element {
                   <div className="space-y-3">
                     <Zone
                       step={2}
-                      title="Middle pane header — key facts"
-                      hint="The small labelled chips in the open record’s header, each editable where it stands. The call log always comes last."
+                      title="Right pane — pinned facts"
+                      hint="The facts at the top of the right pane, under the call deck, each editable where it stands. Who owns the record comes first and the call log last."
                       onReset={heroFields ? () => { setHeroFields(undefined); touch(); } : undefined}
                       testId="zone-header"
                     >
@@ -518,18 +519,13 @@ export default function LayoutDesigner(): JSX.Element {
                         <HeaderFactsPreview facts={heroShown.map((name) => ({ label: labelOf(name), value: sampleOf(name) }))} />
                       </Preview>
                       <OrderedFieldList
-                        label="Header key facts"
+                        label="Pinned facts"
                         value={heroShown}
                         options={fieldOptions}
                         sampleOf={sampleOf}
                         onChange={(next) => { setHeroFields(next); touch(); }}
-                        emptyText="No facts — the header shows only the call log."
+                        emptyText="No facts — only the owner and the call log are pinned."
                       />
-                      {heroShown.length > 4 && (
-                        <p className="text-2xs text-amber-700 dark:text-amber-300">
-                          More than four makes the header wrap onto a second line on a laptop screen.
-                        </p>
-                      )}
                     </Zone>
 
                     <Zone
@@ -551,9 +547,9 @@ export default function LayoutDesigner(): JSX.Element {
                 <div className="flex items-start gap-2.5 px-1 pt-2">
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-[11px] font-bold text-white">4</span>
                   <span>
-                    <span className="block text-sm font-semibold">Middle pane — Overview form</span>
+                    <span className="block text-sm font-semibold">Right pane — field sections</span>
                     <span className="block text-2xs text-muted">
-                      The cards of fields on the Overview tab, in this order. Drag a field, or use its ⋯ menu to move it.
+                      The sections of fields under the pinned facts, in this order. Drag a field, or use its ⋯ menu to move it.
                       Fields on the right are not on the form yet.
                     </span>
                   </span>

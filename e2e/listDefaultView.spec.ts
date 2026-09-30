@@ -132,7 +132,9 @@ test('the divider moves the split, and the width is remembered', async ({ page }
   await forgetTheChoice(page, '/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
 
-  const queue = page.locator('aside').first();
+  // Rooted in the workspace: the first <aside> on the page is the toolbar
+  // dock since 30 September 2026, which never moves.
+  const queue = page.getByTestId('ipropy-workspace').locator('aside').first();
   const before = (await queue.boundingBox())!.width;
 
   /*
@@ -151,7 +153,7 @@ test('the divider moves the split, and the width is remembered', async ({ page }
 
   await page.reload();
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
-  const remembered = (await page.locator('aside').first().boundingBox())!.width;
+  const remembered = (await page.getByTestId('ipropy-workspace').locator('aside').first().boundingBox())!.width;
   expect(Math.abs(remembered - after), 'the width was not remembered').toBeLessThan(4);
 });
 
@@ -232,7 +234,7 @@ test('the face, the name and the controls share one row', async ({ page }) => {
 test('the queue can be ticked in bulk and sorted from its own header', async ({ page }) => {
   await forgetTheChoice(page, '/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
-  const queue = page.locator('aside').first();
+  const queue = page.getByTestId('ipropy-workspace').locator('aside').first();
 
   // One box beside the module's name ticks everything on the page, which is
   // what the bulk-edit bar needs to appear.
@@ -267,29 +269,32 @@ test('the queue can be ticked in bulk and sorted from its own header', async ({ 
   await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('Recently updated');
 });
 
-test('the notes are the third pane, beside the record', async ({ page }) => {
+test('the notes box sits under the timeline, and the fields in the right pane', async ({ page }) => {
   await forgetTheChoice(page, '/leads');
   const desk = page.getByTestId('ipropy-workspace');
   await expect(desk).toBeVisible({ timeout: 30_000 });
 
   /*
-    **27 September 2026, the owner:** three panes, with *"call deck merge in to
-    Note/Comment pane/Box"*. The notes moved out from under the fields and into
-    a pane of their own on the right, which is the half that used to be taken
-    away whenever a call started.
+    **30 September 2026, the owner's four-pane prototype:** the notes box moved
+    to the foot of the timeline, like a chat, and the record's fields moved to
+    the right-hand pane under the call deck — *"This Replacement move vice vera
+    between Overview and Not/Comment pane"*.
 
     Measured rather than read off a class name, because a class that is present
-    while the pane still sits underneath is exactly the bug.
+    while the pane still sits somewhere else is exactly the bug.
   */
-  const fields = desk.getByText(/Information$/).first();
-  const notes = desk.getByTestId('notes-panel');
+  const feed = desk.getByTestId('activity-feed');
+  const notes = desk.getByTestId('note-dock');
+  const fields = desk.getByTestId('record-inspector');
   await expect(notes).toBeVisible();
-  const fieldsBox = (await fields.boundingBox())!;
+  await expect(fields).toBeVisible();
+  const feedBox = (await feed.boundingBox())!;
   const notesBox = (await notes.boundingBox())!;
-  expect(notesBox.x, 'the notes are not to the right of the fields').toBeGreaterThan(fieldsBox.x);
-  expect(notesBox.y, 'the notes start below the fields rather than beside them').toBeLessThan(fieldsBox.y + 200);
+  const fieldsBox = (await fields.boundingBox())!;
+  expect(notesBox.y, 'the notes box is not under the timeline').toBeGreaterThanOrEqual(feedBox.y + feedBox.height - 2);
+  expect(fieldsBox.x, 'the fields are not to the right of the timeline').toBeGreaterThan(notesBox.x + notesBox.width - 2);
 
-  // Three panes, so the queue's divider is still the only one that drags.
+  // The queue's divider is still the only one that drags.
   await expect(page.getByRole('separator', { name: 'Resize the notes panel' })).toHaveCount(0);
   await expect(page.getByRole('separator', { name: 'Resize the list' })).toHaveCount(1);
 });

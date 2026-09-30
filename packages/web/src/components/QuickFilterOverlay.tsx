@@ -1,4 +1,4 @@
-import { type JSX, type ReactNode, useMemo, useState } from 'react';
+import { type JSX, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { FieldMeta, FilterGroup, ModuleMeta } from '@ipropy/shared';
 import {
@@ -73,6 +73,15 @@ export function QuickFilterOverlay({
     () => (typeField?.options ?? []).filter((option) => match(option.label || option.value)),
     [typeField?.options, needle],
   );
+
+  // Escape closes it, like every other panel in the CRM. Without this the
+  // overlay covered the whole screen and only a click could get rid of it.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 

@@ -33,7 +33,9 @@ import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
+import { WorkspaceDock } from '../components/WorkspaceDock';
 import { QuickFilterOverlay } from '../components/QuickFilterOverlay';
+import { countActiveQuickFilters } from '../lib/quickFilters';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 
@@ -63,7 +65,6 @@ export default function ListView(): JSX.Element {
   };
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
   const [taskQueue, setTaskQueue] = useState<TaskQueue | null>(null);
   const [stagePick, setStagePick] = useState<string[]>([]);
   const [agentPick, setAgentPick] = useState<string | null>(null);
@@ -820,202 +821,133 @@ export default function ListView(): JSX.Element {
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
 
   const canCreate = meta.permissions.create;
-  return (
-    <div className="flex h-full min-w-0 flex-col">
-      {/* Header */}
-      {/*
-        The toolbar reads as a bar now, not as the top of the page.
+  /*
+    **30 September 2026, the owner's prototype:** the list's controls live in
+    the record pane now, under its own header — *"the list of All Leads,
+    Status, Call Log etc button move to Below Filter & Sorting Icons of Left
+    pane … in Small buttons Box/Chip"* — with the search box always open under
+    them and the paging at the foot. They are the same components as before;
+    only where they sit has changed, so every filter still reaches the server
+    with the rest of the query.
 
-        It was a near-white strip on a near-white page with a hairline border —
-        the view name, the record count and every control on the screen sat in
-        it, and none of it caught the eye. Reported as "not very eye catching",
-        which is the right complaint: this row is where somebody looks to
-        answer "which list am I on and how many are in it".
-
-        A solid ground, a real bottom border and a little more height are the
-        whole change — no colour, because the row is a container and the
-        coloured thing in it should go on being the New button.
-      */}
-      <div className="shrink-0 border-b border-[var(--border)] bg-white px-3 py-2.5 dark:bg-slate-900 sm:px-4">
-        {/*
-          No title bar.
-
-          The module name is already in the sidebar, in the tab title and in the
-          URL, and a 9mm-tall heading repeating it cost a row of records on every
-          screen in the office. The toolbar starts at the left edge instead and
-          the record count rides along with the search box, which is where
-          somebody actually looks for it.
-
-          The heading itself stays for screen readers and for the page's
-          document outline — removing the only h1 from a route is a real
-          regression, just not a visible one.
-        */}
-        <h1 className="sr-only">{meta.label}</h1>
-        {/*
-          One row, not two. The view tabs used to sit on a line of their own
-          under the toolbar, which cost another row of records on every screen.
-          They take the left of this row and scroll within it; everything that
-          acts on the list is grouped on the right, with the search box beside
-          the Filter button it belongs with.
-        */}
-        {/*
-          Wraps on a phone.
-
-          On one line the saved-view tabs, the search box, Filter, the two view
-          toggles, the column control and New come to more than a 360dp screen
-          holds — so New was clipped at the right edge with nothing to scroll
-          and no way to reach it. The shell is `overflow-hidden`, so the
-          overflow did not even produce a scrollbar to hint at what was missing.
-
-          Wrapping rather than scrolling, deliberately: a horizontally scrolling
-          strip would put the primary action off-screen by default, which is the
-          same problem wearing a different hat.
-        */}
-        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+    The chips **wrap rather than scroll**. A dropdown here is positioned
+    against its button, not drawn in a portal, and a sideways-scrolling row
+    would clip the panel it opens.
+  */
+  const queueTools = (
+    <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
+      <div className="flex flex-wrap items-center gap-1 bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
           <Dropdown
-            align="left"
-            className="min-w-[18rem]"
-            trigger={(
-              <button
-                /* "On" means this button is narrowing the list. The module's
-                   own All-Leads view is a system view and narrows nothing, so
-                   it must not sit lit from the moment the page opens. */
-                className={toolbarButton(Boolean(tagPick || (activeView && !activeView.isSystem)), 'max-w-[14rem]')}
-                aria-label="Choose or manage list views"
-              >
-                {tagPick ? <Tag className="h-3.5 w-3.5 shrink-0" /> : <Filter className="h-3.5 w-3.5 shrink-0" />}
-                {/* No chevron — *"remove arrow key from all Buttons, so that
-                    we can See neet and clean Toolbar"* (28 September 2026).
-                    The icon on the left already says what this opens. */}
-                <span className="truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
-              </button>
-            )}
-          >
-            {(close) => (
-              <ListPicker
-                views={(views ?? []).map((v) => ({
-                  id: v.id, name: v.name, isSystem: v.isSystem, isPublic: v.isPublic,
-                  isDefault: v.isDefault, ownerId: v.ownerId,
-                  isOverride: (v as { isOverride?: boolean }).isOverride,
-                  count: (v as { count?: number }).count,
-                }))}
-                activeViewId={activeView?.id ?? null}
-                activeTag={tagPick}
-                moduleName={meta.name}
-                userId={user?.id}
-                isAdmin={Boolean(user?.isAdmin)}
-                moduleLabel={meta.label}
-                onChooseView={(id) => { setTagPick(null); chooseView(id); close(); }}
-                onChooseTag={(name) => { setTagPick(name); setPage(1); close(); }}
-                onNew={() => { setEditingView(blankView(moduleName)); close(); }}
-                onEdit={(id) => {
-                  const full = (views ?? []).find((v) => v.id === id);
-                  if (full) setEditingView(full as SavedView);
-                  close();
-                }}
-                onDuplicate={(id) => { duplicateView.mutate(id); close(); }}
-                onShare={(id) => { shareView.mutate(id); close(); }}
-                onSetDefault={(id) => { setDefaultView.mutate(id); close(); }}
-                onDelete={(id) => {
-                  const full = (views ?? []).find((v) => v.id === id);
-                  if (full) setConfirmDeleteView(full);
-                  close();
-                }}
-              />
-            )}
-          </Dropdown>
-
-          <StatusBreakdown
-            moduleName={moduleName}
-            meta={meta}
-            viewId={activeView?.id}
-            baseFilter={breakdownFilter}
-            selected={stagePick}
-            agent={agentPick}
-            onApply={(values) => { setStagePick(values); setPage(1); }}
-            onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
-          />
-
-          {taskQueuesEnabled && (
-            <FollowUpQueue
-              moduleName={moduleName}
-              fieldName={taskField!.name}
-              viewId={activeView?.id}
-              fieldMap={fieldMap}
-              active={taskQueue}
-              onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
-              ownerField={ownerField?.name ?? null}
-              agent={agentPick}
-              onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
+          align="left"
+          className="min-w-[18rem]"
+          trigger={(
+            <button
+              /* "On" means this button is narrowing the list. The module's
+                 own All-Leads view is a system view and narrows nothing, so
+                 it must not sit lit from the moment the page opens. */
+              className={toolbarButton(Boolean(tagPick || (activeView && !activeView.isSystem)), 'max-w-[14rem]')}
+              aria-label="Choose or manage list views"
+            >
+              {tagPick ? <Tag className="h-3.5 w-3.5 shrink-0" /> : <Filter className="h-3.5 w-3.5 shrink-0" />}
+              {/* No chevron — *"remove arrow key from all Buttons, so that
+                  we can See neet and clean Toolbar"* (28 September 2026).
+                  The icon on the left already says what this opens. */}
+              <span className="truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
+            </button>
+          )}
+        >
+          {(close) => (
+            <ListPicker
+              views={(views ?? []).map((v) => ({
+                id: v.id, name: v.name, isSystem: v.isSystem, isPublic: v.isPublic,
+                isDefault: v.isDefault, ownerId: v.ownerId,
+                isOverride: (v as { isOverride?: boolean }).isOverride,
+                count: (v as { count?: number }).count,
+              }))}
+              activeViewId={activeView?.id ?? null}
+              activeTag={tagPick}
+              moduleName={meta.name}
+              userId={user?.id}
+              isAdmin={Boolean(user?.isAdmin)}
+              moduleLabel={meta.label}
+              onChooseView={(id) => { setTagPick(null); chooseView(id); close(); }}
+              onChooseTag={(name) => { setTagPick(name); setPage(1); close(); }}
+              onNew={() => { setEditingView(blankView(moduleName)); close(); }}
+              onEdit={(id) => {
+                const full = (views ?? []).find((v) => v.id === id);
+                if (full) setEditingView(full as SavedView);
+                close();
+              }}
+              onDuplicate={(id) => { duplicateView.mutate(id); close(); }}
+              onShare={(id) => { shareView.mutate(id); close(); }}
+              onSetDefault={(id) => { setDefaultView.mutate(id); close(); }}
+              onDelete={(id) => {
+                const full = (views ?? []).find((v) => v.id === id);
+                if (full) setConfirmDeleteView(full);
+                close();
+              }}
             />
           )}
+        </Dropdown>
 
-          {/* After Follow-ups, on the owner's instruction — the row reads left
-              to right the way a day does: which list, which stage, what is due,
-              then how the last call went. */}
-          <CallDispositionFilter
-            pick={dispositionPick}
-            onPick={(next) => { setDispositionPick(next); setPage(1); }}
+        <StatusBreakdown
+          moduleName={moduleName}
+          meta={meta}
+          viewId={activeView?.id}
+          baseFilter={breakdownFilter}
+          selected={stagePick}
+          agent={agentPick}
+          onApply={(values) => { setStagePick(values); setPage(1); }}
+          onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
+        />
+
+        {taskQueuesEnabled && (
+          <FollowUpQueue
+            moduleName={moduleName}
+            fieldName={taskField!.name}
+            viewId={activeView?.id}
+            fieldMap={fieldMap}
+            active={taskQueue}
+            onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
+            ownerField={ownerField?.name ?? null}
+            agent={agentPick}
+            onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
           />
+        )}
 
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {/* The number, not a footnote. It was the same muted 11px as the
-                labels around it; it is the one value on this row somebody
-                reads on purpose.
+        {/* After Follow-ups, on the owner's instruction — the row reads left
+            to right the way a day does: which list, which stage, what is due,
+            then how the last call went. */}
+        <CallDispositionFilter
+          pick={dispositionPick}
+          onPick={(next) => { setDispositionPick(next); setPage(1); }}
+        />
 
-                Two numbers since 19 September, on the owner's instruction:
-                how many are on the screen and how many the filter found. The
-                total on its own says nothing about how far down the page
-                anybody has got — "25 of 22,970" answers both at once. The
-                count is the rows actually delivered, not the page size, so
-                the last page says 20 rather than 25.
-
-                A range since 25 September: page 2 of fifty used to say "50 of
-                22,981" again, as if nobody had moved. It says "51–100" now —
-                where these rows sit, and how far down the list you are. */}
-            <span className="hidden shrink-0 text-xs font-semibold text-slate-700 tnum xl:inline dark:text-slate-200">
-              {isFetching && !data ? 'Loading…' : recordRange(page, pageSize, rows.length, data?.total ?? 0)}
-            </span>
-
-            {/*
-              The open box takes its own width in the row rather than floating
-              over what is to its left.
-
-              It was `absolute` inside an 8×8 box, so opening it drew a 16rem
-              panel across the neighbours — and the neighbour on that side is
-              the record count, which is the number somebody opens a search to
-              compare against. Laying it out in the flow costs the row a little
-              width, which is what the wrap is for, and nothing is hidden.
-            */}
-            <div className={cn('relative h-8 transition-[width]', searchOpen ? 'w-44 lg:w-60' : 'w-8')}>
-            {searchOpen ? (
-              <div className="absolute inset-y-0 right-0 z-30 w-full">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  data-testid="list-search"
-                  autoFocus
-                  className="input w-full py-1.5 pl-8 pr-7 text-sm"
-                  placeholder={`Search ${meta.label.toLowerCase()}…`}
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                />
-                <button className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close list search" onClick={() => { setSearchOpen(false); setSearchInput(''); }}>
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
-              <button className="btn-secondary btn-sm px-2" aria-label={`Search ${meta.label}`} onClick={() => setSearchOpen(true)} title={`Search ${meta.label}`}>
-                <Search className="h-3.5 w-3.5" />
-              </button>
-            )}
-            </div>
-
+      </div>
+      <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            data-testid="list-search"
+            className="w-full rounded-md border-none bg-slate-100 py-1.5 pl-8 pr-7 text-xs text-slate-800 placeholder-slate-500 focus:ring-1 focus:ring-brand-500 dark:bg-slate-800 dark:text-slate-100"
+            placeholder={`Search ${meta.label.toLowerCase()}…`}
+            aria-label={`Search ${meta.label}`}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+          {searchInput && (
+            <button className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted hover:bg-slate-200 dark:hover:bg-slate-700" aria-label="Clear list search" onClick={() => setSearchInput('')}>
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
             <button
               onClick={() => setShowFilters(true)}
-              className={cn('btn-secondary btn-sm', countConditions(filter) > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
+              className={cn('btn-secondary btn-sm px-2', countConditions(filter) > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
+              aria-label="Quick and live filters"
+              title="Quick and live filters"
             >
               <Filter className="h-3.5 w-3.5" />
-              Filter
               {countConditions(filter) > 0 && (
                 <span className="rounded-full bg-brand-600 px-1.5 text-2xs text-white">{countConditions(filter)}</span>
               )}
@@ -1071,33 +1003,69 @@ export default function ListView(): JSX.Element {
               )}
             </Dropdown>
 
-            {(data?.total ?? 0) > 0 && (
-              <div className="hidden items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-muted lg:flex dark:border-slate-700">
-                <button className="btn-ghost p-0.5" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></button>
-                <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-white px-1 text-center text-xs dark:border-slate-700 dark:bg-slate-900" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={pageInput} onFocus={(e) => e.currentTarget.select()} onBlur={commitPageInput} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onChange={(e) => setPageInput(e.target.value)} /><span>/ {data!.totalPages}</span></label>
-                <button className="btn-ghost p-0.5" aria-label="Next page" disabled={page >= data!.totalPages} onClick={() => setPage((p) => Math.min(data!.totalPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></button>
-              </div>
-            )}
-
-            {/*
-              No New button here any more.
-
-              The shell's own New sits a few centimetres away in the header, on
-              every page including this one, and offers the same form for every
-              module the profile can create into — so this one was a second
-              control doing the same job, in a toolbar already carrying search,
-              filters, columns, paging and the view menu. Capture went with it,
-              into that same menu: it is a way of adding a property, not a
-              property of this screen.
-
-              The empty state below keeps its button, because a list with
-              nothing in it and no way forward is a dead end.
-            */}
-
-          </div>
-        </div>
-
       </div>
+    </div>
+  );
+
+  /** Where these rows sit in the whole list, and a page either way. */
+  const queueFooter = (data?.total ?? 0) > 0 ? (
+    <div className="flex shrink-0 items-center justify-between gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px] text-slate-600 dark:bg-slate-800/40 dark:text-slate-300">
+      <span className="truncate tnum">{isFetching && !data ? 'Loading…' : recordRange(page, pageSize, rows.length, data?.total ?? 0)}</span>
+      <div className="flex shrink-0 items-center gap-1">
+        <button className="rounded border border-slate-200 bg-white px-1.5 py-0.5 hover:text-slate-900 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></button>
+        <label className="flex items-center gap-1 whitespace-nowrap font-medium"><input className="h-5 w-10 rounded border border-slate-200 bg-white px-1 text-center text-[11px] dark:border-slate-700 dark:bg-slate-900" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={pageInput} onFocus={(e) => e.currentTarget.select()} onBlur={commitPageInput} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onChange={(e) => setPageInput(e.target.value)} /><span>/ {data!.totalPages}</span></label>
+        <button className="rounded border border-slate-200 bg-white px-1.5 py-0.5 hover:text-slate-900 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900" aria-label="Next page" disabled={page >= data!.totalPages} onClick={() => setPage((p) => Math.min(data!.totalPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></button>
+      </div>
+    </div>
+  ) : null;
+
+  /** How many of the quick filters are narrowing the list right now. */
+  const quickFilterCount = countActiveQuickFilters({
+    filter, stages: stagePick, agent: agentPick, task: taskQueue, disposition: dispositionPick, types: typePick,
+  });
+  const clearQuickFilters = (): void => {
+    setAgentPick(null);
+    setStagePick([]);
+    setTaskQueue(null);
+    setDispositionPick(NO_DISPOSITION_PICK);
+    setTypePick([]);
+    setFilter(EMPTY_FILTER);
+    setPage(1);
+  };
+
+  return (
+    <div className="flex h-full min-w-0 flex-col">
+      {/* Header */}
+      {/*
+        The toolbar reads as a bar now, not as the top of the page.
+
+        It was a near-white strip on a near-white page with a hairline border —
+        the view name, the record count and every control on the screen sat in
+        it, and none of it caught the eye. Reported as "not very eye catching",
+        which is the right complaint: this row is where somebody looks to
+        answer "which list am I on and how many are in it".
+
+        A solid ground, a real bottom border and a little more height are the
+        whole change — no colour, because the row is a container and the
+        coloured thing in it should go on being the New button.
+      */}
+      {/*
+        The list's controls sit inside the record pane now (see
+        `queueTools`). With no records to show there is no pane, so they sit
+        here instead — otherwise a filter that emptied the list would take the
+        only way to undo it off the screen with it.
+      */}
+      <h1 className="sr-only">{meta.label}</h1>
+      {rows.length === 0 && !(isLoading && !data) && (
+        <div className="shrink-0 bg-white dark:bg-slate-900">
+          {queueTools}
+          {/* The count stays on screen too — "0 records" is the answer somebody
+              filtering is looking for, and the paging footer is not drawn. */}
+          <p className="border-b border-[var(--border)] px-3 py-1.5 text-[11px] text-slate-600 tnum dark:text-slate-300">
+            {recordRange(page, pageSize, rows.length, data?.total ?? 0)}
+          </p>
+        </div>
+      )}
 
       {/* Bulk action bar */}
       {(selected.size > 0 || selectedAll) && (
@@ -1168,6 +1136,16 @@ export default function ListView(): JSX.Element {
           table widened the whole page instead of this scroll region; the page
           then moved sideways and the frozen identity column naturally moved
           with it. Keep both axes inside this one scroll container. */}
+      {/*
+        The four panes: the dock, then the record pane, the record and the
+        call pane inside the workspace. The dock stands outside the workspace
+        because it is about getting around the CRM, not about this list.
+      */}
+      <div className="flex min-h-0 min-w-0 flex-1">
+      <WorkspaceDock
+        onTasks={taskQueuesEnabled ? () => { setTaskQueue(taskQueue === 'today' ? null : 'today'); setPage(1); } : undefined}
+        tasksOn={taskQueue === 'today'}
+      />
       <div className="min-h-0 min-w-0 flex-1 overflow-auto">
         {isLoading && !data ? (
           <div className="space-y-2 p-4 sm:p-6">
@@ -1255,11 +1233,16 @@ export default function ListView(): JSX.Element {
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             typePick={typePick}
             onTypePick={(values) => { setTypePick(values); setPage(1); }}
+            queueTools={queueTools}
+            queueFooter={queueFooter}
+            filterBar={{ count: quickFilterCount, onOpen: () => setShowFilters(true), onReset: clearQuickFilters }}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
               : undefined}
           />
         )}
+      </div>
+
       </div>
 
       {/* Pagination */}

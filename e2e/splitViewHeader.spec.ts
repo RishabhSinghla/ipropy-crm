@@ -52,65 +52,13 @@ async function splitView(page: import('@playwright/test').Page): Promise<void> {
   which would prove more than either of these did.
 */
 
-test('the chips beside the face are one look, with the stage the only exception', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 });
-  await splitView(page);
-
-  /*
-    The chip group, by its own test id.
-
-    It used to be found by walking the hero's markup — `div.relative.flex >
-    span` — and the hero has now been rearranged three times in three days, so
-    that walk broke without a single chip changing. An element that a spec
-    measures carries a `data-testid`; the shape around it is free to move.
-  */
-  const chipRow = page.locator('[data-testid="hero-chips"]');
-  await expect(chipRow).toBeVisible();
-
-  const chips = await chipRow.evaluate((box) => [...box.children].map((wrap) => {
-    const el = wrap as HTMLElement;
-    // The chase date draws its own chip inside its wrapper; the others are the
-    // wrapper. Take whichever actually carries a fill.
-    /*
-      The painted node, not its wrapper: a Dropdown puts its own box around
-      the call pill, so measuring the wrapper reports that box's height
-      rather than the chip's — which is how this first failed at 32px
-      against a chip that is plainly 24.
-
-      **Every descendant, not the first one.** Since 28 September 2026 each
-      chip is introduced by its field's own name, so the first inner span is
-      that label — which carries no fill, and reading it reported that not one
-      chip was painted.
-    */
-    const painted = [el, ...el.querySelectorAll('span,button')]
-      .map((n) => n as HTMLElement)
-      .find((n) => getComputedStyle(n).backgroundColor !== 'rgba(0, 0, 0, 0)');
-    const style = painted ? getComputedStyle(painted) : null;
-    return {
-      fill: style?.backgroundColor ?? '',
-      radius: style?.borderRadius ?? '',
-      height: painted ? Math.round(painted.getBoundingClientRect().height) : 0,
-    };
-  }));
-
-  expect(chips.length, 'no chips to compare').toBeGreaterThan(1);
-  const painted = chips.filter((c) => c.fill);
-  expect(painted.length, 'not one chip carries a fill').toBeGreaterThan(0);
-
-  for (const chip of painted) {
-    expect(chip.radius, 'a chip is not round').toMatch(/9999px/);
-    // Small: this is the row that stopped the hero being three lines tall.
-    expect(chip.height, `a chip is ${chip.height}px tall — that is not the small chip`).toBeLessThan(32);
-  }
-
-  /*
-    One ordinary tone, plus the stage's own colour, plus overdue red. Which
-    record the queue opens on decides whether the third is on screen at all,
-    so this allows it rather than depending on it.
-  */
-  expect(new Set(painted.map((c) => c.fill)).size, 'the chips carry more tones than the three there are')
-    .toBeLessThanOrEqual(3);
-});
+/*
+  "The chips beside the face are one look" stood here. **30 September 2026
+  took the chips out of the header** — the owner's four-pane prototype keeps
+  only the face, the name, "Updated" and the actions there — and the same
+  facts are now pinned rows at the top of the right pane (\`RecordInspector\`),
+  proved in \`compactHero.spec.ts\` and \`splitViewHeaderKeys.spec.ts\`.
+*/
 
 /**
  * The photo reaches the innermost ring.

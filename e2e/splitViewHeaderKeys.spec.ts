@@ -56,70 +56,29 @@ test('the toolbar says Status, Task and Call Log, with no arrows', async ({ page
   await expect(page.getByRole('button', { name: /^Call Disposition/ })).toHaveCount(0);
 });
 
-test('each header chip is introduced by its own field name', async ({ page }) => {
+test('each pinned fact is introduced by its own field name', async ({ page }) => {
   const made = await makeLead(page);
   await page.goto(`/leads?open=${made.id}`);
   // A regex, not the bare name: the heading now holds the inline editor, so
   // its accessible name carries that control's label too.
   await expect(page.getByRole('heading', { name: new RegExp(made.name) })).toBeVisible({ timeout: 30_000 });
 
-  const header = page.locator('section header').first();
-  // The labels are the *fields'* own, read from metadata, so this asserts the
-  // stage's label rather than the word "status" written into a component.
-  const chipGroup = header.locator('[data-testid="hero-chips"]');
-  // Case-insensitive: the capitals are `text-transform`, so the DOM still
-  // carries the field's own label as an admin typed it.
-  await expect(chipGroup.getByText(/^Pipeline Status$/i)).toBeVisible();
-  await expect(chipGroup.getByText(/^Call Log$/i)).toBeVisible();
-
   /*
-    **The name sits above the value, not beside it** — the owner's own samples,
-    29 September 2026: *"Next Follow Up / Overdue (11D)"*. Measured as two
-    boxes rather than read off a `flex-col`, because a class that is present
-    while the pair still reads side by side is exactly the bug.
+    Since 30 September 2026 the facts a call changes are pinned rows at the
+    top of the right pane, not chips in the header. The labels are the
+    *fields'* own, read from metadata, so this asserts the stage's label
+    rather than the word "status" written into a component. Case-insensitive:
+    the capitals are `text-transform`.
   */
-  const stacked = await chipGroup.evaluate((group) => {
-    const pair = group.children[group.children.length - 1] as HTMLElement;
-    const [label, value] = [...pair.children].map((c) => c.getBoundingClientRect());
-    return {
-      labelBottom: label.bottom,
-      valueTop: value.top,
-      labelMid: label.left + label.width / 2,
-      valueMid: value.left + value.width / 2,
-    };
-  });
-  expect(stacked.valueTop, 'the value should sit below its field name').toBeGreaterThanOrEqual(stacked.labelBottom - 1);
-  // Centres, not left edges — *"The Key fileds and value should be center
-  // aligned in own seprator"* (29 September 2026), and the chip is usually the
-  // shorter of the two, so a shared left edge would leave it off to one side.
-  expect(Math.abs(stacked.valueMid - stacked.labelMid), 'the two should share a centre').toBeLessThan(4);
+  const inspector = page.getByTestId('record-inspector');
+  await expect(inspector.getByText(/^Pipeline Status\*?$/i).first()).toBeVisible();
+  await expect(inspector.getByText(/^Call Log$/i)).toBeVisible();
 
-  // And they may never run under the face. Measured rather than assumed,
-  // because the hero has been rearranged twice and an overlap is the failure
-  // mode each time.
-  const chipBox = await chipGroup.boundingBox();
-  const faceBox = await page.locator('[data-testid="split-hero-avatar"]').boundingBox();
-  expect(chipBox, 'the chip group should be on screen').not.toBeNull();
-  if (chipBox && faceBox) expect(chipBox.x).toBeGreaterThanOrEqual(faceBox.x + faceBox.width - 1);
-});
-
-test('no hairline sits between the icons and the three call chips', async ({ page }) => {
-  const made = await makeLead(page);
-  await page.goto(`/leads?open=${made.id}`);
-  await expect(page.getByRole('heading', { name: new RegExp(made.name) })).toBeVisible({ timeout: 30_000 });
-
-  /*
-    *"Remove Separator Line in Middle Pane header between Icons and Button Of
-    Follow-up, Status, Call Disposition from All modules"* — 28 September 2026.
-
-    Measured off the computed style, not read off a class list: a `border-t`
-    that is present while `border-top-width` is 0 would pass a class check and
-    still be the thing on screen.
-  */
-  const row = page.locator('[data-testid="split-hero-status-row"]');
-  await expect(row).toBeVisible();
-  const rule = await row.evaluate((el) => getComputedStyle(el).borderTopWidth);
-  expect(rule, 'the hero still draws a rule above the call chips').toBe('0px');
+  // The name sits to the left of its value, on one row.
+  const row = inspector.getByText(/^Call Log$/i).locator('xpath=..');
+  const [label, value] = await row.evaluate((el) => [...el.children].map((c) => c.getBoundingClientRect().toJSON() as DOMRect));
+  expect(value!.x, 'the value should sit to the right of its field name').toBeGreaterThan(label!.x + label!.width - 1);
+  expect(Math.abs(value!.y + value!.height / 2 - (label!.y + label!.height / 2)), 'the two should share a row').toBeLessThan(12);
 });
 
 test('an email icon appears only when there is an address to write to', async ({ page }) => {
