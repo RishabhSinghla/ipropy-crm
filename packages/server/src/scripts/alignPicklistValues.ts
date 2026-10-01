@@ -208,6 +208,19 @@ async function main(): Promise<void> {
           WHERE picklist_name = $1 AND value = $2`,
         [d.picklist, d.from, d.to],
       );
+
+      /*
+        And hold the old word down. The seed re-creates every built-in option
+        it does not find on each cold start, so without this "Busy" — renamed
+        "Busy/Ringing" on 1 October 2026 — would come straight back beside it
+        as a second option meaning the same thing.
+      */
+      await tx.query(
+        `INSERT INTO ipy_picklist_tombstone (picklist_name, value, replaced_with)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (picklist_name, value) DO NOTHING`,
+        [d.picklist, d.from, d.to],
+      );
     }
 
     return { records, filters };
