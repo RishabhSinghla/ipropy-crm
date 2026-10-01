@@ -60,6 +60,18 @@ jobs:
            ORDER BY failed DESC, calls DESC;
           SQL
 
+          echo "--- how long each model takes to answer, successful calls, last 7 days ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT model, count(*)::int AS calls,
+                 percentile_disc(0.5) WITHIN GROUP (ORDER BY latency_ms)::int AS median_ms,
+                 percentile_disc(0.9) WITHIN GROUP (ORDER BY latency_ms)::int AS slow_ms,
+                 string_agg(DISTINCT feature, ', ') AS features
+            FROM ipy_ai_log
+           WHERE created_at > now() - interval '7 days' AND success AND latency_ms IS NOT NULL
+           GROUP BY model
+           ORDER BY median_ms;
+          SQL
+
           echo "--- the model settings these features resolve through ---"
           psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
           SELECT key, left(value #>> '{}', 120) AS value
