@@ -64,9 +64,9 @@ jobs:
     env:
       HAVE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -75,7 +75,7 @@ jobs:
       # Gradle will not substitute another — it fails with "Cannot find a Java
       # installation matching languageVersion=21", which reads like a broken
       # Gradle rather than a missing JDK.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -85,7 +85,7 @@ jobs:
       # reports "Failed to find package 'tools'" and fails the build in twenty
       # seconds, before a line of this app is compiled. Gradle resolves the
       # platform and build-tools it actually needs on its own.
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: ''
 
@@ -227,7 +227,7 @@ jobs:
             || { echo "CALL_PHONE is not in the manifest."; exit 1; }
           echo "placeCall and CALL_PHONE are both present."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ipropy-${{ steps.apk.outputs.name }}
           path: ${{ steps.apk.outputs.path }}
