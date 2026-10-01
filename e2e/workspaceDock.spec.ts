@@ -32,14 +32,12 @@ test('choosing a module goes there, and its icon says so', async ({ page }) => {
   await expect(firstModule).toHaveClass(/bg-white/);
 });
 
-test("the Tasks icon opens today's follow-ups from any page, and again switches them off", async ({ page }) => {
-  await page.goto('/calls');
-  const tasks = page.getByRole('link', { name: "Today's tasks" });
-  await tasks.click();
-  await expect(page).toHaveURL(/task=today/);
-  await expect(page.getByRole('button', { name: 'Clear Due today' })).toBeVisible({ timeout: 30_000 });
-  await tasks.click();
-  await expect(page).not.toHaveURL(/task=today/);
+test('no Tasks or Campaigns icon — Campaigns lives in WhatsApp (3 October 2026)', async ({ page }) => {
+  await page.goto('/leads');
+  const dock = page.getByTestId('workspace-dock');
+  await expect(dock).toBeVisible({ timeout: 30_000 });
+  await expect(dock.getByRole('link', { name: "Today's tasks" })).toHaveCount(0);
+  await expect(dock.getByRole('link', { name: 'Campaigns' })).toHaveCount(0);
 });
 
 test('Ask AI is a circle that can be dragged, and a tap opens it', async ({ page }) => {

@@ -1340,3 +1340,8 @@ Contacts and Inventories alike.
 **Not proved:** a real model's rewrite — no AI provider is configured on the
 development database, so what was driven in a browser is the fallback. On
 production it depends on which provider Admin → Integrations has switched on.
+
+**Later on 3 October 2026:** the chat wallpaper went much lighter (the IPROPY
+lettering had still been drawn in the old dark tone), and the left toolbar lost
+its **Tasks** and **Campaigns** icons — *"not needed here"*. Campaigns is a tab
+of WhatsApp; today's follow-ups are the Task button over each list.

@@ -8,9 +8,9 @@
  * now (`Layout.tsx`), and it replaces the module switcher and the WhatsApp
  * button that used to sit in the top bar.
  *
- * Every icon is a place that already exists. Tasks opens the module you are in
- * (or the first one) on today's follow-ups, through `?task=today`, which the
- * list reads on arrival — the same queue the Task button there opens.
+ * Every icon is a place that already exists. The Tasks and Campaigns icons
+ * went on 3 October 2026 — *"not needed here"*: Campaigns is a tab of
+ * WhatsApp, and today's follow-ups are the Task button over each list.
  *
  * From `lg` up. Below that the app's drawer carries the same destinations.
  *
@@ -19,8 +19,8 @@
  * at the top right, which is where it always was.
  */
 import { type JSX, type ReactNode } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { CheckCircle2, LayoutDashboard, Megaphone, MessagesSquare, PhoneIncoming } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { LayoutDashboard, MessagesSquare, PhoneIncoming } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { ModuleIcon } from './Layout';
@@ -30,11 +30,7 @@ export function WorkspaceDock({ unseen }: {
   unseen?: Record<string, number>;
 }): JSX.Element {
   const { modules } = useApp();
-  const location = useLocation();
   const entityModules = modules.filter((module) => module.isEntity);
-  const here = location.pathname.split('/')[1] ?? '';
-  const taskModule = entityModules.find((module) => module.name === here) ?? entityModules[0];
-  const onTasks = new URLSearchParams(location.search).get('task') === 'today';
   return (
     <aside
       className="hidden w-14 shrink-0 flex-col items-center overflow-y-auto border-r border-slate-200 bg-[#f0f2f5] py-3 no-scrollbar dark:border-slate-800 dark:bg-slate-900 lg:flex"
@@ -55,46 +51,29 @@ export function WorkspaceDock({ unseen }: {
           <LayoutDashboard className="h-[18px] w-[18px]" />
         </DockLink>
         {entityModules.map((module) => (
-          <DockLink key={module.name} to={`/${module.name}`} label={module.label} exact badge={unseen?.[module.name]}>
+          <DockLink key={module.name} to={`/${module.name}`} label={module.label} badge={unseen?.[module.name]}>
             <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />
           </DockLink>
         ))}
         <DockLink to="/calls" label="Call log">
           <PhoneIncoming className="h-[18px] w-[18px]" />
         </DockLink>
-        {taskModule && (
-          <NavLink
-            to={onTasks ? `/${taskModule.name}` : `/${taskModule.name}?task=today`}
-            title={onTasks ? 'Show every record again' : "Today's tasks"}
-            aria-label="Today's tasks"
-            aria-current={onTasks ? 'page' : undefined}
-            className={dockLook(onTasks)}
-          >
-            <CheckCircle2 className="h-[18px] w-[18px]" />
-          </NavLink>
-        )}
-        <DockLink to="/whatsapp/campaigns" label="Campaigns">
-          <Megaphone className="h-[18px] w-[18px]" />
-        </DockLink>
       </div>
     </aside>
   );
 }
 
-function DockLink({ to, label, exact = false, badge, children }: {
-  to: string; label: string; exact?: boolean; badge?: number; children: ReactNode;
+function DockLink({ to, label, badge, children }: {
+  to: string; label: string; badge?: number; children: ReactNode;
 }): JSX.Element {
-  const location = useLocation();
-  // A module's icon stays lit on its records too (`/leads/…`), but not while
-  // the Tasks icon is the one that is on.
-  const onTasks = new URLSearchParams(location.search).get('task') === 'today';
+  // A module's icon stays lit on its records too (`/leads/…`).
   return (
     <NavLink
       to={to}
       end={false}
       title={label}
       aria-label={label}
-      className={({ isActive }) => cn(dockLook(isActive && !(exact && onTasks)), 'relative')}
+      className={({ isActive }) => cn(dockLook(isActive), 'relative')}
     >
       {children}
       {badge ? (
