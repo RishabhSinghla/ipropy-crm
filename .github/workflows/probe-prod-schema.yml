@@ -297,3 +297,35 @@ jobs:
                                 FROM ipy_setting s, jsonb_array_elements(s.value) t
                                WHERE s.key = 'ui.header_tabs' AND jsonb_typeof(s.value) = 'array'),
                             '(not arranged)');"
+          echo
+          # Statuses, Lost Reason, call outcomes and tags — what the Lost rule,
+          # the Hot-lead chip and the call-outcome tidy depend on. Metadata and
+          # counts only, never a record's contents.
+          echo "=== modules and their pipeline field ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT name, label, pipeline_field, is_active FROM ipy_module ORDER BY name;"
+          echo "=== status and lost-reason fields, by module ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT m.name AS module, f.name, f.label, f.column_name, f.storage,
+                   f.config->>'picklist' AS picklist, f.is_mandatory, f.is_active, f.display_type,
+                   f.config ? 'requiredWhen' AS has_required_when
+              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+             WHERE f.name ILIKE '%lost%' OR f.name ILIKE '%status%' OR f.config->>'picklist' ILIKE '%lost%'
+             ORDER BY m.name, f.name;"
+          echo "=== values of status, lost-reason, rating and call-outcome dropdowns ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT p.name AS picklist, v.value, v.label, v.is_active, v.sequence
+              FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+             WHERE p.name ILIKE '%status%' OR p.name ILIKE '%lost%' OR p.name IN ('call_disposition','rating','lead_rating')
+             ORDER BY p.name, v.sequence;"
+          echo "=== call outcomes as stored on calls (count) ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT disposition, count(*)::int AS calls FROM ipy_call GROUP BY 1 ORDER BY 2 DESC LIMIT 40;"
+          echo "=== tags: name, modules, live records carrying it per module ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT t.name, t.modules, m.name AS module, count(r.id)::int AS records
+              FROM ipy_tag t
+              LEFT JOIN ipy_tag_link l ON l.tag_id = t.id
+              LEFT JOIN ipy_record r ON r.id = l.record_id AND NOT r.is_deleted
+              LEFT JOIN ipy_module m ON m.id = r.module_id
+             GROUP BY t.name, t.modules, m.name ORDER BY t.name, m.name;"
