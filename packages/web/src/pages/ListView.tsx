@@ -51,6 +51,8 @@ export default function ListView(): JSX.Element {
 
 
   const [page, setPage] = useState(1);
+  /** Which pane the split view is showing on a phone — see `onShowing`. */
+  const [paneShowing, setPaneShowing] = useState<'list' | 'record'>('list');
   // Keep the page editor separate from the committed page. A controlled
   // number input bound straight to `page` immediately rejected its empty
   // intermediate state, so replacing "1" with "9" required selecting the
@@ -1291,6 +1293,7 @@ export default function ListView(): JSX.Element {
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             queueTools={queueTools}
             queueFooter={queueFooter}
+            onShowing={setPaneShowing}
             filterBar={{
               open: showFilters,
               // Drawn inside the right-hand pane, in its exact shape. It is
@@ -1305,8 +1308,15 @@ export default function ListView(): JSX.Element {
         )}
       </div>
 
-      {/* Pagination */}
-      {(data?.total ?? 0) > 0 && (
+      {/*
+        Pagination, on a phone.
+
+        It belongs to the **list**, so it stands down while a record has the
+        screen — otherwise a record opened on a phone sits above a pager for a
+        list that is not on screen, which is what the owner would have met the
+        first time he opened the CRM on his phone (2 October 2026).
+      */}
+      {(data?.total ?? 0) > 0 && paneShowing === 'list' && (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] bg-white px-4 py-2 lg:hidden dark:bg-slate-900 sm:px-6">
           <p className="text-xs text-muted tnum">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–

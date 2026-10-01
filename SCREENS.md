@@ -1453,3 +1453,63 @@ slow answer times.
   edge folds it to a slim *Menu* strip, the strip brings it back, the width
   slides and the icons fade. Remembered per browser (`ipropy.dock.folded`).
   Pinned by `e2e/workspaceDock.spec.ts`.
+
+## One pattern on a phone, a tablet and a laptop
+
+**2 October 2026, the owner:** *"Can you resign web app and android app
+according to my current UI/UX, I want to make is as simple as GMAIL/WhatsApp
+App with all function and filter system … a ten year child can be use this app
+and we can use Web app, Safari app, Android app in same format."*
+
+**The CRM had two designs, and that is what he was describing.** A browser got
+the split view; the installed app got a different set of screens in
+`packages/web/src/mobile/`. And the split view itself **stacked** below `xl` —
+queue first, record under it — so a phone browser had to scroll past fifty
+records to reach the one it had just opened.
+
+Gmail and WhatsApp are not two designs. They are **one**: a list, you tap a
+row, the item fills the screen, you come back. On a wide screen the list stays
+beside it, which is the same pattern with room for both. So that is what the
+split view does now at every width:
+
+* **`showing` is `'list'` or `'record'`**, and below `xl` only one pane is on
+  screen. Both stay **mounted** — hidden, never unmounted — so coming back
+  keeps the queue's scroll position and does not refetch the record.
+* **The way back is the arrow every phone app puts in that corner**, labelled
+  with the module (`‹ Leads`), and it is `xl:hidden`: on a laptop the list
+  never went anywhere, so there is nothing to go back to.
+* **The shell is a full-height row at every width now.** It used to be
+  `min-h` and a column below `xl`; each pane scrolls inside itself on a phone
+  exactly as it does on a laptop.
+
+**Three faults came out of doing it, and each is the kind only a browser
+shows.**
+
+* **The third pane ate the screen.** The call deck and notes pane is
+  `w-full shrink-0`, so once the shell became a row at every width it took all
+  390px and the record was drawn underneath it. The record and that pane are
+  **one column on a phone and two on a laptop** now — the record, then the
+  call deck and the notes under it, scrolling together. Two panes side by side
+  on a phone show neither, and two scrollers on one screen is the complaint
+  already written down about the WhatsApp tab, so the record's own inner
+  scroller is `xl:overflow-y-auto`.
+* **Then the record collapsed to a few pixels.** Inside a scrolling column a
+  child with `flex-1 min-h-0` is free to shrink to nothing, and it did. It is
+  `shrink-0` with its natural height below `xl` and a filling column above it.
+* **The list's phone pager stayed on screen under the open record.** It
+  belongs to the list, so it stands down while the record has the screen —
+  `onShowing` is the one prop the workspace hands back for it.
+
+**And the name truncated to "Header Keys ]".** Sharing one line with the
+controls on a 390px screen, the heading gave way first — the same fault the
+chat header met once. The header wraps below `xl`, so the name keeps the first
+line and the controls take the next. `e2e/onePatternEverywhere.spec.ts`
+measures `scrollWidth - clientWidth` on the heading rather than reading a
+class, and walks list → record → back on **both** modules at 390px, plus the
+laptop still showing both panes with no Back control at all.
+
+**Still two designs, and this is the honest half that is left:** the installed
+app's own screens in `packages/web/src/mobile/` are untouched, so Android still
+opens those rather than this. Pointing the app at the same routes is the next
+step, and it is now worth doing — before today there was nothing on a phone
+browser worth pointing it at.

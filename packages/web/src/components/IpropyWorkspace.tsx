@@ -153,7 +153,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
 export function IpropyWorkspace({
   module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
-  queueTools, queueFooter, filterBar,
+  queueTools, queueFooter, filterBar, onShowing,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -193,12 +193,37 @@ export function IpropyWorkspace({
    */
   /** The Quick & Live Filters panel, drawn in the right pane; `open` unfolds a folded pane while it shows. */
   filterBar?: { open: boolean; panel?: ReactNode };
+  /**
+   * Which pane a small screen is on — so the page around this one can get out
+   * of the way. The list's phone pager is the caller: it belongs to the list,
+   * and on a phone the list is not on screen while a record is open.
+   */
+  onShowing?: (showing: 'list' | 'record') => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey | null>(null);
   const [finding, setFinding] = useState(false);
   const [findText, setFindText] = useState('');
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
+
+  /*
+    Which pane a small screen is showing.
+
+    **2 October 2026, the owner:** *"I want to make it as simple as GMAIL /
+    WhatsApp App … we can use Web app, Safari app, Android app in same
+    format."*
+
+    That is one pattern, not three designs: a list, you tap a row, the record
+    fills the screen, you come back. On a wide screen both sit side by side —
+    which is the same pattern with room for both, and is what Gmail does too.
+
+    Below `xl` the two panes used to **stack**, so a phone had to scroll past
+    fifty records to reach the one it had opened. Both stay mounted and one is
+    hidden, never unmounted: a remount would lose the queue's scroll position
+    and refetch the record every time somebody pressed Back.
+  */
+  const [showing, setShowing] = useState<'list' | 'record'>('list');
+  useEffect(() => { onShowing?.(showing); }, [showing, onShowing]);
   const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -301,6 +326,9 @@ export function IpropyWorkspace({
   const navigate = useNavigate();
   const openRecord = useCallback((id: string) => {
     setActiveId(id);
+    // On a phone this is the whole navigation: the record takes the screen.
+    // On a wide screen nothing moves, because both panes are always drawn.
+    setShowing('record');
     const next = new URLSearchParams(window.location.search);
     next.set('open', id);
     setSearchParams(next, { replace: true });
@@ -550,12 +578,15 @@ export function IpropyWorkspace({
       itself, so the queue shows as many records as the screen can hold and
       ends exactly at the bottom of it.
 
-      Below `xl` the panes stack and the width is ignored entirely — the handle
-      is `xl:block`, because a divider you cannot see is not one you can drag.
+      Below `xl` only one pane is on screen at a time (see `showing`), so this
+      is a full-height row at every width — each pane scrolls inside itself on
+      a phone exactly as it does on a laptop. The width is ignored below `xl`
+      and the handle is `xl:block`, because a divider you cannot see is not one
+      you can drag.
     */}
     <div
       ref={shell}
-      className="flex min-h-[calc(100vh-13rem)] flex-col bg-white xl:h-[var(--pane-h)] xl:min-h-0 xl:flex-row dark:bg-slate-950"
+      className="flex h-[var(--pane-h)] min-h-0 flex-row bg-white dark:bg-slate-950"
       style={{
         ['--queue-w' as string]: `${queueWidth}px`,
         ['--pane-h' as string]: paneTop ? `calc(100vh - ${paneTop}px)` : 'calc(100vh - 13rem)',
@@ -571,7 +602,14 @@ export function IpropyWorkspace({
         them off. The list inside scrolls on its own. `z-10` keeps an open
         panel above the record beside it.
       */}
-      <aside className="relative z-10 flex w-full shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)]">
+      <aside
+        className={cn(
+          'relative z-10 w-full shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:flex xl:w-[var(--queue-w)]',
+          // `hidden xl:flex`, never unmounted — the queue keeps its scroll
+          // position and its loaded page while the record is on screen.
+          showing === 'record' ? 'hidden' : 'flex',
+        )}
+      >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
           <span className="flex min-w-0 items-center gap-1.5">
             {/* Beside the module's own name, because that is what it selects:
@@ -686,7 +724,50 @@ export function IpropyWorkspace({
       {/* ---------------------------------------------------------------- */}
       {/* Pane 2 — the record.                                             */}
       {/* ---------------------------------------------------------------- */}
-      {active && <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white dark:bg-slate-900">
+      {/*
+        The open record **and** what was said about it are one screen.
+
+        On a laptop they are two columns, as they have always been. On a phone
+        they are one column that scrolls together — the record, then the call
+        deck and the notes under it — because a phone showing two panes
+        side by side shows neither, and two scrollers on one screen is the
+        complaint already written down about the WhatsApp tab.
+      */}
+      {active && <div
+        className={cn(
+          'min-h-0 min-w-0 flex-1 flex-col overflow-y-auto xl:flex xl:flex-row xl:overflow-hidden',
+          // Hidden rather than unmounted while the queue has a phone's screen,
+          // so coming back to a record does not refetch it.
+          showing === 'list' ? 'hidden' : 'flex',
+        )}
+      >
+      {/*
+        `shrink-0` with its natural height on a phone, a filling column on a
+        laptop. Inside a scrolling column `flex-1 min-h-0` lets a child
+        collapse to nothing, which is exactly what happened: the record
+        flattened to a few pixels and the notes pane below it was drawn over
+        the top of it.
+      */}
+      <section className="flex w-full shrink-0 flex-col bg-white xl:min-h-0 xl:min-w-0 xl:flex-1 xl:shrink xl:overflow-hidden dark:bg-slate-900">
+        {/*
+          The way back, and only where there is a way back to.
+
+          **2 October 2026, the owner:** *"as simple as GMAIL/WhatsApp App."*
+          On a phone this screen replaced the list, so it needs the arrow every
+          phone app has in that position. On a wide screen the list never went
+          anywhere, so there is nothing to go back to and the row is not drawn
+          (`xl:hidden`).
+        */}
+        <button
+          type="button"
+          onClick={() => setShowing('list')}
+          data-testid="back-to-list"
+          className="flex shrink-0 items-center gap-1.5 border-b border-slate-100 px-3 py-2 text-left text-sm font-semibold text-slate-600 hover:bg-slate-50 xl:hidden dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          <ChevronLeft className="h-4 w-4 shrink-0" />
+          {module.label}
+        </button>
+
         {/*
           The hero, as the owner drew it on 27 September 2026: where this
           record sits in the queue and who owns it on one line, the face in the
@@ -703,7 +784,14 @@ export function IpropyWorkspace({
           the right-hand pane under the call deck, one line each; the number is
           on the queue card and in that pane too.
         */}
-        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white px-3 py-2 shadow-2xs dark:border-slate-800 dark:bg-slate-900" data-testid="split-hero-layout">
+        {/*
+          `flex-wrap` below `xl`: on a phone the controls take the next line so
+          the **name** keeps the first one. Sharing one line with them, it
+          truncated to "Header Keys ]" — three characters of the one thing on
+          this screen that has to be readable, which is the same fault the
+          chat header met once and is written down against it.
+        */}
+        <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-slate-200/80 bg-white px-3 py-2 shadow-2xs xl:flex-nowrap dark:border-slate-800 dark:bg-slate-900" data-testid="split-hero-layout">
           <span className="shrink-0" data-testid="split-hero-avatar">
             <RecordAvatar
               module={module.name}
@@ -913,7 +1001,12 @@ export function IpropyWorkspace({
         */}
         <div className={cn(
           'flex min-h-0 min-w-0 flex-1 flex-col',
-          shownTab === 'timeline' || shownTab === 'whatsapp' ? 'overflow-hidden' : 'space-y-5 overflow-y-auto bg-[#fafbfa] p-5 dark:bg-slate-950/40',
+          shownTab === 'timeline' || shownTab === 'whatsapp'
+            ? 'overflow-hidden'
+            // `xl:overflow-y-auto`, not `overflow-y-auto`: on a phone the whole
+            // record column scrolls as one page, and a scroller inside a
+            // scroller is how a finger ends up moving the wrong thing.
+            : 'space-y-5 bg-[#fafbfa] p-5 xl:overflow-y-auto dark:bg-slate-950/40',
         )}>
           {shownTab === 'timeline' && (
             <>
@@ -926,12 +1019,12 @@ export function IpropyWorkspace({
           {shownTab === 'calls' && <CallsTab recordId={active.id} />}
           {shownTab === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
         </div>
-      </section>}
+      </section>
 
       {/* ---------------------------------------------------------------- */}
       {/* Pane 3 — the call, and what was said.                            */}
       {/* ---------------------------------------------------------------- */}
-      {active && (
+      {(
         <aside
           data-testid="activity-pane"
           data-folded={paneOpen ? undefined : 'true'}
@@ -1012,6 +1105,7 @@ export function IpropyWorkspace({
           </div>
         </aside>
       )}
+      </div>}
     </div>
 
     {/*
