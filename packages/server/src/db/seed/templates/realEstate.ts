@@ -573,12 +573,8 @@ const MODULES: ModuleDef[] = [
         columns: [],
         filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] },
       },
-      // Same as Leads above — the header badge, openable.
-      {
-        name: 'Unread Inventories',
-        columns: [],
-        filter: { logic: 'AND', conditions: [{ field: 'unread', operator: 'is_true' }] },
-      },
+      // No "Unread Inventories" since 1 October 2026 — the owner asked for it
+      // gone (migration 182). Leads keeps its unread list.
       // And the starred ones, same as Leads above.
       {
         name: 'Favourite Inventories',

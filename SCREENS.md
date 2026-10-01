@@ -1370,3 +1370,8 @@ of WhatsApp; today's follow-ups are the Task button over each list.
   each person's handset once, and the install steps wait behind *How to
   install it on a phone* (their numbering read 1, 2, 3, 4, 4).
 * The toast's close button has a name for screen readers.
+
+**1 October 2026:** the **Unread Inventories** saved list is gone — *"not
+needed"*. Migration `182` deletes the live row and tombstones it, so a cold
+start's seed cannot bring it back; the template no longer lists it. **Unread
+Leads** stays.
