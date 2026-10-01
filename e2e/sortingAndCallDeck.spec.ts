@@ -67,17 +67,18 @@ for (const module of MODULES) {
       expect(on, 'an active filter should change fill, not just text').not.toBe(rest.fill);
     });
 
-    test('the sort menu is the eight he named, and nothing is chosen to begin with', async ({ page }) => {
+    test('the sort menu is the eight he named, and Recently updated to begin with', async ({ page }) => {
       await openQueue(page, module.path);
 
       const trigger = page.getByRole('button', { name: 'Sort this list' });
-      // "The filter data are static records, these are not Dynamically sorting
-      // Changes" — a list nobody has sorted must say so.
-      await expect(trigger).toContainText('No sorting');
+      // 1 October 2026: "No sorting" is gone; a list nobody sorted is
+      // Recently updated, and the button says so.
+      await expect(trigger).toContainText('Recently updated');
 
       await trigger.click();
       const menu = page.getByTestId('queue-sort-menu');
-      await expect(menu).toContainText('Recently updated');
+      await expect(menu).toContainText('Recently created');
+      await expect(menu).not.toContainText('No sorting');
       await expect(menu).toContainText('Agent wise');
       await expect(menu).toContainText('Last call wise');
       await expect(menu).toContainText('Profile strength wise');

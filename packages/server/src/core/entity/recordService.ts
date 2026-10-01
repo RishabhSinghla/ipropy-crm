@@ -183,18 +183,16 @@ function stripHidden(envelope: RecordEnvelope, hidden: Set<string>): void {
   }
 }
 
-export async function listRecords(
-  ctx: ServiceContext,
-  moduleName: string,
-  q: ListQuery = {},
-  opts: { conn?: Tx } = {},
-): Promise<ListResult> {
-  const conn = opts.conn ?? db;
+/**
+ * The parts of a list query every reader shares: which rows (filter, view,
+ * search, permissions) and in what order. Pulled out so the record header's
+ * "3 / 25,458" counts the very same list the screen shows — two copies of
+ * this reasoning is how the counter once counted a different order.
+ */
+async function prepareList(ctx: ServiceContext, moduleName: string, q: ListQuery, conn: Tx) {
   const module = await registry.requireModule(moduleName);
   if (!ctx.system) await assertModuleAccess(ctx.user, moduleName, 'view');
 
-  const page = Math.max(1, q.page ?? 1);
-  const pageSize = Math.min(500, Math.max(1, q.pageSize ?? 25));
   const params = new SqlParams();
   const buildCtx = buildContextFrom(ctx);
 
@@ -286,10 +284,24 @@ export async function listRecords(
     ${whereSql}
   `;
 
+  const orderBy = await buildOrderBy(module, effectiveSortBy, effectiveSortDir, joinMap);
+  return { module, params, from, orderBy, effectiveFilter, effectiveColumns, buildCtx };
+}
+
+export async function listRecords(
+  ctx: ServiceContext,
+  moduleName: string,
+  q: ListQuery = {},
+  opts: { conn?: Tx } = {},
+): Promise<ListResult> {
+  const conn = opts.conn ?? db;
+  const page = Math.max(1, q.page ?? 1);
+  const pageSize = Math.min(500, Math.max(1, q.pageSize ?? 25));
+  const { module, params, from, orderBy, effectiveFilter, effectiveColumns, buildCtx } = await prepareList(ctx, moduleName, q, conn);
+
   const countRes = await conn.queryOne<{ count: number }>(`SELECT COUNT(*)::int AS count ${from}`, params.all());
   const total = countRes?.count ?? 0;
 
-  const orderBy = await buildOrderBy(module, effectiveSortBy, effectiveSortDir, joinMap);
   const limitParam = params.add(pageSize);
   const offsetParam = params.add((page - 1) * pageSize);
 
@@ -372,6 +384,56 @@ export async function listRecords(
   }
 
   return result;
+}
+
+/** Where one record sits in a list: its place, the whole count, and either side. */
+export interface ListPosition {
+  /** 1-based; null when the record is not in this list (filtered out since it was opened). */
+  position: number | null;
+  total: number;
+  prevId: string | null;
+  nextId: string | null;
+}
+
+/**
+ * Where a record sits in the list a person came from, counted by the database
+ * over exactly the rows and the ORDER BY the list itself uses.
+ *
+ * It used to be worked out from a cursor — "how many rows sort before this
+ * one's value" — and that was wrong in three ways at once: it defaulted to a
+ * different order from the list, a timestamp read into JavaScript loses its
+ * microseconds so records imported in the same second could not be told
+ * apart, and the orderings that are not a field (agent name, profile
+ * strength, last call) cannot be compared as a value at all. A window
+ * function over the list's own ORDER BY has none of those problems.
+ */
+export async function locateInList(
+  ctx: ServiceContext,
+  moduleName: string,
+  q: ListQuery,
+  recordId: string,
+): Promise<ListPosition> {
+  const { params, from, orderBy } = await prepareList(ctx, moduleName, q, db);
+  const idParam = params.add(recordId);
+  const found = await db.queryOne<{ position: number; total: number; prev_id: string | null; next_id: string | null }>(
+    `SELECT position, total, prev_id, next_id FROM (
+       SELECT ${RECORD_ALIAS}.id,
+              row_number() OVER (ORDER BY ${orderBy})::int AS position,
+              count(*) OVER ()::int AS total,
+              lag(${RECORD_ALIAS}.id) OVER (ORDER BY ${orderBy}) AS prev_id,
+              lead(${RECORD_ALIAS}.id) OVER (ORDER BY ${orderBy}) AS next_id
+       ${from}
+     ) placed
+     WHERE id = ${idParam}::uuid`,
+    params.all(),
+  );
+  if (found) return { position: found.position, total: found.total, prevId: found.prev_id, nextId: found.next_id };
+  // Not in this list any more — say how big the list is and point nowhere.
+  const counted = await db.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count ${from}`,
+    params.all().slice(0, -1),
+  );
+  return { position: null, total: counted?.count ?? 0, prevId: null, nextId: null };
 }
 
 /** Kanban column counts/sums for a grouping field. */
@@ -1922,6 +1984,7 @@ export async function globalSearch(
 export const recordService = {
   getRecord,
   listRecords,
+  locateInList,
   createRecord,
   updateRecord,
   findDuplicateRecord,

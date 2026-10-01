@@ -331,13 +331,12 @@ describe('buildSearchClause', () => {
 
 describe('buildOrderBy', () => {
   /*
-    27 September 2026, the owner: *"the filter data are static records, these
-    are not Dynamically sorting Changes."* It was `updated_at DESC`, so touching
-    a record sent it to the top of the list somebody was working down. When a
-    record was added never changes, so the unsorted list holds still.
+    1 October 2026, the owner: *"get rid off this no sorting … by default it
+    be recently updated"*. The record id still breaks ties so page two never
+    repeats page one.
   */
-  it('holds still when nobody has chosen an order', async () => {
-    expect(await buildOrderBy(leads(), null, 'desc', new Map())).toBe('r.created_at DESC, r.id DESC');
+  it('is Recently updated when nobody has chosen an order', async () => {
+    expect(await buildOrderBy(leads(), null, 'desc', new Map())).toBe('r.updated_at DESC, r.id DESC');
   });
 
   it('resolves system and module fields', async () => {
@@ -346,7 +345,7 @@ describe('buildOrderBy', () => {
   });
 
   it('falls back to the default for an unknown field', async () => {
-    expect(await buildOrderBy(leads(), 'not_a_field', 'asc', new Map())).toBe('r.created_at DESC, r.id DESC');
+    expect(await buildOrderBy(leads(), 'not_a_field', 'asc', new Map())).toBe('r.updated_at DESC, r.id DESC');
   });
 
   /*

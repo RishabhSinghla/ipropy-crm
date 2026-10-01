@@ -470,8 +470,8 @@ export function IpropyWorkspace({
 
     It used to be built out of the module's own fields: the name A–Z, then one
     row per subtitle field, then the stage. The owner asked for those to go on
-    27 September 2026 and for these in their place, with *nothing* chosen by
-    default so that a filtered list holds still while it is worked.
+    27 September 2026 and for these in their place. On 1 October he took
+    "No sorting" out: a list nobody sorted is Recently updated, newest first.
   */
   const choices = useMemo(() => sortOptions(followUpField?.name), [followUpField?.name]);
   const chosen = activeSortOption(choices, sortBy);
@@ -525,8 +525,15 @@ export function IpropyWorkspace({
     record it was started from through `useLiveCall` now, and the WhatsApp
     composer closes itself when the record changes, so neither needs the key.
   */
+  /*
+    `nextId` stays undefined until this record's neighbours have arrived. A
+    call placed before then — Save & Next rings the next record the moment it
+    opens — would otherwise freeze "nobody is next" into the call and lose its
+    own Save & Next button (the owner, 1 October 2026). Undefined lets the
+    deck ask for itself.
+  */
   return <CallDispositionProvider recordId={active?.id ?? ''} module={module.name} queue={{
-    nextId: neighbours?.nextId ?? null,
+    nextId: neighbours ? neighbours.nextId : undefined,
     position: neighbours?.position ?? null,
     total: neighbours?.total ?? null,
     url: callQueueUrl,
@@ -611,9 +618,8 @@ export function IpropyWorkspace({
                   {/*
                     One direction control for the whole menu rather than a
                     second row per option — "Minimal Drop down, Specially
-                    Sorting by Z-A / A-Z" (27 September 2026). It is dead
-                    while nothing is sorted, because there is no direction
-                    for an order nobody has asked for.
+                    Sorting by Z-A / A-Z" (27 September 2026). With nothing
+                    chosen it turns Recently updated round.
                   */}
                   <div className="flex items-center gap-1 px-3 pb-1.5 pt-1.5">
                     <p className="mr-auto text-2xs font-bold uppercase tracking-wide text-muted">Sort by</p>

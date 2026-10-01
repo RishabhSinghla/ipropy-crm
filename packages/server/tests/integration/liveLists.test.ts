@@ -74,6 +74,6 @@ describe('live list attention and favourites', () => {
 
     const summary = await auth('post', `/api/ai/summarise/leads/${created.body.id}`).send({}).expect(200);
     expect(summary.body.summary).toContain(marker);
-    expect(summary.body.summary).toContain('Next action:');
+    expect(summary.body.summary).toContain('Next steps to close:');
   });
 });

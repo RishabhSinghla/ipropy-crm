@@ -2977,6 +2977,12 @@ reason — "it works on leads" is exactly how a module gets left behind.
 
 ### Sorting: nothing by default, and eight questions when you want one
 
+> **1 October 2026: reversed.** *"get rid off this no sorting in sorting and by
+> default it be recently updated"* — "No sorting" is gone from the menu and
+> `UNSORTED` is `updated_at DESC, id DESC` again. The record counter reads the
+> list's own ORDER BY now (`locateInList`), so it follows. See `SCREENS.md`,
+> *The counter, the call deck and the rewrite*.
+
 *"I need Nothing by default … when we Filter the data, The data have no sorting
 option by Default (Means The filter data are static records, these are not
 Dynamically sorting Changes)"*, then the eight, *"all sorting feature works

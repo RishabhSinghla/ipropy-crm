@@ -168,8 +168,10 @@ test('the desk offers the record, its fields and a way to delete it', async ({ p
   // action a thumb's width from Call was one accident waiting — so it is
   // reached rather than sitting in the open.
   await expect(desk.getByText('Basic Information')).toBeVisible();
+  // The menu's own Delete: a record with comments also carries one "Delete
+  // this comment" button per comment, and the newest-updated record is first.
   await desk.getByRole('button', { name: 'More actions' }).click();
-  await expect(page.getByRole('button', { name: /^Delete/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete record' })).toBeVisible();
 });
 
 test('the queue is faces and facts, with the completeness bar off it', async ({ page }) => {
@@ -258,15 +260,15 @@ test('the queue can be ticked in bulk and sorted from its own header', async ({ 
   */
   await page.getByRole('button', { name: 'Sort this list' }).click();
   await expect(page.getByRole('button', { name: 'Everyone' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('No sorting');
-
-  await page.getByTestId('queue-sort-menu').getByText('Recently updated', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('Recently updated');
 
-  // The direction is its own control, and it is dead until an order is chosen.
+  await page.getByTestId('queue-sort-menu').getByText('Recently created', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('Recently created');
+
+  // The direction is its own control, one for the whole menu.
   await page.getByRole('button', { name: 'Sort this list' }).click();
   await page.getByRole('button', { name: 'A–Z', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('Recently updated');
+  await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('Recently created');
 });
 
 test('the notes box sits under the timeline, and the fields in the right pane', async ({ page }) => {

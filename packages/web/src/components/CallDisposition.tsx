@@ -70,7 +70,7 @@ export function CallDispositionProvider({
   /** Canonical for Leads; legacy Inventory workspaces still use next_follow_up. */
   followUpField?: string;
   /** The next row in the current filtered and sorted split queue. */
-  queue?: { nextId: string | null; position: number | null; total: number | null; url: string };
+  queue?: { nextId: string | null | undefined; position: number | null; total: number | null; url: string };
   children: ReactNode;
 }): JSX.Element {
   const [params, setParams] = useSearchParams();
@@ -137,7 +137,8 @@ export function CallDispositionProvider({
     useLiveCall.getState().begin({
       userId, number, module, recordId, followUpField,
       ...(queue ? {
-        queueNextId: queue.nextId,
+        // Unknown yet: leave it out so the deck asks rather than deciding "nobody".
+        ...(queue.nextId !== undefined ? { queueNextId: queue.nextId } : {}),
         queuePosition: queue.position === null ? null : queue.position + 1,
         queueTotal: queue.total,
         queueUrl: queue.url,

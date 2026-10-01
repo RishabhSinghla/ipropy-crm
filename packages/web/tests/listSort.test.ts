@@ -7,9 +7,8 @@
  * Strength Wise, Task Wise' … else should be delete i.e Name, House, Portion,
  * category, Locality, Lead/Property Status."*
  *
- * Two things are worth pinning and neither is cosmetic: that nothing is chosen
- * when nothing has been asked for — a list that re-orders itself under a rep
- * working down it is what he was reporting — and that the menu no longer grows
+ * 1 October 2026 he reversed the first half: "No sorting" is gone and the
+ * default is Recently updated. What stays pinned is that the menu never grows
  * a row every time an admin flags a field.
  */
 import { describe, expect, it } from 'vitest';
@@ -19,7 +18,6 @@ describe('the list sort menu', () => {
   it('offers the eight he asked for, and nothing about a field', () => {
     const labels = sortOptions('next_followup_at').map((option) => option.label);
     expect(labels).toEqual([
-      'No sorting',
       'Recently updated',
       'Recently created',
       'Agent wise',
@@ -44,10 +42,12 @@ describe('the list sort menu', () => {
     expect(sortOptions('next_follow_up').find((o) => o.key === 'task')?.by).toBe('next_follow_up');
   });
 
-  it('chooses nothing when nothing has been asked for', () => {
+  // 1 October 2026: "No sorting" is gone and a list nobody sorted is
+  // Recently updated — the server's own default, so the button tells the truth.
+  it('reads Recently updated when nothing has been asked for', () => {
     const options = sortOptions('next_followup_at');
-    expect(activeSortOption(options, undefined)?.key).toBe('none');
-    expect(activeSortOption(options, undefined)?.by).toBeUndefined();
+    expect(activeSortOption(options, undefined)?.key).toBe('updated');
+    expect(options.some((option) => option.label === 'No sorting')).toBe(false);
   });
 
   it('finds the row for an order that is on', () => {
@@ -58,7 +58,7 @@ describe('the list sort menu', () => {
 
   /*
     A column heading clicked in the table view is none of the eight. Answering
-    "No sorting" there would tell somebody their list is unsorted while it is
+    Recently updated there would tell somebody their list is unsorted while it is
     plainly sorted by the column they just clicked.
   */
   it('claims none of them for a column the table sorted by', () => {

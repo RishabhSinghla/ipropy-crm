@@ -6,6 +6,8 @@ import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, type LiveCallState } from '../lib/api';
+import type { RecordEnvelope } from '@ipropy/shared';
+import { invalidateRecordQueries } from '../lib/invalidate';
 import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { saveNextUrl } from '../lib/saveNextUrl';
@@ -87,6 +89,19 @@ export interface CallDeckState {
   onDiscard: () => void;
 }
 
+/** The list a call was started from, as the neighbours endpoint reads it. */
+function queueContext(queueUrl: string | null | undefined): { view?: string; search?: string; filter?: string; sort?: string; dir?: string } {
+  if (!queueUrl) return {};
+  const params = new URL(queueUrl, 'https://crm.local').searchParams;
+  return {
+    ...(params.get('view') ? { view: params.get('view')! } : {}),
+    ...(params.get('q') ? { search: params.get('q')! } : {}),
+    ...(params.get('filter') ? { filter: params.get('filter')! } : {}),
+    ...(params.get('sort') ? { sort: params.get('sort')! } : {}),
+    ...(params.get('dir') ? { dir: params.get('dir')! } : {}),
+  };
+}
+
 /** The state and actions for the in-record call panel. Only call with a live call. */
 export function useCallDeckState(): CallDeckState {
   const call = useLiveCall((state) => state.call)!;
@@ -111,9 +126,15 @@ export function useCallDeckState(): CallDeckState {
     queryKey: ['record', call.module, call.recordId],
     queryFn: () => api.record(call.module, call.recordId),
   });
+  /*
+    Asked from the list the call was started in, never from the module as a
+    whole: a call begun before the queue knew who was next (the record after a
+    Save & Next rings the moment it opens) used to lose Save & Next entirely,
+    and an unfiltered answer would name somebody outside the rep's list.
+  */
   const { data: fallbackNeighbours } = useQuery({
-    queryKey: ['call-next', call.module, call.recordId],
-    queryFn: () => api.neighbours(call.module, call.recordId),
+    queryKey: ['call-next', call.module, call.recordId, call.queueUrl ?? null],
+    queryFn: () => api.neighbours(call.module, call.recordId, queueContext(call.queueUrl)),
     enabled: call.queueNextId === undefined,
     staleTime: 60_000,
   });
@@ -172,6 +193,29 @@ export function useCallDeckState(): CallDeckState {
     }
   };
 
+  /*
+    A date picked on the deck goes on the record now, not when the call is
+    saved — the right-hand pane shows the record, and a follow-up that only
+    appears there after Save reads as one that did not take (the owner,
+    1 October 2026). "Let the outcome decide" and "No follow-up" write nothing
+    yet: both are decided at Save, from the outcome chosen by then.
+  */
+  const chaseOn = async (day: string | null | undefined): Promise<void> => {
+    update({ chaseOverride: day });
+    if (typeof day !== 'string') return;
+    const { module, recordId, followUpField } = call;
+    queryClient.setQueryData<RecordEnvelope>(['record', module, recordId], (was) => (
+      was ? { ...was, values: { ...was.values, [followUpField]: day } } : was
+    ));
+    try {
+      await api.update(module, recordId, { [followUpField]: day });
+    } catch (err) {
+      toast.error('Could not set the follow-up', (err as Error).message);
+    } finally {
+      invalidateRecordQueries(queryClient, module, recordId);
+    }
+  };
+
   const save = async (andDialNext: boolean): Promise<void> => {
     if (saving) return;
     setSaving(true);
@@ -205,17 +249,9 @@ export function useCallDeckState(): CallDeckState {
       // the default Recently Updated sort. Refresh the saved neighbor's ordinal
       // after that write so the handoff page remains the page containing it.
       let nextPosition = call.queuePosition;
-      if (!progressiveMatches && goTo && call.queueUrl && call.queuePosition) {
+      if (!progressiveMatches && goTo && call.queueUrl) {
         try {
-          const source = new URL(call.queueUrl, window.location.origin);
-          const params = source.searchParams;
-          const refreshed = await api.neighbours(call.module, goTo, {
-            ...(params.get('view') ? { view: params.get('view')! } : {}),
-            ...(params.get('q') ? { search: params.get('q')! } : {}),
-            ...(params.get('filter') ? { filter: params.get('filter')! } : {}),
-            ...(params.get('sort') ? { sort: params.get('sort')! } : {}),
-            ...(params.get('dir') ? { dir: params.get('dir')! } : {}),
-          });
+          const refreshed = await api.neighbours(call.module, goTo, queueContext(call.queueUrl));
           if (refreshed.position) nextPosition = refreshed.position;
         } catch {
           // The captured queue position is a safe fallback during a transient
@@ -229,11 +265,9 @@ export function useCallDeckState(): CallDeckState {
       const advanced = progressiveMatches
         ? useProgressiveDialer.getState().advance(!andDialNext)
         : null;
+      invalidateRecordQueries(queryClient, module, recordId);
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record-calls', recordId] }),
-        queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }),
-        queryClient.invalidateQueries({ queryKey: ['record', module, recordId] }),
-        queryClient.invalidateQueries({ queryKey: ['records', module] }),
         queryClient.invalidateQueries({ queryKey: ['calls'] }),
       ]);
       // Keep the exact view/filter/sort/page context captured when the rep
@@ -284,7 +318,8 @@ export function useCallDeckState(): CallDeckState {
     onControl: (action, on) => void control(action, on),
     canEndCall: Boolean(report?.canEndCall) && report?.state !== 'ended',
     onHangUp: () => void hangUp(),
-    position: call.queuePosition ?? fallbackNeighbours?.position ?? null,
+    // `queuePosition` is the *next* record's place; this one sits just above it.
+    position: call.queuePosition ? call.queuePosition - 1 : fallbackNeighbours?.position ?? null,
     total: call.queueTotal ?? fallbackNeighbours?.total ?? null,
     who,
     outcomes,
@@ -294,7 +329,7 @@ export function useCallDeckState(): CallDeckState {
     // Not `?? null`: absent means "let the outcome decide" and null means
     // "chase nobody", and collapsing them makes the second unsayable.
     followUp: chaseOverride,
-    onFollowUp: (day) => update({ chaseOverride: day }),
+    onFollowUp: (day) => void chaseOn(day),
     saving,
     nextLabel,
     confirmNext: progressiveMatches,

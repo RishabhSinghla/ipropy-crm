@@ -693,9 +693,10 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
  * says so.
  */
 aiRouter.post('/rewrite-note', modelLimiter, asyncHandler(async (req, res) => {
-  const { text, style } = z.object({
+  const { text } = z.object({
     text: z.string().trim().min(1, 'Write something first').max(4_000),
-    style: z.enum(['polish', 'shorter', 'detailed']).optional(),
+    // Still accepted from a tab opened before Polish became the only rewrite.
+    style: z.string().optional(),
   }).parse(req.body);
   const { featureOn } = await import('../../core/settings/aiFeatures.js');
   const { rewriteNote, tidyNote } = await import('../../ai/rewriteNote.js');
@@ -703,7 +704,7 @@ aiRouter.post('/rewrite-note', modelLimiter, asyncHandler(async (req, res) => {
     res.json({ note: tidyNote(text), rewritten: false, reason: 'switched_off' });
     return;
   }
-  res.json(await rewriteNote(text, getUser(req).id, style));
+  res.json(await rewriteNote(text, getUser(req).id));
 }));
 
 /**

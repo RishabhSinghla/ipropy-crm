@@ -561,19 +561,18 @@ export function buildSearchClause(term: string, params: SqlParams): string {
 // ---------------------------------------------------------------------------
 
 /**
- * The order a list comes back in when nobody has chosen one.
+ * The order a list comes back in when nobody has chosen one: the record most
+ * recently changed first.
  *
- * **27 September 2026, the owner:** *"I need Nothing by default … the filter
- * data are static records, these are not Dynamically sorting Changes."* It
- * used to be `updated_at DESC`, so touching a record sent it to the top of the
- * list the rep was working down — the queue reshuffling under their thumb.
- * When a record was *added* never changes, so this order holds still.
+ * **1 October 2026, the owner:** *"get rid off this no sorting in sorting and
+ * by default it be recently updated"*. That reverses 27 September, when the
+ * default was when a record was *added* so a worked list held still; the menu
+ * no longer offers "No sorting" at all.
  *
- * A list must still come back in *some* order, and it has to be the same one
- * every time or page two would repeat page one's rows: the record id is the
- * final tie breaker for exactly that reason.
+ * The record id is the final tie breaker, so a list comes back in the same
+ * order every time and page two never repeats page one's rows.
  */
-const UNSORTED = `${RECORD_ALIAS}.created_at DESC, ${RECORD_ALIAS}.id DESC`;
+const UNSORTED = `${RECORD_ALIAS}.updated_at DESC, ${RECORD_ALIAS}.id DESC`;
 
 /**
  * Orderings that are about a record without being a field on it.

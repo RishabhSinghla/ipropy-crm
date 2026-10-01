@@ -15,7 +15,6 @@
  * say so rather than pretending a model rewrote it.
  */
 import { aiStatus, complete } from './client.js';
-import { jobModel } from '../core/settings/aiModels.js';
 import { toLatin } from './devanagari.js';
 
 /** Plain tidy with no model: spaces, capital letters, a full stop. */
@@ -34,17 +33,14 @@ export function tidyNote(text: string): string {
   return /[.!?)…:]$/.test(joined) ? joined : `${joined}.`;
 }
 
-/** How the rep wants it rewritten — the three choices other writing tools offer. */
-export type RewriteStyle = 'polish' | 'shorter' | 'detailed';
-
-const STYLE_ASK: Record<RewriteStyle, string> = {
-  polish: 'Make it read well: complete, clear sentences. Turn shorthand into words '
-    + '("cl bk tmrw" becomes "call back tomorrow", "bdgt 1.2cr" becomes "budget 1.2 Cr"). '
-    + 'Put separate facts on separate lines when there are several.',
-  shorter: 'Make it as short as it can be while keeping every fact: a few crisp lines, no filler words.',
-  detailed: 'Make it fuller and easier for a colleague to act on: spell out shorthand, give each fact '
-    + 'its own line, and make clear what happened and what was agreed — but only from what the note says.',
-};
+/*
+  One rewrite, and it is the fuller one. The owner, 1 October 2026: Polish,
+  Shorter and More detail were three answers to choose between, and he wants
+  only More detail — a note a colleague can pick up and act on.
+*/
+const ASK = 'Make it fuller and easier for a colleague to act on: spell out shorthand '
+  + '("cl bk tmrw" becomes "call back tomorrow", "bdgt 1.2cr" becomes "budget 1.2 Cr"), give each fact '
+  + 'its own line, and make clear what happened and what was agreed — but only from what the note says.';
 
 export interface RewriteAnswer {
   note: string;
@@ -55,28 +51,28 @@ export interface RewriteAnswer {
 }
 
 /*
-  The admin's chosen writing model (Admin → AI models → copy), the same one
-  voice notes are tidied with — not the provider's quick model. The quick one
-  answered "test" with "Test." and little else, which is how the button came
-  to look broken on 1 October 2026.
+  The provider's quick model, on purpose. Measured on production, 1 October
+  2026: Gemini Flash-Lite answered notes in about 1.4 seconds, the writing
+  model (Admin → AI models → copy) in about 6 and up to 10 — and a button a
+  rep presses mid-conversation has to come back while they are still looking.
 */
-export async function rewriteNote(text: string, userId: string, style: RewriteStyle = 'polish'): Promise<RewriteAnswer> {
+export async function rewriteNote(text: string, userId: string): Promise<RewriteAnswer> {
   if (!aiStatus().available) return { note: tidyNote(text), rewritten: false, reason: 'no_ai' };
   const answer = await complete({
     feature: 'note_rewrite',
-    ...(await jobModel('copy')),
+    fast: true,
     system: 'You rewrite notes a property sales team leaves on a customer record. '
       + 'You keep the language the note was written in: English stays English, Hindi stays Hindi, '
       + 'Hinglish stays Hinglish in Latin script. You never translate. You never add a fact, a number, '
       + 'a name or a next step that is not in the note. You sound like a friendly, capable colleague, '
       + 'never corporate.',
     prompt: `Rewrite this note.\n\n"""${text.slice(0, 4_000)}"""\n\n`
-      + `${STYLE_ASK[style]}\n`
+      + `${ASK}\n`
       + '- Fix spelling, grammar and punctuation.\n'
       + '- Keep every number, name, date and amount exactly as written.\n'
       + '- No greeting, no heading, no sign-off, no quotes around it. Keep any emoji or @mention it already has.\n\n'
       + 'Return only the rewritten note.',
-    maxTokens: 800,
+    maxTokens: 600,
     // A little variety, so "Try again" can offer a different wording.
     temperature: 0.6,
     userId,

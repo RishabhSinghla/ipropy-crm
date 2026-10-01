@@ -1348,10 +1348,9 @@ of WhatsApp; today's follow-ups are the Task button over each list.
 
 **1 October 2026, five more:**
 
-* **Rewrite with AI uses the writing model** (`jobModel('copy')`), not the
-  provider's quick one — the live log showed six rewrites averaging four words
-  out, which read as "not working". It offers **Polish · Shorter · More
-  detail** and **Try again**, always rewriting the rep's own words, and says
+* **Rewrite with AI** — *later the same day this changed again; see "The
+  counter, the call deck and the rewrite" below.* It offered **Polish ·
+  Shorter · More detail** and **Try again**, always rewriting the rep's own words, and says
   the true reason when no model wrote it (`reason`: `no_ai`, `no_answer`,
   `switched_off`) instead of always "AI is not set up".
 * **Summarise with AI is three headings of short bullets** — *Who*, *Where it
@@ -1375,3 +1374,41 @@ of WhatsApp; today's follow-ups are the Task button over each list.
 needed"*. Migration `182` deletes the live row and tombstones it, so a cold
 start's seed cannot bring it back; the template no longer lists it. **Unread
 Leads** stays.
+
+## The counter, the call deck and the rewrite — 1 October 2026
+
+**The "2 / 25,458" on the first record.** The counter beside the arrows was
+worked out from a cursor in a *different order* from the list (last changed,
+where the list was newest added), read timestamps through JavaScript — which
+drops the microseconds, so records imported in the same instant could not be
+told apart — and could not compare the orderings that are not a field (agent
+name, profile strength, last call) at all. Now `locateInList` in
+`recordService.ts` asks the database where the record sits with a window
+function over **the list's own WHERE and ORDER BY** (`prepareList`, shared with
+`listRecords`), so the two cannot disagree. A record that has left the list
+answers `position: null` and the header shows `—`. Every record edit refreshes
+the counter (`invalidateRecordQueries`), because in a Recently updated list an
+edit moves the record. Pinned by `theCounterCountsTheListOnScreen.test.ts`.
+
+**"No sorting" is gone; the default is Recently updated** — the owner's
+instruction, reversing 27 September. `UNSORTED` in `core/query/builder.ts` is
+`updated_at DESC, id DESC`, and the sort button reads *Recently updated* when
+nothing was chosen.
+
+**Save & Next went missing after the first Save & Next.** The next record
+rings the moment it opens, before its neighbours have loaded, so the call
+froze "nobody is next". The workspace now passes `nextId: undefined` until the
+answer arrives, and the deck asks for itself — from the call's own queue
+(`queueContext(call.queueUrl)`), never the whole module.
+
+**A follow-up picked on the call deck is written to the record at once**
+(`chaseOn` in `LiveCallDeck.tsx`), so the right pane shows it during the call
+rather than after Save. *Let the outcome decide* and *No follow-up* still
+decide at Save.
+
+**Rewrite with AI is one answer, the More detail one**, on the notes box and
+now in the comment **edit** box too (with *Undo*; nothing saves until Save).
+It runs on the provider's quick model (`fast: true`): measured on production,
+Gemini Flash-Lite answered in about 1.4 s, the writing model in about 6 and up
+to 10. `.github/workflows/ai-failures.yml` now prints each model's median and
+slow answer times.

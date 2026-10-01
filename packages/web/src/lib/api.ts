@@ -845,8 +845,8 @@ export const api = {
   deleteComment: (module: string, id: string, commentId: string) =>
     del(`/api/records/${module}/${id}/comments/${commentId}`),
   /** A note rewritten so it reads nicely. Nothing is saved; `rewritten: false` means no model ran. */
-  rewriteNote: (text: string, style: 'polish' | 'shorter' | 'detailed' = 'polish') =>
-    post<{ note: string; rewritten: boolean; reason?: 'no_ai' | 'no_answer' | 'switched_off' }>('/api/ai/rewrite-note', { text, style }),
+  rewriteNote: (text: string) =>
+    post<{ note: string; rewritten: boolean; reason?: 'no_ai' | 'no_answer' | 'switched_off' }>('/api/ai/rewrite-note', { text }),
   related: (module: string, id: string, relation: string, page = 1) =>
     get<ListResult & { relation: Record<string, unknown> }>(`/api/records/${module}/${id}/related/${relation}${qs({ page })}`),
   linkRelated: (module: string, id: string, relation: string, targetId: string) =>

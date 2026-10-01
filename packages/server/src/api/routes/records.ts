@@ -769,9 +769,8 @@ recordsRouter.delete('/:module/:id/related/:relation/:targetId', asyncHandler(as
  * refresh): no entry, both arrows dead. This answers the question properly,
  * from the same saved view and sort the back button restores.
  *
- * The cursor is the sort value of this record, with the record id breaking
- * ties, reusing the list engine's own filter/sort so permissions and hidden
- * fields apply identically.
+ * `locateInList` counts it with the list engine's own filter, permissions and
+ * ORDER BY, so the header and the list cannot disagree about the order.
  */
 recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
   const scope = getScope(req);
@@ -783,104 +782,16 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
   const sortParam = listInput.sortBy ?? (typeof req.query.sort === 'string' && req.query.sort ? req.query.sort : undefined);
   const dirParam = listInput.sortDir ?? (req.query.dir === 'asc' ? 'asc' as const : req.query.dir === 'desc' ? 'desc' as const : undefined);
 
-  const current = await recordService.getRecord(scope, moduleName, id);
-  const view = viewId
-    ? await db.queryOne<{ filter: FilterGroup; sort_by: string | null; sort_dir: string }>(
-      `SELECT filter, sort_by, sort_dir FROM ipy_view WHERE id = $1`, [viewId])
-    : null;
-
-  // This must match buildOrderBy's list default exactly.  Using created_at
-  // here while the list defaulted to updated_at made a top-row record claim
-  // it was e.g. 28 / 22,983 and made next/previous jump to another ordering.
-  const field = sortParam ?? view?.sort_by ?? 'updated_at';
-  // The direction comes from ?dir, or the view's, or the list default. (The
-  // sort FIELD and the direction are two different things; conflating them
-  // once produced a cursor that never matched and neighbours from the wrong
-  // end of the table.)
-  const dir: 'asc' | 'desc' = dirParam ?? (view?.sort_dir === 'asc' ? 'asc' : 'desc');
-  const value = (current.values as Record<string, unknown>)[field];
-
-  // No comparable value (a blank sort field on this record): say so rather
-  // than guess, and the UI keeps the arrows idle.
-  if (value === null || value === undefined) {
-    res.json({ prevId: null, nextId: null });
-    return;
-  }
-
-  const atOrTie = (op: 'greater_than' | 'less_than'): FilterGroup => ({
-    // A record with no value for the sort field has no position in the list;
-    // the explicit not-empty guard keeps it out of both branches whatever the
-    // comparison engine does with NULL.
-    logic: 'AND',
-    conditions: [
-      { field, operator: 'is_not_empty' },
-      /*
-        A record is never its own neighbour. Said outright, because leaving it
-        to the value comparison is what broke the back arrow.
-
-        Postgres keeps timestamps to the microsecond and a JavaScript Date only
-        to the millisecond, so a `created_at` of `04:34:17.534234` reaches this
-        filter as `04:34:17.534`. On the default newest-first list "previous"
-        asks for `created_at > .534000` — and `.534234` is greater, so every
-        record matched itself and the arrow reloaded the page you were already
-        on. "Next" asks for `< .534000`, which excludes it, which is why only
-        one arrow appeared broken.
-
-        The equality tiebreak below cannot save it either: the two values are
-        not equal once one has been truncated. Excluding the id is exact,
-        needs no precision at all, and is what the rule actually means.
-      */
-      { field: 'id', operator: 'not_equals', value: id },
-      {
-        logic: 'OR',
-        conditions: [
-          { field, operator: op, value },
-          { logic: 'AND', conditions: [{ field, operator: 'equals', value }, { field: 'id', operator: op, value: id }] },
-        ],
-      },
-    ],
-  });
-
-  const queryWithCursor = (cursor: FilterGroup): ListQuery => ({
-    ...(viewId ? { view: viewId } : {}),
-    ...(listInput.search ? { search: listInput.search } : {}),
-    filter: listInput.filter ? { logic: 'AND', conditions: [...listInput.filter.conditions, ...cursor.conditions] } : cursor,
-    sortBy: field,
-    sortDir: dir,
-    page: 1,
-    pageSize: 1,
-  });
-
-  const neighbour = async (which: 'prev' | 'next'): Promise<string | null> => {
-    // "Next" walks the list in its own direction from the cursor; "prev"
-    // walks the same list backwards, so both are one row fetches.
-    const forward = which === 'next';
-    const filter: FilterGroup = forward
-      ? atOrTie(dir === 'asc' ? 'greater_than' : 'less_than')
-      : atOrTie(dir === 'asc' ? 'less_than' : 'greater_than');
-    const result = await recordService.listRecords(scope, moduleName, {
-      ...queryWithCursor(filter),
-      sortDir: forward ? dir : dir === 'asc' ? 'desc' : 'asc',
-    });
-    if (process.env.NEIGHBOUR_DEBUG) console.log("NB", which, JSON.stringify(filter), "row budget:", result.rows[0]?.values?.budget ?? null, result.rows[0]?.id ?? null);
-    return result.rows[0]?.id ?? null;
-  };
-
-  // The header counter must describe the whole filtered result, not the 25
-  // ids that the browser happened to have rendered on the list page.
-  const all = await recordService.listRecords(scope, moduleName, {
+  // Throws if this person cannot open the record, before anything is counted.
+  await recordService.getRecord(scope, moduleName, id);
+  const placed = await recordService.locateInList(scope, moduleName, {
     ...(viewId ? { view: viewId } : {}),
     ...(listInput.search ? { search: listInput.search } : {}),
     ...(listInput.filter ? { filter: listInput.filter } : {}),
-    page: 1, pageSize: 1, sortBy: field, sortDir: dir,
-  });
-  const before = await recordService.listRecords(scope, moduleName, queryWithCursor(atOrTie(dir === 'asc' ? 'less_than' : 'greater_than')));
-  res.json({
-    prevId: await neighbour('prev'),
-    nextId: await neighbour('next'),
-    position: before.total + 1,
-    total: all.total,
-  });
+    ...(sortParam ? { sortBy: sortParam } : {}),
+    ...(dirParam ? { sortDir: dirParam } : {}),
+  }, id);
+  res.json(placed);
 }));
 
 // Tags, stars, sharing

@@ -134,28 +134,37 @@ describe('record neighbours', () => {
     expect(await budgetOf(top.body.nextId!)).toBe(await closestBudget(made[4], 500, 'below'));
   });
 
-  it('leaves the true end of the list with one working arrow', async () => {
-    // A descending list ends at the smallest budget there is. Which record
-    // that is depends on what else the suite has created, so ask.
+  it('steps past the smallest budget into the blanks, as the list does', async () => {
+    // A descending list runs down to the smallest budget and then on into the
+    // records with no budget at all (NULLS LAST). Which record is next depends
+    // on what else the suite has created, so ask.
     const below = await closestBudget(made[0], 100, 'below');
 
     const bottom = await neighbours(made[0], '?sort=budget&dir=desc');
     expect(await budgetOf(bottom.body.prevId!)).toBe(await closestBudget(made[0], 100, 'above'));
-    if (below === null) expect(bottom.body.nextId, 'nothing sits below the end of the list').toBeNull();
-    else expect(await budgetOf(bottom.body.nextId!)).toBe(below);
+    if (below === null) {
+      if (bottom.body.nextId) expect(await budgetOf(bottom.body.nextId), 'only a blank budget sorts after the smallest').toBeNull();
+    } else expect(await budgetOf(bottom.body.nextId!)).toBe(below);
   });
 
-  it('answers nothing for a record whose sort value is blank', async () => {
+  it('puts a record whose sort value is blank at the end, where the list shows it', async () => {
     const blank = await recordService.createRecord(await adminContext(), 'leads', {
       full_name: `Neighbour blank ${Date.now()}`,
       mobile: `9${String(900000000 + Date.now() % 100000000).slice(-9)}`,
     });
     made.push(blank.id);
 
-    const res = await neighbours(blank.id, '?sort=budget&dir=desc');
+    // The list sorts blanks last (NULLS LAST), so the counter must too —
+    // it used to answer nothing at all, and the arrows went dead.
+    const res = await request(app)
+      .get(`/api/records/leads/${blank.id}/neighbours?sort=budget&dir=desc`)
+      .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
-    expect(res.body.prevId).toBeNull();
-    expect(res.body.nextId).toBeNull();
+    const list = await recordService.listRecords(await adminContext(), 'leads', { sortBy: 'budget', sortDir: 'desc', pageSize: 500 });
+    const at = list.rows.findIndex((row) => row.id === blank.id);
+    expect(at).toBeGreaterThan(-1);
+    expect(res.body.position).toBe(at + 1);
+    expect(res.body.prevId).toBe(list.rows[at - 1]?.id ?? null);
   });
 
   it('refuses a stranger asking about someone else\'s record', async () => {

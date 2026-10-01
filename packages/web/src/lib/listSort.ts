@@ -15,18 +15,22 @@
  * A–Z" is for. These eight are questions somebody actually has, they are the
  * same eight in both modules, and each one is one row with one direction.
  *
+ * **1 October 2026:** "No sorting" is gone, on the owner's instruction, and a
+ * list nobody has sorted is Recently updated, newest first — which is also
+ * what the server answers when no order is named.
+ *
  * Pure, so a `node` test reads it without the store: what matters here is that
- * nothing is chosen by default, that every option carries a direction, and
+ * Recently updated is the default, that every option carries a direction, and
  * that the two the modules name for themselves — the task date — are found
  * through metadata rather than written down.
  */
 
-/** One row of the sort menu. `by` absent means no sorting at all. */
+/** One row of the sort menu. */
 export interface SortOption {
   key: string;
   label: string;
-  /** What the server is asked to order by. `undefined` is "leave it alone". */
-  by?: string;
+  /** What the server is asked to order by. */
+  by: string;
   /** What A–Z and Z–A mean for this one, for the hover. */
   ascHint: string;
   descHint: string;
@@ -44,7 +48,6 @@ const OLDEST = 'Oldest first';
  */
 export function sortOptions(taskField?: string): SortOption[] {
   const options: SortOption[] = [
-    { key: 'none', label: 'No sorting', ascHint: 'As the records were added', descHint: 'As the records were added' },
     { key: 'updated', label: 'Recently updated', by: 'updated_at', ascHint: OLDEST, descHint: NEWEST },
     { key: 'created', label: 'Recently created', by: 'created_at', ascHint: OLDEST, descHint: NEWEST },
     { key: 'agent', label: 'Agent wise', by: 'owner_id', ascHint: 'Agent name A–Z', descHint: 'Agent name Z–A' },
@@ -64,7 +67,7 @@ export function sortOptions(taskField?: string): SortOption[] {
 /**
  * Which row of the menu is on, given what the list is actually sorted by.
  *
- * Nothing chosen is the first row, which is the whole of "Nothing by default".
+ * Nothing chosen is the first row, Recently updated — the server's own default.
  * A column heading somebody clicked in the table view is none of these — the
  * table sorts by its own columns and always has — so that answers null and the
  * button says which field it is instead of claiming one of these eight.

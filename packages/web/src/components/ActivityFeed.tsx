@@ -16,7 +16,7 @@
 import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime, type TimelineEntry } from '@ipropy/shared';
-import { Activity, Check, CheckCheck, History, Mail, MessageSquare, Paperclip, Pencil, Trash2, PhoneIncoming, PhoneMissed, PhoneOutgoing, RefreshCw } from 'lucide-react';
+import { Activity, Check, CheckCheck, History, Mail, MessageSquare, Paperclip, Pencil, Trash2, PhoneIncoming, PhoneMissed, PhoneOutgoing, RefreshCw, Sparkles } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -228,11 +228,34 @@ function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry
     try {
       await api.editComment(module, recordId, commentId, draft.trim());
       setDraft(null);
+      setBeforeRewrite(null);
       await queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] });
     } catch (err) {
       toast.error('Could not save the comment', (err as Error).message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  /*
+    Rewrite with AI while editing, the same More detail rewrite the notes box
+    offers (the owner, 1 October 2026). It goes into the edit box, not onto the
+    comment: nothing is saved until Save, and Undo puts their words back.
+  */
+  const [rewriting, setRewriting] = useState(false);
+  const [beforeRewrite, setBeforeRewrite] = useState<string | null>(null);
+  const rewrite = async (): Promise<void> => {
+    if (!draft?.trim()) return;
+    setRewriting(true);
+    try {
+      const answer = await api.rewriteNote(draft.trim());
+      if (!answer.rewritten) toast.info('Only tidied', answer.reason === 'no_answer' ? 'The AI did not answer just now — try again.' : 'AI rewriting is not available, so only spacing and capitals were tidied.');
+      setBeforeRewrite(draft);
+      setDraft(answer.note);
+    } catch (err) {
+      toast.error('Could not rewrite that', (err as Error).message);
+    } finally {
+      setRewriting(false);
     }
   };
 
@@ -270,8 +293,21 @@ function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry
               rows={Math.min(8, Math.max(2, draft.split('\n').length))}
               className="input w-72 max-w-full resize-y p-2 text-xs"
             />
-            <span className="mt-1.5 flex justify-end gap-1.5">
-              <button type="button" className="btn-secondary btn-sm" onClick={() => setDraft(null)} disabled={saving}>Cancel</button>
+            <span className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => void rewrite()}
+                disabled={rewriting || saving || !draft.trim()}
+                title="Rewrite it with more detail — nothing is saved until you press Save"
+                className="mr-auto inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:text-brand-300 dark:hover:bg-slate-700"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {rewriting ? 'Rewriting…' : 'Rewrite with AI'}
+              </button>
+              {beforeRewrite !== null && (
+                <button type="button" className="btn-secondary btn-sm" onClick={() => { setDraft(beforeRewrite); setBeforeRewrite(null); }}>Undo</button>
+              )}
+              <button type="button" className="btn-secondary btn-sm" onClick={() => { setDraft(null); setBeforeRewrite(null); }} disabled={saving}>Cancel</button>
               <button type="button" className="btn-primary btn-sm" onClick={() => void save()} disabled={saving || !draft.trim()}>
                 {saving ? 'Saving…' : 'Save'}
               </button>

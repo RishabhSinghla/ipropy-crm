@@ -28,6 +28,15 @@ export function invalidateRecordQueries(qc: QueryClient, module?: string, id?: s
   void qc.invalidateQueries({ queryKey: ['unseen-counts'] });
   void qc.invalidateQueries({ queryKey: ['starred'] });
 
+  /*
+    The "3 / 25,458" counter and the arrows beside it. The list's default is
+    Recently updated, so any edit moves a record — and a counter left over from
+    before the edit names a place the record no longer holds.
+  */
+  void qc.invalidateQueries({ queryKey: ['record-neighbours'] });
+  void qc.invalidateQueries({ queryKey: ['neighbours'] });
+  void qc.invalidateQueries({ queryKey: ['call-next'] });
+
   if (module && id) {
     void qc.invalidateQueries({ queryKey: ['record', module, id] });
     void qc.invalidateQueries({ queryKey: ['timeline', module, id] });
