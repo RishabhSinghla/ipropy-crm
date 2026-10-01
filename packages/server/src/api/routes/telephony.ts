@@ -988,6 +988,23 @@ telephonyRouter.post('/dial/:id/result', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/** Clear away revoked, never-connected and replaced phones in one go. */
+telephonyRouter.post('/devices/clean-up', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const { deleteStaleDevices } = await import('../../integrations/telephony/deviceSync.js');
+  res.json({ removed: await deleteStaleDevices(user.id, user.isAdmin) });
+}));
+
+/** Remove one phone for good. Calls it logged stay on their records. */
+telephonyRouter.delete('/devices/:id/permanently', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const { deleteDevice } = await import('../../integrations/telephony/deviceSync.js');
+  if (!await deleteDevice(req.params.id, user.id, user.isAdmin)) throw new NotFoundError('That phone is not yours or is already gone.');
+  res.json({ ok: true });
+}));
+
 telephonyRouter.delete('/devices/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'telephony.call');

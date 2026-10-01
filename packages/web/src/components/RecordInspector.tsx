@@ -64,7 +64,7 @@ export function RecordInspector({ module, row, canEdit, blocks, rows, assignedFi
     .filter((block, index) => index === 0 || block.fields.length > 0);
 
   return (
-    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3.5" data-testid="record-inspector">
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3.5 xl:pl-7" data-testid="record-inspector">
       {sections.map((block, index) => (
         <section key={block.key}>
           <h3 className="mb-2 flex items-center gap-1.5 border-b border-[var(--border)] pb-1.5 text-xs font-bold text-slate-900 dark:text-slate-100">

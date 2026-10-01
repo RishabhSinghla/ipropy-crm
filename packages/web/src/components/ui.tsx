@@ -484,7 +484,7 @@ export function ToastHost(): JSX.Element {
               {t.body && <p className="mt-0.5 text-xs text-muted">{t.body}</p>}
             </div>
           )}
-          <button onClick={() => dismiss(t.id)} className="shrink-0 text-slate-400 hover:text-slate-600">
+          <button onClick={() => dismiss(t.id)} aria-label="Dismiss message" title="Dismiss" className="shrink-0 text-slate-400 hover:text-slate-600">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>

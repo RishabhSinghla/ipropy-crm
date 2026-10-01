@@ -1,4 +1,5 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SummaryText } from './SummaryText';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
@@ -366,7 +367,6 @@ export function IpropyWorkspace({
     setPaneFoldedState(folded);
     try { localStorage.setItem(`${SPLIT_KEY}.detailsFolded`, folded ? '1' : '0'); } catch { /* see loadSplit */ }
   }, []);
-  const paneOpen = !paneFolded || Boolean(filterBar?.open);
 
   const resize = useCallback((delta: number) => {
     const [min, max] = QUEUE_LIMITS;
@@ -511,6 +511,10 @@ export function IpropyWorkspace({
   const canEdit = active?.can?.edit ?? module.permissions.edit;
   // Light the Call action while this record owns the permanent deck's live call.
   const onCall = useCallIsOn(module.name, active?.id ?? '');
+  // A folded pane opens itself while the filters or a call on this record are
+  // up — the call deck lives in it (the owner, 3 October 2026: pressing Call
+  // should not need the pane opening by hand). It folds back when the call ends.
+  const paneOpen = !paneFolded || Boolean(filterBar?.open) || onCall;
   const allChecked = rows.length > 0 && rows.every((row) => selected.has(row.id));
 
   /*
@@ -935,7 +939,8 @@ export function IpropyWorkspace({
             The content keeps its own width while the pane narrows round it, so
             nothing reflows mid-slide; it fades, and `inert` keeps a folded
             pane out of the Tab order. The Quick & Live Filters panel still
-            opens here, so a folded pane opens itself while it shows.
+            opens here, so a folded pane opens itself while it shows — and while a
+            call on this record is up, since the call deck lives here too.
           */}
           {paneOpen ? (
             <button
@@ -944,10 +949,10 @@ export function IpropyWorkspace({
               title="Fold the details away"
               aria-label="Fold the details pane"
               aria-expanded
-              className="absolute left-0 top-1/2 z-20 hidden h-10 w-3.5 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-slate-200 bg-white text-slate-500 shadow-xs transition hover:w-5 hover:bg-brand-600 hover:text-white xl:flex dark:border-slate-700 dark:bg-slate-800"
+              className="absolute left-0 top-1/2 z-20 hidden h-12 w-5 -translate-y-1/2 items-center justify-center rounded-r-lg bg-brand-600 text-white shadow-md transition hover:w-6 hover:bg-brand-700 xl:flex"
               data-testid="fold-details"
             >
-              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+              <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2.5} />
             </button>
           ) : (
             <button
@@ -956,10 +961,10 @@ export function IpropyWorkspace({
               title="Show the details"
               aria-label="Show the details pane"
               aria-expanded={false}
-              className="absolute inset-0 z-20 flex items-center justify-center gap-2 text-slate-500 transition hover:bg-brand-50 hover:text-brand-700 xl:flex-col xl:justify-start xl:pt-3 dark:hover:bg-slate-800"
+              className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-brand-50 text-brand-700 transition hover:bg-brand-100 xl:flex-col xl:justify-start xl:pt-3 dark:bg-slate-800 dark:text-brand-300 dark:hover:bg-slate-700"
               data-testid="unfold-details"
             >
-              <ChevronLeft className="h-4 w-4 shrink-0 max-xl:-rotate-90" />
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm"><ChevronLeft className="h-4 w-4 max-xl:-rotate-90" strokeWidth={2.5} /></span>
               <span className="text-[11px] font-bold uppercase tracking-widest xl:[writing-mode:vertical-rl] xl:rotate-180">Details</span>
             </button>
           )}
@@ -1013,7 +1018,7 @@ export function IpropyWorkspace({
     >
       <div className="space-y-3">
         <div className="rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm leading-6 text-slate-700 dark:border-brand-900 dark:bg-brand-950 dark:text-slate-200">
-          {summary}
+          <SummaryText text={summary ?? ''} />
         </div>
         <p className="text-xs text-muted">
           Built only from the CRM fields and activity you are allowed to see; missing facts are not invented.

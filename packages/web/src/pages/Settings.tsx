@@ -989,6 +989,16 @@ function GetTheApp(): JSX.Element | null {
         are questions the handset will put to whoever is holding it, one at a
         time, with the app's own checklist in front of them.
       */}
+      {/*
+        Folded away until somebody is actually installing — on 1 October 2026
+        the owner opened this page and found the wall of steps "terrifying".
+        Nothing in it changed; it simply waits behind one line.
+      */}
+      <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
+        <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-brand-700 hover:bg-slate-50 dark:text-brand-300 dark:hover:bg-slate-800">
+          How to install it on a phone
+        </summary>
+        <div className="space-y-4 border-t border-slate-100 p-3 dark:border-slate-800">
       <div className="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
         <p className="text-sm font-medium">What the phone will ask you to allow</p>
         <ul className="mt-2 space-y-1 text-2xs text-muted">
@@ -1003,7 +1013,7 @@ function GetTheApp(): JSX.Element | null {
         </p>
       </div>
 
-      <ol className="space-y-2 border-t border-slate-100 pt-4 text-sm text-muted dark:border-slate-800">
+      <ol className="space-y-2 text-sm text-muted">
         {/*
           Step zero, and it is the one that stops people. A new signing key was
           generated on 20 September 2026, so a handset still on 1.0.0 — which
@@ -1039,12 +1049,14 @@ function GetTheApp(): JSX.Element | null {
           the time&quot;.
         </li>
         <li>
-          <span className="font-medium text-slate-700 dark:text-slate-200">4. On Xiaomi, Oppo, Vivo or Realme, turn on Autostart.</span>{' '}
+          <span className="font-medium text-slate-700 dark:text-slate-200">5. On Xiaomi, Oppo, Vivo or Realme, turn on Autostart.</span>{' '}
           In the phone&apos;s own app settings, switch Autostart on and set battery to No
           restrictions. Skip this and the phone stops reporting a day or two later with nothing to
           show why.
         </li>
       </ol>
+        </div>
+      </details>
     </div>
   );
 }
@@ -1263,19 +1275,41 @@ function ThisPhone(): JSX.Element | null {
 function PhonesTab(): JSX.Element {
   const { user } = useApp();
   const [pairOpen, setPairOpen] = useState(false);
-  const [revoking, setRevoking] = useState<{ id: string; label: string } | null>(null);
+  const queryClient = useQueryClient();
+  const [deleting, setDeleting] = useState<{ id: string; label: string } | null>(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [showOld, setShowOld] = useState(false);
   const { data: devices, isLoading, refetch } = useQuery({
     queryKey: ['device-phones'],
     queryFn: () => api.devices(),
   });
-
-  const revokeNow = async (): Promise<void> => {
-    if (!revoking) return;
-    await api.revokeDevice(revoking.id);
-    toast.success('Device revoked', 'It can no longer sync calls.');
-    setRevoking(null);
+  // The reachability card above reads its own copy of the same list.
+  const refreshAll = async (): Promise<void> => {
     await refetch();
+    void queryClient.invalidateQueries({ queryKey: ['devices'] });
   };
+
+  /*
+    Delete, not just revoke — the owner, 1 October 2026: *"no delete button
+    why"*. Every reinstall paired the phone again, so the list filled with
+    rows for one handset. The calls a phone logged stay on their records.
+  */
+  const deleteNow = async (): Promise<void> => {
+    if (!deleting) return;
+    await api.deleteDevice(deleting.id);
+    toast.success('Phone removed', 'Calls it logged stay on the records.');
+    setDeleting(null);
+    await refreshAll();
+  };
+  const cleanUpNow = async (): Promise<void> => {
+    const { removed } = await api.cleanUpDevices();
+    toast.success(removed ? `${removed} old phone${removed === 1 ? '' : 's'} removed` : 'Nothing to clean up', removed ? 'Calls they logged stay on the records.' : undefined);
+    setCleaning(false);
+    await refreshAll();
+  };
+  const allDevices = (devices ?? []) as { is_active: boolean }[];
+  const revokedCount = allDevices.filter((d) => !d.is_active).length;
+  const shownDevices = (devices ?? []).filter((d) => showOld || (d as { is_active: boolean }).is_active);
 
   return (
     <div className="space-y-4">
@@ -1307,9 +1341,16 @@ function PhonesTab(): JSX.Element {
             still issues a token by hand, for the older companion app.
           </p>
         </div>
-        <button className="btn-primary btn-sm shrink-0" onClick={() => setPairOpen(true)}>
-          <Plus className="h-3.5 w-3.5" /> Pair a phone
-        </button>
+        <div className="flex shrink-0 gap-2">
+          {allDevices.length > 1 && (
+            <button className="btn-secondary btn-sm" onClick={() => setCleaning(true)} data-testid="clean-up-phones">
+              <Trash2 className="h-3.5 w-3.5" /> Clean up old phones
+            </button>
+          )}
+          <button className="btn-primary btn-sm" onClick={() => setPairOpen(true)}>
+            <Plus className="h-3.5 w-3.5" /> Pair a phone
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -1324,8 +1365,9 @@ function PhonesTab(): JSX.Element {
           body="Pair the first handset and every call it makes or takes will show up in the CRM automatically."
         />
       ) : (
+        <>
         <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
-          {(devices ?? []).map((raw) => {
+          {shownDevices.map((raw) => {
             const d = raw as {
               id: string; label: string | null; platform: string | null;
               token_preview: string | null; phone_number: string | null; model: string | null;
@@ -1371,19 +1413,24 @@ function PhonesTab(): JSX.Element {
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <Badge color="#10b981">{d.call_count} calls logged</Badge>
-                  {d.is_active && (
-                    <button
-                      className="btn-ghost btn-sm text-negative"
-                      onClick={() => setRevoking({ id: d.id, label: d.label ?? 'this phone' })}
-                    >
-                      Revoke
-                    </button>
-                  )}
+                  <button
+                    className="btn-ghost btn-sm text-negative"
+                    onClick={() => setDeleting({ id: d.id, label: d.label ?? 'this phone' })}
+                    aria-label={`Delete ${d.label ?? 'this phone'}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </button>
                 </div>
               </li>
             );
           })}
         </ul>
+        {revokedCount > 0 && (
+          <button type="button" className="text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300" onClick={() => setShowOld((value) => !value)}>
+            {showOld ? 'Hide' : 'Show'} {revokedCount} switched-off phone{revokedCount === 1 ? '' : 's'}
+          </button>
+        )}
+        </>
       )}
 
       <PairPhoneModal
@@ -1393,12 +1440,22 @@ function PhonesTab(): JSX.Element {
       />
 
       <ConfirmDialog
-        open={!!revoking}
-        onClose={() => setRevoking(null)}
-        onConfirm={() => revokeNow()}
-        title="Revoke this phone?"
-        confirmLabel="Revoke"
-        body="It will stop syncing calls immediately. Pairing again later needs a fresh token from this screen."
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleteNow()}
+        title={`Delete ${deleting?.label ?? 'this phone'}?`}
+        confirmLabel="Delete"
+        body="It stops logging calls and leaves this list. Every call it already logged stays on its customer's record. To use the phone again, open the app on it and switch call logging on."
+        danger
+      />
+
+      <ConfirmDialog
+        open={cleaning}
+        onClose={() => setCleaning(false)}
+        onConfirm={() => cleanUpNow()}
+        title="Clean up old phones?"
+        confirmLabel="Clean up"
+        body="Removes phones that were switched off, phones that paired but never once connected, and older pairings of a handset that has paired again since. Every call they logged stays on its customer's record."
         danger
       />
     </div>

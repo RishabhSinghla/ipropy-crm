@@ -1,4 +1,5 @@
 import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { SummaryText } from '../components/SummaryText';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
@@ -739,7 +740,7 @@ function FullRecordPage(): JSX.Element {
       >
         <div className="space-y-3">
           <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4 text-sm leading-6 text-slate-700 dark:border-brand-900 dark:bg-brand-950/30 dark:text-slate-200">
-            {aiSummary}
+            <SummaryText text={aiSummary ?? ''} />
           </div>
           <p className="text-xs text-muted">
             Built only from the CRM fields and activity you are allowed to see; missing facts are not invented.

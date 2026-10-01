@@ -14,7 +14,8 @@
  * (`tidyNote`), and the answer says the model did not run, so the screen can
  * say so rather than pretending a model rewrote it.
  */
-import { complete } from './client.js';
+import { aiStatus, complete } from './client.js';
+import { jobModel } from '../core/settings/aiModels.js';
 import { toLatin } from './devanagari.js';
 
 /** Plain tidy with no model: spaces, capital letters, a full stop. */
@@ -33,28 +34,56 @@ export function tidyNote(text: string): string {
   return /[.!?)…:]$/.test(joined) ? joined : `${joined}.`;
 }
 
-export async function rewriteNote(text: string, userId: string): Promise<{ note: string; rewritten: boolean }> {
+/** How the rep wants it rewritten — the three choices other writing tools offer. */
+export type RewriteStyle = 'polish' | 'shorter' | 'detailed';
+
+const STYLE_ASK: Record<RewriteStyle, string> = {
+  polish: 'Make it read well: complete, clear sentences. Turn shorthand into words '
+    + '("cl bk tmrw" becomes "call back tomorrow", "bdgt 1.2cr" becomes "budget 1.2 Cr"). '
+    + 'Put separate facts on separate lines when there are several.',
+  shorter: 'Make it as short as it can be while keeping every fact: a few crisp lines, no filler words.',
+  detailed: 'Make it fuller and easier for a colleague to act on: spell out shorthand, give each fact '
+    + 'its own line, and make clear what happened and what was agreed — but only from what the note says.',
+};
+
+export interface RewriteAnswer {
+  note: string;
+  /** A model wrote it; false means the plain tidy below. */
+  rewritten: boolean;
+  /** Why no model wrote it, so the screen can say the true thing. */
+  reason?: 'no_ai' | 'no_answer' | 'switched_off';
+}
+
+/*
+  The admin's chosen writing model (Admin → AI models → copy), the same one
+  voice notes are tidied with — not the provider's quick model. The quick one
+  answered "test" with "Test." and little else, which is how the button came
+  to look broken on 1 October 2026.
+*/
+export async function rewriteNote(text: string, userId: string, style: RewriteStyle = 'polish'): Promise<RewriteAnswer> {
+  if (!aiStatus().available) return { note: tidyNote(text), rewritten: false, reason: 'no_ai' };
   const answer = await complete({
     feature: 'note_rewrite',
-    fast: true,
-    system: 'You rewrite short notes a property sales team leaves on a customer record. '
+    ...(await jobModel('copy')),
+    system: 'You rewrite notes a property sales team leaves on a customer record. '
       + 'You keep the language the note was written in: English stays English, Hindi stays Hindi, '
       + 'Hinglish stays Hinglish in Latin script. You never translate. You never add a fact, a number, '
-      + 'a name or a next step that is not in the note.',
-    prompt: `Rewrite this note so it reads nicely.\n\n"${text.slice(0, 4_000)}"\n\n`
-      + '- Friendly and natural, like a good colleague wrote it. Not formal, not corporate, no jargon.\n'
-      + '- Fix spelling, grammar and punctuation. Split a run-on sentence.\n'
+      + 'a name or a next step that is not in the note. You sound like a friendly, capable colleague, '
+      + 'never corporate.',
+    prompt: `Rewrite this note.\n\n"""${text.slice(0, 4_000)}"""\n\n`
+      + `${STYLE_ASK[style]}\n`
+      + '- Fix spelling, grammar and punctuation.\n'
       + '- Keep every number, name, date and amount exactly as written.\n'
-      + '- Keep it about as long as the original. No greeting, no heading, no sign-off, no emojis added.\n'
-      + '- Keep any emoji or @mention the note already has.\n\n'
+      + '- No greeting, no heading, no sign-off, no quotes around it. Keep any emoji or @mention it already has.\n\n'
       + 'Return only the rewritten note.',
-    maxTokens: 600,
-    temperature: 0.3,
+    maxTokens: 800,
+    // A little variety, so "Try again" can offer a different wording.
+    temperature: 0.6,
     userId,
   });
-  const written = answer?.text.trim().replace(/^"(.*)"$/s, '$1').trim();
+  const written = answer?.text.trim().replace(/^["'“”]+|["'“”]+$/g, '').trim();
   if (written) return { note: toLatinIfHinglish(text, written), rewritten: true };
-  return { note: tidyNote(text), rewritten: false };
+  return { note: tidyNote(text), rewritten: false, reason: 'no_answer' };
 }
 
 /*

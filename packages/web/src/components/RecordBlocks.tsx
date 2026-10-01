@@ -267,9 +267,13 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
     swapped in silently: the rep reads it and chooses it or keeps their own.
     With no AI provider the server still answers with a plain tidy, and says so.
   */
-  const [rewrite, setRewrite] = useState<{ note: string; rewritten: boolean } | null>(null);
+  type RewriteStyle = 'polish' | 'shorter' | 'detailed';
+  const [rewrite, setRewrite] = useState<{ note: string; rewritten: boolean; reason?: string; style: RewriteStyle; from: string } | null>(null);
   const rewriting = useMutation({
-    mutationFn: () => api.rewriteNote(note.trim()),
+    // Always rewrites what the rep typed, not the last suggestion, so the
+    // three styles and Try again are three ways of saying their own words.
+    mutationFn: ({ from, style }: { from: string; style: RewriteStyle }) =>
+      api.rewriteNote(from, style).then((answer) => ({ ...answer, style, from })),
     onSuccess: (answer) => setRewrite(answer),
     onError: (error: Error) => toast.error('Could not rewrite that', error.message),
   });
@@ -330,13 +334,42 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
     )}>
       {rewrite && (
         <div className="mb-2 rounded-lg border border-brand-200 bg-brand-50 p-2 dark:border-brand-800 dark:bg-slate-900" data-testid="note-rewrite">
-          <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-brand-700 dark:text-brand-300">
-            <Sparkles className="h-3 w-3" />
-            {rewrite.rewritten ? 'Rewritten — use it, or keep yours' : 'AI is not set up, so only the spacing and capitals were tidied'}
-          </p>
+          <div className="mb-1 flex flex-wrap items-center gap-1">
+            <Sparkles className="h-3 w-3 text-brand-700 dark:text-brand-300" />
+            {/* The three choices other writing tools offer; each rewrites the rep's own words. */}
+            {([['polish', 'Polish'], ['shorter', 'Shorter'], ['detailed', 'More detail']] as const).map(([style, label]) => (
+              <button
+                key={style}
+                type="button"
+                aria-pressed={rewrite.style === style}
+                disabled={rewriting.isPending}
+                onClick={() => rewriting.mutate({ from: rewrite.from, style })}
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-[10.5px] font-semibold transition',
+                  rewrite.style === style ? 'bg-brand-600 text-white' : 'text-brand-700 hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-slate-800',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+            {rewriting.isPending && <span className="text-[10.5px] text-muted">Rewriting…</span>}
+          </div>
+          {!rewrite.rewritten && (
+            <p className="mb-1 text-[10.5px] text-muted">
+              {rewrite.reason === 'no_ai'
+                ? 'AI is not set up, so only the spacing and capitals were tidied.'
+                : rewrite.reason === 'switched_off'
+                  ? 'Rewrite with AI is switched off in Settings, so only the spacing and capitals were tidied.'
+                  : 'The AI did not answer just now — try again. Only the spacing and capitals were tidied.'}
+            </p>
+          )}
+          {rewrite.rewritten && rewrite.note.trim() === rewrite.from.trim() && (
+            <p className="mb-1 text-[10.5px] text-muted">It already reads well — nothing to change.</p>
+          )}
           <p className="whitespace-pre-wrap break-words text-xs text-slate-800 dark:text-slate-100">{rewrite.note}</p>
           <div className="mt-1.5 flex justify-end gap-1.5">
             <button type="button" className="btn-secondary btn-sm" onClick={() => setRewrite(null)}>Keep mine</button>
+            <button type="button" className="btn-secondary btn-sm" disabled={rewriting.isPending} onClick={() => rewriting.mutate({ from: rewrite.from, style: rewrite.style })}>Try again</button>
             <button type="button" className="btn-primary btn-sm" onClick={() => { setNote(rewrite.note); setRewrite(null); textBox.current?.focus(); }}>Use this</button>
           </div>
         </div>
@@ -387,7 +420,7 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
           />
           <button
             type="button"
-            onClick={() => rewriting.mutate()}
+            onClick={() => rewriting.mutate({ from: note.trim(), style: 'polish' })}
             disabled={!note.trim() || rewriting.isPending || add.isPending}
             title="Rewrite what you typed so it reads nicely — same language, your call whether to use it"
             className={cn(

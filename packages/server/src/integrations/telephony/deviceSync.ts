@@ -496,6 +496,55 @@ export async function revokeDevice(deviceId: string, userId: string, isAdmin: bo
   );
 }
 
+/**
+ * Remove a phone for good — the owner, 1 October 2026: *"no delete button why"*.
+ *
+ * Safe for history: every call it logged stays on its customer's record
+ * (`ipy_call.device_id` is `ON DELETE SET NULL`), only the note of which
+ * handset logged it goes. Its waiting call instructions go with it.
+ */
+export async function deleteDevice(deviceId: string, userId: string, isAdmin: boolean): Promise<boolean> {
+  const result = await db.query(
+    `DELETE FROM ipy_device WHERE id = $1 AND (user_id = $2 OR $3)`,
+    [deviceId, userId, isAdmin],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * The phones nobody needs to see any more, all at once:
+ *
+ *  - revoked ones;
+ *  - ones that paired over a day ago and never once got in touch;
+ *  - an older pairing of the same person's same handset model, once a newer
+ *    pairing of it has been heard from more recently. Reinstalling the app
+ *    pairs again, so one Samsung had piled up a dozen rows.
+ *
+ * Calls they logged stay on the records, as with `deleteDevice`.
+ */
+export async function deleteStaleDevices(userId: string, isAdmin: boolean): Promise<number> {
+  const result = await db.query(
+    `DELETE FROM ipy_device d
+      WHERE (d.user_id = $1 OR $2)
+        AND (
+          d.is_active = false
+          OR (d.last_sync_at IS NULL AND d.last_seen_at IS NULL AND d.created_at < now() - interval '1 day')
+          OR EXISTS (
+            SELECT 1 FROM ipy_device newer
+             WHERE newer.user_id = d.user_id
+               AND newer.id <> d.id
+               AND newer.is_active
+               AND coalesce(newer.model, '') = coalesce(d.model, '')
+               AND newer.created_at > d.created_at
+               AND greatest(newer.last_seen_at, newer.last_sync_at)
+                   > coalesce(greatest(d.last_seen_at, d.last_sync_at), '-infinity'::timestamptz)
+          )
+        )`,
+    [userId, isAdmin],
+  );
+  return result.rowCount ?? 0;
+}
+
 // ---------------------------------------------------------------------------
 // Telling a rep's own phone to place a call
 // ---------------------------------------------------------------------------

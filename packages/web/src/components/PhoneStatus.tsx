@@ -63,7 +63,7 @@ export function PhoneStatus({ compact = false }: { compact?: boolean }): JSX.Ele
   });
 
   if (isLoading) return <Skeleton className="h-32 w-full" />;
-  const phones = ((data ?? []) as unknown as PhoneRow[]).filter((phone) => phone.is_active);
+  const phones = onePerHandset(((data ?? []) as unknown as PhoneRow[]).filter((phone) => phone.is_active));
   if (!phones.length) {
     return (
       <p className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-muted dark:border-slate-700">
@@ -121,4 +121,20 @@ function dialWord(status: string): string {
   if (status === 'queued' || status === 'delivered') return 'waiting for the phone';
   if (status === 'failed') return 'the phone could not place it';
   return status;
+}
+
+/*
+  One row per person's handset. Reinstalling the app pairs it again, so one
+  Samsung had a dozen rows here, all but one saying "never seen". The list
+  arrives most recently heard-from first, so the first of each is the one in
+  use; the older pairings are cleared under Call-logging phones.
+*/
+function onePerHandset(phones: PhoneRow[]): PhoneRow[] {
+  const seen = new Set<string>();
+  return phones.filter((phone) => {
+    const key = `${phone.user_name ?? ''}|${phone.model ?? phone.label ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

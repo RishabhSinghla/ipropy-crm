@@ -845,7 +845,8 @@ export const api = {
   deleteComment: (module: string, id: string, commentId: string) =>
     del(`/api/records/${module}/${id}/comments/${commentId}`),
   /** A note rewritten so it reads nicely. Nothing is saved; `rewritten: false` means no model ran. */
-  rewriteNote: (text: string) => post<{ note: string; rewritten: boolean }>('/api/ai/rewrite-note', { text }),
+  rewriteNote: (text: string, style: 'polish' | 'shorter' | 'detailed' = 'polish') =>
+    post<{ note: string; rewritten: boolean; reason?: 'no_ai' | 'no_answer' | 'switched_off' }>('/api/ai/rewrite-note', { text, style }),
   related: (module: string, id: string, relation: string, page = 1) =>
     get<ListResult & { relation: Record<string, unknown> }>(`/api/records/${module}/${id}/related/${relation}${qs({ page })}`),
   linkRelated: (module: string, id: string, relation: string, targetId: string) =>
@@ -1052,6 +1053,10 @@ export const api = {
   pairDevice: (data: { label?: string; phoneNumber?: string | null; model?: string | null }) =>
     post<{ deviceId: string; token: string; note: string }>('/api/telephony/devices', data),
   revokeDevice: (id: string) => del(`/api/telephony/devices/${id}`),
+  /** Gone for good; the calls it logged stay on their records. */
+  deleteDevice: (id: string) => del(`/api/telephony/devices/${id}/permanently`),
+  /** Revoked, never-connected and replaced phones, all at once. */
+  cleanUpDevices: () => post<{ removed: number }>('/api/telephony/devices/clean-up', {}),
   /** Ring a number from the signed-in user's own paired phone. */
   /** The app saying it is open, so a desk Call knows it can reach this phone. */
   appIsOpen: (state: { canEndCall?: boolean; canControlCall?: boolean; deviceId?: string; deviceFingerprint?: string } = {}) =>

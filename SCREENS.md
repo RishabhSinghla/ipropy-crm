@@ -1345,3 +1345,28 @@ production it depends on which provider Admin → Integrations has switched on.
 lettering had still been drawn in the old dark tone), and the left toolbar lost
 its **Tasks** and **Campaigns** icons — *"not needed here"*. Campaigns is a tab
 of WhatsApp; today's follow-ups are the Task button over each list.
+
+**1 October 2026, five more:**
+
+* **Rewrite with AI uses the writing model** (`jobModel('copy')`), not the
+  provider's quick one — the live log showed six rewrites averaging four words
+  out, which read as "not working". It offers **Polish · Shorter · More
+  detail** and **Try again**, always rewriting the rep's own words, and says
+  the true reason when no model wrote it (`reason`: `no_ai`, `no_answer`,
+  `switched_off`) instead of always "AI is not set up".
+* **Summarise with AI is three headings of short bullets** — *Who*, *Where it
+  stands*, *Next steps to close* — on the same writing model; the default model
+  was failing 25 of 30 calls and every failure cost seconds before a fallback.
+  `components/SummaryText.tsx` draws it; the no-AI fallback uses the same shape.
+* **The folded right pane is coloured** (a brand-tinted strip, a filled round
+  arrow) and so is the tab that folds it; the field labels leave room for the
+  tab. **Pressing Call on a record unfolds the pane** while that call is up,
+  because the call deck lives in it.
+* **Settings → Phones can delete.** Each phone has *Delete*; *Clean up old
+  phones* removes revoked phones, phones that paired and never connected, and
+  older pairings of a handset heard from since (`deleteStaleDevices`).
+  Calls they logged stay on their records (`ipy_call.device_id` is `ON DELETE
+  SET NULL`). Switched-off phones are folded away, the reachability card shows
+  each person's handset once, and the install steps wait behind *How to
+  install it on a phone* (their numbering read 1, 2, 3, 4, 4).
+* The toast's close button has a name for screen readers.

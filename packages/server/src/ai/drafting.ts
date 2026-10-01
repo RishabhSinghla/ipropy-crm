@@ -8,6 +8,7 @@ import type { ScopeContext } from '../core/permissions/index.js';
 import { db } from '../db/pool.js';
 import { complete, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
 import { matchForRecord } from './matching.js';
+import { jobModel } from '../core/settings/aiModels.js';
 import { fenceId, fenced, untrustedRule } from './untrusted.js';
 
 export interface DraftInput {
@@ -294,47 +295,61 @@ export async function summariseRecord(
   const kind = meta?.singularLabel.toLowerCase() ?? 'record';
   const facts = summary.split('\n').map((line) => line.replace(/^-\s*/, '').trim()).filter(Boolean).slice(0, 7);
   const latest = timeline[0];
+  /*
+    The same three headings with or without a model, so the screen always
+    reads the same way: who, where it stands, how to close it. The owner,
+    1 October 2026: *"stupidly simple summary with very less words and in
+    bullet points … and whats next steps to close it"*.
+  */
   const fallback = [
-    facts.length
-      ? `Current ${kind} details: ${facts.join('; ')}.`
-      : `This ${kind} does not yet have enough populated CRM fields for a detailed summary.`,
+    'Who:',
+    ...(facts.length ? facts.slice(0, 4).map((fact) => `• ${fact}`) : [`• Not much filled in on this ${kind} yet`]),
+    'Where it stands:',
     latest
-      ? `Latest activity: ${latest.title}${latest.body ? ` — ${latest.body.slice(0, 180)}` : ''}.`
-      : 'No activity has been logged yet.',
-    `Next action: review the missing details and record the next concrete follow-up in the CRM.`,
-  ].join(' ');
+      ? `• Last: ${latest.title}${latest.body ? ` — ${latest.body.slice(0, 100)}` : ''}`
+      : '• Nothing logged yet',
+    'Next steps to close:',
+    '• Call them and fill in what is missing',
+    '• Set the next follow-up date',
+  ].join('\n');
 
   // A provider outage should not turn the menu item into a dead end. The
   // factual summary above is deterministic and still useful; when AI is
-  // connected it is replaced by the richer, context-aware version below.
+  // connected it is replaced by the model's version below.
   if (!isAiAvailable()) return fallback;
 
   const summaryFence = fenceId();
 
-  const prompt = `Summarise where this ${kind} stands in iPropy CRM.
+  const prompt = `Summarise this ${kind} for a real-estate sales rep who has 10 seconds.
 
 ${fenced(summaryFence, '## Record', summary)}
 
-${fenced(summaryFence, '## Activity (newest first)', timeline.map((t) => `- [${new Date(t.at).toLocaleDateString('en-IN')}] ${t.title}${t.body ? `: ${t.body.slice(0, 200)}` : ''}`).join('\n'))}
+${fenced(summaryFence, '## Activity (newest first)', timeline.slice(0, 25).map((t) => `- [${new Date(t.at).toLocaleDateString('en-IN')}] ${t.title}${t.body ? `: ${t.body.slice(0, 160)}` : ''}`).join('\n'))}
 
-Write 3 to 5 short sentences using only the facts above.
+Answer in exactly this shape and nothing else:
 
-Write it the way you would explain it out loud to a colleague who has not seen
-this record — plain, everyday English, short words, short sentences. No jargon,
-no CRM terms, no bullet points, no headings, no preamble.
+Who:
+• (2 to 4 bullets: who they are and what they want — budget, size, area, timeline)
+Where it stands:
+• (1 to 3 bullets: what has happened so far, latest first, with dates)
+Next steps to close:
+• (2 to 3 bullets: the concrete actions that move this towards a sale, most urgent first)
 
-Say who or what this is, where it has got to, and what to do next. If something
-important is missing, say it is missing rather than inventing it.
+Rules:
+- Each bullet at most 10 words. Plain everyday words; Hinglish is fine if the notes are Hinglish.
+- Use only facts above. If something important is missing (budget, area, a follow-up date), make getting it a next step.
+- Next steps start with a verb: "Call", "Send", "Book", "Ask", "Share".
+- No intro line, no extra headings, no bold, no closing line.`;
 
-Avoid words like "engagement", "pipeline", "lifecycle", "leverage", "optimise",
-"stakeholder", "actionable" and "utilise". Say "call them", not "initiate
-contact".`;
-
+  // The admin's writing model, reached first: the provider's default model
+  // was failing most calls, and each failure cost seconds before a fallback.
   const result = await complete({
     feature: 'summarise_record',
+    ...(await jobModel('copy')),
     system: `${REAL_ESTATE_SYSTEM}\n\n${untrustedRule(summaryFence)}`,
     prompt,
-    maxTokens: 600,
+    maxTokens: 400,
+    temperature: 0.2,
     recordId,
     userId: userId ?? null,
   });
