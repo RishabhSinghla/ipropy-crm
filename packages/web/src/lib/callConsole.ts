@@ -62,7 +62,30 @@ const CARDS: Record<string, OutcomeCard> = {
     spares that one the guess.
   */
   'No Answer': { icon: 'noring', hint: 'Retry later today', chip: 'No ring', followUpInHours: 4, primary: true },
+  /*
+    The words production's own list stores since 1 October 2026, when every
+    outcome was made to store exactly what it shows ("Busy" became
+    "Busy/Ringing"). Each behaves as the word it replaced, so the follow-up a
+    card schedules did not change with its name.
+  */
+  'Busy/Ringing': { icon: 'clock', hint: 'Call later today', chip: 'In 2 hours', followUpInHours: 2, primary: true },
+  'Call Back Request': { icon: 'clock', hint: 'They asked for a call back', chip: 'In 2 hours', followUpInHours: 2, primary: true },
+  'Call Connected': { icon: 'up', hint: 'Spoke to them', chip: 'Connected', primary: true },
+  'Invalid/Wrong Num': { icon: 'invalid', hint: 'Update records', chip: 'Invalid', disqualifies: true, primary: true },
+  'Switch Off': { icon: 'unreachable', hint: 'Schedule re-dial', chip: 'Unreachable', followUpInHours: 24 },
+  'Out Of Service': { icon: 'invalid', hint: 'Number not in service', chip: 'Invalid', disqualifies: true },
 };
+
+/**
+ * True when nobody picked up, so the call is logged as zero minutes talked.
+ *
+ * Read off the card rather than a list of words, which is how "Busy" being
+ * renamed "Busy/Ringing" once quietly turned every busy call into a talked one.
+ */
+export function nobodyAnswered(outcome: string): boolean {
+  const card = outcomeCard(outcome);
+  return card.icon === 'noring' || card.icon === 'unreachable' || /busy/i.test(outcome);
+}
 
 /**
  * The card for one outcome.

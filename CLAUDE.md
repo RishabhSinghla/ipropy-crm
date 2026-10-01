@@ -1478,6 +1478,9 @@ the screen a rep lives in.
 > can be dragged anywhere. See `SCREENS.md`, *1 October 2026*. **2 October 2026:** the social
 > icons are gone from the header and from Admin → Brand, and the toolbar has no Settings gear or
 > account circle at its foot — see `SCREENS.md`, *Fourteen more*.
+> **1 October 2026, evening:** the toolbar folds too; a Lost status needs a Lost
+> Reason again on every module (reversing migration `176`); the Hot chip replaced
+> the call-outcome chip — see `SCREENS.md`, *Five more and a fold*.
 > **3 October 2026:** the right pane folds away, its top rows are all the Layout
 > Designer's (`rightPane`), and deleting a comment is admins only unless a profile
 > holds `comments.delete` — see `SCREENS.md`, *Eleven more*.

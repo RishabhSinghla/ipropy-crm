@@ -12,7 +12,7 @@ import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { saveNextUrl } from '../lib/saveNextUrl';
 import {
-  callBar, deckStatus, followUpFor, minutesFrom, type CallBar, type PhoneCallReport,
+  callBar, deckStatus, followUpFor, minutesFrom, nobodyAnswered, type CallBar, type PhoneCallReport,
 } from '../lib/callConsole';
 import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
@@ -226,7 +226,7 @@ export function useCallDeckState(): CallDeckState {
         which is exact; otherwise the old estimate from when Call was pressed.
         An outcome that means nobody answered is always zero.
       */
-      const answered = !['No Answer', 'Busy', 'Switched Off', 'Not Reachable'].includes(outcome);
+      const answered = !nobodyAnswered(outcome);
       const talked = report?.talkedSeconds
         ?? (report?.connectedAt ? Math.round((Date.now() - report.connectedAt) / 1000) : null);
       await api.logCall({

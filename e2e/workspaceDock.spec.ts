@@ -59,3 +59,29 @@ test('Ask AI is a circle that can be dragged, and a tap opens it', async ({ page
   await bubble.click();
   await expect(page.getByPlaceholder(/Ask or tell iPropy/)).toBeVisible();
 });
+
+/*
+  1 October 2026, the owner: *"similar to that fold unfold thing we got on very
+  right detail pane so that left tool bar would be same working open/closed"*.
+  Measured, not read off a class: the frame narrows, the icons stop being
+  reachable, it comes back on a tap, and a reload remembers the choice.
+*/
+test('the toolbar folds away and comes back, and remembers', async ({ page }) => {
+  await page.goto('/leads');
+  const frame = page.getByTestId('workspace-dock-frame');
+  await expect(page.getByTestId('workspace-dock')).toBeVisible({ timeout: 30_000 });
+  const open = (await frame.boundingBox())!.width;
+
+  await page.getByTestId('fold-dock').click();
+  await expect.poll(async () => (await frame.boundingBox())!.width).toBeLessThan(open - 20);
+  await expect(page.getByTestId('workspace-dock').getByRole('link', { name: 'Dashboard' })).not.toBeInViewport({ ratio: 1 }).catch(() => undefined);
+  await expect(frame).toHaveAttribute('data-folded', 'true');
+
+  await page.reload();
+  await expect(page.getByTestId('unfold-dock')).toBeVisible({ timeout: 30_000 });
+
+  await page.getByTestId('unfold-dock').click();
+  await expect.poll(async () => (await frame.boundingBox())!.width).toBeGreaterThan(open - 2);
+  await page.getByTestId('workspace-dock').getByRole('link', { name: 'Dashboard' }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+});

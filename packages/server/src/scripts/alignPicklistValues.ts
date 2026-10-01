@@ -17,6 +17,7 @@
  *
  *   DATABASE_URL='postgresql://…' npm run picklists:align            # dry run
  *   DATABASE_URL='postgresql://…' npm run picklists:align -- --apply # write
+ *   … npm run picklists:align -- --only call_disposition --apply     # one dropdown
  *
  * **Two phases, because the renames collide.** `Converted` wants to become
  * "Contacted" while `Contacted` is still taken by the option that wants to
@@ -43,14 +44,15 @@ interface Drifted {
 }
 
 /** Every option whose stored value is not the label sitting on top of it. */
-async function findDrift(conn: Tx): Promise<Drifted[]> {
+async function findDrift(conn: Tx, only: string | null): Promise<Drifted[]> {
   const rows = await conn.query<{ id: string; picklist: string; value: string; label: string }>(`
     SELECT v.id, p.name AS picklist, v.value, v.label
       FROM ipy_picklist_value v
       JOIN ipy_picklist p ON p.id = v.picklist_id
      WHERE v.value IS DISTINCT FROM v.label
+       AND ($1::text IS NULL OR p.name = $1)
      ORDER BY p.name, v.sequence
-  `);
+  `, [only]);
   return rows.rows.map((r) => ({ picklist: r.picklist, id: r.id, from: r.value, to: r.label }));
 }
 
@@ -92,8 +94,12 @@ async function findConflicts(conn: Tx, drift: Drifted[]): Promise<string[]> {
 
 async function main(): Promise<void> {
   const apply = process.argv.includes('--apply');
+  // `--only call_disposition` aligns one dropdown and leaves every other
+  // alone — the owner asked for call outcomes on 1 October 2026, not statuses.
+  const onlyAt = process.argv.indexOf('--only');
+  const only = onlyAt >= 0 ? process.argv[onlyAt + 1] ?? null : null;
 
-  const drift = await findDrift(db);
+  const drift = await findDrift(db, only);
   if (!drift.length) {
     logger.info('every dropdown option already stores its own label — nothing to do');
       return;

@@ -16,6 +16,9 @@ on:
       apply:
         description: "Type apply to write. Anything else lists what would change."
         default: "dry-run"
+      only:
+        description: "One dropdown's name (e.g. call_disposition). Leave empty for every dropdown."
+        default: ""
 
 permissions:
   contents: read
@@ -43,13 +46,15 @@ jobs:
       - name: What would change
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: npm run picklists:align
+          ONLY: ${{ inputs.only }}
+        run: npm run picklists:align -- ${ONLY:+--only "$ONLY"}
 
       - name: Change it
         if: ${{ inputs.apply == 'apply' }}
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: npm run picklists:align -- --apply
+          ONLY: ${{ inputs.only }}
+        run: npm run picklists:align -- ${ONLY:+--only "$ONLY"} --apply
 
       # The registry caches every dropdown in the process's memory, so the
       # renamed values are invisible until it reloads. Render restarts on a

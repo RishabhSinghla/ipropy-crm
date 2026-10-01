@@ -15,7 +15,7 @@
  */
 import { type JSX, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { picklistOptionForValue, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
+import { owesLostReason, picklistOptionForValue, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import { LayoutList } from 'lucide-react';
 import { EditableField, isInlineEditable } from './EditableField';
 import { FieldValue } from './FieldRenderer';
@@ -142,7 +142,14 @@ function PlainValue({ module, row, field, canEdit }: { module: DescribedModule; 
   const queryClient = useQueryClient();
   const editable = canEdit && isInlineEditable(field);
   return (
-    <FieldBox editable={editable} className="px-2 py-1 text-xs font-medium text-slate-800 dark:text-slate-100">
+    <FieldBox
+      editable={editable}
+      className={cn(
+        'px-2 py-1 text-xs font-medium text-slate-800 dark:text-slate-100',
+        // A Lost record with no Lost Reason — red until somebody picks one.
+        owesLostReason(module.fields, field, row.values) && 'ring-2 ring-red-400 dark:ring-red-500',
+      )}
+    >
       {editable
         ? <EditableField
             module={module.name}

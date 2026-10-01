@@ -306,8 +306,21 @@ export async function replaceValueInRecords(
  * touch a filter looking for "Lost" in a different dropdown that happens to use
  * the same word.
  */
+/*
+  Filter names that read a dropdown without being a field. A list filtered on
+  "last call was Busy" names `last_call_disposition`, a system field over
+  `ipy_call` that no module carries — so without this a renamed outcome left
+  every such saved list silently empty.
+*/
+const SYSTEM_FILTER_FIELDS: Record<string, string[]> = {
+  call_disposition: ['last_call_disposition'],
+};
+
 async function renameInFilters(name: string, from: string, to: string, conn: Tx): Promise<number> {
-  const fields = (await fieldsUsingPicklist(name)).map((u) => u.field);
+  const fields = [
+    ...(await fieldsUsingPicklist(name)).map((u) => u.field),
+    ...(SYSTEM_FILTER_FIELDS[name] ?? []),
+  ];
   if (!fields.length) return 0;
 
   let changed = 0;

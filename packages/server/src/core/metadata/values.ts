@@ -6,7 +6,7 @@
  * tools all agree on what a "date" or a "currency" is.
  */
 import {
-  formatIndianPrice, formatArea, parseIndianPrice, collectFieldErrors, evaluateFilter, picklistOptionForValue,
+  formatIndianPrice, formatArea, parseIndianPrice, collectFieldErrors, evaluateFilter, missingLostReason, picklistOptionForValue,
   type FieldMeta,
 } from '@ipropy/shared';
 import { ValidationError } from '../../utils/errors.js';
@@ -436,6 +436,15 @@ export function validateRequired(
     if (isEmpty(value)) {
       errors.push({ field: f.name, message: `${f.label} is required` });
     }
+  }
+  /*
+    Lost needs a reason — on every module that has both fields. The rule is in
+    `@ipropy/shared` so the form and the inline editors ask the same question
+    before the save reaches here.
+  */
+  const lostReason = missingLostReason(fields, isCreate ? merged : values, merged);
+  if (lostReason && !errors.some((e) => e.field === lostReason.name)) {
+    errors.push({ field: lostReason.name, message: `${lostReason.label} is required when the status is Lost` });
   }
   /*
     "At least one of these" — a rule about a pair, which no per-field flag can say.

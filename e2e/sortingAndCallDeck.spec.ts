@@ -16,8 +16,8 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const MODULES = [
-  { path: '/leads', label: 'Contacts' },
-  { path: '/properties', label: 'Inventories' },
+  { path: '/leads', label: 'Contacts', name: 'leads' },
+  { path: '/properties', label: 'Inventories', name: 'properties' },
 ] as const;
 
 /** Open a module on the split view, which is where all of this lives. */
@@ -34,37 +34,50 @@ async function openQueue(page: Page, path: string): Promise<void> {
 
 for (const module of MODULES) {
   test.describe(module.label, () => {
-    test('the filter buttons are on the row, call disposition after follow-ups', async ({ page }) => {
+    test('the Hot chip counts the hot tag and narrows the list to it', async ({ page }) => {
+      /*
+        1 October 2026, the owner: the call-outcome chip made way for *"hot lead
+        tag thing along with count"*. It is the module's own tag called "hot",
+        so the spec makes sure one exists and is offered here before looking.
+      */
+      await page.goto(module.path);
+      await page.evaluate(async (name) => {
+        const auth = { Authorization: `Bearer ${localStorage.getItem('ipropy.token')}`, 'Content-Type': 'application/json' };
+        const tags = await fetch(`/api/tags?module=${name}`, { headers: auth }).then((r) => r.json()) as { name: string }[];
+        if (!tags.some((t) => /^hot$/i.test(t.name))) {
+          await fetch('/api/tags', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'hot', modules: [] }) });
+        }
+      }, module.name);
       await openQueue(page, module.path);
 
-      const disposition = page.getByTestId('call-disposition-filter');
-      await expect(disposition).toBeVisible();
+      const hot = page.getByTestId('hot-tag-chip');
+      await expect(hot).toBeVisible();
+      await expect(page.getByTestId('call-disposition-filter')).toHaveCount(0);
 
       /*
         **Light at rest, filled and reversed to white once it is narrowing the
-        list** — the owner, 29 September 2026. This used to assert white text
-        at rest, which was his instruction of the 27th; the later one stands.
-
-        Measured as *different*, not as two exact colours: the brand is an
-        admin's to change, so pinning `rgb(76, 29, 149)` would make this a test
-        of one theme rather than of the rule.
+        list** — the owner, 29 September 2026. Measured as *different*, not as
+        two exact colours: the brand is an admin's to change.
       */
-      const rest = await disposition.evaluate((el) => {
+      const rest = await hot.evaluate((el) => {
         const style = getComputedStyle(el);
         return { fill: style.backgroundColor, text: style.color };
       });
-      expect(rest.fill, 'a resting pill should still carry a light fill').not.toBe('rgba(0, 0, 0, 0)');
       expect(rest.text, 'a resting pill should not be reversed out to white').not.toBe('rgb(255, 255, 255)');
 
-      // Turn it on: pick "never called", which every module can answer.
-      await disposition.click();
-      await page.getByText(/Never called/i).first().click();
+      let askedForHot = false;
+      await page.route('**/api/records/**', async (route) => {
+        const asked = decodeURIComponent(route.request().postData() ?? route.request().url());
+        if (asked.includes('record_tags') && /"hot"/i.test(asked)) askedForHot = true;
+        await route.continue();
+      });
+      await hot.click();
+      await expect.poll(() => askedForHot, { timeout: 15_000 }).toBe(true);
       await expect.poll(
-        async () => disposition.evaluate((el) => getComputedStyle(el).color),
+        async () => hot.evaluate((el) => getComputedStyle(el).color),
         { timeout: 15_000, message: 'an active filter should reverse to white' },
       ).toBe('rgb(255, 255, 255)');
-      const on = await disposition.evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(on, 'an active filter should change fill, not just text').not.toBe(rest.fill);
+      await expect(hot).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('the sort menu is the eight he named, and Recently updated to begin with', async ({ page }) => {
@@ -108,31 +121,6 @@ for (const module of MODULES) {
       await page.getByRole('button', { name: 'Sort this list' }).click();
       await page.getByRole('button', { name: 'A–Z', exact: true }).click();
       await expect.poll(() => asked.some((body) => body.includes('"sortDir":"asc"'))).toBe(true);
-    });
-
-    test('the call disposition filter sends what it says it does', async ({ page }) => {
-      await openQueue(page, module.path);
-
-      /*
-        The *effect* is pinned against a real database in
-        `tests/integration/lastCallSortAndFilter.test.ts`, which makes its own
-        calls to filter on. What only a browser can say is that the button on
-        this row asks the question at all — a disposition is not a field on
-        either module, so nothing else would have noticed it going nowhere.
-      */
-      let sentFilter = false;
-      await page.route('**/api/records/**', async (route) => {
-        const body = route.request().postData() ?? route.request().url();
-        if (body.includes('last_call_disposition')) sentFilter = true;
-        await route.continue();
-      });
-
-      await page.getByTestId('call-disposition-filter').click();
-      await page.getByRole('button', { name: 'Never called' }).click();
-      await page.keyboard.press('Escape');
-      await expect.poll(() => sentFilter, { timeout: 15_000 }).toBe(true);
-      // The chip is an icon and a count now; lit, it counts the one choice.
-      await expect(page.getByTestId('call-disposition-filter')).toContainText('1');
     });
   });
 }

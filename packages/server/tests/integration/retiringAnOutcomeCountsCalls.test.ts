@@ -56,4 +56,23 @@ describe('an outcome in use by a call', () => {
 
     await db.query(`UPDATE ipy_call SET disposition = NULL WHERE id = $1`, [callId]);
   });
+
+  it('moves a saved list filtering on the last call outcome too', async () => {
+    const before = `${OUTCOME} list`;
+    const after = `${OUTCOME} list v2`;
+    const view = await db.queryOne<{ id: string }>(
+      `INSERT INTO ipy_view (module_id, name, filter, is_public)
+       SELECT id, $1, $2::jsonb, false FROM ipy_module WHERE name = 'leads' RETURNING id`,
+      [`QA outcome list ${stamp}`, JSON.stringify({ logic: 'AND', conditions: [{ field: 'last_call_disposition', operator: 'in', value: [before] }] })],
+    );
+    try {
+      await replaceValueInRecords('call_disposition', before, after);
+      const row = await db.queryOne<{ filter: { conditions: { value: string[] }[] } }>(
+        `SELECT filter FROM ipy_view WHERE id = $1`, [view!.id],
+      );
+      expect(row?.filter.conditions[0]?.value, 'the saved list still asked for the old outcome').toEqual([after]);
+    } finally {
+      await db.query(`DELETE FROM ipy_view WHERE id = $1`, [view!.id]);
+    }
+  });
 });

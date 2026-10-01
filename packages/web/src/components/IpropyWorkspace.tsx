@@ -738,12 +738,6 @@ export function IpropyWorkspace({
             {/* Call sits right after the name — *"the call icon should come right
                 after the name of the record"* (3 October 2026). */}
             {phoneValue && <span className="shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
-            {/* Which module this record is, at a glance — *"just a small …
-                leads or whether inventories or associate"* (2 October 2026).
-                The module's own label, so a rename in Settings shows here. */}
-            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300" data-testid="record-module-label">
-              {module.label}
-            </span>
             </span>
             {/* The record's tags, where "Updated …" used to be — *"remove that
                 updated thing and instead of it show just the tag if any"*
@@ -754,6 +748,14 @@ export function IpropyWorkspace({
           </span>
 
           <span className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5" data-testid="split-hero-actions-status">
+            {/* Which module this record is, at a glance — *"just a small …
+                leads or whether inventories or associate"* (2 October 2026).
+                Just left of the counter since 1 October: *"move this leads
+                thing written to right just left of this count"*. The module's
+                own label, so a rename in Settings shows here. */}
+            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300" data-testid="record-module-label">
+              {module.label}
+            </span>
             {/* Where this record sits in the queue, and a step either way. */}
             <span className="mr-1 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-slate-500" aria-label="Record navigation">
               <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">

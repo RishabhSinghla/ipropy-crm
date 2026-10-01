@@ -25,8 +25,9 @@ import { ListPicker } from '../components/ListPicker';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import { StatusBreakdown } from '../components/StatusBreakdown';
 import {
-  CallDispositionFilter, LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
+  LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
 } from '../components/CallDispositionFilter';
+import { HotTagChip } from '../components/HotTagChip';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import SiteCapture from './SiteCapture';
 import { useOfflineMeta } from '../lib/useOfflineList';
@@ -945,12 +946,13 @@ export default function ListView(): JSX.Element {
           />
         )}
 
-        {/* After Follow-ups, on the owner's instruction — the row reads left
-            to right the way a day does: which list, which stage, what is due,
-            then how the last call went. */}
-        <CallDispositionFilter
-          pick={dispositionPick}
-          onPick={(next) => { setDispositionPick(next); setPage(1); }}
+        {/* After Follow-ups. It was the last-call-outcome chip until
+            1 October 2026, when the owner swapped it for Hot; that filter is
+            still in the filter panel. */}
+        <HotTagChip
+          moduleName={moduleName!}
+          active={tagPick}
+          onPick={(tag) => { setTagPick(tag); setPage(1); }}
         />
 
       </div>

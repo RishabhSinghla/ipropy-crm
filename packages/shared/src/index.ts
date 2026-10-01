@@ -5,3 +5,4 @@ export * from './format.js';
 export * from './evaluate.js';
 export * from './redact.js';
 export * from './strength.js';
+export * from './lostReason.js';

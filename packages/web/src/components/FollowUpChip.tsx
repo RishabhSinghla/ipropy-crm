@@ -21,14 +21,14 @@ import { cn } from '../lib/utils';
 
 /*
   The owner's colours, one per state. Each text colour clears WCAG AA against
-  its tint; Pending uses the darker of his two slates, because #64748b on
+  its tint; Upcoming uses the darker of his two slates, because #64748b on
   #f1f5f9 falls just short.
 */
 export const FOLLOW_UP_STYLE: Record<FollowUpTone, string> = {
   today: 'bg-[#fffbeb] text-[#b45309] dark:bg-amber-950/50 dark:text-amber-300',
   tomorrow: 'bg-[#eff6ff] text-[#1d4ed8] dark:bg-blue-950/50 dark:text-blue-300',
   overdue: 'bg-[#fef2f2] text-[#b91c1c] dark:bg-red-950/50 dark:text-red-300',
-  pending: 'bg-[#f1f5f9] text-[#475569] dark:bg-slate-800 dark:text-slate-300',
+  upcoming: 'bg-[#f1f5f9] text-[#475569] dark:bg-slate-800 dark:text-slate-300',
 };
 
 /**

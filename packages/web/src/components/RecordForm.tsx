@@ -7,7 +7,7 @@ import { type JSX, useEffect, useMemo, useState } from 'react';
  * visibility, live duplicate detection and server-side field errors.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { collectFieldErrors, evaluateFilter, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
+import { collectFieldErrors, evaluateFilter, missingLostReason, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import { AlertTriangle, Save, TrendingUp, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
@@ -276,6 +276,10 @@ export default function RecordForm({
         if (empty) next[name] = `${field.label} is required`;
       }
     }
+
+    // Lost needs a reason — the same shared rule the server applies.
+    const lostReason = missingLostReason(module.fields, values, values);
+    if (lostReason && !next[lostReason.name]) next[lostReason.name] = `${lostReason.label} is required when the status is Lost`;
 
     /*
       "At least one of these" — a rule about a pair, held on the module.

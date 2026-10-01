@@ -25,7 +25,8 @@ import { type CSSProperties, type JSX, type ReactNode, type KeyboardEvent as Rea
  * value and explains why via toast, rather than silently dropping the edit.
  */
 import { createPortal } from 'react-dom';
-import type { FieldMeta } from '@ipropy/shared';
+import { isLostStatus, lostReasonFieldOf, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Check, Loader2, Pencil,
 } from 'lucide-react';
@@ -33,7 +34,7 @@ import { api } from '../lib/api';
 import { optionsWithValue } from '../lib/picklistOptions';
 import { toast, useApp } from '../lib/store';
 import { cn, deepEqual } from '../lib/utils';
-import { Avatar, Badge } from './ui';
+import { Avatar, Badge, Modal } from './ui';
 import {
   FieldInput, FieldValue, MultiSelect, ReferencePicker, TagInput,
 } from './FieldRenderer';
@@ -175,11 +176,11 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     setLocalDisplay(display);
   }, [value, display, editing]);
 
-  async function commit(next: unknown, previous: unknown): Promise<void> {
+  async function commit(next: unknown, previous: unknown, alongside: Record<string, unknown> = {}): Promise<void> {
     const seq = ++commitSeq.current;
     setStatus('saving');
     try {
-      const saved = await api.update(module, recordId, { ...otherDraft, [field.name]: next });
+      const saved = await api.update(module, recordId, { ...otherDraft, ...alongside, [field.name]: next });
       if (commitSeq.current !== seq) return; // superseded by a later edit
       setOtherDraft({});
       const savedValue = saved.values[field.name];
@@ -231,15 +232,49 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     void commit(nextDraft, previous);
   }
 
+  /*
+    Picking Lost asks why, before anything is saved — the owner, 1 October
+    2026: a Lost status must carry its Lost Reason. Both go in one save, so
+    the record is never Lost without a reason even for a moment. The rule is
+    `missingLostReason` in `@ipropy/shared`; the server refuses the same.
+  */
+  const queryClient = useQueryClient();
+  const [askingWhyLost, setAskingWhyLost] = useState<{ next: unknown; reasonField: FieldMeta } | null>(null);
+
+  function reasonNeededFor(next: unknown): FieldMeta | null {
+    const isStatus = field.columnName === 'status' || field.name === 'status';
+    if (!isStatus || !isLostStatus(next)) return null;
+    const moduleMeta = queryClient.getQueryData<ModuleMeta>(['module', module]);
+    const reasonField = moduleMeta ? lostReasonFieldOf(moduleMeta.fields) : undefined;
+    if (!reasonField) return null;
+    const record = queryClient.getQueryData<RecordEnvelope>(['record', module, recordId]);
+    const current = siblings?.[reasonField.name] ?? record?.values?.[reasonField.name];
+    return current === null || current === undefined || current === '' ? reasonField : null;
+  }
+
   /** A pick from a single-value popover (picklist/owner/reference): apply, close, save in the background. */
   function pickAndClose(next: unknown): void {
     setDraft(next);
     setEditing(false);
     onClosed?.();
     if (deepEqual(next, localValue)) return;
+    const reasonField = reasonNeededFor(next);
+    if (reasonField) {
+      setAskingWhyLost({ next, reasonField });
+      return;
+    }
     const previous = localValue;
     setLocalValue(next);
     void commit(next, previous);
+  }
+
+  function saveLostWithReason(reason: string): void {
+    if (!askingWhyLost) return;
+    const { next, reasonField } = askingWhyLost;
+    setAskingWhyLost(null);
+    const previous = localValue;
+    setLocalValue(next);
+    void commit(next, previous, { [reasonField.name]: reason });
   }
 
   /** A toggle inside a multi-value popover (multipicklist/tags): apply and save, but keep the panel open. */
@@ -510,6 +545,25 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
             />
           )}
         </FloatingEditor>
+      )}
+      {askingWhyLost && (
+        <Modal open onClose={() => { setAskingWhyLost(null); setDraft(localValue); }} title={`Why was it lost? — pick a ${askingWhyLost.reasonField.label}`} size="sm">
+          <p className="mb-3 text-xs text-muted">
+            A Lost status needs a {askingWhyLost.reasonField.label}. Both are saved together.
+          </p>
+          <div className="flex flex-wrap gap-1.5" data-testid="lost-reason-choices">
+            {(askingWhyLost.reasonField.options ?? []).filter((o) => o.isActive !== false).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => saveLostWithReason(option.value)}
+                className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-800 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
     </div>
   );

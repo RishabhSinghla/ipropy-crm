@@ -2,7 +2,7 @@
  * The follow-up date, said the way a rep says it.
  *
  * **26 September 2026, the owner:** the queue card's task chip reads Today,
- * Tomorrow, Pending, or Overdue with how long for ("Overdue (1 day)",
+ * Tomorrow, Upcoming, or Overdue with how long for ("Overdue (1 day)",
  * "Overdue (2 months)"), and anywhere the date is changed it can be set in one
  * tap to Today, Tomorrow, Next Week or Next Month.
  *
@@ -10,7 +10,7 @@
  * built with `toISOString()` before 5:30 in the morning is yesterday.
  */
 
-export type FollowUpTone = 'today' | 'tomorrow' | 'overdue' | 'pending';
+export type FollowUpTone = 'today' | 'tomorrow' | 'overdue' | 'upcoming';
 
 export interface FollowUpChip {
   label: string;
@@ -53,7 +53,9 @@ export function howLongOverdue(days: number): string {
 /**
  * The chip a follow-up date shows on a queue card, or null when none is set.
  *
- * Anything after tomorrow is "Pending": the task exists and is not due yet.
+ * Anything after tomorrow is "Upcoming": the task exists and is not due yet.
+ * It said "Pending" until 1 October 2026, which reads as late — the owner:
+ * *"its showing pending instead its actually upcoming"*.
  * The exact date is one hover away (`title`), and on the record itself.
  */
 export function followUpChip(value: unknown, now: Date = new Date()): FollowUpChip | null {
@@ -64,7 +66,7 @@ export function followUpChip(value: unknown, now: Date = new Date()): FollowUpCh
   if (days < 0) return { label: `Overdue (${howLongOverdue(-days)})`, tone: 'overdue' };
   if (days === 0) return { label: 'Today', tone: 'today' };
   if (days === 1) return { label: 'Tomorrow', tone: 'tomorrow' };
-  return { label: 'Pending', tone: 'pending' };
+  return { label: 'Upcoming', tone: 'upcoming' };
 }
 
 /** The one-tap choices offered wherever a follow-up date is changed. */

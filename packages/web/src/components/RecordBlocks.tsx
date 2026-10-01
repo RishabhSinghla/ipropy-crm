@@ -1,6 +1,6 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { picklistOptionForValue, relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
+import { owesLostReason, picklistOptionForValue, relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
 import { FileText, LayoutList, MessageSquare, Mic, Send, Sparkles } from 'lucide-react';
 import { Avatar } from './ui';
 import { FieldValue } from './FieldRenderer';
@@ -43,7 +43,7 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
         step `.key-tile` lost. The columns keep their gap: fields that touch
         sideways read as one wide field. */}
     <dl className={cn('grid gap-x-4 gap-y-3 px-5 py-4', columns >= 3 ? 'sm:grid-cols-3' : columns === 1 ? '' : 'sm:grid-cols-2')}>{fields.map((field) => <div key={field.name}>
-      <dt className="key-label mb-1.5">{field.label}{field.isMandatory && <span className="ml-0.5 text-negative">*</span>}</dt>
+      <dt className="key-label mb-1.5">{field.label}{(field.isMandatory || owesLostReason(module.fields, field, row.values)) && <span className="ml-0.5 text-negative">*</span>}</dt>
       {/*
         The whole cell is the target, not just the value inside it.
 
@@ -58,6 +58,8 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
         className={cn(
           'key-tile text-sm font-medium text-slate-800 dark:bg-slate-800/70 dark:text-slate-100',
           canEdit && isInlineEditable(field) && 'cursor-pointer hover:ring-1 hover:ring-brand-300',
+          // A Lost record with no Lost Reason — red until somebody picks one.
+          owesLostReason(module.fields, field, row.values) && 'ring-2 ring-red-400 dark:ring-red-500',
         )}
         onClick={(event) => {
           if (event.target !== event.currentTarget) return;

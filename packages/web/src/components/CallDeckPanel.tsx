@@ -315,7 +315,9 @@ function Chase({ deck }: { deck: CallDeckState }): JSX.Element {
     ? due.tone === 'today' || due.tone === 'tomorrow' || due.tone === 'overdue'
       ? due.label
       : readableDay(existing!.slice(0, 10))
-    : 'Pending';
+    // Nothing booked yet: the outcome picks the day at Save. It used to say
+    // "Pending", which read as something late.
+    : 'Set by the outcome';
   const value = deck.followUp === undefined ? 'auto' : deck.followUp === null ? 'none' : deck.followUp;
   // A day the rep typed rather than tapped — it belongs in the list, or the
   // control would read as nothing chosen while a date is plainly set.

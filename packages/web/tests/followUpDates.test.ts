@@ -4,10 +4,10 @@ import { followUpChip, howLongOverdue, localDay, quickFollowUpDates } from '../s
 const now = new Date(2026, 8, 26, 10, 0); // 26 Sep 2026, 10 am local
 
 describe('followUpChip', () => {
-  it('says Today, Tomorrow and Pending', () => {
+  it('says Today, Tomorrow and Upcoming', () => {
     expect(followUpChip('2026-09-26', now)).toEqual({ label: 'Today', tone: 'today' });
     expect(followUpChip('2026-09-27', now)).toEqual({ label: 'Tomorrow', tone: 'tomorrow' });
-    expect(followUpChip('2026-10-05', now)).toEqual({ label: 'Pending', tone: 'pending' });
+    expect(followUpChip('2026-10-05', now)).toEqual({ label: 'Upcoming', tone: 'upcoming' });
   });
 
   it('uses compact D, M and Y notation for a task overdue', () => {

@@ -177,19 +177,39 @@ describe('validateValues — behaviour', () => {
   });
 });
 
-describe('Lost Reason is independent of Status', () => {
+/*
+  1 October 2026, the owner: a Lost status needs a Lost Reason, on every
+  module. It was made independent on 28 September; this is the reverse, and
+  it asks only when the status is being set — an old Lost record can still be
+  edited without being stopped.
+*/
+describe('Lost needs a Lost Reason', () => {
   const fields = [
-    field({ name: 'status', uitype: 'picklist' }),
-    field({ name: 'lost_reason', uitype: 'picklist', config: { picklist: 'lost_reason' } }),
+    field({ name: 'lead_status', columnName: 'status', uitype: 'picklist' }),
+    field({ name: 'lost_reason', label: 'Lost Reason', uitype: 'picklist', config: { picklist: 'lost_reason' } }),
   ];
 
-  it('allows any module to save a Lost status without a Lost Reason', () => {
-    expect(() => validateRequired(fields, { status: 'Lost' }, false, { status: 'Lost', lost_reason: null })).not.toThrow();
-    expect(() => validateRequired(fields, { status: 'Lead Lost' }, true)).not.toThrow();
+  it('refuses setting the status to Lost with no reason', () => {
+    expect(() => validateRequired(fields, { lead_status: 'Lead Lost' }, false, { lead_status: 'Lead Lost', lost_reason: null }))
+      .toThrow(/Lost Reason/);
+    expect(() => validateRequired(fields, { lead_status: 'Lost' }, true)).toThrow(/Lost Reason/);
   });
 
-  it('still respects an explicitly mandatory Lost Reason field', () => {
-    expect(() => validateRequired([{ ...fields[1]!, isMandatory: true }], { lost_reason: null }, true)).toThrow(/Lost Reason|lost_reason/);
+  it('accepts Lost with a reason, saved together or already on the record', () => {
+    expect(() => validateRequired(fields, { lead_status: 'Lost', lost_reason: 'No Need' }, false, { lead_status: 'Lost', lost_reason: 'No Need' })).not.toThrow();
+    expect(() => validateRequired(fields, { lead_status: 'Lost' }, false, { lead_status: 'Lost', lost_reason: 'No Need' })).not.toThrow();
+  });
+
+  it('does not stop an unrelated edit on a record that was already Lost', () => {
+    expect(() => validateRequired(fields, { mobile: '9811111111' }, false, { lead_status: 'Lost', lost_reason: null })).not.toThrow();
+  });
+
+  it('refuses clearing the reason of a Lost record', () => {
+    expect(() => validateRequired(fields, { lost_reason: null }, false, { lead_status: 'Lost', lost_reason: null })).toThrow(/Lost Reason/);
+  });
+
+  it('leaves every other status alone', () => {
+    expect(() => validateRequired(fields, { lead_status: 'Contacted' }, false, { lead_status: 'Contacted', lost_reason: null })).not.toThrow();
   });
 });
 

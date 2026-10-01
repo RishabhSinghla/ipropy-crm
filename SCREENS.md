@@ -1412,3 +1412,44 @@ It runs on the provider's quick model (`fast: true`): measured on production,
 Gemini Flash-Lite answered in about 1.4 s, the writing model in about 6 and up
 to 10. `.github/workflows/ai-failures.yml` now prints each model's median and
 slow answer times.
+
+## Five more and a fold, 1 October 2026 (evening)
+
+* **The Hot chip.** The toolbar's call-outcome chip is gone — the last-call
+  filter is still in the filter panel — and in its place is a flame and a
+  count: the module's own **tag** called "hot" (`hot`, `Hot Lead`, `hot
+  leads`; production's is `hot`, offered on all three modules). One tap shows
+  only those records, a second shows everybody. A module with no such tag
+  shows no chip. `components/HotTagChip.tsx`; the count is the tag list's own.
+* **Lost needs a Lost Reason, on every module.** This reverses migration
+  `176` (28 September), on the owner's instruction. One rule,
+  `missingLostReason` in `@ipropy/shared/lostReason.ts`, used by the server
+  (`validateRequired`), the full form and the inline editor:
+  - the stage field is the one stored in the `status` column, the reason
+    field the one on the `lost_reason` dropdown, and "Lost" is any stage
+    value containing the word (Leads stores `Lead Lost`);
+  - it asks only when the stage is being **set** to Lost, or the reason
+    cleared — an old Lost record can still have its number fixed;
+  - picking Lost inline opens *"Why was it lost?"* with the reasons as
+    buttons, and both are saved together;
+  - a Lost record with no reason shows its Lost Reason box ringed red
+    (`owesLostReason`).
+  Migration `176`'s guard against a `requiredWhen` on Lost Reason stays: the
+  rule is built in, not a per-field setting somebody can half-configure.
+* **The module badge sits just left of the record counter** (`LEADS · 1 / 25,458`).
+* **Call outcomes store what they show.** Four stored a different word from
+  their label (`Busy` showed "Busy/Ringing"; `Call Not Picked`, "Call Back
+  Request"; `Interested`, "Call Connected"; `Invalid Number`,
+  "Invalid/Wrong Num"). `align-picklist-values.yml` with `only:
+  call_disposition` renamed the stored words to the labels — calls, saved
+  lists filtering on the last call outcome (new: `SYSTEM_FILTER_FIELDS` in
+  `picklists.ts`) and tombstones included — and **no other dropdown**. The
+  outcome cards know both words, and whether anybody answered is read off the
+  card (`nobodyAnswered`), not a list of words.
+* **"Pending" is "Upcoming".** A follow-up after tomorrow reads Upcoming;
+  "Pending" read as late. The deck's auto choice with nothing booked says
+  *Set by the outcome*.
+* **The left toolbar folds** like the right pane: a brand tab on its inner
+  edge folds it to a slim *Menu* strip, the strip brings it back, the width
+  slides and the icons fade. Remembered per browser (`ipropy.dock.folded`).
+  Pinned by `e2e/workspaceDock.spec.ts`.
