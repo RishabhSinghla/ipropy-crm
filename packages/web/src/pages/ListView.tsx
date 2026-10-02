@@ -1668,11 +1668,19 @@ function BulkEditButton({
       && f.displayType !== 'hidden' && f.displayType !== 'detail_only'
       && f.displayType !== 'readonly' && f.displayType !== 'create_only'
       && !f.isReadonly
-      && f.massEditable
-      // Assigned To is not bulk-edited: the Reassign button that did it was
-      // removed on 2 October 2026 ("not needed"), and a record is handed over
-      // one at a time from its own Assigned To field.
-      && f.uitype !== 'owner'),
+      && f.massEditable),
+    // **Assigned To is bulk-editable again**, on the owner's instruction later
+    // the same day: *"in the bulk edit of Inventory, please provide Assignto
+    // option from bulk adit feature"* (2 October 2026). The standalone
+    // Reassign button went that morning as a duplicate; handing twenty units
+    // to one agent is the job it was doing, and this is where it belongs —
+    // beside every other field a selection can be changed through, on every
+    // module rather than only Inventories.
+    //
+    // Nothing special is needed on the server: `owner_id` is already
+    // `mass_editable` on all three modules and `massUpdate` writes it through
+    // `recordService` like any other field, so permissions, validation and the
+    // audit trail apply unchanged.
     [fieldMap],
   );
   const field = fieldName ? fieldMap.get(fieldName) : undefined;

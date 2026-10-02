@@ -88,3 +88,48 @@ test('Enter posts a comment, and Shift+Enter writes a new line', async ({ page }
   await expect(box, 'Enter did not post the comment').toHaveValue('', { timeout: 20_000 });
   await expect(page.getByText(marker).first()).toBeVisible({ timeout: 20_000 });
 });
+
+/**
+ * 6. *"in the bulk edit of Inventory, please provide Assignto option from bulk
+ *    adit feature"* — 2 October 2026.
+ *
+ * The standalone Reassign button went that morning as a duplicate, and the
+ * bulk-edit list was written to leave owner fields out with it. Handing twenty
+ * units to one agent is the job it was doing, so it belongs here — beside
+ * every other field a selection can be changed through, and on every module
+ * rather than only Inventories.
+ */
+for (const path of ['/properties', '/leads']) {
+  test(`${path}: a selection can be handed to another agent in one go`, async ({ page }) => {
+    await openList(page, path);
+    await page.getByRole('checkbox', { name: /^Select all/ }).check();
+
+    await page.getByRole('button', { name: /^Edit$/ }).first().click();
+    const dialog = page.getByRole('dialog').first();
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+
+    const picker = dialog.locator('select').first();
+    const fields = await picker.evaluate((select: HTMLSelectElement) =>
+      [...select.options].map((option) => option.text));
+    expect(
+      fields.some((name) => /assigned to/i.test(name)),
+      `bulk edit offers no Assigned To on ${path}: ${fields.slice(0, 12).join(', ')}`,
+    ).toBe(true);
+
+    /*
+      And choosing it offers somebody to hand them to, rather than a dead row.
+      A field in the list that cannot be filled in is the failure this would
+      otherwise ship as.
+    */
+    await picker.selectOption({ label: fields.find((name) => /assigned to/i.test(name))! });
+
+    const agents = dialog.locator('select').nth(1);
+    await expect(agents, 'Assigned To has no control to choose an agent with').toBeVisible({ timeout: 10_000 });
+    const people = await agents.evaluate((select: HTMLSelectElement) =>
+      [...select.options].filter((option) => option.value).length);
+    expect(people, 'the agent picker offers nobody to hand the records to').toBeGreaterThan(0);
+
+    // And the change is applied to the whole selection, not one record.
+    await expect(dialog.getByRole('button', { name: /^Apply to \d/ })).toBeVisible();
+  });
+}

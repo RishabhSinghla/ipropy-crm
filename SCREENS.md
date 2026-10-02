@@ -1578,3 +1578,14 @@ on the dock's `#f0f2f5` is **4.48:1** — under AA by two hundredths, on a row
 that is now words rather than a filled circle. It is `#0a7038` there. The
 filled circle elsewhere keeps the real green, because white on it is a
 different pair.
+
+* **A selection can be handed to another agent in one go again** — *"in the
+  bulk edit of Inventory, please provide Assignto option from bulk adit
+  feature."* The standalone Reassign button went that morning as a duplicate,
+  and the bulk-edit field list was written to leave owner fields out with it.
+  Handing twenty units to one agent is the job that button was doing, so it is
+  back where it belongs: beside every other field a selection can be changed
+  through, **on every module** rather than only Inventories.
+  Nothing was needed on the server — `owner_id` is already `mass_editable` on
+  all three modules and `massUpdate` writes it through `recordService`, so
+  permissions, validation and the audit trail apply unchanged.
