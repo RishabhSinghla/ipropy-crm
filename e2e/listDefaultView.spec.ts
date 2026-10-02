@@ -69,12 +69,22 @@ test('the record\'s own tabs open inside the desk, not on another page', async (
   /*
     The complaint this answers: every tab used to send you to the record page,
     which is the trip the desk exists to save. So the assertion is not only
-    that each tab renders — it is that the URL never moved.
+    that each one renders — it is that the URL never moved.
+
+    It walks **whatever is on the bar** rather than a fixed five. Since
+    2 October 2026 the bar is the rep's own arrangement, five entries with the
+    rest under *More*, so naming the five would be a spec about one browser's
+    stored order rather than about the promise.
   */
-  for (const tab of ['Activity', 'Matching', 'Files', 'Calls', 'WhatsApp']) {
-    await page.getByRole('button', { name: new RegExp(`^${tab}`) }).first().click();
+  const bar = page.getByTestId('record-menu-bar');
+  const count = await bar.locator('button').count();
+  for (let index = 0; index < count; index += 1) {
+    const button = bar.locator('button').nth(index);
+    const name = (await button.innerText()).split('\n')[0];
+    if (/^More$/.test(name)) continue; // the overflow menu, not a section
+    await button.click();
     await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
-    expect(page.url(), `${tab} navigated away from the list`).toBe(listUrl);
+    expect(page.url(), `${name} navigated away from the list`).toBe(listUrl);
   }
 });
 
@@ -223,14 +233,20 @@ test('the face, the name and the controls share one row', async ({ page }) => {
   */
   const header = recordPane(page).locator('header').first();
   const name = header.getByRole('heading').first();
-  const star = header.locator('button[title$="starred"], button[title^="Star "]').first();
+  /*
+    The *More actions* circle, not the star: the star and the tag left this bar
+    on 2 October 2026 for rows in that very menu — *"the extra icon of Header
+    also will be remove from header like, Star, Tag icons."* This button is the
+    last control on the row, which is what the measurement is about.
+  */
+  const lastControl = header.locator('button[aria-label="More actions"]').first();
   const faceBox = (await header.getByTestId('split-hero-avatar').boundingBox())!;
   const nameBox = (await name.boundingBox())!;
-  const starBox = (await star.boundingBox())!;
+  const controlBox = (await lastControl.boundingBox())!;
 
   expect(nameBox.x, 'the name should start after the face').toBeGreaterThan(faceBox.x);
-  expect(starBox.x, 'the controls should sit after the name').toBeGreaterThan(nameBox.x);
-  expect(Math.abs(starBox.y - faceBox.y), 'the controls have left the face\'s row').toBeLessThan(90);
+  expect(controlBox.x, 'the controls should sit after the name').toBeGreaterThan(nameBox.x);
+  expect(Math.abs(controlBox.y - faceBox.y), 'the controls have left the face\'s row').toBeLessThan(90);
 });
 
 test('the queue can be ticked in bulk and sorted from its own header', async ({ page }) => {
@@ -318,12 +334,17 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
   const header = recordPane(page).locator('header').first();
   const dialog = page.getByRole('dialog');
   /*
+    Through *More actions*, because the tag icon left this bar on 2 October
+    2026 — *"the extra icon of Header also will be remove from header like,
+    Star, Tag icons."* The chips stayed; only the icon went.
+
     Retried, because the "Tags updated" toast lands over this corner of the
     header for a few seconds and a click that hits it opens nothing at all.
   */
   const openTheDialog = async (): Promise<void> => {
     await expect(async () => {
-      await header.getByRole('button', { name: 'Edit tags' }).click();
+      await header.locator('button[aria-label="More actions"]').first().click();
+      await page.getByRole('button', { name: /Add a tag|^Tags \(/ }).first().click();
       await expect(dialog).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 20_000 });
   };
@@ -344,10 +365,10 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
 
   const chip = header.getByText(name, { exact: true }).first();
   await expect(chip).toBeVisible({ timeout: 10_000 });
-  const star = header.locator('button[title$="starred"], button[title^="Star "]').first();
+  const icons = header.locator('button[aria-label="More actions"]').first();
   const chipBox = (await chip.boundingBox())!;
-  const starBox = (await star.boundingBox())!;
-  expect(chipBox.x, 'the tag chip is not before the icons').toBeLessThan(starBox.x);
+  const iconsBox = (await icons.boundingBox())!;
+  expect(chipBox.x, 'the tag chip is not before the icons').toBeLessThan(iconsBox.x);
 
   // Put the record back the way it was found.
   await openTheDialog();

@@ -1,14 +1,13 @@
-import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SummaryText } from './SummaryText';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText,
-  Mail, MessageCircle, MessagesSquare, MoreHorizontal, Phone, Search, Sparkles, Star, Trash2, Users, X,
+  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
+  History, Mail, MessageCircle, MessageSquare, MessagesSquare, MoreHorizontal, Phone, Search, Send,
+  Sparkles, Star, Tag, Trash2, Users, X,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { MatchingTab } from './MatchingTab';
@@ -29,22 +28,41 @@ import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar } from './RecordAvatar';
-import type { SplitTabKey } from '../lib/splitViewLayout';
+import {
+  activityKindOf, arrangeRecordMenu, loadRecordMenu, moveEntry, saveRecordMenu, splitMenu,
+  type MenuKey,
+} from '../lib/recordMenu';
 import { api } from '../lib/api';
 import { activeSortOption, sortOptions } from '../lib/listSort';
-import { cn, restrictionForField } from '../lib/utils';
+import { cn } from '../lib/utils';
 import { toast } from '../lib/store';
 import { queueRecordUrl } from '../lib/saveNextUrl';
 import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
 
-type DeskTabKey = SplitTabKey;
+/*
+  **2 October 2026, the owner:** *"all tab of activity move/merge in to menu
+  bar i.e All, Comment, Messages, Calls, Changes, Files."*
 
-const TAB_ICON: Record<DeskTabKey, JSX.Element> = {
+  One row of buttons now. Five of them open a screen of their own; three narrow
+  the activity stream to one kind of thing that happened. What each one *is*
+  lives in `lib/recordMenu.ts`, pure and tested — this file only draws it.
+*/
+const MENU_ICON: Record<MenuKey, JSX.Element> = {
   timeline: <MessagesSquare className="h-4 w-4" />,
   matching: <Users className="h-4 w-4" />,
   files: <FileText className="h-4 w-4" />,
   calls: <Phone className="h-4 w-4" />,
   whatsapp: <MessageCircle className="h-4 w-4" />,
+  comment: <MessageSquare className="h-4 w-4" />,
+  message: <Send className="h-4 w-4" />,
+  audit: <History className="h-4 w-4" />,
+};
+
+/** The three the activity stream contributes. Tab labels stay the Layout Designer's. */
+const STREAM_LABEL: Record<'comment' | 'message' | 'audit', string> = {
+  comment: 'Comments',
+  message: 'Messages',
+  audit: 'Changes',
 };
 
 /**
@@ -201,7 +219,7 @@ export function IpropyWorkspace({
   onShowing?: (showing: 'list' | 'record') => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
-  const [tab, setTab] = useState<DeskTabKey | null>(null);
+  const [menuPick, setMenuPick] = useState<MenuKey | null>(null);
   const [finding, setFinding] = useState(false);
   const [findText, setFindText] = useState('');
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
@@ -417,8 +435,40 @@ export function IpropyWorkspace({
     queueFields, blocks, tabs, rightPaneRows,
     assignedField, statusField, followUpField, phoneField, emailField,
   } = useRecordPanes(module);
-  // Nothing picked yet, or a tab the designer has since hidden: the first tab.
-  const shownTab: DeskTabKey = tabs.some((item) => item.key === tab) ? tab! : tabs[0]!.key;
+  /*
+    The menu bar's order, this browser's own.
+
+    It is remembered per person per module rather than per organisation — the
+    owner asked for *"user can set menu button … as per their priority"*, and a
+    rep who lives in Comments and a manager who lives in Changes are both
+    right. Same reasoning as which view a list opens in and how wide the queue
+    is: a personal arrangement, adjusted now and then, nobody else's business.
+  */
+  const [savedMenu, setSavedMenu] = useState<MenuKey[] | null>(() => loadRecordMenu(module.name));
+  useEffect(() => { setSavedMenu(loadRecordMenu(module.name)); }, [module.name]);
+  const availableMenu = useMemo<MenuKey[]>(
+    () => [...tabs.map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
+    [tabs],
+  );
+  const menuOrder = useMemo(() => arrangeRecordMenu(availableMenu, savedMenu), [availableMenu, savedMenu]);
+  const reorderMenu = useCallback((from: number, to: number) => {
+    // Outside the state updater on purpose: StrictMode calls an updater twice,
+    // and a write to storage is not something to do twice for one drag.
+    const next = moveEntry(menuOrder, from, to);
+    saveRecordMenu(module.name, next);
+    setSavedMenu(next);
+  }, [menuOrder, module.name]);
+  const menuLabel = useCallback((key: MenuKey): string => {
+    const kind = activityKindOf(key);
+    if (kind) return STREAM_LABEL[kind];
+    return tabs.find((item) => item.key === key)?.label ?? key;
+  }, [tabs]);
+
+  // Nothing picked yet, or an entry the designer has since hidden: the first one.
+  const shownKey: MenuKey = menuOrder.includes(menuPick as MenuKey) ? menuPick! : menuOrder[0]!;
+  /** `null` for a tab that draws its own screen; otherwise the stream, narrowed. */
+  const streamKind = activityKindOf(shownKey);
+  const onTheStream = streamKind !== null || shownKey === 'timeline';
 
   /*
     Which field holds the name. `module.labelFields` is what every other
@@ -427,6 +477,8 @@ export function IpropyWorkspace({
   */
   /** The email dialog, open against the record on screen. */
   const [composing, setComposing] = useState(false);
+  /** The tag dialog, opened from *More actions* since the header's icon went (2 October 2026). */
+  const [tagging, setTagging] = useState(false);
 
   const nameField = useMemo(
     () => module.fields.find((f) => f.name === module.labelFields?.[0]),
@@ -480,7 +532,7 @@ export function IpropyWorkspace({
     enabled: Boolean(active?.id),
     staleTime: 60_000,
   });
-  const tabCount = (key: DeskTabKey): string | null => {
+  const menuCount = (key: MenuKey): string | null => {
     const shown = (count: number | undefined, cap: number): string | null => {
       if (!count) return null;
       return count >= cap ? `${cap}+` : String(count);
@@ -489,6 +541,10 @@ export function IpropyWorkspace({
     if (key === 'matching') return shown(matchingCount, 50);
     if (key === 'files') return shown(fileRows?.length, 1000);
     if (key === 'calls') return shown(callRows?.length, 50);
+    // The three stream entries count out of the same answer the tabs do, so a
+    // badge and the list it labels cannot disagree and nothing is asked twice.
+    const kind = activityKindOf(key);
+    if (kind) return shown(feed?.filter((entry) => entry.type === kind).length, FEED_LIMIT);
     return shown(feed?.filter((entry) => entry.type === 'message' && entry.meta.channel === 'whatsapp').length, FEED_LIMIT);
   };
 
@@ -883,17 +939,6 @@ export function IpropyWorkspace({
                   <Search className="h-4 w-4" />
                 </button>
               )}
-              <TagButton
-                module={module.name}
-                recordId={active.id}
-                tags={active.tags}
-                canEdit={canEdit}
-                className={cn(
-                  ACTION_CIRCLE,
-                  'hover:bg-brand-600',
-                  active.tags?.length && 'border-brand-300 bg-brand-100 text-brand-800 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-200',
-                )}
-              />
               {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
               {/*
                 Write to them without leaving the pane — *"show email Icon in
@@ -921,18 +966,14 @@ export function IpropyWorkspace({
                   <Mail className="h-4 w-4" />
                 </button>
               )}
-              <button
-                aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
-                title={active.starred ? 'Remove from starred' : 'Star this record'}
-                onClick={() => star.mutate(active)}
-                className={cn(
-                  ACTION_CIRCLE,
-                  'hover:bg-amber-500',
-                  active.starred && 'border-amber-300 bg-amber-50 text-amber-500',
-                )}
-              >
-                <Star className={cn('h-4 w-4', active.starred && 'fill-amber-500')} />
-              </button>
+              {/*
+                **The star and the tag icon are gone from this bar** — the
+                owner, 2 October 2026: *"after the Resign Middle Menu bar then
+                the extra icon of Header also will be remove from header like,
+                Star, Tag icons."* Neither function went anywhere: both are rows
+                in *More actions*, a few pixels to the right. What the bar keeps
+                is what a rep reaches for mid-call — search, WhatsApp, email.
+              */}
               <Dropdown
                 align="right"
                 className="min-w-[15rem]"
@@ -944,6 +985,20 @@ export function IpropyWorkspace({
               >
                 {(close) => (
                   <>
+                    <DropdownItem
+                      icon={<Star className={cn('h-3.5 w-3.5', active.starred && 'fill-amber-500 text-amber-500')} />}
+                      onClick={() => { close(); star.mutate(active); }}
+                    >
+                      {active.starred ? 'Remove from starred' : 'Star this record'}
+                    </DropdownItem>
+                    {canEdit && (
+                      <DropdownItem
+                        icon={<Tag className={cn('h-3.5 w-3.5', active.tags?.length && 'text-brand-600 dark:text-brand-300')} />}
+                        onClick={() => { close(); setTagging(true); }}
+                      >
+                        {active.tags?.length ? `Tags (${active.tags.length})` : 'Add a tag'}
+                      </DropdownItem>
+                    )}
                     <DropdownItem
                       icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
                       onClick={() => {
@@ -977,19 +1032,55 @@ export function IpropyWorkspace({
         </header>
 
         {/*
+          The tag dialog lives out here, not in the menu panel above: a panel
+          unmounts the moment it closes, and the dialog would go with it.
+        */}
+        <TagButton
+          module={module.name}
+          recordId={active.id}
+          tags={active.tags}
+          canEdit={canEdit}
+          open={tagging}
+          onOpenChange={setTagging}
+        />
+
+        {/*
           **30 September 2026, the owner's prototype:** the tabs are icons, each
           with its count — *"menu will be in icons instead of Text"*. The name
-          is still there for a screen reader and on hover; the order and the
-          names are the Layout Designer's, and the first is the one a record
-          opens on.
+          is still there for a screen reader and on hover; the names are the
+          Layout Designer's, and the first is the one a record opens on.
+
+          **2 October 2026:** the order is now the rep's own, by dragging, with
+          anything past the fifth under *More* — his *"user can set menu button
+          and they can choose button as per their priority and if button too
+          much, then 'More hamburger' will be shown"*.
         */}
-        <nav className="flex shrink-0 items-center gap-4 overflow-x-auto border-b border-slate-200 bg-white px-4 text-slate-500 no-scrollbar dark:border-slate-800 dark:bg-slate-900" aria-label="Record workspace sections">
-          {tabs.map((item) => (
-            <DeskTab key={item.key} active={shownTab === item.key} onClick={() => setTab(item.key)} label={item.label} count={tabCount(item.key)}>
-              {TAB_ICON[item.key]}
-            </DeskTab>
-          ))}
-        </nav>
+        <RecordMenuBar
+          order={menuOrder}
+          shown={shownKey}
+          onPick={setMenuPick}
+          onReorder={reorderMenu}
+          label={menuLabel}
+          count={menuCount}
+        />
+
+        {/*
+          What this entry lets a rep *start*, right under the bar — *"after
+          selection of a Tab please give a option to make New call/Post
+          Comment/Add New files/Send New whatsapp"*.
+
+          Only where the screen below does not already offer it: Files opens on
+          its own **Upload file** button and WhatsApp on its own message box,
+          and a second button two centimetres above the first is how a rep
+          learns to trust neither. There is no SMS row because this CRM cannot
+          send one — an action that can only apologise is worse than none.
+        */}
+        <RecordMenuAction
+          shown={shownKey}
+          onStream={onTheStream}
+          phone={phoneValue}
+          recordId={active.id}
+        />
 
         {/*
           **One scroll area, never two stacked.** The WhatsApp tab has its own
@@ -1001,23 +1092,29 @@ export function IpropyWorkspace({
         */}
         <div className={cn(
           'flex min-h-0 min-w-0 flex-1 flex-col',
-          shownTab === 'timeline' || shownTab === 'whatsapp'
+          onTheStream || shownKey === 'whatsapp'
             ? 'overflow-hidden'
             // `xl:overflow-y-auto`, not `overflow-y-auto`: on a phone the whole
             // record column scrolls as one page, and a scroller inside a
             // scroller is how a finger ends up moving the wrong thing.
             : 'space-y-5 bg-[#fafbfa] p-5 xl:overflow-y-auto dark:bg-slate-950/40',
         )}>
-          {shownTab === 'timeline' && (
+          {onTheStream && (
             <>
-              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} find={findText} />
+              {/*
+                One stream, four doors into it. `filter` is the bar's choice
+                now, so the feed no longer carries a chip row of its own — that
+                row named Calls and Files a second time, two rows apart,
+                meaning something different each time.
+              */}
+              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} find={findText} filter={streamKind ?? 'all'} />
               <NoteComposer module={module.name} recordId={active.id} look="dock" whatsAppTo={phoneValue || undefined} />
             </>
           )}
-          {shownTab === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
-          {shownTab === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
-          {shownTab === 'calls' && <CallsTab recordId={active.id} />}
-          {shownTab === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
+          {shownKey === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
+          {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
+          {shownKey === 'calls' && <CallsTab recordId={active.id} />}
+          {shownKey === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
         </div>
       </section>
 
@@ -1438,16 +1535,46 @@ function QueueCard({
  * than on its own page. Gating it on that setting is what put an Edit button
  * here, which is the thing the owner asked to be rid of.
  */
-function DeskTab({ active = false, onClick, label, count, children }: { active?: boolean; onClick: () => void; label: string; count?: string | null; children: React.ReactNode }): JSX.Element {
+function DeskTab({ active = false, onClick, label, count, children, drag }: {
+  active?: boolean;
+  onClick: () => void;
+  label: string;
+  count?: string | null;
+  children: React.ReactNode;
+  /** Where this entry sits, and how to move it. Absent: not arrangeable. */
+  drag?: {
+    index: number;
+    dragging: boolean;
+    onPickUp: (index: number) => void;
+    onDrop: (to: number) => void;
+    onNudge: (from: number, to: number) => void;
+  };
+}): JSX.Element {
   return (
     <button
       type="button"
       onClick={onClick}
+      draggable={Boolean(drag)}
+      onDragStart={drag && (() => drag.onPickUp(drag.index))}
+      onDragEnd={drag && (() => drag.onPickUp(-1))}
+      onDragOver={drag && ((event) => { event.preventDefault(); })}
+      onDrop={drag && ((event) => { event.preventDefault(); drag.onDrop(drag.index); })}
+      /*
+        **Alt + ← / → moves it too.** Dragging is a mouse, and an arrangement
+        a keyboard cannot reach is an arrangement half the team does not have.
+      */
+      onKeyDown={drag && ((event) => {
+        if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+        event.preventDefault();
+        drag.onNudge(drag.index, drag.index + (event.key === 'ArrowLeft' ? -1 : 1));
+      })}
       aria-label={count ? `${label} (${count})` : label}
       aria-current={active ? 'page' : undefined}
-      title={label}
+      title={drag ? `${label} — drag to reorder, or Alt and an arrow key` : label}
       className={cn(
         'flex shrink-0 items-center gap-1.5 border-b-2 px-1.5 py-2 text-xs font-semibold transition-colors',
+        drag && 'cursor-grab active:cursor-grabbing',
+        drag?.dragging && 'opacity-40',
         active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200',
       )}
     >
@@ -1459,6 +1586,164 @@ function DeskTab({ active = false, onClick, label, count, children }: { active?:
     </button>
   );
 }
+/**
+ * The record's one menu bar: the first five as buttons, the rest under *More*.
+ *
+ * **2 October 2026, the owner:** *"Please Make Menu tab Drag and drop in menu
+ * bar, so that user can set menu button and they can choose button as per their
+ * priority and if button too much, then 'More hamburger' will be shown."*
+ *
+ * Native HTML5 drag-and-drop, no new dependency: a drop on a button moves the
+ * dragged one into that place. The arithmetic of *which* place lives in
+ * `moveEntry`, pure and tested, because a drop landing one position short is
+ * the classic bug here and no amount of reading the code finds it.
+ */
+function RecordMenuBar({ order, shown, onPick, onReorder, label, count }: {
+  order: MenuKey[];
+  shown: MenuKey;
+  onPick: (key: MenuKey) => void;
+  onReorder: (from: number, to: number) => void;
+  label: (key: MenuKey) => string;
+  count: (key: MenuKey) => string | null;
+}): JSX.Element {
+  const { bar, more } = splitMenu(order);
+  const [dragFrom, setDragFrom] = useState(-1);
+  const pickUp = (index: number): void => setDragFrom(index);
+  const drop = (to: number): void => {
+    if (dragFrom >= 0) onReorder(dragFrom, to);
+    setDragFrom(-1);
+  };
+  return (
+    <nav
+      className="flex shrink-0 items-center gap-4 overflow-x-auto border-b border-slate-200 bg-white px-4 text-slate-500 no-scrollbar dark:border-slate-800 dark:bg-slate-900"
+      aria-label="Record workspace sections"
+      data-testid="record-menu-bar"
+    >
+      {bar.map((key, index) => (
+        <DeskTab
+          key={key}
+          active={shown === key}
+          onClick={() => onPick(key)}
+          label={label(key)}
+          count={count(key)}
+          drag={{ index, dragging: dragFrom === index, onPickUp: pickUp, onDrop: drop, onNudge: onReorder }}
+        >
+          {MENU_ICON[key]}
+        </DeskTab>
+      ))}
+      {more.length > 0 && (
+        <Dropdown
+          align="right"
+          className="min-w-[14rem]"
+          trigger={(
+            <button
+              type="button"
+              className="flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-1.5 py-2 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+              aria-label={`More sections (${more.length})`}
+              title="More sections"
+              data-testid="record-menu-more"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="whitespace-nowrap">More</span>
+            </button>
+          )}
+        >
+          {(close) => (
+            <>
+              {more.map((key, offset) => {
+                const index = bar.length + offset;
+                return (
+                  <div key={key} className="flex items-center gap-1 px-1">
+                    <button
+                      type="button"
+                      onClick={() => { onPick(key); close(); }}
+                      className={cn(
+                        'flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold transition-colors',
+                        shown === key ? 'text-brand-600 dark:text-brand-300' : 'text-slate-600 hover:bg-[var(--surface-muted)] dark:text-slate-300 dark:hover:bg-slate-800',
+                      )}
+                    >
+                      {MENU_ICON[key]}
+                      <span className="min-w-0 flex-1 truncate">{label(key)}</span>
+                      {count(key) && <span className="shrink-0 text-[10px] tabular-nums text-muted">{count(key)}</span>}
+                    </button>
+                    {/*
+                      Dragging *out of* a floating panel is not something a
+                      browser does reliably — the panel closes on the first
+                      pointer move. So an entry down here is promoted by a
+                      button instead, which also works from a keyboard.
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => onReorder(index, 0)}
+                      aria-label={`Move ${label(key)} to the front of the bar`}
+                      title="Move to the front of the bar"
+                      className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-[var(--surface-muted)] hover:text-brand-600 dark:hover:bg-slate-800"
+                    >
+                      <GripVertical className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </Dropdown>
+      )}
+    </nav>
+  );
+}
+
+/**
+ * The one thing this section lets a rep start, drawn under the bar.
+ *
+ * **2 October 2026, the owner:** *"after selection of a Tab please give a
+ * option to make New call/Post Comment/Add New files/Send New whatsapp/Send
+ * New SMS under menu bar of selected tab in History Pane."*
+ *
+ * Only where the screen below does not already offer it. Files opens on its own
+ * **Upload file** button and WhatsApp on its own message box; a second button
+ * two centimetres above the first is how a rep learns to trust neither. **And
+ * there is no SMS row, because this CRM cannot send one** — a control that can
+ * only apologise is worse than no control, which is the rule the dead End
+ * button on the call console already answers to.
+ */
+function RecordMenuAction({ shown, onStream, phone, recordId }: {
+  shown: MenuKey;
+  onStream: boolean;
+  phone: string;
+  recordId: string;
+}): JSX.Element | null {
+  if (shown === 'calls') {
+    return phone ? (
+      <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900" data-testid="record-menu-action">
+        <CallButton to={phone} />
+      </div>
+    ) : null;
+  }
+  if (!onStream) return null;
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900" data-testid="record-menu-action">
+      {/*
+        The note box is already at the foot of the stream, so this puts the
+        cursor in it rather than opening a second one somewhere else — two
+        places to type a comment is two drafts to lose.
+      */}
+      <button
+        type="button"
+        className="btn-secondary btn-sm"
+        onClick={() => {
+          const box = document.querySelector<HTMLTextAreaElement>(`[data-testid="note-box"][data-record="${recordId}"]`);
+          box?.focus();
+          box?.scrollIntoView({ block: 'nearest' });
+        }}
+      >
+        <MessageSquare className="h-3.5 w-3.5" />
+        Post a comment
+      </button>
+      {phone && <WhatsAppButton to={phone} />}
+    </div>
+  );
+}
+
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
 
 /** Whether a key press belongs to a text box, a dialog or a menu rather than to the queue. */

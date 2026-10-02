@@ -363,6 +363,14 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
       )}
       <textarea
         ref={textBox}
+        /*
+          Named, because the record's menu bar has a *Post a comment* button
+          that puts the cursor in **this** box — and a record page can hold more
+          than one note box at a time, so the record's own id is part of the
+          name (2 October 2026).
+        */
+        data-testid="note-box"
+        data-record={recordId}
         value={note}
         onChange={(event) => setNote(event.target.value)}
         /*

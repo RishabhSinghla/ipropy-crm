@@ -1,0 +1,105 @@
+/**
+ * The record's one menu bar, arranged by the person using it.
+ *
+ * **2 October 2026, the owner:** *"Please Make Menu tab Drag and drop in menu
+ * bar, so that user can set menu button and they can choose button as per their
+ * priority and if button too much, then 'More hamburger' will be shown … And
+ * all tab of activity move/merge in to menu bar i.e All, Comment, Messages,
+ * Calls, Changes, Files and after selection of a Tab please give a option to
+ * make New call/Post Comment/Add New files/Send New whatsapp … after the Resign
+ * Middle Menu bar then the extra icon of Header also will be remove from header
+ * like, Star, Tag icons."*
+ *
+ * Both modules, because *"All changes should be in all Modules"* — "it works on
+ * leads" is exactly how a module gets left behind.
+ *
+ * The arrangement lives in the browser's own storage, so the only way to prove
+ * it stuck is to move something and reload. Each test clears the key first:
+ * otherwise a run inherits the previous run's arrangement and proves nothing.
+ */
+import { expect, test } from '@playwright/test';
+
+test.use({ viewport: { width: 1600, height: 900 } });
+
+const MODULES = ['leads', 'properties'] as const;
+
+async function openFirstRecord(page: import('@playwright/test').Page, module: string): Promise<void> {
+  await page.goto(`/${module}`);
+  await page.evaluate((name) => {
+    try { localStorage.removeItem(`ipropy.recordMenu.${name}`); } catch { /* a browser refusing storage still gets the default */ }
+  }, module);
+  await page.reload();
+  await expect(page.getByText(/[\d,]+ records/).first()).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('queue-card').first().click();
+  await expect(page.getByTestId('record-menu-bar')).toBeVisible();
+}
+
+for (const module of MODULES) {
+  test(`${module}: five on the bar and the rest under More`, async ({ page }) => {
+    await openFirstRecord(page, module);
+    const bar = page.getByTestId('record-menu-bar');
+    // Five entries plus the More button. Fewer would mean nothing spilled, and
+    // then "More" would be a control with nothing behind it.
+    const more = page.getByTestId('record-menu-more');
+    await expect(more).toBeVisible();
+    const onTheBar = await bar.locator('button').count();
+    expect(onTheBar).toBe(6);
+
+    await more.click();
+    // Every entry the module offers is reachable — an entry that is neither on
+    // the bar nor in this list is a screen nobody can get to.
+    await expect(page.getByRole('button', { name: /Move .* to the front of the bar/ }).first()).toBeVisible();
+    await page.keyboard.press('Escape');
+  });
+
+  test(`${module}: the activity tabs are in the bar, not a second row`, async ({ page }) => {
+    await openFirstRecord(page, module);
+    // The stream's own chip row is gone: it named Calls and Files a second
+    // time, two rows apart, meaning something different each time.
+    await expect(page.getByRole('group', { name: 'Show in the timeline' })).toHaveCount(0);
+    // Comments is on the bar, and choosing it still shows the stream.
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Comments/ }).click();
+    await expect(page.getByTestId('activity-feed')).toBeVisible();
+  });
+
+  test(`${module}: the bar offers what the section lets you start`, async ({ page }) => {
+    await openFirstRecord(page, module);
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Comments/ }).click();
+    const action = page.getByTestId('record-menu-action');
+    await expect(action).toBeVisible();
+    await action.getByRole('button', { name: 'Post a comment' }).click();
+    // It puts the cursor in the note box that is already there rather than
+    // opening a second one: two places to type is two drafts to lose.
+    await expect(page.locator('[data-testid="note-box"]:focus')).toHaveCount(1);
+  });
+
+  test(`${module}: an arrangement sticks`, async ({ page }) => {
+    await openFirstRecord(page, module);
+    const bar = page.getByTestId('record-menu-bar');
+    const before = (await bar.locator('button').allInnerTexts()).slice(0, 2);
+    // Alt and an arrow key, because dragging is a mouse and an arrangement a
+    // keyboard cannot reach is one half the team does not have.
+    await bar.locator('button').first().focus();
+    await page.keyboard.press('Alt+ArrowRight');
+    const after = (await bar.locator('button').allInnerTexts()).slice(0, 2);
+    expect(after[0]).not.toBe(before[0]);
+    await page.reload();
+    await expect(page.getByTestId('record-menu-bar')).toBeVisible({ timeout: 30_000 });
+    const reloaded = (await page.getByTestId('record-menu-bar').locator('button').allInnerTexts()).slice(0, 2);
+    expect(reloaded[0]).toBe(after[0]);
+  });
+
+  test(`${module}: the star and the tag icon left the header for the menu`, async ({ page }) => {
+    await openFirstRecord(page, module);
+    // Gone from the icon bar…
+    await expect(page.locator('button[aria-label="Edit tags"]')).toHaveCount(0);
+    await expect(page.locator('button[aria-label="Star this record"], button[aria-label="Remove from starred"]')).toHaveCount(0);
+    // …and both still reachable, a few pixels away.
+    await page.locator('button[aria-label="More actions"]').first().click();
+    // `Dropdown`'s panel is a plain positioned div, not `role="menu"` — reading
+    // it as a menu finds nothing at all, which is how this spec first failed
+    // against markup that was perfectly correct.
+    await expect(page.getByRole('button', { name: /Star this record|Remove from starred/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Add a tag|^Tags \(/ })).toBeVisible();
+  });
+}

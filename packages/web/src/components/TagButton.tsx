@@ -1,4 +1,4 @@
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tag } from 'lucide-react';
 import { api } from '../lib/api';
@@ -20,7 +20,7 @@ import { Badge, Modal } from './ui';
  * The options come from `['tags', module]`, the key the record page already
  * uses to colour its chips, so opening this costs no extra request.
  */
-export function TagButton({ module, recordId, tags, canEdit, className, iconClassName }: {
+export function TagButton({ module, recordId, tags, canEdit, className, iconClassName, open: given, onOpenChange }: {
   module: string;
   recordId: string;
   tags: string[] | undefined;
@@ -28,9 +28,25 @@ export function TagButton({ module, recordId, tags, canEdit, className, iconClas
   canEdit: boolean;
   className?: string;
   iconClassName?: string;
+  /**
+   * Open the dialog without a trigger of this component's own.
+   *
+   * **2 October 2026, the owner:** *"the extra icon of Header also will be
+   * remove from header like, Star, Tag icons."* Tagging moved into the record's
+   * *More actions* menu — and a menu panel unmounts the moment it closes, so a
+   * dialog living inside it would close with it. The caller holds the open
+   * state instead; the dialog sits outside the panel.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }): JSX.Element | null {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = given ?? ownOpen;
+  const setOpen = (next: boolean): void => {
+    if (onOpenChange) onOpenChange(next);
+    else setOwnOpen(next);
+  };
   const [draft, setDraft] = useState<string[]>([]);
 
   // Only the tags this module offers: "Site Visit Done" is not a thing a
@@ -62,20 +78,29 @@ export function TagButton({ module, recordId, tags, canEdit, className, iconClas
     onError: (err: Error) => toast.error('Could not update tags', err.message),
   });
 
+  /*
+    Seed what is ticked from the record every time the dialog opens — here
+    rather than in the trigger's own click, because the caller may be the one
+    opening it now (the record's *More actions* menu).
+  */
+  useEffect(() => { if (open) setDraft(tags ?? []); }, [open, tags]);
+
   if (!canEdit) return null;
   const count = tags?.length ?? 0;
 
   return (
     <>
+      {given === undefined && (
       <button
         type="button"
         className={cn(className, count > 0 && 'text-brand-600 dark:text-brand-300')}
         title={count ? `Tags: ${tags!.join(', ')}` : 'Add a tag'}
         aria-label="Edit tags"
-        onClick={() => { setDraft(tags ?? []); setOpen(true); }}
+        onClick={() => setOpen(true)}
       >
         <Tag className={cn(iconClassName ?? 'h-4 w-4', count > 0 && 'fill-brand-100 dark:fill-brand-950')} />
       </button>
+      )}
 
       <Modal
         open={open}

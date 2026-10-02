@@ -1589,3 +1589,80 @@ different pair.
   Nothing was needed on the server — `owner_id` is already `mass_editable` on
   all three modules and `massUpdate` writes it through `recordService`, so
   permissions, validation and the audit trail apply unchanged.
+
+### The record's two bars became one, and the header gave up two icons
+
+**2 October 2026, the owner**, the last two of the same seven: *"Please Make
+Menu tab Drag and drop in menu bar, so that user can set menu button and they
+can choose button as per their priority and if button too much, then 'More
+hamburger' will be shown in ment bar … And all tab of activity move/merge in to
+menu bar i.e All, Comment, Messages, Calls, Changes, Files and after selection
+of a Tab please give a option to make New call/Post Comment/Add New files/Send
+New whatsapp/Send New SMS under menu bar of selected tab in History Pane"*, and
+*"after the Resign Middle Menu bar then the extra icon of Header also will be
+remove from header like, Star, Tag icons."*
+
+**The record had two rows of buttons and they disagreed.** The pane's own tabs
+said Activity · Matching · Files · Calls · WhatsApp; the activity stream
+underneath carried its own chips — All · Comments · Messages · Calls · Changes ·
+Files. So **Calls and Files appeared twice, two rows apart, meaning something
+different each time**: on the top row a screen of its own, on the bottom row the
+stream narrowed. That is the duplication he was looking at.
+
+One list now. An entry is either a tab that draws its own screen
+(`timeline`, `matching`, `files`, `calls`, `whatsapp`) or the stream narrowed to
+one kind of thing that happened (`comment`, `message`, `audit`). `ActivityFeed`
+takes its filter from the bar and draws **no chip row of its own** when it is
+given one — the record page's own Activity tab, which has no merged bar, still
+gets the chips.
+
+* **The order is the rep's own, and it is dragged.** `lib/recordMenu.ts` holds
+  the model — pure and node-tested (11 tests), because the arithmetic of a drop
+  is where this goes wrong and reading the code never finds it: a drop landing
+  one place short is the classic. Saved per browser per module, the same
+  reasoning as which view a list opens in and how wide the queue is: a rep who
+  lives in Comments and a manager who lives in Changes are both right.
+* **Five on the bar, the rest under *More*** (`ON_THE_BAR`), which is what his
+  screenshot drew — *"Items 1 to 5 are pinned to middle bar / Items 6 to 10 live
+  under More"*.
+* **Alt and an arrow key moves an entry too.** Dragging is a mouse, and an
+  arrangement a keyboard cannot reach is one half the team does not have.
+  **Promoting from the *More* list is a button, not a drag**: dragging out of a
+  floating panel is not something a browser does reliably — the panel closes on
+  the first pointer move.
+* **A saved arrangement is cleaned against what the module offers.** Anything
+  stored but no longer there is dropped, anything new is appended. Same rule as
+  `arrangeHeaderTabs`, applied per person rather than per organisation: a module
+  that loses its Matching tab must not leave a dead button, and one that gains
+  an entry must not hide it from everybody who has ever dragged anything.
+* **The counts come out of the answer the bar already has.** Comments, Messages
+  and Changes count the same `['timeline', …]` request the tabs do, so a badge
+  and the list it labels cannot disagree and nothing is asked twice.
+
+**What each section lets you *start*, under the bar** — and only where the
+screen below does not already offer it. Comments and the stream get **Post a
+comment**, which puts the cursor in the note box already at the foot of the
+stream rather than opening a second one (two places to type is two drafts to
+lose), plus **Send WhatsApp** when the record has a number. Calls gets the call
+button. **Files and WhatsApp get nothing**, because Files opens on its own
+*Upload file* button and WhatsApp on its own message box, and a second button
+two centimetres above the first is how a rep learns to trust neither.
+
+**And there is no "Send New SMS" row, which he did ask for.** This CRM cannot
+send an SMS — there is no provider, no route and no queue — so a button there
+could only apologise, which is the rule the dead End button on the call console
+already answers to. Said plainly rather than built as decoration.
+
+**The star and the tag icon left the header** (item 7). Neither *function*
+went anywhere: both are rows in *More actions*, a few pixels to the right, and
+the tag **chips** still sit under the name — what he asked to be rid of is the
+icons, not the facts. `TagButton` gained a controlled `open`, because a menu
+panel unmounts the moment it closes and a dialog living inside it would close
+with it; the dialog sits outside the panel and the menu row opens it.
+
+Pinned by `e2e/recordMenuBar.spec.ts` — five tests **on both modules**, since
+*"All changes should be in all Modules"* is the one way a module gets left
+behind: five on the bar with a *More* behind it, the stream's second chip row
+gone, the action row putting the cursor in the right box, an arrangement
+surviving a reload, and the star and tag reachable from the menu while absent
+from the header.

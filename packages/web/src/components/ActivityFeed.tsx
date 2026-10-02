@@ -46,15 +46,26 @@ export function useActivityEntries(module: string, recordId: string, filter: Fee
   });
 }
 
-export function ActivityFeed({ module, recordId, customerName, find = '' }: {
+export function ActivityFeed({ module, recordId, customerName, find = '', filter: given }: {
   module: string;
   recordId: string;
   /** Initials on the customer's own bubbles. */
   customerName: string;
   /** Words typed into the header's search: only entries that mention them. */
   find?: string;
+  /**
+   * Which kind to show, decided by the caller.
+   *
+   * **2 October 2026, the owner:** *"all tab of activity move/merge in to menu
+   * bar."* The record's menu bar owns that choice now, so the chip row below is
+   * drawn only where nothing else offers one — the record page's own tab, which
+   * has no merged bar. Two rows naming Calls and Files, two rows apart, meaning
+   * different things each time, is what this replaced.
+   */
+  filter?: FeedFilter;
 }): JSX.Element {
-  const [filter, setFilter] = useState<FeedFilter>('all');
+  const [ownFilter, setFilter] = useState<FeedFilter>('all');
+  const filter = given ?? ownFilter;
   const { data, isLoading, isError, refetch } = useActivityEntries(module, recordId, filter);
   const entries = useMemo(() => {
     const needle = find.trim().toLocaleLowerCase();
@@ -69,6 +80,7 @@ export function ActivityFeed({ module, recordId, customerName, find = '' }: {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="activity-feed">
+      {given === undefined && (
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border)] bg-white px-3 py-1.5 no-scrollbar dark:bg-slate-900" role="group" aria-label="Show in the timeline">
         {FEED_FILTERS.map((option) => (
           <button
@@ -87,6 +99,7 @@ export function ActivityFeed({ module, recordId, customerName, find = '' }: {
           </button>
         ))}
       </div>
+      )}
 
       {/* Focusable, so the stream can be scrolled from the keyboard — a region
           that scrolls and cannot be reached is one a keyboard user cannot read. */}
