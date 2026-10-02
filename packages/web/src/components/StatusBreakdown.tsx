@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Check, ChevronRight } from 'lucide-react';
 import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import { api } from '../lib/api';
-import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
 import { badgeVars } from '../lib/color';
 import { pipelineFieldOf } from '../lib/fields';
@@ -54,7 +54,7 @@ export function StatusBreakdown({
           title={`Filter by ${field.label}`}
           className={toolbarButton(on)}
         >
-          <BarChart3 className="h-3.5 w-3.5 shrink-0" />
+          <BarChart3 className={filterIcon('status', on)} />
           {/*
             **28 September 2026, the owner:** *"Rename Toolbar Button Text
             'Lead/Property/Associate Status' to Status … Also remove arrow key

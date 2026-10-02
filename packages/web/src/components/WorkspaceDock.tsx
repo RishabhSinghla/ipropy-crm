@@ -182,7 +182,14 @@ function DockLink({ to, label, count, tone, children }: {
 function dockLook(on: boolean, tone?: 'whatsapp'): string {
   return cn(
     'flex h-10 w-full shrink-0 items-center gap-2.5 rounded-xl px-2 text-sm font-semibold transition',
-    tone === 'whatsapp' && !on && 'text-[#0B8043] hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950',
+    /*
+      `#0a7038`, not WhatsApp's own `#0B8043`, and the contrast scan is what
+      said so: on this toolbar's `#f0f2f5` their green is **4.48:1**, which is
+      under AA by two hundredths. A row nobody can read is not branding. The
+      filled circle elsewhere keeps the real green, because white on it is a
+      different pair.
+    */
+    tone === 'whatsapp' && !on && 'text-[#0a7038] hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950',
     on
       ? 'border border-slate-200/80 bg-white text-brand-600 shadow-xs dark:border-slate-700 dark:bg-slate-800 dark:text-brand-300'
       : !tone && 'text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800',

@@ -28,7 +28,7 @@ import {
   LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
 } from '../components/CallDispositionFilter';
 import { HotTagChip } from '../components/HotTagChip';
-import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import SiteCapture from './SiteCapture';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
@@ -876,7 +876,14 @@ export default function ListView(): JSX.Element {
               aria-label="Choose or manage list views"
               title={tagPick ?? activeView?.name ?? `All ${meta.label}`}
             >
-              {tagPick ? <Tag className="h-3.5 w-3.5 shrink-0" /> : <Filter className="h-3.5 w-3.5 shrink-0" />}
+              {/*
+                One button, two of his four colours — it picks a **list or a
+                tag**, so it says which: red when a tag is narrowing the list,
+                blue when a saved list is.
+              */}
+              {tagPick
+                ? <Tag className={filterIcon('tag', true)} />
+                : <Filter className={filterIcon('list', Boolean(activeView && !activeView.isSystem))} />}
               {/* No chevron — *"remove arrow key from all Buttons, so that
                   we can See neet and clean Toolbar"* (28 September 2026).
                   The icon on the left already says what this opens. */}

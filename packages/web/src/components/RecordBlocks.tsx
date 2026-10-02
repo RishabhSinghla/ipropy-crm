@@ -365,9 +365,25 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
         ref={textBox}
         value={note}
         onChange={(event) => setNote(event.target.value)}
-        // The hint under the box has always promised this; now it does it.
+        /*
+          **Enter posts the comment** — the owner, 2 October 2026: *"default
+          Posting a comment should work from enter tab of keyword and Send
+          whatsapp msg from Mouse."*
+
+          So the two ways out of this box are deliberately different gestures:
+          the keyboard writes a note to the team, the mouse sends a message to
+          the customer. Nothing a rep types can reach a customer by accident,
+          which is the whole reason to split them.
+
+          **Shift+Enter is still a new line**, which is what WhatsApp and every
+          chat box does and what a rep's hands already know. ⌘/Ctrl+Enter keeps
+          working too, because the hint said so for weeks and somebody will
+          have learnt it.
+        */
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); post(); }
+          if (event.key !== 'Enter' || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          post();
         }}
         placeholder={docked && whatsAppTo
           ? 'Write a comment or a WhatsApp message… type @ to notify someone'
@@ -420,7 +436,7 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
           <span className="min-w-0 truncate text-2xs text-muted" aria-live="polite">
             {voice.recording
               ? 'Listening — tap the mic again when you have finished'
-              : voice.busy ? 'Writing that up…' : '⌘↵ to post'}
+              : voice.busy ? 'Writing that up…' : '↵ to post · ⇧↵ for a new line'}
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5">

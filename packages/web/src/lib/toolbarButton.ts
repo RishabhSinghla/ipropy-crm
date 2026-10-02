@@ -79,3 +79,38 @@ export function toolbarCount(on = false, warning = false): string {
         : 'bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-100',
   );
 }
+
+/**
+ * The colour a filter's own icon takes once that filter is on.
+ *
+ * **2 October 2026, the owner:** *"in the Left record pane their are buttons of
+ * List, status, Task, Tag, Please change the colour of all tab's icons after
+ * the select a button i.e List Icon Colour will be Blue, Status icon Colour
+ * will be Yellow, Follow-up /Task Icon colour will be Green and Tag Icon
+ * colour will be Red."*
+ *
+ * **Only the icon.** The pill itself keeps the look he set on 29 September —
+ * quiet when off, a solid brand fill when on — so this is a mark *inside* the
+ * selected button rather than a fifth arrangement of the row.
+ *
+ * The 300 steps are chosen so each one clears 3:1 on that solid fill, which is
+ * the bar for something you read as a shape rather than as words: measured on
+ * `--brand-700` (#5b21b6) they are 4.3, 4.9, 4.7 and 3.7 to one. An icon
+ * nobody can see on the button they just pressed is worse than no colour.
+ *
+ * Off, the icon inherits the pill's own text colour: he asked for the change
+ * to happen **on select**, and four tinted icons at rest read as four
+ * warnings — the same reason the record's action circles are grey at rest.
+ */
+export type FilterKind = 'list' | 'status' | 'task' | 'tag';
+
+const ON_ICON: Record<FilterKind, string> = {
+  list: 'text-sky-300',
+  status: 'text-amber-300',
+  task: 'text-emerald-300',
+  tag: 'text-red-300',
+};
+
+export function filterIcon(kind: FilterKind, on: boolean, extra?: string): string {
+  return cn('h-3.5 w-3.5 shrink-0', on && ON_ICON[kind], extra);
+}

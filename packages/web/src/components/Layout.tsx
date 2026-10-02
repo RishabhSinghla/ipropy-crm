@@ -401,9 +401,28 @@ function UserMenu(): JSX.Element {
   const { user, logout } = useApp();
   return (
     <Dropdown
+      /*
+        **2 October 2026, the owner:** *"in the avtar of Agent on main Screen
+        please give a option of agent name and Designation of agent."* The
+        corner was a face and nothing else, so on a shared machine the only way
+        to find out who was signed in was to open the menu.
+
+        The designation is the user's **role** — the one the CRM already knows
+        and the one the menu's badge has always shown. `hidden sm:flex` on the
+        words: on a phone the face alone is right, and the header has no room
+        for two more lines.
+      */
       trigger={
-        <button className="ml-1 flex items-center gap-2 rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800">
+        <button className="ml-1 flex items-center gap-2 rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800" data-testid="account-button">
           <Avatar name={user?.fullName ?? '?'} src={user?.avatarUrl} size={28} />
+          <span className="hidden min-w-0 flex-col items-start leading-tight sm:flex">
+            <span className="max-w-[9rem] truncate text-xs font-semibold text-slate-800 dark:text-slate-100">
+              {user?.fullName}
+            </span>
+            {user?.roleName && (
+              <span className="max-w-[9rem] truncate text-[10px] text-muted">{user.roleName}</span>
+            )}
+          </span>
         </button>
       }
     >

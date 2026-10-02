@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Clock, ChevronRight, Phone, Sparkles } from 'lucide-react';
 import type { FieldMeta, FilterGroup, ListQuery, RecordEnvelope } from '@ipropy/shared';
 import { api } from '../lib/api';
-import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
 import { dial } from '../lib/nativeActions';
 import { phoneOf } from '../mobile/rows';
@@ -136,7 +136,7 @@ export function FollowUpQueue({
                toolbar reading as two toolbars. */
             className={toolbarButton(Boolean(active))}
           >
-            <Clock className="h-3.5 w-3.5 shrink-0" />
+            <Clock className={filterIcon('task', Boolean(active))} />
             {/* *"'Follow-ups' to Task"* — the owner's word for it, 28
                 September 2026. The field is still whatever the module calls
                 it; this is the button. Icon and count only since 1 October

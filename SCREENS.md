@@ -1544,3 +1544,37 @@ hamburg function before ipropy company name."*
 `e2e/workspaceDock.spec.ts` pins the order, that every row carries a name, and
 that the Leads count **equals the list's own total** — read off the live page,
 so it cannot pass against a number the CRM invented.
+
+### Three more from the same message
+
+* **The agent's name and designation sit beside the avatar** — *"in the avtar
+  of Agent on main Screen please give a option of agent name and Designation of
+  agent."* The corner was a face and nothing else, so on a shared machine the
+  only way to find out who was signed in was to open the menu. The designation
+  is the user's **role**, which is what the menu's badge has always shown.
+  `hidden sm:flex` on the words: on a phone the face alone is right.
+* **A filter's icon takes its own colour once that filter is on** — List blue,
+  Status yellow, Task green, Tag red (`filterIcon` in `lib/toolbarButton.ts`).
+  **Only the icon**: the pill keeps the look he set on 29 September, so this is
+  a mark *inside* the selected button rather than a fifth arrangement of the
+  row. Off, the icon inherits the pill's own colour — four tinted icons at rest
+  read as four warnings, the same reason the record's action circles are grey.
+  The 300 steps are chosen because each clears **3:1 on the solid fill** —
+  measured 4.3, 4.9, 4.7 and 3.7 — and an icon nobody can see on the button
+  they just pressed is worse than no colour at all.
+  **One button carries two of the four**: the picker chooses a *list or a tag*,
+  so it is red when a tag is narrowing the list and blue when a list is.
+* **Enter posts the comment; the mouse sends the WhatsApp** — *"default Posting
+  a comment should work from enter tab of keyword and Send whatsapp msg from
+  Mouse."* The two ways out of that box are deliberately different gestures
+  now: the keyboard writes to the team, the mouse writes to the customer, so
+  nothing a rep types can reach a customer by accident. **Shift+Enter is still
+  a new line**, which is what every chat box does and what a rep's hands
+  already know; ⌘/Ctrl+Enter keeps working because the hint promised it for
+  weeks.
+
+**And the contrast scan caught the toolbar's own green.** WhatsApp's `#0B8043`
+on the dock's `#f0f2f5` is **4.48:1** — under AA by two hundredths, on a row
+that is now words rather than a filled circle. It is `#0a7038` there. The
+filled circle elsewhere keeps the real green, because white on it is a
+different pair.
