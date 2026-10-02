@@ -28,8 +28,13 @@ import { ModuleIcon } from './Layout';
 
 const FOLDED_KEY = 'ipropy.dock.folded';
 
-/** Folded or not is this browser's choice, like the right pane's. */
-function useDockFolded(): [boolean, (folded: boolean) => void] {
+/**
+ * Folded or not is this browser's choice, like the right pane's.
+ *
+ * Exported because the header's hamburger folds it too (2 October 2026) — one
+ * piece of state, read in two places, rather than two that drift apart.
+ */
+export function useDockFolded(): [boolean, (folded: boolean) => void] {
   const [folded, setFoldedState] = useState(() => {
     try { return localStorage.getItem(FOLDED_KEY) === '1'; } catch { return false; }
   });
@@ -48,18 +53,30 @@ function useDockFolded(): [boolean, (folded: boolean) => void] {
   brings it back, the width slides, the icons fade, and `inert` keeps a folded
   dock out of the Tab order.
 */
-export function WorkspaceDock({ unseen }: {
-  /** Records nobody has opened yet, per module — the switcher's old badge. */
-  unseen?: Record<string, number>;
+export function WorkspaceDock({ counts, folded, onFoldChange }: {
+  /**
+   * How many records each module holds, as this user may see them.
+   *
+   * **2 October 2026, the owner:** *"all icon have their names also with
+   * record counts and the unread feature disables from all modules's
+   * toolbar."* It used to be "not opened yet", which is a number only the CRM
+   * cares about; this is the module's own size.
+   */
+  counts?: Record<string, number>;
+  /** Owned by `Layout`, so the header's hamburger folds the same toolbar. */
+  folded: boolean;
+  onFoldChange: (folded: boolean) => void;
 }): JSX.Element {
   const { modules } = useApp();
   const entityModules = modules.filter((module) => module.isEntity);
-  const [folded, setFolded] = useDockFolded();
+  const setFolded = onFoldChange;
   return (
     <div
       className={cn(
         'relative hidden shrink-0 overflow-hidden border-r border-slate-200 transition-[width] duration-300 ease-in-out dark:border-slate-800 lg:block',
-        folded ? 'w-7' : 'w-14',
+        // Wide enough for a name beside every icon — *"all icon have their
+        // names"* (2 October 2026). Folded it is the same slim strip it was.
+        folded ? 'w-7' : 'w-52',
       )}
       data-testid="workspace-dock-frame"
       data-folded={folded ? 'true' : undefined}
@@ -67,32 +84,31 @@ export function WorkspaceDock({ unseen }: {
       <aside
         inert={folded}
         className={cn(
-          'flex h-full w-14 flex-col items-center overflow-y-auto bg-[#f0f2f5] py-3 no-scrollbar transition-opacity duration-200 dark:bg-slate-900',
+          'flex h-full w-52 flex-col overflow-y-auto bg-[#f0f2f5] py-3 no-scrollbar transition-opacity duration-200 dark:bg-slate-900',
           folded ? 'pointer-events-none opacity-0' : 'opacity-100',
         )}
         aria-label="Workspace toolbar"
         data-testid="workspace-dock"
       >
-        <div className="flex flex-col items-center gap-3.5">
-          <NavLink
-            to="/whatsapp"
-            title="WhatsApp"
-            aria-label="WhatsApp"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0B8043] text-white shadow-sm transition hover:opacity-95"
-          >
-            <MessagesSquare className="h-5 w-5" />
-          </NavLink>
-          <span className="h-px w-7 shrink-0 bg-slate-300 dark:bg-slate-700" />
+        {/*
+          The order the owner drew on 2 October 2026 — *"Whatsapp icon Shift to
+          Below Call and Dashboard icon on top"*. Dashboard, then the modules a
+          rep works, then the call log, then WhatsApp at the foot.
+        */}
+        <div className="flex flex-col gap-1 px-2">
           <DockLink to="/dashboard" label="Dashboard">
             <LayoutDashboard className="h-[18px] w-[18px]" />
           </DockLink>
           {entityModules.map((module) => (
-            <DockLink key={module.name} to={`/${module.name}`} label={module.label} badge={unseen?.[module.name]}>
+            <DockLink key={module.name} to={`/${module.name}`} label={module.label} count={counts?.[module.name]}>
               <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />
             </DockLink>
           ))}
-          <DockLink to="/calls" label="Call log">
+          <DockLink to="/calls" label="Calls">
             <PhoneIncoming className="h-[18px] w-[18px]" />
+          </DockLink>
+          <DockLink to="/whatsapp" label="WhatsApp" tone="whatsapp">
+            <MessagesSquare className="h-[18px] w-[18px]" />
           </DockLink>
         </div>
       </aside>
@@ -126,8 +142,14 @@ export function WorkspaceDock({ unseen }: {
   );
 }
 
-function DockLink({ to, label, badge, children }: {
-  to: string; label: string; badge?: number; children: ReactNode;
+function DockLink({ to, label, count, tone, children }: {
+  to: string;
+  label: string;
+  /** How many records this module holds. Absent for a destination that is not one. */
+  count?: number;
+  /** `whatsapp` keeps its own green, which is how a rep finds it without reading. */
+  tone?: 'whatsapp';
+  children: ReactNode;
 }): JSX.Element {
   // A module's icon stays lit on its records too (`/leads/…`).
   return (
@@ -135,25 +157,34 @@ function DockLink({ to, label, badge, children }: {
       to={to}
       end={false}
       title={label}
-      aria-label={label}
-      className={({ isActive }) => cn(dockLook(isActive), 'relative')}
+      className={({ isActive }) => dockLook(isActive, tone)}
     >
-      {children}
-      {badge ? (
-        <span className="absolute -right-1.5 -top-1.5 min-w-[1.1rem] rounded-full bg-brand-600 px-1 text-center text-[9px] font-bold leading-4 text-white ring-2 ring-[#f0f2f5] dark:ring-slate-900" title={`${badge} not opened yet`}>
-          {badge > 99 ? '99+' : badge}
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center">{children}</span>
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      {/*
+        The module's own size, and **not** an unread count — that feature is
+        off the toolbar on the owner's instruction (2 October 2026). A count
+        of nothing is not drawn: a grey zero beside every module is noise.
+      */}
+      {count ? (
+        <span
+          className="shrink-0 rounded-full bg-slate-200 px-1.5 text-[10px] font-bold leading-[1.1rem] text-slate-700 tnum dark:bg-slate-700 dark:text-slate-100"
+          title={`${count.toLocaleString('en-IN')} ${label.toLowerCase()}`}
+        >
+          {count > 999 ? `${Math.floor(count / 1000)}k` : count}
         </span>
       ) : null}
     </NavLink>
   );
 }
 
-/** The one look for a dock icon: a white tile when it is where you are, a quiet one when it is not. */
-function dockLook(on: boolean): string {
+/** The one look for a dock row: a white tile when it is where you are, a quiet one when it is not. */
+function dockLook(on: boolean, tone?: 'whatsapp'): string {
   return cn(
-    'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition',
+    'flex h-10 w-full shrink-0 items-center gap-2.5 rounded-xl px-2 text-sm font-semibold transition',
+    tone === 'whatsapp' && !on && 'text-[#0B8043] hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950',
     on
       ? 'border border-slate-200/80 bg-white text-brand-600 shadow-xs dark:border-slate-700 dark:bg-slate-800 dark:text-brand-300'
-      : 'text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800',
+      : !tone && 'text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800',
   );
 }

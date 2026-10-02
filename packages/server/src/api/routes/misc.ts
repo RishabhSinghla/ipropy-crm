@@ -29,6 +29,7 @@ import {
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 import { PHOTO_ORDER } from '../../core/media/ordering.js';
 import { recordService } from '../../core/entity/recordService.js';
+import { recordCounts } from '../../core/entity/recordCounts.js';
 import { unseenCounts } from '../../core/entity/unseen.js';
 import {
   deletePushSubscription, ensureVapidKeys, notify, savePushSubscription,
@@ -87,6 +88,15 @@ miscRouter.get('/recent', asyncHandler(async (req, res) => {
  */
 miscRouter.get('/unseen-counts', asyncHandler(async (req, res) => {
   res.json(await unseenCounts(getScope(req)));
+}));
+
+/**
+ * How many records each module holds, as this user may see them — the left
+ * toolbar's counts (the owner, 2 October 2026). Scoped, so the number is the
+ * one a rep can actually open.
+ */
+miscRouter.get('/record-counts', asyncHandler(async (req, res) => {
+  res.json(await recordCounts(getScope(req)));
 }));
 
 /**

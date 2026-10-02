@@ -85,3 +85,59 @@ test('the toolbar folds away and comes back, and remembers', async ({ page }) =>
   await page.getByTestId('workspace-dock').getByRole('link', { name: 'Dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 });
+
+/**
+ * Names, counts, and the order the owner drew.
+ *
+ * **2 October 2026:** *"Left Toolbar Whatsapp icon Shift to Below Call and
+ * Dashboard icon on top all icon have their names also with record counts and
+ * the unread feature disables from all modules's toolbar, the toolbar also
+ * have hamburg function before ipropy company name."*
+ */
+test('the toolbar reads as names, counts and the owner’s own order', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto('/leads');
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+
+  const rows = await page.locator('[data-testid="workspace-dock"] a')
+    .evaluateAll((els) => els.map((el) => (el as HTMLElement).innerText.split('\n')[0].trim()));
+
+  // Dashboard first, WhatsApp last — below the call log, which is the move.
+  expect(rows[0]).toBe('Dashboard');
+  expect(rows[rows.length - 1]).toBe('WhatsApp');
+  expect(rows.indexOf('WhatsApp')).toBeGreaterThan(rows.indexOf('Calls'));
+
+  // Every row says what it is, rather than being an icon you learn.
+  expect(rows.every((name) => name.length > 0), `a toolbar row has no name: ${rows.join(', ')}`).toBe(true);
+
+  /*
+    A module's row carries **how many records it holds** — not an unread
+    count, which came off the toolbar on the same instruction. Read off the
+    live list's own total, so this cannot pass against a number the CRM
+    invented.
+  */
+  const total = await page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/).innerText();
+  const listTotal = Number((total.match(/of ([\d,]+) records/)?.[1] ?? '').replace(/,/g, ''));
+  const leads = page.locator('[data-testid="workspace-dock"] a').filter({ hasText: 'Leads' }).first();
+  // The chip's own title, not the row's — the row's title is the module name.
+  const chip = leads.locator('span[title]').first();
+  await expect(chip, 'the Leads row carries no record count').toHaveCount(1);
+  expect(
+    Number((await chip.getAttribute('title') ?? '').replace(/[^\d]/g, '')),
+    'the toolbar count disagrees with the list it links to',
+  ).toBe(listTotal);
+});
+
+test('the hamburger beside the company name folds the toolbar', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto('/leads');
+  const frame = page.locator('[data-testid="workspace-dock-frame"]');
+  await expect(frame).toBeVisible({ timeout: 30_000 });
+  await expect(frame).not.toHaveAttribute('data-folded', 'true');
+
+  await page.getByTestId('app-menu-button').click();
+  await expect(frame).toHaveAttribute('data-folded', 'true');
+
+  await page.getByTestId('app-menu-button').click();
+  await expect(frame).not.toHaveAttribute('data-folded', 'true');
+});

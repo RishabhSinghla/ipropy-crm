@@ -1513,3 +1513,34 @@ app's own screens in `packages/web/src/mobile/` are untouched, so Android still
 opens those rather than this. Pointing the app at the same routes is the next
 step, and it is now worth doing — before today there was nothing on a phone
 browser worth pointing it at.
+
+## The left toolbar says what each icon is, and how big it is
+
+**2 October 2026, the owner:** *"Left Toolbar Whatsapp icon Shift to Below Call
+and Dashboard icon on top all icon have their names also with record counts and
+the unread feature disables from all modules's toolbar, the toolbar also have
+hamburg function before ipropy company name."*
+
+* **His order:** Dashboard, then the modules a rep works, then Calls, then
+  **WhatsApp at the foot** — it used to sit on top in its own green circle.
+  It keeps the green, because that is how a rep finds it without reading.
+* **Every row is an icon, a name and a count.** The dock was a column of round
+  icons at `w-14`; it is `w-52` with a label on each row, and still folds to
+  the same slim strip.
+* **The count is the module's own size, not an unread badge.** "Not opened
+  yet" is a number only the CRM cares about. `GET /api/record-counts`
+  (`core/entity/recordCounts.ts`) answers it **through `recordScopeSql`**, so a
+  rep sees how many records *they* can open — a toolbar that says 22,988 to
+  somebody who may open 300 is a number that teaches people to ignore the
+  toolbar. Five minutes stale on purpose: it is a sense of size, not a live
+  figure, and refetching it on every edit would cost one query per module.
+  A count of nothing is not drawn at all.
+* **The hamburger beside the company name folds the toolbar.** It was
+  `lg:hidden` — the phone drawer's button. It is on every screen now and does
+  whichever navigation that screen has: the drawer on a phone, the toolbar from
+  `lg` up. The fold state moved up to `Layout` so the header and the toolbar
+  read one value rather than two that drift.
+
+`e2e/workspaceDock.spec.ts` pins the order, that every row carries a name, and
+that the Leads count **equals the list's own total** — read off the live page,
+so it cannot pass against a number the CRM invented.

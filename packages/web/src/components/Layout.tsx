@@ -9,7 +9,7 @@ import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 import { LiveCallDeck } from './LiveCallDeck';
-import { WorkspaceDock } from './WorkspaceDock';
+import { useDockFolded, WorkspaceDock } from './WorkspaceDock';
 import { AiBubble } from './AiBubble';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -45,11 +45,28 @@ export default function Layout(): JSX.Element {
   const { user, modules, theme, setTheme, aiAvailable } = useApp();
   const [aiOpen, setAiOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /*
+    The left toolbar's fold, held here rather than inside it — the hamburger
+    beside the company name folds it (2 October 2026), and the hamburger is up
+    here in the header.
+  */
+  const [dockFolded, setDockFolded] = useDockFolded();
   const location = useLocation();
 
   // One socket for the whole session: server-side changes (workflow tasks, AI
   // scoring, another user's edit) invalidate the matching queries live.
   useRealtime(Boolean(user));
+
+  /*
+    How big each module is, for the toolbar's counts — the owner, 2 October
+    2026. Five minutes stale is fine: it is a sense of size, not a live figure,
+    and refetching it on every record edit would cost one query per module.
+  */
+  const { data: moduleCounts } = useQuery({
+    queryKey: ['record-counts'],
+    queryFn: () => api.recordCounts(),
+    staleTime: 300_000,
+  });
 
   const { data: unseenCounts } = useQuery({
     queryKey: ['unseen-counts'],
@@ -93,10 +110,21 @@ export default function Layout(): JSX.Element {
             actions on the right. One row, every width — the old sidebar spent
             its whole height saying what a 12px tab now says. */}
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 dark:bg-slate-900 sm:gap-3 sm:px-4">
+          {/*
+            One hamburger, two jobs, and the job is whichever navigation this
+            screen has — *"the toolbar also have hamburg function before ipropy
+            company name"* (2 October 2026). On a phone there is no toolbar, so
+            it opens the drawer; from `lg` up it folds the toolbar away.
+          */}
           <button
-            onClick={() => setDrawerOpen(true)}
-            className="btn-ghost p-2 lg:hidden"
-            aria-label="Open menu"
+            onClick={() => {
+              if (window.matchMedia('(min-width: 1024px)').matches) setDockFolded(!dockFolded);
+              else setDrawerOpen(true);
+            }}
+            className="btn-ghost p-2"
+            aria-label={'Open menu'}
+            title="Menu"
+            data-testid="app-menu-button"
           >
             <Menu className="h-4.5 w-4.5" />
           </button>
@@ -197,7 +225,7 @@ export default function Layout(): JSX.Element {
           used to take it away, which is exactly when a rep wants a way back.
         */}
         <div className="flex min-h-0 min-w-0 flex-1">
-        <WorkspaceDock unseen={unseenCounts} />
+        <WorkspaceDock counts={moduleCounts} onFoldChange={setDockFolded} folded={dockFolded} />
         <main id="main" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-16 lg:pb-0">
           {/* Per-page net. Keyed on the path so a crashed page clears itself
               when the user navigates away — without the key the boundary stays

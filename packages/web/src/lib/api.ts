@@ -1242,6 +1242,8 @@ export const api = {
     post<{ unseen: string[] }>(`/api/records/${module}/unseen`, { ids }),
   markModuleSeen: (module: string) => post(`/api/records/${module}/seen`, {}),
   unseenCounts: () => get<Record<string, number>>('/api/unseen-counts'),
+  /** How many records each module holds, as this user may see them — the left toolbar's counts. */
+  recordCounts: () => get<Record<string, number>>('/api/record-counts'),
 
   notifications: (unread = false) =>
     get<{ notifications: Record<string, unknown>[]; unreadCount: number }>(`/api/notifications${qs({ unread })}`),
