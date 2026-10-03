@@ -925,3 +925,125 @@ compile check.
    folder those files are in (often `Recordings/Call` or `MIUI/sound_recorder/call_rec`).
 4. Recordings upload with the next call sync (about every fifteen minutes, or *Sync
    now*), and appear on the call in the Calls tab.
+
+## The dialler screens, from the owner's prototype — 3 October 2026
+
+**The owner, with a four-screen Stitch prototype** (`keypad`, `active in-call
+HUD`, `recents`, `lead profile`): *"Can you rebuild my Android app according to
+this prototype as a default Dailer/Phone app with all accept all persimmon by
+user/agent, we want to see exact/True as UI/UX on my android app with full
+features/function according to my CRM."*
+
+### What was already there, and is the reason this was mostly screens
+
+The first job was to read the app rather than start typing, and it changed the
+shape of the work entirely. **The native default-dialler half already exists
+and already ships.** `packages/app/android/.../calls/` holds `PhoneCallService`
+(the `InCallService`), `InCallActivity` and `DialActivity`; the manifest
+declares `android.telecom.InCallService`, three `ACTION_DIAL` filters,
+`CALL_PHONE` and `ANSWER_PHONE_CALLS`; and `CallSyncPlugin` exposes
+`requestCallApp` (the `ROLE_DIALER` request), `callControl`, `callAction`,
+`placeCall` and `endCall`. Opened and read, the published APK **2.4.1** carries
+all of it.
+
+**Read the dex, never the raw bytes.** A first check for those class names
+against the APK file answered "not found" for every one of them, and that
+answer is wrong: the strings live inside `classes*.dex`, so the file has to be
+unzipped and the dex blobs searched. This is the same trap this file already
+records for the binary manifest, met in a new costume, and it nearly produced
+a day of rebuilding something that was already shipped.
+
+So what the prototype actually asked for was the **screens**, and there were
+none: `packages/web/src/mobile/` held Alerts, Compose, List, Record, Shell and
+You, and no keypad, no call log and no call screen.
+
+### What was built
+
+Three screens, in the app's own bundle — which is the half that updates itself
+on the next launch, so this reaches every installed handset with no APK
+rebuild at all.
+
+* **`mobile/Dialer.tsx`** — the keypad, the typed number, the T9 matches and
+  the call row. It opens the app now, in place of Contacts: a phone app opens
+  on the thing you dial with.
+* **`mobile/Recents.tsx`** — the call log with the CRM in it: which lead, what
+  the last person who rang them wrote, and Call back / WhatsApp / Add note. It
+  is `GET /api/telephony/calls`, the same endpoint the Calls page reads, so a
+  call cannot read one way on a laptop and another on a phone.
+* **`mobile/InCall.tsx`** — who is on the call, the clock, the five controls,
+  a note and End. It reads `useLiveCall`, the same state the floating bar and
+  the record's call deck read: three renderings of one call, never three
+  copies of its rules.
+* **`lib/t9.ts`** — spelling a name on the keys, pure and node-tested
+  (15 tests).
+
+### Three faults a browser found that nothing else could
+
+All three were invisible to a clean typecheck and 1,200 green unit tests,
+because all three are about data this CRM actually holds.
+
+* **The CRM's text search does not match a phone number at all.** Searching
+  `9830132657` against a database holding exactly that number answers **zero**
+  — measured against the endpoint every other screen uses. It searches names.
+  On a keypad that is the one search that matters, so the dialler asks with the
+  **filter grammar** instead — `contains` on each of the module's phone fields,
+  OR'd — and the same database answers **8**. Worth knowing before anybody
+  builds another screen that searches by number: `api.lookup` is the obvious
+  endpoint and is doubly wrong here, since it answers an id and a label and no
+  number at all.
+* **The call log answers the table's own snake_case.** Read as `recordLabel`
+  and `startedAt` every row drew "Unknown number" with no time against it —
+  correct code reading fields that have never existed. It is `record_label`,
+  `started_at`, `duration_seconds`, `to_number`/`from_number`.
+* **"Missed" is `answered=no`, not a flag**, and there is no `mine` — it is a
+  `userId`. A guessed parameter is simply ignored, so the chip lights up and
+  the list does not move, which reads as a broken filter.
+  And **answered means time on the clock, not a status word**: that is the
+  server's own rule, written beside its filter, because a status is whatever
+  that make of handset chose to call it.
+
+### What T9 can and cannot do, said plainly
+
+**Typing a number finds anybody in the CRM.** That runs on the server, through
+the filter above, and is permission-scoped like every other list read.
+
+**Typing a name finds somebody you have called before.** T9 has to compare the
+keys against a candidate's *letters*, which no SQL index can do, so it runs in
+the app over the people already to hand — this rep's own recent calls. Pulling
+22,988 names on to a phone to match against is not an option, and pretending
+the two searches have the same reach would be worse than saying which is
+which.
+
+### The controls are dead until the rep hands over their phone app
+
+Mute, speaker and hold work **only** for Android's default calling app — there
+is no permission that buys them separately, and `callControlState()` is what
+this screen asks. So they are drawn and visibly disabled with the reason in
+their tooltip, and the e2e spec **asserts they are disabled** so nobody
+quietly enables one. The in-call screen offers the role where it would change
+something; Android asks, and the rep can hand it back from Settings at any
+time. **End is cheaper and separate**: `TelecomManager.endCall()` needs
+`ANSWER_PHONE_CALLS` alone.
+
+**"Accept all permissions" is not a thing Android allows**, and it is worth
+writing down rather than discovering: installing an APK grants nothing, and
+every permission is asked for at the moment the code needs it. What exists for
+that is `lib/phonePermissions.ts` and `components/PhoneSetup.tsx` — the
+checklist a rep walks — and the dialler role is now offered from the call
+screen as well.
+
+### What is proved, and the one thing that is not
+
+Proved in a real browser at 390px through the app preview (`?app=1`), in
+`e2e/dialerApp.spec.ts`, six checks: the keypad opens the app, typing a real
+contact's number finds them by name **made rather than hoped for**, the pad
+stays on screen while matches are offered (which is why the list caps at
+three — five push it off), the log names people and its chips reach the
+server, and the four controls Android withholds are disabled.
+
+**Not proved, and it cannot be from here: any of it on a handset.** This
+container has a JDK and no Android SDK, so nothing was compiled and no APK was
+built or installed. The screens ride in the web bundle and reach phones on the
+next launch; the native half is unchanged and already shipped in 2.4.1. What
+still needs a real phone is the dialler role being granted, a live call
+reaching the HUD, and whether mute actually mutes.

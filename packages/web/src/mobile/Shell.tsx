@@ -30,7 +30,7 @@ import { Spinner } from '../components/ui';
 */
 import { resolveIcon } from '../lib/icons';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, Camera, CircleUser } from 'lucide-react';
+import { Bell, Camera, CircleUser, Grid3x3, History } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { tap } from '../lib/nativeActions';
@@ -43,6 +43,9 @@ import MobileRecord from './Record';
 import MobileCompose from './Compose';
 import MobileAlerts from './Alerts';
 import MobileYou from './You';
+import MobileDialer from './Dialer';
+import MobileRecents from './Recents';
+import MobileInCall from './InCall';
 
 // At a desk in spirit, so they load only if somebody asks for them.
 const SiteCapture = lazy(() => import('../pages/SiteCapture'));
@@ -96,7 +99,13 @@ function DesktopCallingSetup(): JSX.Element | null {
 
 export default function MobileShell(): JSX.Element {
   const modules = useApp((s) => s.modules);
-  const home = modules[0]?.name ?? 'leads';
+  /*
+    **The app opens on the keypad from 3 October 2026.** It opened on Contacts,
+    on the reasoning that a messaging app opens on messages — and the owner's
+    prototype makes this a *phone* app, which opens on the thing you dial with.
+    Contacts is one tap away.
+  */
+  const home = 'dialer';
 
   return (
     <div className="flex h-full flex-col bg-[var(--app-bg)]">
@@ -114,6 +123,15 @@ export default function MobileShell(): JSX.Element {
         <Suspense fallback={<Loading />}>
           <Routes>
             <Route index element={<Navigate to={`/${home}`} replace />} />
+            {/*
+              The dialler, 3 October 2026, from the owner's four-screen
+              prototype. Above `/:module` deliberately: that route is the
+              catch-all for any single-segment URL, so a dialler route written
+              after it would be answered by the contacts list instead.
+            */}
+            <Route path="/dialer" element={<MobileDialer />} />
+            <Route path="/recents" element={<MobileRecents />} />
+            <Route path="/in-call" element={<MobileInCall />} />
             <Route path="/settings" element={<MobileYou />} />
             <Route path="/alerts" element={<MobileAlerts />} />
             <Route path="/capture" element={<SiteCapture />} />
@@ -199,7 +217,20 @@ function TabBar(): JSX.Element | null {
     choices for a module. Passing the component directly keeps the registry
     meaning exactly what it says.
   */
+  /*
+    **Dialler and Recents lead the bar from 3 October 2026**, because that is
+    what the owner's prototype makes this app: a broker's phone app, opening on
+    the keypad rather than on a list. The modules keep their own tabs after
+    them and are still read from metadata — rename a module and its tab
+    renames, which is the one thing a hardcoded bar could never do.
+
+    They are fixed rather than metadata, and that is the exception the comment
+    above describes: a keypad is not a module and adding one in the admin panel
+    must not produce a second dialler.
+  */
   const tabs: { to: string; label: string; icon: JSX.Element }[] = [
+    { to: '/dialer', label: 'Dialer', icon: <Grid3x3 className="h-6 w-6" /> },
+    { to: '/recents', label: 'Recents', icon: <History className="h-6 w-6" /> },
     ...modules.map((m) => ({
       to: `/${m.name}`,
       label: m.label,

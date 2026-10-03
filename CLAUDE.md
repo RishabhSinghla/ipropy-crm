@@ -15,7 +15,7 @@ before you work in that area** — each carries traps that have already cost a d
 | Working on | Read first |
 |---|---|
 | WhatsApp — inbox, templates, campaigns, media, reports | [`WHATSAPP.md`](WHATSAPP.md) |
-| The phone app, dialling, call recording, the call console | [`CALLING.md`](CALLING.md) |
+| The phone app, dialling, call recording, the call console, the dialler screens | [`CALLING.md`](CALLING.md) |
 | Lists, the split view, tags | [`SCREENS.md`](SCREENS.md) |
 | A deploy, or something misbehaving on production | [`OPERATIONS.md`](OPERATIONS.md) |
 | Anything a person clicks, before calling it done | the `prove-it` skill |
@@ -253,10 +253,10 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 1,189 unit tests, no DB: 841 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 1,204 unit tests, no DB: 841 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers), 340 in `packages/web` (colour contrast, safe markdown, header-tab
+  serving headers), 355 in `packages/web` (colour contrast, safe markdown, T9 dialler matching, header-tab
   arrangement, and the rich-text
   sanitiser that renders the imported Vtiger notes), and 8 in `packages/mcp` (tool-output
   formatting). The web suite runs on `node` except where a file asks for `jsdom` with a
