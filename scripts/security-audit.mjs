@@ -28,8 +28,6 @@ import { readFileSync } from 'node:fs';
 
 // GHSA id → why it is accepted, and what retires it.
 //
-// Empty, and that is the goal state rather than an oversight.
-//
 // Six advisories lived here — four in fast-uri, two in qs — and all six are now
 // genuinely fixed rather than accepted. qs went with the Express 5 upgrade:
 // Express 4 pinned `qs` to `~6.15.1`, so the patched 6.16.0 was outside the
@@ -40,6 +38,18 @@ import { readFileSync } from 'node:fs';
 // alternative to a named allowlist is either a permanently red gate that
 // everybody learns to ignore, or no gate at all.
 const ALLOWED = new Map([
+  ['GHSA-vfj7-8cjw-p6xm',
+   'braces — stack exhaustion on a deeply nested glob pattern. **Every published '
+   + 'version is affected** (npm reports the range as `*`), so there is nothing to '
+   + 'update to; npm\'s only offered fix is tailwindcss 4, a major upgrade that '
+   + 'would rewrite this CRM\'s whole colour-token layer. It arrives solely '
+   + 'through tailwindcss (a devDependency of packages/web) → chokidar and '
+   + 'micromatch, and `npm ls braces` shows no other path. Nothing in '
+   + 'packages/{server,shared,mcp} imports chokidar, micromatch or braces, so no '
+   + 'running code reaches it: the only globs it ever sees are the ones in this '
+   + 'repo\'s own tailwind.config.js, at build time, and they are not user input. '
+   + 'Retires when braces publishes a patched version, or when this CRM moves to '
+   + 'Tailwind 4 for its own reasons.'],
   ['GHSA-w5hq-g745-h8pq',
    'uuid <11.1.1, reached only through exceljs (the .xlsx export). The bug is a '
    + 'missing bounds check in v3/v5/v6 when the caller passes its own `buf`; '
