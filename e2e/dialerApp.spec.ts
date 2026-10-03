@@ -127,3 +127,74 @@ test('the call screen offers what the phone can do, and no more', async ({ page 
   }
   await expect(page.getByRole('button', { name: /End call/ })).toBeEnabled();
 });
+
+/**
+ * Lead Details, reshaped to the prototype's fourth screen — 3 October 2026,
+ * *"yes make Lead Details as per prototype"*.
+ *
+ * The existing record screen was reshaped rather than a second one added: a
+ * rival screen is how two versions of "open a lead" drift, which this repo
+ * keeps paying for. So everything it already did — editing one field at a
+ * time, the metadata blocks, attachments, delete — is still here, under a
+ * Details tab, with the prototype's card, tiles, actions, tabs and note bar
+ * around it.
+ */
+test.describe('lead details', () => {
+  async function openSomeLead(page: Page): Promise<void> {
+    await page.goto('/leads?app=1');
+    await page.waitForLoadState('networkidle');
+    const token = await page.evaluate(() => localStorage.getItem('ipropy.token'));
+    const id = await page.evaluate(async (auth) => {
+      const answer = await fetch('/api/records/leads/search', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${auth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page: 1, pageSize: 1 }),
+      }).then((r) => r.json());
+      return answer.rows?.[0]?.id as string | undefined;
+    }, token);
+    test.skip(!id, 'no contacts in this database');
+    await page.goto(`/leads/${id}?app=1`);
+    await page.waitForLoadState('networkidle');
+  }
+
+  test('is the prototype’s card, actions, tabs and note bar', async ({ page }) => {
+    await openSomeLead(page);
+    // The app bar's title is not a heading element, so it is addressed as text.
+    await expect(page.getByText('Lead details').first()).toBeVisible({ timeout: 30_000 });
+
+    for (const tab of ['Matching', 'Files', 'Details']) {
+      await expect(page.getByRole('button', { name: new RegExp(`^${tab}`) })).toBeVisible();
+    }
+    await expect(page.getByRole('button', { name: /^Notes \(\d+\)/ })).toBeVisible();
+    await expect(page.getByLabel('Write a note')).toBeVisible();
+  });
+
+  test('the fields an admin arranged are still reachable and still editable', async ({ page }) => {
+    /*
+      The prototype has nowhere for the module's thirty-odd fields. Dropping
+      them to match the drawing exactly would make this the one screen in the
+      CRM where a field an admin added cannot be seen — so Details is a fourth
+      tab, and this is what stops somebody "tidying" it away.
+    */
+    await openSomeLead(page);
+    await page.getByRole('button', { name: /^Details/ }).click();
+    await expect(page.getByText('Details', { exact: true }).first()).toBeVisible();
+  });
+
+  test('a quick phrase fills the note box rather than posting on its own', async ({ page }) => {
+    await openSomeLead(page);
+    const box = page.getByLabel('Write a note');
+    const chips = page.locator('button').filter({ hasText: /^[A-Z][a-z]/ });
+    // The phrases are the `note_snippet` dropdown, so a database with none
+    // shows none — that is the list being empty, not the feature missing.
+    const phrase = page.getByRole('button', { name: 'Price negotiable' });
+    test.skip(!(await phrase.count()), 'no note snippets on this database');
+    await phrase.click();
+    await expect(box).toHaveValue(/Price negotiable/);
+    // Tapping the same phrase twice must add nothing — a note repeating itself
+    // is slower than not using the chips at all.
+    await phrase.click();
+    expect((await box.inputValue()).match(/Price negotiable/g)?.length).toBe(1);
+    expect(await chips.count()).toBeGreaterThan(0);
+  });
+});

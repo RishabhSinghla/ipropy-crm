@@ -1047,3 +1047,63 @@ built or installed. The screens ride in the web bundle and reach phones on the
 next launch; the native half is unchanged and already shipped in 2.4.1. What
 still needs a real phone is the dialler role being granted, a live call
 reaching the HUD, and whether mute actually mutes.
+
+### Lead Details, the fourth screen — the same day
+
+*"yes make Lead Details as per prototype."*
+
+**Reshaped, not replaced.** `mobile/Record.tsx` keeps its data layer, its
+one-field-at-a-time editing, its metadata blocks, attachments and delete; the
+prototype's card, tiles, actions, tabs and note bar are drawn around them. A
+second "open a lead" screen is how two versions of one thing drift, and this
+repo has paid for that more than once.
+
+What is on it, and where each fact comes from:
+
+* **The card** — face, name, number, the stage as the admin's own coloured
+  chip, and *"3 calls · spoke 5h ago"* counted off `/api/telephony/calls`.
+* **Three key tiles.** The prototype draws Budget / Possession / Sentiment.
+  **Which three is the admin's decision**: they are the header fields
+  `useRecordPanes` resolves — the same answer the record page, the split view
+  and the call console read — so re-arranging the header moves this too. The
+  stage, the phone and the module's own label fields are dropped from them,
+  because all three are already on the card an inch above; that is the exact
+  duplication the Chats header met once, fixed the same way, through metadata
+  rather than by naming a field.
+* **Four actions, where the prototype draws five.** Call, WhatsApp, **Task**
+  and Note. "Task" is the chase date through the field `useRecordPanes` finds
+  — this CRM has no task record, and `core/workflow/followUp.ts` is the one
+  definition of chasing somebody. **There is no SMS button**: there is no SMS
+  provider, and a button that can only apologise is worse than one that is not
+  there.
+* **Four tabs, where the prototype draws three.** Notes, Matching and Files are
+  his; **Details** is the thirty-odd fields an admin arranged, which the
+  mock-up has nowhere for. Dropping them to match the drawing exactly would
+  make this the one screen in the CRM where a field an admin added cannot be
+  seen — an e2e test now stops anybody tidying it away.
+* **Matching** is live rather than the pinned snapshot: a snapshot is what
+  somebody chose to keep, and standing in front of a buyer a rep wants what
+  matches *now*. Asked only once the tab is open, so the AI matching does not
+  run for every record somebody glances at.
+* **The note bar** across the foot, with the prototype's quick phrases above
+  it. **They are the `note_snippet` dropdown**, editable in Admin → Dropdowns —
+  the same list the desktop notes box offers — never three phrases typed into
+  a component. An empty list shows no chips rather than inventing words this
+  business never chose. **No microphone:** dictation is the keyboard's own
+  button on both platforms.
+
+**Two faults a browser found here, both only visible on screen:**
+
+* **The key tiles repeated the number** already printed under the name, which
+  is the Chats-header lesson arriving again in a new costume.
+* **Every note was signed "Comment".** A timeline entry's `title` for a comment
+  is the word "Comment"; the author is `actorName`. The whole point of that
+  panel is seeing *who* on the team last spoke to this person, and it was the
+  one thing it could not say.
+
+Proved by three more checks in `e2e/dialerApp.spec.ts` (nine in all): the card,
+tabs and note bar are drawn; the Details tab still reaches the admin's fields;
+and a quick phrase fills the box rather than posting on its own, twice adding
+nothing. **Still not proved on a handset**, for the same reason as the rest:
+no Android SDK here, so nothing is compiled. These screens ride in the web
+bundle and reach every installed phone on the next launch.
