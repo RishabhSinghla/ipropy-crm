@@ -638,18 +638,35 @@ function BottomTabs({
 function BrandMark({ logoUrl, name }: { logoUrl: string | null; name: string }): JSX.Element {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [logoUrl]);
-  const circle = 'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-brand-100 shadow-sm dark:ring-brand-900';
+  /*
+    **3 October 2026, the owner:** *"Company Avtar Circle of Company Picture
+    should be Dark and Bold as per Theme, current circle line is thin, and i
+    cant see company picture/logo."*
+
+    Two changes, and the second is the one that makes a logo appear at all. The
+    ring was `brand-100` — the palest step there is — on a white header, which
+    is a hairline nobody can see; it is the brand's own dark step now, and a
+    step thicker. And the picture was `object-cover`, which fills the circle by
+    **cropping** — a wide wordmark came out as an unreadable slice of its middle,
+    which is what "I can't see the logo" looks like. `object-contain` fits the
+    whole of it inside the circle instead, with a little room so it is not
+    pressed against the ring.
+
+    Plain brand steps, never an opacity modifier: these resolve to a bare
+    `var(--brand-…)`, so `ring-brand-600/40` would compile to nothing at all.
+  */
+  const circle = 'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full ring-[3px] ring-brand-600 shadow-sm dark:ring-brand-400';
   if (logoUrl && !failed) {
     return (
-      <span className={`${circle} bg-white`}>
+      <span className={`${circle} bg-white`} data-testid="brand-mark">
         {/* A CRM-hosted logo is permission-checked, and an <img> cannot send
             the session header — so the token rides in the query string. */}
-        <img src={authedFileUrl(logoUrl)} alt="" className="h-full w-full object-cover" onError={() => setFailed(true)} />
+        <img src={authedFileUrl(logoUrl)} alt="" className="h-full w-full p-0.5 object-contain" onError={() => setFailed(true)} />
       </span>
     );
   }
   return (
-    <span className={`${circle} bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white`} aria-hidden>
+    <span className={`${circle} bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white`} data-testid="brand-mark" aria-hidden>
       {name.trim().charAt(0).toUpperCase() || 'i'}
     </span>
   );

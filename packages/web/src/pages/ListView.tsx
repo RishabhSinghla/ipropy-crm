@@ -26,7 +26,6 @@ import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/Fo
 import {
   LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
 } from '../components/CallDispositionFilter';
-import { HotTagChip } from '../components/HotTagChip';
 import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import SiteCapture from './SiteCapture';
 import { useOfflineMeta } from '../lib/useOfflineList';
@@ -897,9 +896,15 @@ export default function ListView(): JSX.Element {
               {/* No chevron — *"remove arrow key from all Buttons, so that
                   we can See neet and clean Toolbar"* (28 September 2026).
                   The icon on the left already says what this opens. */}
-              {/* Icon and count only — *"just icons … along with count"*
-                  (1 October 2026). The list's name is the tooltip. */}
-              <span className="sr-only">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
+              {/*
+                **The name is back on the button** — *"Also Show the name of all
+                icons 'All Leads/Inventory, Followup, Tag Name (hot)' in the
+                record left pane"* (3 October 2026), reversing the icons-only
+                row of 1 October. It truncates rather than wraps, and the button
+                has its own ceiling, so a long list name cannot push Task off
+                the row.
+              */}
+              <span className="min-w-0 truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
               <span className={toolbarCount(Boolean(tagPick || (activeView && !activeView.isSystem)))}>
                 {(data?.total ?? 0).toLocaleString('en-IN')}
               </span>
@@ -916,12 +921,10 @@ export default function ListView(): JSX.Element {
               }))}
               activeViewId={activeView?.id ?? null}
               activeTag={tagPick}
-              moduleName={meta.name}
               userId={user?.id}
               isAdmin={Boolean(user?.isAdmin)}
               moduleLabel={meta.label}
               onChooseView={(id) => { setTagPick(null); chooseView(id); close(); }}
-              onChooseTag={(name) => { setTagPick(name); setPage(1); close(); }}
               onNew={() => { setEditingView(blankView(moduleName)); close(); }}
               onEdit={(id) => {
                 const full = (views ?? []).find((v) => v.id === id);
@@ -962,14 +965,14 @@ export default function ListView(): JSX.Element {
           />
         )}
 
-        {/* After Follow-ups. It was the last-call-outcome chip until
-            1 October 2026, when the owner swapped it for Hot; that filter is
-            still in the filter panel. */}
-        <HotTagChip
-          moduleName={moduleName!}
-          active={tagPick}
-          onPick={(tag) => { setTagPick(tag); setPage(1); }}
-        />
+        {/*
+          **The Hot chip left this row on 3 October 2026** — the owner: *"Now i
+          need to remove hot tag/Icon from Left Record Pane after the List and
+          Task Icons."* Tags are on the main toolbar beside the company name
+          now (`TagCards`), so a third pill here was the same question asked in
+          two places; and the button on the left of this row still says the
+          tag's name whenever one is narrowing the list.
+        */}
 
       </div>
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">

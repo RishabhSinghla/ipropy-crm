@@ -253,10 +253,10 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 1,182 unit tests, no DB: 840 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 1,187 unit tests, no DB: 840 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers), 334 in `packages/web` (colour contrast, safe markdown, header-tab
+  serving headers), 339 in `packages/web` (colour contrast, safe markdown, header-tab
   arrangement, and the rich-text
   sanitiser that renders the imported Vtiger notes), and 8 in `packages/mcp` (tool-output
   formatting). The web suite runs on `node` except where a file asks for `jsdom` with a
@@ -1484,6 +1484,11 @@ the screen a rep lives in.
 > **3 October 2026:** the right pane folds away, its top rows are all the Layout
 > Designer's (`rightPane`), and deleting a comment is admins only unless a profile
 > holds `comments.delete` — see `SCREENS.md`, *Eleven more*.
+> **3 October 2026, evening:** the Hot chip left the queue toolbar and the two
+> pills that stay say their own names again; tags left the list picker; the
+> completeness bar is three quarters the width in red/amber/green by percentage;
+> the email circle moved into the menu bar's *More* and Call moved under the name
+> — see `SCREENS.md`, *Nine more, the same evening*.
 
 **Reports is folded into that page, on the same instruction** — *"merge this
 reports module into this whatsapp module only"*. It is the same `Reports`

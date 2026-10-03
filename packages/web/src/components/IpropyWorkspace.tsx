@@ -26,7 +26,7 @@ import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, oneOfEach, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ModuleIcon } from './Layout';
-import { ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
+import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar, StrengthBar } from './RecordAvatar';
 import {
@@ -503,6 +503,25 @@ export function IpropyWorkspace({
     enabled: Boolean(assignedField),
     staleTime: 5 * 60_000,
   });
+  /*
+    Every agent's photo, by their id — *"Replace small Avtar from Agent Name in
+    the left pane of records if profile Picture available, the the profile pic
+    will be shown on Agent/User Avtar"* (3 October 2026).
+
+    **By id, never by name.** The record stores the user's id and the queue row
+    carries it, so the lookup is exact; matching on the displayed name would
+    silently lose anybody whose name is spelt two ways. This is the directory
+    the pane already fetches for the assignment control — no second request.
+  */
+  const agentPhotos = useMemo(
+    () => new Map<string, string | null>(
+      assignableUsers.map((candidate) => [
+        String(candidate.id ?? ''),
+        candidate.avatarUrl ? String(candidate.avatarUrl) : null,
+      ]),
+    ),
+    [assignableUsers],
+  );
   const assignedUserId = assignedField ? String(active?.values[assignedField.name] ?? '') : '';
   const assignedName = assignedField
     ? String(active?.display?.[assignedField.name]
@@ -779,6 +798,7 @@ export function IpropyWorkspace({
               moduleName={module.name}
               nameField={nameField}
               assignedField={assignedField}
+              agentPhotos={agentPhotos}
               canEdit={canEdit}
               onEdited={() => invalidateRecordQueries(queryClient, module.name, row.id)}
               onSelect={() => openRecord(row.id)}
@@ -892,15 +912,11 @@ export function IpropyWorkspace({
                 />
               ) : active.label}
             </h2>
-            {/* Call sits right after the name — *"the call icon should come right
-                after the name of the record"* (3 October 2026). */}
-            {phoneValue && <span className="shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
             {/*
-              The record's tags, on the name's own line after the call icon —
-              *"Please shift this tag beside/adjoining the Name after call icon
-              in proper alignment"* (3 October 2026). They replaced "Updated …"
-              here the day before; the queue still says how recently a record
-              moved.
+              The record's tags, on the name's own line — *"Please shift this
+              tag beside/adjoining the Name"* (3 October 2026). They replaced
+              "Updated …" here the day before; the queue still says how recently
+              a record moved.
 
               **The name still gives way first.** `shrink-0` on the chips and
               `truncate` on the name means a long name shortens rather than
@@ -919,10 +935,23 @@ export function IpropyWorkspace({
               pill around the face; the face is just a face now, and the number
               reads as a proportion at a glance.
             */}
-            <StrengthBar
-              percent={recordStrength(module.fields, active.values).percent}
-              className="max-w-[14rem]"
-            />
+            {/*
+              The bar and the Call button share the line under the name —
+              *"middle header call icon move to after the full Name and bar and
+              aligned also from name and Bar"* (3 October 2026). Both start at
+              the name's own left edge, so the three read as one column.
+
+              **Three quarters of the width it was** — *"the bar of profile
+              strength long please make it 75% of current size"*, the same
+              message.
+            */}
+            <span className="flex min-w-0 items-center gap-2">
+              <StrengthBar
+                percent={recordStrength(module.fields, active.values).percent}
+                className="max-w-[10.5rem] flex-1"
+              />
+              {phoneValue && <span className="shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
+            </span>
           </span>
 
           <span className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5" data-testid="split-hero-actions-status">
@@ -972,41 +1001,12 @@ export function IpropyWorkspace({
                 </span>
               ) : null}
               {/*
-                Write to them without leaving the pane — *"show email Icon in
-                Icon bar of middle pane, If Record have a Email Id, so that we
-                can send mail directly from icon"* (28 September 2026).
-
-                **Only when there is an address to write to.** An icon that
-                opens a dialog which can only say "no email on this record" is
-                one a rep learns to ignore, and this bar already carries five.
-                Which field holds it is `useRecordPanes`, found by uitype, so
-                no screen names a field.
-
-                It opens the CRM's own composer rather than `mailto:` — the
-                reply threads back onto the record, and a rep on a phone has no
-                desktop mail client to hand it to.
-              */}
-              {emailValue && (
-                <button
-                  type="button"
-                  aria-label={`Email ${emailValue}`}
-                  title={`Email ${emailValue}`}
-                  onClick={() => setComposing(true)}
-                  className={cn(ACTION_CIRCLE, 'hover:bg-brand-600')}
-                >
-                  <Mail className="h-4 w-4" />
-                </button>
-              )}
-              {/*
-                **The three-dot menu is gone from this bar too** — the owner,
-                3 October 2026: *"the Three dot of Dropdown fields (Star, Tags,
-                Summarise withAI, Move to, Delete recored) Please move/merge all
-                in to More button in the Menu bar."* Two *More* buttons a few
-                pixels apart is what he was looking at; there is one now, on the
-                menu bar below, and `recordActions` is what fills it.
-
-                What this strip keeps is the one thing with an address behind
-                it: email, and only when there is an address to write to.
+                **Nothing else is on this strip any more.** The three-dot menu
+                went on 3 October — *"move/merge all in to More button in the
+                Menu bar"* — and the email circle followed it the same evening:
+                *"Move email icons from Middle heade pane to Menu bar more
+                tab."* So what is left here is where the record sits in the
+                queue, a step either way, and the search box when it is open.
               */}
           </span>
         </header>
@@ -1048,6 +1048,26 @@ export function IpropyWorkspace({
               <DropdownItem icon={<Search className="h-3.5 w-3.5" />} onClick={() => { close(); setFinding(true); }}>
                 Search this record
               </DropdownItem>
+              {/*
+                Write to them — *"Move email icons from Middle heade pane to
+                Menu bar more tab"* (3 October 2026). It was a circle on the
+                strip beside the record navigation; that strip now carries
+                nothing but the navigation itself.
+
+                **Only when there is an address to write to.** A row that can
+                only say "no email on this record" is one a rep learns to
+                ignore. Which field holds it is `useRecordPanes`, found by
+                uitype, so no screen names a field.
+
+                It opens the CRM's own composer rather than `mailto:` — the
+                reply threads back onto the record, and a rep on a phone has no
+                desktop mail client to hand it to.
+              */}
+              {emailValue && (
+                <DropdownItem icon={<Mail className="h-3.5 w-3.5" />} onClick={() => { close(); setComposing(true); }}>
+                  Email {emailValue}
+                </DropdownItem>
+              )}
               <DropdownItem
                 icon={<Star className={cn('h-3.5 w-3.5', active.starred && 'fill-amber-500 text-amber-500')} />}
                 onClick={() => { close(); star.mutate(active); }}
@@ -1317,7 +1337,7 @@ export function IpropyWorkspace({
  */
 function QueueCard({
   row, active, checked, attention, card, queueFields,
-  moduleName, nameField, assignedField, canEdit, onEdited, onSelect, onToggle,
+  moduleName, nameField, assignedField, agentPhotos, canEdit, onEdited, onSelect, onToggle,
 }: {
   row: RecordEnvelope;
   active: boolean;
@@ -1335,6 +1355,8 @@ function QueueCard({
    * is how two screens come to name different agents for one record.
    */
   assignedField?: FieldMeta;
+  /** Each agent's photo by user id, so the row can show a face. */
+  agentPhotos?: Map<string, string | null>;
   canEdit: boolean;
   onEdited: () => void;
   onSelect: () => void;
@@ -1356,11 +1378,23 @@ function QueueCard({
   const [editing, setEditing] = useState<'name' | null>(null);
   const editField = editing === 'name' ? nameField : undefined;
   const read = (field: FieldMeta): string => displayOf(row, field);
+  /*
+    **The second line, with nothing said twice** — the owner, 3 October 2026:
+    *"the duplicate House No. are still tin left record pane there, Please Check
+    and Remove one of them."*
+
+    The unit number was printed on its own *and* again inside the description,
+    because the Field Manager flags it as a subtitle field and this card also
+    draws it as the unit. `oneOfEach` already dropped a repeat **within** the
+    description; the unit sat outside it and so escaped. One list through one
+    filter is the fix — and it keeps working when an admin flags or unflags a
+    field, which naming the house-number field here would not.
+  */
   const unit = card.unit ? read(card.unit) : '';
-  const description = queueFields
-    ? oneOfEach(queueFields.map((field) => read(field)))
-    : unitDescription(card, read);
+  const facts = queueFields ? queueFields.map((field) => read(field)) : [unitDescription(card, read)];
+  const description = oneOfEach([unit, ...facts]);
   const agent = assignedField ? read(assignedField) : '';
+  const agentId = assignedField ? String(row.values[assignedField.name] ?? '') : '';
   const price = card.price ? cardPrice(row.values[card.price.name]) : '';
   const areaUnitField = card.area?.config.unitField;
   const area = card.area
@@ -1510,14 +1544,14 @@ function QueueCard({
 
         {/* 2. Which unit, cut short with "…" rather than wrapped — and not
             drawn at all when there is nothing to say, rather than a dash. */}
-        {(unit || description) && <span className={cn(
+        {description && <span className={cn(
           'mt-0.5 block min-w-0 truncate text-xs',
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
           active ? 'font-semibold text-brand-700 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400',
         )}>
-          {[unit, description].filter(Boolean).join(', ')}
+          {description}
         </span>}
 
         {/*
@@ -1558,11 +1592,19 @@ function QueueCard({
             <span
               title={`Assigned to ${agent}`}
               className={cn(
-                'ml-auto min-w-0 shrink truncate pl-1 text-[11px] font-medium',
+                'ml-auto flex min-w-0 shrink items-center gap-1 pl-1 text-[11px] font-medium',
                 active ? 'text-brand-700 dark:text-brand-100' : 'text-muted',
               )}
             >
-              {agent}
+              {/*
+                Their photo, and their initials when they have not added one —
+                *"if profile Picture available, the the profile pic will be
+                shown on Agent/User Avtar"* (3 October 2026). `Avatar` already
+                does both, and already knows that a CRM-hosted photo needs the
+                session token in its address.
+              */}
+              <Avatar name={agent} src={agentPhotos?.get(agentId) ?? null} size={16} />
+              <span className="min-w-0 truncate">{agent}</span>
             </span>
           )}
         </span>}

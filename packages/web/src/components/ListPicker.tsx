@@ -1,12 +1,9 @@
 import { type JSX, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
-  Copy, ListOrdered, MoreVertical, Pencil, Plus, Search, Share2, Tag, Trash2, Users,
+  Copy, ListOrdered, MoreVertical, Pencil, Plus, Search, Share2, Trash2, Users,
 } from 'lucide-react';
 import type { CustomView } from '@ipropy/shared';
-import { api } from '../lib/api';
 import { cn } from '../lib/utils';
-import { badgeVars } from '../lib/color';
 import { CHOSEN } from './StatusBreakdown';
 
 export interface PickerView extends Pick<CustomView, 'id' | 'name' | 'isSystem' | 'isPublic' | 'isDefault' | 'ownerId'> {
@@ -14,35 +11,21 @@ export interface PickerView extends Pick<CustomView, 'id' | 'name' | 'isSystem' 
   count?: number;
 }
 
-export interface PickerTag {
-  id: string;
-  name: string;
-  color: string;
-  created_by: string | null;
-  usage_count: number;
-}
-
 /**
- * One place to choose what the list shows: a saved list, or a tag.
+ * One place to choose which saved list the queue shows, and to manage them.
  *
- * They were two different controls in two different places, and they answer the
- * same question — "which of these people am I looking at". A tag is the way a
- * rep marks a handful of records on the spot, without an admin building a view
- * for it, so it belongs beside the views rather than behind a filter dialog.
+ * **Tags left this panel on 3 October 2026**, on the owner's instruction:
+ * *"also remove tag list from the dropdown of this list."* They are cards on
+ * the main toolbar beside the company name now (`TagCards`), which is the one
+ * place a tag is chosen — and `activeTag` is still read here, because while a
+ * tag is narrowing the queue no saved list is the one in force.
  *
  * Lists are split by who owns them, because a list somebody else built is a
- * different thing from your own. Tags are not: every tag name is unique across
- * the CRM and everybody can read every tag, so "mine" and "shared" only ever
- * meant who typed the name first. The owner asked for that split gone — it is
- * one list of tags.
- *
- * Which tags appear at all is a different question, and it is the module's:
- * since migration 154 a tag may be narrowed to Contacts or to Inventories, and
- * a tag that names nothing on this module would filter to an empty list.
+ * different thing from your own.
  */
 export function ListPicker({
-  views, activeViewId, activeTag, userId, isAdmin, moduleLabel, moduleName,
-  onChooseView, onChooseTag, onEdit, onNew, onDuplicate, onShare, onDelete, onSetDefault,
+  views, activeViewId, activeTag, userId, isAdmin, moduleLabel,
+  onChooseView, onEdit, onNew, onDuplicate, onShare, onDelete, onSetDefault,
 }: {
   views: PickerView[];
   activeViewId: string | null;
@@ -50,9 +33,7 @@ export function ListPicker({
   userId: string | undefined;
   isAdmin: boolean;
   moduleLabel: string;
-  moduleName: string;
   onChooseView: (id: string) => void;
-  onChooseTag: (name: string | null) => void;
   onEdit: (id: string) => void;
   onNew: () => void;
   onDuplicate: (id: string) => void;
@@ -63,16 +44,12 @@ export function ListPicker({
   const [query, setQuery] = useState('');
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
-  const { data: tags } = useQuery({ queryKey: ['tags', moduleName], queryFn: () => api.tags(moduleName) });
-
   const needle = query.trim().toLowerCase();
   const matches = (name: string): boolean => !needle || name.toLowerCase().includes(needle);
 
   const mine = views.filter((v) => matches(v.name) && (v.isSystem || v.ownerId === userId || !v.isPublic));
   const shared = views.filter((v) => matches(v.name) && !v.isSystem && v.isPublic && v.ownerId !== userId);
-  const tagList = (tags ?? []).filter((t) => matches(t.name));
-
-  const nothing = !mine.length && !shared.length && !tagList.length;
+  const nothing = !mine.length && !shared.length;
   const canManage = (view: PickerView): boolean =>
     Boolean(view.isSystem || view.ownerId === userId || isAdmin);
 
@@ -81,7 +58,7 @@ export function ListPicker({
     // reads down, not labels.
     <div className="flex max-h-[calc(100vh-11rem)] w-80 flex-col text-[13px]">
       <div className="flex items-center justify-between border-b border-slate-100 p-3 dark:border-slate-800">
-        <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Select list or tag</span>
+        <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Select a list</span>
         <button
           type="button"
           onClick={onNew}
@@ -101,8 +78,8 @@ export function ListPicker({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onClick={(e) => e.stopPropagation()}
-            placeholder="Search for lists and tags"
-            aria-label="Search lists and tags"
+            placeholder="Search for a list"
+            aria-label="Search lists"
             className="input h-7 w-full pl-8 text-xs"
           />
         </div>
@@ -111,7 +88,7 @@ export function ListPicker({
       {/* A landmark, so the rows can be addressed as a set — by a screen
           reader moving between regions, and by a test that needs "the lists",
           not "every button on the page". */}
-      <nav aria-label="Lists and tags" className="flex-1 space-y-3 overflow-y-auto px-2 py-2">
+      <nav aria-label="Lists" className="flex-1 space-y-3 overflow-y-auto px-2 py-2">
         {nothing && <p className="px-1.5 py-3 text-center text-[11px] text-muted">Nothing matches “{query.trim()}”.</p>}
 
         {mine.length > 0 && (
@@ -156,13 +133,6 @@ export function ListPicker({
           </Section>
         )}
 
-        <Section label="Tags">
-          {tagList.length === 0
-            ? <Empty>No tags found</Empty>
-            : tagList.map((tag) => (
-              <TagRow key={tag.id} tag={tag} active={activeTag === tag.name} onChoose={onChooseTag} />
-            ))}
-        </Section>
       </nav>
     </div>
   );
@@ -175,10 +145,6 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <div className="space-y-0.5">{children}</div>
     </div>
   );
-}
-
-function Empty({ children }: { children: React.ReactNode }): JSX.Element {
-  return <p className="px-1.5 pt-0.5 text-[11px] italic text-muted">{children}</p>;
 }
 
 function ViewRow({
@@ -236,8 +202,18 @@ function ViewRow({
         </span>
       </div>
 
+      {/*
+        **In the flow, not floating** — the owner, 3 October 2026: *"the default
+        List or created list … should with function of be edit/Delete in three
+        dot of the list."* Edit and Delete have always been here; the panel they
+        sit in was positioned `absolute` inside a list that scrolls, and
+        `overflow-y-auto` clips an absolutely-placed child — so on any row below
+        the first few the menu was cut off or invisible, which reads exactly
+        like the controls not existing. Opening it in the flow pushes the rows
+        below down instead, and nothing can clip it.
+      */}
       {menuOpen && (
-        <div className="popover absolute right-1 top-8 z-50 w-36 py-1">
+        <div className="popover mx-1 mt-1 w-[calc(100%-0.5rem)] py-1">
           <MenuItem icon={<Pencil className="h-3 w-3" />} onClick={onEdit}>Edit</MenuItem>
           <MenuItem icon={<Copy className="h-3 w-3" />} onClick={onDuplicate}>Duplicate</MenuItem>
           {/* Sharing a list here is what it means in this CRM: making it public
@@ -282,31 +258,6 @@ function MenuItem({
     >
       <span className="w-4 shrink-0 text-slate-400">{icon}</span>
       {children}
-    </button>
-  );
-}
-
-function TagRow({
-  tag, active, onChoose,
-}: { tag: PickerTag; active: boolean; onChoose: (name: string | null) => void }): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={() => onChoose(active ? null : tag.name)}
-      aria-pressed={active}
-      className={cn(
-        'flex w-full items-center gap-2 rounded-md p-2 text-left transition-colors',
-        active ? CHOSEN : 'font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
-      )}
-    >
-      {/* The tag's own colour, through the helper that keeps it legible. */}
-      <Tag className="h-3 w-3 shrink-0 text-tinted" style={badgeVars(tag.color)} />
-      <span className="min-w-0 flex-1 truncate">{tag.name}</span>
-      {tag.usage_count > 0 && (
-        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-          {tag.usage_count.toLocaleString('en-IN')}
-        </span>
-      )}
     </button>
   );
 }

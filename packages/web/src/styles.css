@@ -99,6 +99,16 @@
     --negative-on-soft: #93000a;
 
     /*
+      The three bands of the record-completeness bar, 3 October 2026: red to
+      the bar's 40% mark, amber to 70%, green after — see `lib/strengthBar.ts`.
+      Variables rather than Tailwind steps because a bar is a shape the theme
+      owns, and because the dark sheet needs its own three.
+    */
+    --strength-low: #c92a2a;
+    --strength-mid: #d98500;
+    --strength-high: #047857;
+
+    /*
       The brand scale. These are the indigo values the CRM shipped with; the
       whole point of variables is that an admin can overwrite every one of
       them from Brand settings (`applyBrandColour` in lib/store.ts generates
@@ -226,6 +236,11 @@
     --positive-on-soft: #85f8c4;
     --negative-soft: #93000a;
     --negative-on-soft: #ffdad6;
+
+    /* The same three bands, lifted so each reads on a dark track. */
+    --strength-low: #f87171;
+    --strength-mid: #fbbf24;
+    --strength-high: #34d399;
 
     --list-text: #e2e8f0;
     --list-row: #0f172a;

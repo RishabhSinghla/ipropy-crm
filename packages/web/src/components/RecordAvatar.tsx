@@ -24,6 +24,7 @@ import { Eye, Loader2, Trash2, Upload } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
+import { strengthFill } from '../lib/strengthBar';
 import { Avatar, Dropdown, DropdownItem, Modal } from './ui';
 
 /** What the record's own photo is filed under. */
@@ -237,9 +238,11 @@ export function StrengthBar({ percent, className }: { percent: number; className
       title={`This record is ${percent}% filled in`}
     >
       <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+        {/* Red, amber then green by how full the bar is — `strengthFill` holds
+            the rule and the arithmetic, so a node test can read it. */}
         <span
-          className="block h-full rounded-full bg-positive transition-[width] duration-500"
-          style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
+          className="block h-full rounded-full transition-[width] duration-500"
+          style={{ width: `${Math.max(0, Math.min(100, percent))}%`, background: strengthFill(percent) }}
         />
       </span>
       <span className="shrink-0 text-[10px] font-bold tabular-nums text-muted">{percent}%</span>

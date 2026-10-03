@@ -139,9 +139,13 @@ export function FollowUpQueue({
             <Clock className={filterIcon('task', Boolean(active))} />
             {/* *"'Follow-ups' to Task"* — the owner's word for it, 28
                 September 2026. The field is still whatever the module calls
-                it; this is the button. Icon and count only since 1 October
-               2026; the word stays for a screen reader and the tooltip. */}
-            <span className="sr-only">Task</span>
+                it; this is the button.
+
+                **The word is back on it** — *"Also Show the name of all icons
+                'All Leads/Inventory, Followup, Tag Name (hot)' in the record
+                left pane"* (3 October 2026), reversing the icons-only row of
+                1 October. */}
+            <span>Task</span>
             {/* Something overdue stays red on the purple: it is the one count
                 in this row that is a warning rather than a size. */}
             <span className={toolbarCount(Boolean(active), counts.pending > 0)}>

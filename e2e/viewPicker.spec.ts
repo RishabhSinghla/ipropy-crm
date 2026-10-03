@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 
 test('the view picker opens and lists views', async ({ page }) => {
   await page.getByRole('button', { name: 'Choose or manage list views' }).click();
-  await expect(page.getByText('Select list or tag')).toBeVisible();
+  await expect(page.getByText('Select a list')).toBeVisible();
   // Every module ships at least one view, so an empty picker is a real failure.
   await expect(page.getByRole('button', { name: /^All Leads/ })).toBeVisible();
 });
@@ -33,7 +33,7 @@ test('choosing a view still applies it', async ({ page }) => {
     inside the panel" instead catches the create button and each row's action
     menu, which is how this spec silently skipped itself.
   */
-  const options = page.getByRole('navigation', { name: 'Lists and tags' })
+  const options = page.getByRole('navigation', { name: 'Lists' })
     .getByRole('button', { name: /\S/ })
     .filter({ hasNotText: /^Actions for/ });
   test.skip((await options.count()) < 2, 'needs a second view to switch to');
@@ -72,7 +72,7 @@ test('the search box narrows the list once there are enough views', async ({ pag
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole('button', { name: 'Choose or manage list views' }).click();
-  const search = page.getByLabel('Search lists and tags');
+  const search = page.getByLabel('Search lists');
   await expect(search).toBeVisible();
 
   /*

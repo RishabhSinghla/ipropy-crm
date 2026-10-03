@@ -151,7 +151,23 @@ test('the tag cards sit after the company name and narrow a list', async ({ page
   const first = cards.locator('button').first();
   const name = (await first.innerText()).split('\n')[0]!;
   const before = await page.getByText(/[\d,]+ records/).first().innerText();
+
+  /*
+    **A tag is not a field on the module**, so it cannot be sent as one — it has
+    to reach the server as `record_tags` with `has_any`. Sent as a field name the
+    request is refused, or worse, silently matches nothing. This assertion lived
+    in `listPicker.spec.ts` until 3 October 2026, when tags left that panel and
+    these cards became the one way to choose one.
+  */
+  let askedByTag = false;
+  await page.route('**/api/records/**', async (route) => {
+    const asked = decodeURIComponent(route.request().postData() ?? route.request().url());
+    if (asked.includes('record_tags') && asked.includes('has_any') && asked.includes(name)) askedByTag = true;
+    await route.continue();
+  });
+
   await first.click();
+  await expect.poll(() => askedByTag, { timeout: 15_000 }).toBe(true);
   // It reaches the server: the whole total moves, not just the page.
   await expect(page.getByText(/[\d,]+ records/).first()).not.toHaveText(before, { timeout: 15_000 });
   expect(page.url()).toContain(`tag=${encodeURIComponent(name)}`);

@@ -1920,3 +1920,87 @@ decisions; all of them are on Contacts and Inventories alike.
   now rather than initials. It sits outside the card's `<button>`, a sibling: a
   button inside a button is invalid HTML and a screen reader cannot reach the
   inner one, which is why the tick box and the inline editor live out there too.
+
+### Nine more, the same evening
+
+He worked the screen again. All of it is on Contacts and Inventories alike, and
+`e2e/ownerNineOctober3.spec.ts` drives every promise twice for that reason.
+
+* **The Hot chip left the queue toolbar.** *"Now i need to remove hot tag/Icon
+  from Left Record Pane after the List and Task Icons."* Tags are cards on the
+  main toolbar beside the company name since this morning, so a third pill here
+  was the same question asked in two places. `HotTagChip.tsx` was **deleted**
+  rather than left behind unused, and the proof that a tag reaches the server as
+  `record_tags` with `has_any` moved onto the cards — it was the only thing that
+  spec was really guarding, and a tag sent as a field name is silently refused.
+* **The two pills that stay say their own names again** — *"Also Show the name of
+  all icons 'All Leads/Inventory, Followup, Tag Name (hot)' in the record left
+  pane."* This reverses the icons-only row of 1 October; he has worked both and
+  the later decision stands. The list button already printed the **tag's** name
+  whenever one was narrowing the list, which is the third name he asked for.
+* **Tags left the list picker** — *"also remove tag list from the dropdown of
+  this list."* `activeTag` is still read there, because while a tag is narrowing
+  the queue no saved list is the one in force.
+* **Edit and Delete were always in that three-dot menu, and could not be seen.**
+  *"the default List or created list … should with function of be edit/Delete in
+  three dot."* The panel was positioned `absolute` inside a list that scrolls,
+  and **`overflow-y-auto` clips an absolutely-placed child** — so on any row
+  below the first few the menu was cut off or simply invisible, which reads
+  exactly like the controls not existing. It opens in the flow now and pushes
+  the rows below down; nothing can clip it. The spec measures the panel's box
+  against its scroller's and deliberately opens the **last** row, because the
+  first one was never the one that broke.
+* **The duplicate house number is gone for the second time, and this is the half
+  that was missed.** `oneOfEach` deduped the description's own pieces; the unit
+  number was drawn *beside* that sentence rather than inside it, so it escaped
+  the filter it was written for. One list through one filter — and still not by
+  naming the house-number field, which would stop being true the first time an
+  admin flags another.
+* **The completeness bar is three quarters the width** and carries **three
+  colours by how full it is**: red to the bar's 40% mark, amber to 70%, green
+  after, so a record at 85% shows all three bands and one at 30% shows red
+  alone. The boundaries belong to the **track**, not the fill — and since the
+  fill is only `percent` of the track wide, a boundary at the track's 40% sits
+  at `40 / percent` of the fill. That one division is `strengthFill` in
+  `lib/strengthBar.ts`, pure and node-tested, because it is the only thing here
+  that can be arithmetically wrong. The three colours are `--strength-low` /
+  `-mid` / `-high` in `styles.css`, with their own dark-mode values: a bar is a
+  shape the theme owns, and the contrast scan walks both themes.
+* **The email circle left the record header for the menu bar's *More*** —
+  *"Move email icons from Middle heade pane to Menu bar more tab."* That strip
+  now carries nothing but where the record sits in the queue and the search box
+  when it is open. The spec asserts it is **absent** from the strip as well as
+  present in *More*: a control that moved while the old one stayed is the bug
+  this kind of change produces.
+* **Call moved under the name, on to the bar's own row** — *"middle header call
+  icon move to after the full Name and bar and aligned also from name and
+  Bar."* Measured rather than read off a class: below the name, level with the
+  bar, after it, and starting from the same left edge the name and bar do.
+* **The agent on a queue row is a face and a name.** *"if profile Picture
+  available, the the profile pic will be shown on Agent/User Avtar."* Looked up
+  **by user id**, never by the displayed name — the record stores the id and the
+  row carries it, so the match is exact, while matching on a name silently loses
+  anybody whose name is spelt two ways. It reads the directory the pane already
+  fetches for the assignment control, so there is no second request, and
+  `Avatar` already draws initials when somebody has no photo.
+* **The company circle is a bold dark ring, and a logo is fitted rather than
+  cropped.** *"current circle line is thin, and i cant see company picture/logo."*
+  The ring was `brand-100` — the palest step there is — on a white header, which
+  is a hairline nobody can see. And the picture was `object-cover`, which fills
+  a circle by **cropping**: a wide wordmark came out as an unreadable slice of
+  its middle, which is exactly what "I can't see the logo" looks like.
+  `object-contain` shows the whole of it. **Unverified:** whether a logo is
+  uploaded on production at all — this container cannot reach the site. With
+  none, the first letter of the company name is the correct thing to see, and
+  Admin → Brand is where one is added.
+
+**Three specs were behind the screen and are caught up here**, all three left
+stale by the ten earlier that day rather than by this batch: `splitViewHeaderKeys`
+still asked for a Status button on the queue toolbar (removed that morning —
+*"it is already in the Quick Filter"*), the accessibility suite still opened the
+stage breakdown through that same button, and `listDefaultView` still looked for
+the strength **ring**'s label on a record that now draws a bar. Each was failing
+on `main` before any of this, which is worth writing down: a spec that names a
+control the owner has just removed fails for the right reason and still has to be
+pointed at where the promise went, or the next person reads a red run as a
+regression.

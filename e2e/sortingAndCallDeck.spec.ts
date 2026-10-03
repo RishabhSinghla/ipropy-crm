@@ -34,51 +34,14 @@ async function openQueue(page: Page, path: string): Promise<void> {
 
 for (const module of MODULES) {
   test.describe(module.label, () => {
-    test('the Hot chip counts the hot tag and narrows the list to it', async ({ page }) => {
-      /*
-        1 October 2026, the owner: the call-outcome chip made way for *"hot lead
-        tag thing along with count"*. It is the module's own tag called "hot",
-        so the spec makes sure one exists and is offered here before looking.
-      */
-      await page.goto(module.path);
-      await page.evaluate(async (name) => {
-        const auth = { Authorization: `Bearer ${localStorage.getItem('ipropy.token')}`, 'Content-Type': 'application/json' };
-        const tags = await fetch(`/api/tags?module=${name}`, { headers: auth }).then((r) => r.json()) as { name: string }[];
-        if (!tags.some((t) => /^hot$/i.test(t.name))) {
-          await fetch('/api/tags', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'hot', modules: [] }) });
-        }
-      }, module.name);
-      await openQueue(page, module.path);
-
-      const hot = page.getByTestId('hot-tag-chip');
-      await expect(hot).toBeVisible();
-      await expect(page.getByTestId('call-disposition-filter')).toHaveCount(0);
-
-      /*
-        **Light at rest, filled and reversed to white once it is narrowing the
-        list** — the owner, 29 September 2026. Measured as *different*, not as
-        two exact colours: the brand is an admin's to change.
-      */
-      const rest = await hot.evaluate((el) => {
-        const style = getComputedStyle(el);
-        return { fill: style.backgroundColor, text: style.color };
-      });
-      expect(rest.text, 'a resting pill should not be reversed out to white').not.toBe('rgb(255, 255, 255)');
-
-      let askedForHot = false;
-      await page.route('**/api/records/**', async (route) => {
-        const asked = decodeURIComponent(route.request().postData() ?? route.request().url());
-        if (asked.includes('record_tags') && /"hot"/i.test(asked)) askedForHot = true;
-        await route.continue();
-      });
-      await hot.click();
-      await expect.poll(() => askedForHot, { timeout: 15_000 }).toBe(true);
-      await expect.poll(
-        async () => hot.evaluate((el) => getComputedStyle(el).color),
-        { timeout: 15_000, message: 'an active filter should reverse to white' },
-      ).toBe('rgb(255, 255, 255)');
-      await expect(hot).toHaveAttribute('aria-pressed', 'true');
-    });
+    /*
+      **The Hot chip left this row on 3 October 2026** — the owner: *"Now i need
+      to remove hot tag/Icon from Left Record Pane after the List and Task
+      Icons."* Tags are cards on the main toolbar now, and the test that a tag
+      reaches the server as `record_tags` moved with it, to
+      `ownerBatchOctober3.spec.ts`. The call-outcome filter it replaced on
+      1 October is still in the Quick & Live Filters panel.
+    */
 
     test('the sort menu is the eight he named, and Recently updated to begin with', async ({ page }) => {
       await openQueue(page, module.path);

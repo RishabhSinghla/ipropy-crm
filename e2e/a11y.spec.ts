@@ -159,20 +159,26 @@ test.describe('accessibility', () => {
     await deck.getByRole('button', { name: /save & exit/i }).click();
   });
 
-  test('the pipeline breakdown panel has no violations', async ({ page }) => {
+  /*
+    **This scanned the stage breakdown's own panel until 3 October 2026**, when
+    the owner took that button off the queue — *"it is already in the Quick
+    Filter"*. The question it asked is now a section of the Quick & Live Filters
+    panel, so that is what gets scanned: the panel, not the button that is gone.
+  */
+  test('the quick and live filters panel has no violations', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
-    await page.getByRole('button', { name: /^Status\b/ }).first().click();
-    await expect(page.getByRole('heading', { name: /breakdown$/i })).toBeVisible();
+    await page.getByTestId('quick-filter-button').click();
+    await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
   });
 
-  test('the list and tag picker has no violations', async ({ page }) => {
+  test('the list picker has no violations', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
     await page.getByRole('button', { name: /Choose or manage list views/ }).click();
-    await expect(page.getByText('Select list or tag')).toBeVisible();
+    await expect(page.getByText('Select a list')).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
   });

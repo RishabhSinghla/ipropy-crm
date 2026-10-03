@@ -215,12 +215,14 @@ test('the queue is faces and facts, with the completeness bar off it', async ({ 
   */
   await expect(queue.getByRole('img', { name: /Record \d+% complete/ })).toHaveCount(0);
   /*
-    27 September 2026: it is the ring around the face in the record hero now,
-    which is where the prototype puts it. Still a `role="img"` with the same
-    spoken label, so this assertion says where it went rather than only that it
-    left the queue.
+    **It is a bar under the record's name now**, not the ring around the face —
+    *"Remove and Change profile strength circle in to bar, that bar will shown
+    below the Full name of Record"* (3 October 2026), and three quarters the
+    width it was from that evening. Still a `role="img"`, so this assertion says
+    where it went rather than only that it left the queue; the label is the
+    bar's own, because "Form strength" was the ring's and the ring is gone.
   */
-  await expect(recordPane(page).getByRole('img', { name: /Form strength \d+%/ })).toBeVisible();
+  await expect(recordPane(page).getByRole('img', { name: /Record \d+% complete/ })).toBeVisible();
 
   /*
     The chevron that used to sit at the end of every row is gone. It pointed

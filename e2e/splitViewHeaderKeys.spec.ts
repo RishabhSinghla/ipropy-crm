@@ -41,19 +41,33 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
 });
 
-test('the toolbar says Status, Task and Call Log, with no arrows', async ({ page }) => {
+test('the toolbar is the list and Task, and Status and Call Log are in the panel', async ({ page }) => {
   await page.goto('/leads');
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
-  // The owner's own words for these buttons, 28 September 2026 — one set of
-  // words on every module rather than "Lead Status" here and "Associate
-  // Status" there.
-  for (const label of ['Status', 'Task', 'Call Log']) {
-    await expect(page.getByRole('button', { name: new RegExp(`^${label}`) })).toBeVisible();
-  }
+  /*
+    **This spec was behind the screen and is caught up here.** It asked for a
+    Status button on this row, which the owner had already taken off on
+    3 October — *"Please remove the status chip/button from left record pane,
+    bcoz it is already in the Quick Filter"* — and for a Call Log button, which
+    went the same way. The row is two pills now, and both say their own name
+    again (3 October, evening).
+  */
+  const tools = page.getByTestId('queue-tools');
+  await expect(tools.getByRole('button', { name: /Choose or manage list views/ })).toContainText(/All Leads/i);
+  await expect(tools.getByRole('button', { name: 'Task' })).toContainText('Task');
+
+  // His own words for them, wherever they are drawn: never "Lead Status" here
+  // and "Associate Status" there, and never a chevron on a pill.
   await expect(page.getByRole('button', { name: /^Lead Status/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Follow-ups/ })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Call Disposition/ })).toHaveCount(0);
+  await expect(tools.locator('button[title^="Filter by "]')).toHaveCount(0);
+
+  // And both questions are still askable, in the panel he said they were in.
+  await page.getByTestId('quick-filter-button').click();
+  const panel = page.getByTestId('quick-filter-overlay');
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText(/Call Log|Status/i).first()).toBeVisible();
 });
 
 test('each pinned fact is introduced by its own field name', async ({ page }) => {
@@ -81,12 +95,23 @@ test('each pinned fact is introduced by its own field name', async ({ page }) =>
   expect(Math.abs(value!.y + value!.height / 2 - (label!.y + label!.height / 2)), 'the two should share a row').toBeLessThan(12);
 });
 
-test('an email icon appears only when there is an address to write to', async ({ page }) => {
+test('writing to them is in More, only when there is an address', async ({ page }) => {
   const made = await makeLead(page);
   await page.goto(`/leads?open=${made.id}`);
   // A regex, not the bare name: the heading now holds the inline editor, so
   // its accessible name carries that control's label too.
   await expect(page.getByRole('heading', { name: new RegExp(made.name) })).toBeVisible({ timeout: 30_000 });
+
+  /*
+    **It left the header strip on 3 October 2026** — *"Move email icons from
+    Middle heade pane to Menu bar more tab"* — so the circle is gone and the row
+    is behind the menu bar's *More*. Asserting it is absent from the strip as
+    well, because a control that moved while the old one stayed is the bug this
+    kind of change produces.
+  */
+  await expect(page.getByTestId('split-hero-actions-status')
+    .getByRole('button', { name: `Email ${made.email}` })).toHaveCount(0);
+  await page.getByTestId('record-menu-more').click();
 
   const write = page.getByRole('button', { name: `Email ${made.email}` });
   await expect(write).toBeVisible();

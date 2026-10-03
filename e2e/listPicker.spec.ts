@@ -1,43 +1,50 @@
 /**
- * Choosing what the list shows: a saved list, or a tag.
+ * Choosing which saved list the queue shows, and managing one from its own row.
  *
- * Tags were reachable only through the filter dialog, which meant knowing the
- * filter grammar to answer "show me the ones I marked". They answer the same
- * question the saved lists do, so they live in the same picker now.
+ * **Tags left this panel on 3 October 2026**, on the owner's instruction —
+ * *"remove tag list from the dropdown of this list"*. They are cards on the main
+ * toolbar now, and `ownerBatchOctober3.spec.ts` is what proves a card reaches
+ * the server as `record_tags`.
  *
- * The one thing only a browser proves: a tag is not a field on the module, so
- * it cannot be sent as one. It has to reach the server as `record_tags` with
- * `has_any` — send it as a field name and the request is refused, or worse,
- * silently matches nothing.
+ * The one thing only a browser proves here: the row's actions menu used to be
+ * positioned `absolute` inside a list that scrolls, and `overflow-y-auto` clips
+ * an absolutely-placed child — so Edit and Delete were cut off or invisible on
+ * any row below the first few, which reads exactly like the controls not
+ * existing. Nothing but a real browser measures that.
  */
-import { test, expect, type Page, type Request } from '@playwright/test';
-
-function isListSearch(r: Request): boolean {
-  if (!r.url().includes('/api/records/leads/search') || r.method() !== 'POST') return false;
-  return Array.isArray(r.postDataJSON()?.columns);
-}
+import { test, expect, type Page } from '@playwright/test';
 
 async function openPicker(page: Page) {
   await page.goto('/leads');
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: /Choose or manage list views/ }).click();
-  await expect(page.getByText('Select list or tag')).toBeVisible();
+  await expect(page.getByText('Select a list')).toBeVisible();
 }
 
-test('lists and tags are both in the one picker', async ({ page }) => {
+test('the picker holds lists and no tags', async ({ page }) => {
   await openPicker(page);
-  // One tag section, not two. The owner asked for the "shared tags" split
-  // gone on 19 September — every tag is readable by everybody, so who typed
-  // the name first was never a useful division. `exact` because the empty
-  // state ("No tags found") would otherwise match the heading too.
-  await expect(page.getByText('Tags', { exact: true })).toBeVisible();
-  await expect(page.getByText('Shared tags', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^All Leads/ })).toBeVisible();
+  // The heading is gone, not merely empty: a "Tags" section with nothing under
+  // it reads as tags being broken rather than as tags having moved.
+  await expect(page.getByText('Tags', { exact: true })).toHaveCount(0);
 });
 
-test('the search box narrows lists and tags together', async ({ page }) => {
+test('the button says which list is on', async ({ page }) => {
   await openPicker(page);
-  const box = page.getByPlaceholder('Search for lists and tags');
+  /*
+    **The name is back on the pill** — *"Also Show the name of all icons 'All
+    Leads/Inventory, Followup, Tag Name (hot)' in the record left pane"*
+    (3 October 2026), reversing the icons-only row of 1 October. Read off the
+    button's own text, not its tooltip: the tooltip was already right while the
+    face of it said nothing.
+  */
+  await expect(page.getByRole('button', { name: /Choose or manage list views/ })).toContainText('All Leads');
+  await expect(page.getByRole('button', { name: 'Task' })).toContainText('Task');
+});
+
+test('the search box narrows the lists', async ({ page }) => {
+  await openPicker(page);
+  const box = page.getByPlaceholder('Search for a list');
 
   await box.fill('zzz-nothing-matches-this');
   await expect(page.getByText(/Nothing matches/)).toBeVisible();
@@ -46,59 +53,36 @@ test('the search box narrows lists and tags together', async ({ page }) => {
   await expect(page.getByRole('button', { name: /^All Leads/ })).toBeVisible();
 });
 
-test('a tag filters the list as `record_tags`, not as a field', async ({ page }) => {
+test('a list can be acted on from its own row, and the menu is not clipped', async ({ page }) => {
   await openPicker(page);
 
-  const tag = page.locator('[aria-pressed="false"]').filter({ hasText: /^[a-z][a-z -]+\d*$/ }).last();
-  if (!(await tag.count())) test.skip(true, 'no tags in this database');
-  const name = (await tag.innerText()).split('\n')[0].trim();
+  const lists = page.getByRole('navigation', { name: 'Lists' });
+  // The last row, deliberately: the first one was never the one that broke.
+  const rows = lists.getByRole('button', { name: /^Actions for / });
+  const last = rows.last();
+  await last.scrollIntoViewIfNeeded();
+  await last.click();
 
-  const search = page.waitForRequest(isListSearch);
-  await tag.click();
-
-  const conditions = (await search).postDataJSON().filter?.conditions ?? [];
-  const tagCondition = conditions.find((c: { field?: string }) => c.field === 'record_tags');
-  expect(tagCondition, JSON.stringify(conditions)).toBeTruthy();
-  expect(tagCondition.operator).toBe('has_any');
-  expect(tagCondition.value).toEqual([name]);
-
-  // The button says what is being shown, so the filter is never invisible.
-  await expect(page.getByRole('button', { name: /Choose or manage list views/ })).toContainText(name);
-});
-
-test('a list can be acted on from its own row', async ({ page }) => {
-  await openPicker(page);
-
-  await page.getByRole('button', { name: /^Actions for All Leads$/ }).click();
-  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+  const edit = page.getByRole('button', { name: 'Edit', exact: true });
+  await expect(edit).toBeVisible();
   await expect(page.getByRole('button', { name: 'Duplicate' })).toBeVisible();
   await expect(page.getByRole('checkbox', { name: /Set as default/ })).toBeVisible();
 
-  // A built-in list cannot be deleted or unshared — it is everybody's.
-  await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
+  /*
+    Measured, not read off a class name. A panel clipped by its scroller is
+    still "visible" to Playwright as far as its own box goes — what gives it
+    away is the box sitting outside the scroller it lives in.
+  */
+  const inside = await edit.evaluate((el) => {
+    const panel = el.closest('.popover')!.getBoundingClientRect();
+    const scroller = el.closest('nav')!.getBoundingClientRect();
+    return panel.bottom <= scroller.bottom + 1 && panel.top >= scroller.top - 1;
+  });
+  expect(inside, 'the actions menu should sit inside the list it scrolls with').toBe(true);
 });
 
-test('choosing a list clears a tag, and the two do not stack', async ({ page }) => {
+test('a built-in list cannot be deleted', async ({ page }) => {
   await openPicker(page);
-  const full = await page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/).innerText();
-
-  const tag = page.locator('[aria-pressed="false"]').filter({ hasText: /^[a-z][a-z -]+\d*$/ }).last();
-  if (!(await tag.count())) test.skip(true, 'no tags in this database');
-  const name = (await tag.innerText()).split('\n')[0].trim();
-  await tag.click();
-
-  const trigger = page.getByRole('button', { name: /Choose or manage list views/ });
-  await expect(trigger).toContainText(name);
-
-  await trigger.click();
-  await page.getByRole('button', { name: /^All Leads/ }).click();
-
-  /*
-    Asserted on what the screen says, not on a request. Going back to the list
-    you were already on restores a query React Query still holds, so there is
-    no network call to wait for — and the bug this guards against is the tag
-    surviving underneath a list, which shows as the count staying narrowed.
-  */
-  await expect(trigger).not.toContainText(name);
-  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toHaveText(full);
+  await page.getByRole('button', { name: /^Actions for All Leads$/ }).click();
+  await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
 });
