@@ -76,16 +76,16 @@ for (const module of MODULES) {
     // time, two rows apart, meaning something different each time.
     await expect(page.getByRole('group', { name: 'Show in the timeline' })).toHaveCount(0);
     // Comments is on the bar, and choosing it still shows the stream.
-    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Comments/ }).click();
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Notes/ }).click();
     await expect(page.getByTestId('activity-feed')).toBeVisible();
   });
 
   test(`${module}: the bar offers what the section lets you start`, async ({ page }) => {
     await openFirstRecord(page, module);
-    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Comments/ }).click();
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Notes/ }).click();
     const action = page.getByTestId('record-menu-action');
     await expect(action).toBeVisible();
-    await action.getByRole('button', { name: 'Post a comment' }).click();
+    await action.getByRole('button', { name: 'Write a note' }).click();
     // It puts the cursor in the note box that is already there rather than
     // opening a second one: two places to type is two drafts to lose.
     await expect(page.locator('[data-testid="note-box"]:focus')).toHaveCount(1);

@@ -23,12 +23,12 @@ import { RecordInspector } from './RecordInspector';
 import { AccessRequestBanner } from './AccessRequestBanner';
 import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
-import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
+import { cardArea, cardPrice, oneOfEach, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ModuleIcon } from './Layout';
-import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
+import { ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
-import { RecordAvatar } from './RecordAvatar';
+import { RecordAvatar, StrengthBar } from './RecordAvatar';
 import {
   ON_THE_BAR, activityKindOf, arrangeRecordMenu, loadRecordMenu, moveEntry, saveRecordMenu, splitMenu,
   type MenuKey,
@@ -60,8 +60,14 @@ const MENU_ICON: Record<MenuKey, JSX.Element> = {
 };
 
 /** The three the activity stream contributes. Tab labels stay the Layout Designer's. */
+/*
+  **"Note", not "Comments"** — the owner, 3 October 2026: *"Please change the
+  Name of Comment to Note."* It is what the box at the foot of the record has
+  always called itself ("Write a note…"), and one thing with two names is one
+  thing a rep has to learn twice.
+*/
 const STREAM_LABEL: Record<'comment' | 'message' | 'audit', string> = {
-  comment: 'Comments',
+  comment: 'Notes',
   message: 'Messages',
   audit: 'Changes',
 };
@@ -772,6 +778,7 @@ export function IpropyWorkspace({
               queueFields={queueFields}
               moduleName={module.name}
               nameField={nameField}
+              assignedField={assignedField}
               canEdit={canEdit}
               onEdited={() => invalidateRecordQueries(queryClient, module.name, row.id)}
               onSelect={() => openRecord(row.id)}
@@ -860,7 +867,6 @@ export function IpropyWorkspace({
               module={module.name}
               recordId={active.id}
               name={active.label}
-              percent={recordStrength(module.fields, active.values).percent}
               canEdit={canEdit}
               size={56}
             />
@@ -872,7 +878,7 @@ export function IpropyWorkspace({
               admin may change either.
             */}
             <span className="flex min-w-0 items-center gap-2">
-            <h2 className="min-w-0 truncate text-sm font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+            <h2 className="min-w-0 flex-1 basis-24 truncate text-sm font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
               {canEdit && nameField && isInlineEditable(nameField) ? (
                 <EditableField
                   module={module.name}
@@ -889,24 +895,44 @@ export function IpropyWorkspace({
             {/* Call sits right after the name — *"the call icon should come right
                 after the name of the record"* (3 October 2026). */}
             {phoneValue && <span className="shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
-            </span>
-            {/* The record's tags, where "Updated …" used to be — *"remove that
-                updated thing and instead of it show just the tag if any"*
-                (2 October 2026). The queue still says how recently it moved. */}
+            {/*
+              The record's tags, on the name's own line after the call icon —
+              *"Please shift this tag beside/adjoining the Name after call icon
+              in proper alignment"* (3 October 2026). They replaced "Updated …"
+              here the day before; the queue still says how recently a record
+              moved.
+
+              **The name still gives way first.** `shrink-0` on the chips and
+              `truncate` on the name means a long name shortens rather than
+              pushing the tags off the row — and the name has a floor, because
+              three characters of the one thing that has to be readable is the
+              fault this header has already met once.
+            */}
             {(active.tags?.length ?? 0) > 0 && (
-              <TagChips module={module.name} tags={active.tags} className="min-w-0 overflow-hidden" />
+              <TagChips module={module.name} tags={active.tags} className="shrink-0 overflow-hidden" />
             )}
+            </span>
+            {/*
+              How complete the record is, under the name — *"Remove and Change
+              profile strength circle in to bar, that bar will shown below the
+              Full name of Record"* (3 October 2026). It was four rings and a
+              pill around the face; the face is just a face now, and the number
+              reads as a proportion at a glance.
+            */}
+            <StrengthBar
+              percent={recordStrength(module.fields, active.values).percent}
+              className="max-w-[14rem]"
+            />
           </span>
 
           <span className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5" data-testid="split-hero-actions-status">
-            {/* Which module this record is, at a glance — *"just a small …
-                leads or whether inventories or associate"* (2 October 2026).
-                Just left of the counter since 1 October: *"move this leads
-                thing written to right just left of this count"*. The module's
-                own label, so a rename in Settings shows here. */}
-            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300" data-testid="record-module-label">
-              {module.label}
-            </span>
+            {/*
+              **The module's name left this header on 3 October 2026** —
+              *"Remove inventory/Lead labels/text from this middle header."*
+              It arrived on 2 October and he has now worked the screen: the
+              left toolbar already says which module is open, and the record in
+              front of you is not somewhere you arrive by accident.
+            */}
             {/* Where this record sits in the queue, and a step either way. */}
             <span className="mr-1 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-slate-500" aria-label="Record navigation">
               <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
@@ -1291,7 +1317,7 @@ export function IpropyWorkspace({
  */
 function QueueCard({
   row, active, checked, attention, card, queueFields,
-  moduleName, nameField, canEdit, onEdited, onSelect, onToggle,
+  moduleName, nameField, assignedField, canEdit, onEdited, onSelect, onToggle,
 }: {
   row: RecordEnvelope;
   active: boolean;
@@ -1301,6 +1327,14 @@ function QueueCard({
   queueFields?: FieldMeta[];
   moduleName: string;
   nameField?: FieldMeta;
+  /**
+   * Who the record is assigned to.
+   *
+   * Passed in rather than found here: which field that is is `useRecordPanes`'
+   * decision, the same one the record header reads, and a second answer to it
+   * is how two screens come to name different agents for one record.
+   */
+  assignedField?: FieldMeta;
   canEdit: boolean;
   onEdited: () => void;
   onSelect: () => void;
@@ -1324,8 +1358,9 @@ function QueueCard({
   const read = (field: FieldMeta): string => displayOf(row, field);
   const unit = card.unit ? read(card.unit) : '';
   const description = queueFields
-    ? queueFields.map((field) => read(field)).filter((value) => value && value !== '—').join(', ')
+    ? oneOfEach(queueFields.map((field) => read(field)))
     : unitDescription(card, read);
+  const agent = assignedField ? read(assignedField) : '';
   const price = card.price ? cardPrice(row.values[card.price.name]) : '';
   const areaUnitField = card.area?.config.unitField;
   const area = card.area
@@ -1432,9 +1467,18 @@ function QueueCard({
             : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
         )}
       >
-        <span className="absolute left-3 top-1/2 -translate-y-1/2">
-          <Avatar name={row.label} size={40} />
-        </span>
+        {/*
+          The face on the row, and the same menu behind it as the record's own
+          — *"Same as well as in Left record pane"* (3 October 2026). It shows
+          the photo somebody uploaded rather than initials, which is the half
+          that was missing here.
+
+          **Outside the card's `<button>`**, a sibling rather than a child: a
+          button inside a button is invalid HTML and a screen reader cannot
+          reach the inner one, which is the same reason the tick box and the
+          inline name editor sit out here too.
+        */}
+        <span className="pointer-events-none absolute left-3 top-1/2 z-[2] -translate-y-1/2" />
         {/*
           1. Who, and what kind of contact — the line a rep scans, so it is the
           heaviest thing on the card.
@@ -1481,7 +1525,7 @@ function QueueCard({
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        {(price || area) && <span className="mt-0.5 flex items-center gap-2 text-xs">
+        {(price || area || agent) && <span className="mt-0.5 flex items-center gap-2 text-xs">
           {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.
@@ -1500,6 +1544,27 @@ function QueueCard({
               active ? 'text-brand-700 dark:text-brand-100' : 'text-muted',
             )}>• {area}</span>
           )}
+          {/*
+            Who it belongs to, hard against the right edge — the owner,
+            3 October 2026: *"We Need to display a Text of assign to agent name
+            in third row After the Area/Size and agent name should be aligned
+            from Right of the Record pane."*
+
+            `ml-auto` pushes it right and `truncate` makes it the thing that
+            gives way: the money and the size are what a rep is scanning this
+            row for, and a long name must not squeeze them.
+          */}
+          {agent && (
+            <span
+              title={`Assigned to ${agent}`}
+              className={cn(
+                'ml-auto min-w-0 shrink truncate pl-1 text-[11px] font-medium',
+                active ? 'text-brand-700 dark:text-brand-100' : 'text-muted',
+              )}
+            >
+              {agent}
+            </span>
+          )}
         </span>}
       </button>
 
@@ -1515,6 +1580,10 @@ function QueueCard({
         The box only shows on hover or once ticked, so the row reads as a name
         and a price until somebody reaches for a bulk action.
       */}
+      <span className="absolute left-3 top-1/2 z-[2] -translate-y-1/2">
+        <RecordAvatar module={moduleName} recordId={row.id} name={row.label} canEdit={canEdit} size={40} />
+      </span>
+
       <span className="absolute bottom-2.5 right-2.5 flex items-center gap-1">
         <input
           aria-label={`Select ${row.label}`}
@@ -1579,18 +1648,38 @@ function DeskTab({ active = false, onClick, label, count, children, drag }: {
       aria-label={count ? `${label} (${count})` : label}
       aria-current={active ? 'page' : undefined}
       title={drag ? `${label} — drag to reorder, or Alt and an arrow key` : label}
+      /*
+        **The chosen one is a solid brand pill** — the owner, 3 October 2026:
+        *"after selection the any menu from Menu bar the theme dark button also
+        be there … so that we can easy highlighted Menu keys."* A 2px underline
+        is easy to lose along a row of eight.
+
+        One whole string per state, never a tint layered on top: `cn` is plain
+        clsx with no tailwind-merge, so two `bg-*` utilities in one class list
+        are decided by Tailwind's own stylesheet order rather than by the order
+        they are typed. This repo has paid for that twice.
+      */
       className={cn(
-        'flex shrink-0 items-center gap-1.5 border-b-2 px-1.5 py-2 text-xs font-semibold transition-colors',
+        'flex shrink-0 items-center gap-1.5 px-2 py-1 text-xs font-semibold transition-colors',
         drag && 'cursor-grab active:cursor-grabbing',
         drag?.dragging && 'opacity-40',
-        active ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-300' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200',
+        active
+          ? 'rounded-full bg-brand-700 text-white shadow-xs dark:bg-brand-600'
+          : 'rounded-full text-slate-500 hover:bg-[var(--surface-muted)] hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200',
       )}
     >
       {children}
       {/* The name beside the icon — *"team is unable to understand just from
           icon"* (1 October 2026). */}
       <span className="whitespace-nowrap">{label}</span>
-      {count && <span className="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-bold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">{count}</span>}
+      {/* The count rides on whichever fill the button wears — a slate chip on
+          a brand pill is the pair that lands around 2–3:1. */}
+      {count && (
+        <span className={cn(
+          'rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums',
+          active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+        )}>{count}</span>
+      )}
     </button>
   );
 }
@@ -1869,7 +1958,7 @@ function RecordMenuAction({ shown, onStream, phone, recordId }: {
         onClick={() => putTheCursorInTheNoteBox(recordId)}
       >
         <MessageSquare className="h-3.5 w-3.5" />
-        Post a comment
+        Write a note
       </button>
       {phone && <WhatsAppButton to={phone} />}
     </div>

@@ -547,10 +547,30 @@ export function quoteIdent(name: string): string {
 // ---------------------------------------------------------------------------
 
 export function buildSearchClause(term: string, params: SqlParams): string {
-  const t = term.trim();
-  if (!t) return '';
-  const like = params.add(`%${escapeLike(t)}%`);
-  const ts = params.add(t.split(/\s+/).filter(Boolean).map((w) => `${w}:*`).join(' & '));
+  /*
+    **Commas narrow.** 3 October 2026, the owner: *"we can filter any values
+    from this filter as many as by given comma, i.e 2 BHK, 50L, For Sale,
+    Neharpar Etc. in same search."*
+
+    So the box is read as a list of things that must **all** be true of the
+    record, each matched the way one search always was. Typed without a comma
+    it behaves exactly as before, which matters: every saved view, every link
+    and every spec that passes a plain phrase keeps its answer.
+
+    Each piece is ANDed and the pieces themselves are ORed across the three
+    places a record can be matched. Splitting inside one `to_tsquery` would
+    not do: "2 BHK" and "Neharpar" live in different columns of the same row,
+    and one tsquery over the lot would demand they live in the same one.
+  */
+  const pieces = term.split(',').map((piece) => piece.trim()).filter(Boolean);
+  if (!pieces.length) return '';
+  return `(${pieces.map((piece) => onePiece(piece, params)).join(' AND ')})`;
+}
+
+/** One thing a record has to match, anywhere the search looks. */
+function onePiece(piece: string, params: SqlParams): string {
+  const like = params.add(`%${escapeLike(piece)}%`);
+  const ts = params.add(piece.split(/\s+/).filter(Boolean).map((w) => `${w}:*`).join(' & '));
   return `(${RECORD_ALIAS}.label ILIKE ${like}
     OR ${RECORD_ALIAS}.record_number ILIKE ${like}
     OR ${RECORD_ALIAS}.search_vector @@ to_tsquery('simple', ${ts}))`;

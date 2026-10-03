@@ -19,7 +19,7 @@
  * when a tag on two records read 229 because it was counting links.
  */
 import { type JSX } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
@@ -41,19 +41,6 @@ export function TagCards(): JSX.Element | null {
   const { modules } = useApp();
   const entityModules = modules.filter((module) => module.isEntity);
 
-  /*
-    Every tag, not one module's: a card has to say which module it belongs to
-    before it can open that module's list. Asked once for the whole app and
-    held for five minutes — tags change about as often as the team's
-    vocabulary does, and a request per page load would be a request nobody
-    reads the answer to.
-  */
-  const { data: tags } = useQuery({
-    queryKey: ['tags', 'all'],
-    queryFn: () => api.tags(),
-    staleTime: 5 * 60_000,
-  });
-
   /** Which module this tag's card should open. */
   const moduleFor = (offered: string[]): string | null => {
     // Empty means every module, which is the seeded default.
@@ -65,16 +52,50 @@ export function TagCards(): JSX.Element | null {
     return allowed.find((name) => entityModules.some((module) => module.name === name)) ?? null;
   };
 
-  const cards = (tags ?? [])
-    .filter((tag) => tag.usage_count > 0 && moduleFor(tag.modules))
-    .sort((a, b) => b.usage_count - a.usage_count)
-    .slice(0, ON_THE_BAR);
+  /*
+    **Asked per module, because the number has to be the one the card opens.**
+
+    3 October 2026, the owner: *"The for sale record count is display wrong,
+    this should be actual as tagged in inventory."* `GET /api/tags` with no
+    module counts every record carrying that tag across the whole CRM, so a
+    card that opens Inventories was printing the Contacts rows as well. The
+    server already narrows the count when it is told which module to count —
+    it simply was never told.
+
+    One small request per module, held for five minutes: tags change about as
+    often as the team's vocabulary does.
+  */
+  const perModule = useQueries({
+    queries: entityModules.map((module) => ({
+      queryKey: ['tags', module.name],
+      queryFn: () => api.tags(module.name),
+      staleTime: 5 * 60_000,
+    })),
+  });
+
+  /*
+    One row per tag, counted in the module its card will open. A tag offered on
+    both modules appears once — otherwise the bar would carry "For Sale" twice
+    with two different numbers, which is worse than one number being wrong.
+  */
+  const byName = new Map<string, { id: string; name: string; color: string; count: number; module: string }>();
+  entityModules.forEach((module, index) => {
+    for (const tag of perModule[index]?.data ?? []) {
+      if (moduleFor(tag.modules) !== module.name || tag.usage_count <= 0) continue;
+      const already = byName.get(tag.name);
+      if (!already || tag.usage_count > already.count) {
+        byName.set(tag.name, { id: tag.id, name: tag.name, color: tag.color, count: tag.usage_count, module: module.name });
+      }
+    }
+  });
+
+  const cards = [...byName.values()].sort((a, b) => b.count - a.count).slice(0, ON_THE_BAR);
   if (!cards.length) return null;
 
   return (
     <div className="hidden min-w-0 shrink items-center gap-1.5 md:flex" data-testid="tag-cards">
       {cards.map((tag) => {
-        const module = moduleFor(tag.modules)!;
+        const { module } = tag;
         const narrowed = location.pathname.startsWith(`/${module}`)
           && new URLSearchParams(location.search).get('tag') === tag.name;
         return (
@@ -88,7 +109,7 @@ export function TagCards(): JSX.Element | null {
             */
             onClick={() => navigate(narrowed ? `/${module}` : `/${module}?tag=${encodeURIComponent(tag.name)}`)}
             aria-pressed={narrowed}
-            title={`${tag.name} — ${tag.usage_count.toLocaleString('en-IN')} records${narrowed ? '. Click again to show all.' : ''}`}
+            title={`${tag.name} — ${tag.count.toLocaleString('en-IN')} records${narrowed ? '. Click again to show all.' : ''}`}
             /*
               The colour is the admin's own, through `badgeVars` — which keeps
               the hue and moves lightness until the pair clears AA in both
@@ -111,7 +132,7 @@ export function TagCards(): JSX.Element | null {
           >
             <span className="min-w-0 truncate text-[11px] font-bold leading-tight">{tag.name}</span>
             <span className="badge-solid shrink-0 rounded-full px-1.5 text-[10px] font-bold leading-[1.1rem] tnum">
-              {tag.usage_count > 999 ? `${Math.floor(tag.usage_count / 1000)}k` : tag.usage_count}
+              {tag.count > 999 ? `${Math.floor(tag.count / 1000)}k` : tag.count}
             </span>
           </button>
         );

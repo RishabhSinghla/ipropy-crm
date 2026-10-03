@@ -108,19 +108,23 @@ export function byLabel<T extends { label: string }>(fields: readonly T[]): T[] 
  * Undefined is left alone: that means "the server's defaults", and narrowing
  * it to a handful of fields would empty the table.
  *
- * Two things go in. The line under the name — the fields the module itself
+ * Three things go in. The line under the name — the fields the module itself
  * flags `config.listSubtitle`, so the queue shows what the Field Manager says
- * rather than a pair named in this file. And the **pipeline field**, whose
- * chip sits beside it: Lead Status on a contact, Property Status on a unit.
+ * rather than a pair named in this file. The **pipeline field**, whose chip
+ * sits beside it: Lead Status on a contact, Property Status on a unit. And
+ * **who the record is assigned to**, which the card's third row has carried
+ * since 3 October 2026 — *"a Text of assign to agent name in third row"*.
  */
 export function withQueueSubtitle(
   columns: string[] | undefined,
   module: { fields: FieldMeta[]; pipelineField: string | null } | undefined,
 ): string[] | undefined {
   if (!columns || !module) return columns;
-  const subtitle = subtitleFieldsOf(module.fields).map((field) => field.name);
-  const status = pipelineFieldOf(module)?.name;
-  const wanted = status ? [...subtitle, status] : subtitle;
+  const wanted = [
+    ...subtitleFieldsOf(module.fields).map((field) => field.name),
+    pipelineFieldOf(module)?.name,
+    assignmentField(module.fields)?.name,
+  ].filter((name): name is string => Boolean(name));
   const extra = wanted.filter((name) => !columns.includes(name));
   return extra.length ? [...columns, ...extra] : columns;
 }

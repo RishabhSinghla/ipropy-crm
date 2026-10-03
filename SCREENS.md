@@ -1851,3 +1851,72 @@ Migration `183`. Proved by `tests/integration/askTheOwnerForARecord.test.ts` (7)
 against a real database: the record is named but refused, asking twice makes one
 request, a stranger cannot answer their own, granting really moves the record,
 and an answered request cannot be answered again.
+
+## Ten on a screenshot, 3 October 2026
+
+He worked the live screens and numbered what he saw. Four are faults, six are
+decisions; all of them are on Contacts and Inventories alike.
+
+* **The tag card counted the wrong records.** *"The for sale record count is
+  display wrong, this should be actual as tagged in inventory."* `GET /api/tags`
+  with no module counts every record carrying that tag **across the whole CRM**,
+  so a card that opens Inventories was printing the Contacts rows in with them.
+  The server narrows the count when it is told which module to count — it was
+  simply never told. The cards ask per module now, and a tag offered on both
+  appears once rather than twice with two different numbers.
+* **The stage button left the queue header.** *"it is already in the Quick
+  Filter."* Only the button: `stagePick` is still the list's state and the panel
+  still sets it, so a saved link naming a stage still narrows the list.
+* **The record's tags moved up beside the name**, after the call icon. The name
+  still gives way first — it has a floor, because three characters of the one
+  thing that has to be readable is the fault this header has already met.
+* **The module's name left that header.** It arrived on 2 October and he has now
+  worked the screen: the left toolbar already says which module is open.
+* **Commas narrow the search.** *"we can filter any values from this filter as
+  many as by given comma, i.e 2 BHK, 50L, For Sale, Neharpar."* `buildSearchClause`
+  reads the box as a list of things that must **all** be true, each matched the
+  way one search always was. Typed without a comma it behaves exactly as before,
+  which matters: every saved view, link and spec that passes a plain phrase keeps
+  its answer. Splitting inside one `to_tsquery` would not do — "2 BHK" and
+  "Neharpar" live in different columns of the same row, and one tsquery over the
+  lot would demand they live in the same one.
+  **And the answer sits under the box it is about.** A search that finds nothing
+  used to replace the whole workspace with a page-sized panel in the middle of
+  the screen, a long way from the words just typed. It is a line under the search
+  box now, with **Clear search**, and it names the comma trick — that is the
+  moment a rep is most likely to read it.
+* **"Comments" is "Notes"**, which is what the box at the foot of the record has
+  always called itself; one thing with two names is one thing to learn twice.
+  **And the chosen menu key is a solid brand pill** rather than a 2px underline,
+  which is easy to lose along a row of eight. The count chip rides on whichever
+  fill the button wears — a slate chip on a brand pill lands around 2–3:1.
+* **The queue card said the house number twice** — "A-2029, A-2029". Two fields
+  on that module hold it and both are flagged for the line. `oneOfEach` dedupes
+  what is drawn rather than what is arranged: which fields the line shows is an
+  admin's decision and this is not the place to overrule it, but **the same words
+  twice in one sentence** is wrong however it is set. Compared without case or
+  spacing, because "A-2029" and "a-2029 " are one fact to a person.
+* **The agent's name is the third row's right edge.** `withQueueSubtitle` asks
+  for the assignment field now, or the line would be blank on any view whose
+  columns leave it out — the same trap the subtitle met. The name truncates
+  first: the money and the size are what a rep scans that row for.
+* **A note is a white card with a header line.** *"rich white background, and the
+  update date also will be in new style so that we can see date, agent name and
+  Note in easily and simple Manner."* It was cream on a cream canvas, which is
+  the one combination that makes a card stop reading as a card. Who and when sit
+  above the words for a note; a chat bubble keeps its clock in the corner, where
+  every chat app puts it.
+  **And the imported notes stopped showing their own HTML.** Thousands came
+  across from Vtiger as `<div><strong>…`, and the stream drew them as a wall of
+  tags with the sentence buried inside — his second screenshot.
+  `RecordDetail` has sanitised and rendered these since the import; the activity
+  stream simply never did, and now calls the same `sanitiseRichText`.
+* **The strength ring is a bar under the name, and the face is the control.**
+  *"Remove camera icon from Avtar but function will remain same even more
+  function also appear after clicking of avatar i.e Preview, Upload, Remove,
+  Replace."* Four circles and a pill around a photo is a lot of drawing for one
+  number. Clicking the face opens Preview / Upload / Replace / Remove, and the
+  **queue card's face does the same** — it shows the record's own photo there
+  now rather than initials. It sits outside the card's `<button>`, a sibling: a
+  button inside a button is invalid HTML and a screen reader cannot reach the
+  inner one, which is why the tick box and the inline editor live out there too.

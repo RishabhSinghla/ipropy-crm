@@ -92,9 +92,35 @@ type Reader = (field: FieldMeta) => string;
  */
 export function unitDescription(card: CardFields, read: Reader): string {
   const text = (field?: FieldMeta): string => (field ? read(field).trim() : '');
-  return [text(card.bedrooms), text(card.portion), text(card.category), text(card.locality)]
-    .filter(Boolean)
-    .join(', ');
+  return oneOfEach([text(card.bedrooms), text(card.portion), text(card.category), text(card.locality)]);
+}
+
+/**
+ * The card's middle line: the facts in order, each said once.
+ *
+ * **3 October 2026, the owner:** *"in the left record pane, we see dual House
+ * No 'A-2029, A-2029', Please check duplicate and fix it."* Two fields on that
+ * module hold the same unit number — `unit_no` and `unit_number`, a leftover
+ * from before the Layout Designer owned this list — and both are flagged, so
+ * the line said it twice.
+ *
+ * Deduping here rather than in the arrangement is deliberate: which fields the
+ * line shows is an admin's decision and this is not the place to overrule it.
+ * What a reader never wants is the **same words twice in one sentence**, and
+ * that is true however the arrangement is set. Compared without case or
+ * spacing, because "A-2029" and "a-2029 " are one fact to a person.
+ */
+export function oneOfEach(values: string[]): string {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const value of values) {
+    const text = value.trim();
+    const key = text.toLocaleLowerCase();
+    if (!text || text === '—' || seen.has(key)) continue;
+    seen.add(key);
+    kept.push(text);
+  }
+  return kept.join(', ');
 }
 
 /** "₹1.85 Cr", or empty when there is no price. */

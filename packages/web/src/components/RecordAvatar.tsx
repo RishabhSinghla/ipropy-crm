@@ -20,27 +20,14 @@
  */
 import { type JSX, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, Loader2, Trash2, Upload } from 'lucide-react';
+import { Eye, Loader2, Trash2, Upload } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from '../lib/store';
-import { Avatar, Dropdown, DropdownItem } from './ui';
+import { cn } from '../lib/utils';
+import { Avatar, Dropdown, DropdownItem, Modal } from './ui';
 
 /** What the record's own photo is filed under. */
 const AVATAR_CATEGORY = 'avatar';
-
-/**
- * The dashed circle's radius, as a share of the panel's width — and the
- * photo's own edge, because the owner asked for the two to meet.
- *
- * One number for both, so the day somebody moves the ring the face moves with
- * it rather than leaving the gap this was raised about.
- */
-const DASHED_RING = 0.385;
-
-/** The white hairline drawn around the photo (`ring-2`), in pixels. The photo
- *  shrinks by it on each side so that ring — not the picture — is what meets
- *  the dashed circle. */
-const PHOTO_RING = 2;
 
 /** Big enough that a face is a face; a phone photo is scaled by the pipeline. */
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -88,12 +75,10 @@ function useRecordPhoto(recordId: string): { file: RecordFile | null; key: unkno
   return { file: newest ?? null, key };
 }
 
-export function RecordAvatar({ module, recordId, name, percent, canEdit, size = 96 }: {
+export function RecordAvatar({ module, recordId, name, canEdit, size = 96 }: {
   module: string;
   recordId: string;
   name: string;
-  /** How complete the record is, 0–100. The arc and the pill read the same number. */
-  percent: number;
   canEdit: boolean;
   size?: number;
 }): JSX.Element {
@@ -101,6 +86,7 @@ export function RecordAvatar({ module, recordId, name, percent, canEdit, size = 
   const { file, key } = useRecordPhoto(recordId);
   const picker = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: key });
@@ -141,163 +127,122 @@ export function RecordAvatar({ module, recordId, name, percent, canEdit, size = 
     upload.mutate(chosen);
   };
 
+  const face = (
+    <Avatar
+      name={name}
+      src={file ? fileUrl(file.id) : null}
+      size={size}
+      className="ring-2 ring-white dark:ring-slate-900"
+    />
+  );
+
+  /*
+    **The rings and the camera went on 3 October 2026**, on the owner's
+    instruction: *"Please Remove and Change profile strength circle in to bar …
+    and also Remove camera icon from Avtar but function will remain same even
+    more function also appear after clicking of avatar i.e Preview, Upload,
+    Remove, Replace."*
+
+    So the face is the control. How complete the record is is a `StrengthBar`
+    under the name now — see `IpropyWorkspace`.
+  */
+  if (!canEdit && !file) return <span className="inline-flex shrink-0">{face}</span>;
+
   return (
-    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }}>
-      <StrengthRings percent={percent} size={size} name={name} />
-
-      {/*
-        The photo, filling the dashed hairline.
-
-        **28 September 2026, the owner:** *"There are three lines after
-        avatar. Please increase the avtar size till touch inner circle first
-        line, so that we see the picture as big as."* It was 62% of the
-        panel's width against a dashed circle at 77%, so a fifth of the space
-        inside the rings was empty and the face was the smallest thing in its
-        own portrait.
-
-        `DASHED_RING` is the shared number: the photo's diameter and the
-        dashed circle's radius are printed from it, so the two cannot drift
-        apart the next time either is touched.
-
-        **It stops one white ring short of the dashes rather than on them.**
-        He counted three lines and asked the photo to reach the first, so the
-        first still has to be there when it arrives — grown flush, the
-        photo's own ring covers the dashes and he is left with two. So the
-        picture is the dashed circle less its ring on each side, and that
-        ring is the hairline where the two meet.
-      */}
-      <Avatar
-        name={name}
-        src={file ? fileUrl(file.id) : null}
-        size={Math.round(size * DASHED_RING * 2) - PHOTO_RING * 2}
-        className="relative z-10 ring-2 ring-white dark:ring-slate-900"
-      />
-
-      {/*
-        The number rides on the arc at the top right, where he drew it — and it
-        is the same `percent` the arc is drawn from, so a pill and a ring that
-        disagree is not expressible.
-      */}
-      <span
-        className="absolute -top-1 right-0 z-20 translate-x-1/2 rounded-full bg-positive px-2 py-0.5 text-2xs font-bold leading-none text-white shadow-2xs"
-        role="img"
-        aria-label={`Form strength ${percent}%`}
-      >
-        {percent}%
-      </span>
-
+    <span className="relative inline-flex shrink-0">
       {canEdit && (
-        <>
-          <input
-            ref={picker}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => { choose(event.target.files?.[0]); event.target.value = ''; }}
-          />
-          {/*
-            The camera sits on the photo's own bottom edge and is always there
-            rather than on hover: a control that appears only under a mouse is
-            a control a tablet cannot find.
-
-            The absolute positioning is on this wrapper and not on the button:
-            `Dropdown` puts its own relatively-positioned box between the two,
-            so a button positioned against "its parent" lands against that box
-            instead — which is how it ended up sitting on the face.
-          */}
-          <span className="absolute bottom-0 right-1 z-20">
-          <Dropdown
-            align="left"
-            trigger={(
-              <button
-                type="button"
-                disabled={busy}
-                aria-label={file ? 'Change or remove the photo' : 'Add a photo'}
-                title={file ? 'Change or remove the photo' : 'Add a photo'}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-xs transition-colors hover:bg-brand-600 hover:text-white disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-              >
-                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-              </button>
-            )}
-          >
-            {(close) => (
-              <>
-                <DropdownItem icon={<Upload className="h-3.5 w-3.5" />} onClick={() => { close(); picker.current?.click(); }}>
-                  {file ? 'Replace photo' : 'Upload photo'}
-                </DropdownItem>
-                {file && (
-                  <DropdownItem
-                    icon={<Trash2 className="h-3.5 w-3.5" />}
-                    danger
-                    onClick={() => { close(); setBusy(true); remove.mutate(); }}
-                  >
-                    Remove photo
-                  </DropdownItem>
-                )}
-              </>
-            )}
-          </Dropdown>
-          </span>
-        </>
+        <input
+          ref={picker}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => { choose(event.target.files?.[0]); event.target.value = ''; }}
+        />
       )}
+      <Dropdown
+        align="left"
+        trigger={(
+          <button
+            type="button"
+            disabled={busy}
+            aria-label={`Photo of ${name}`}
+            title={canEdit ? 'Preview, upload, replace or remove the photo' : 'Preview the photo'}
+            className="relative inline-flex rounded-full transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-60"
+          >
+            {face}
+            {busy && (
+              <span className="absolute inset-0 inline-flex items-center justify-center rounded-full bg-white/70 dark:bg-slate-900/70">
+                <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+              </span>
+            )}
+          </button>
+        )}
+      >
+        {(close) => (
+          <>
+            {file && (
+              <DropdownItem icon={<Eye className="h-3.5 w-3.5" />} onClick={() => { close(); setPreviewing(true); }}>
+                Preview photo
+              </DropdownItem>
+            )}
+            {canEdit && (
+              <DropdownItem icon={<Upload className="h-3.5 w-3.5" />} onClick={() => { close(); picker.current?.click(); }}>
+                {file ? 'Replace photo' : 'Upload photo'}
+              </DropdownItem>
+            )}
+            {canEdit && file && (
+              <DropdownItem
+                icon={<Trash2 className="h-3.5 w-3.5" />}
+                danger
+                onClick={() => { close(); setBusy(true); remove.mutate(); }}
+              >
+                Remove photo
+              </DropdownItem>
+            )}
+          </>
+        )}
+      </Dropdown>
+
+      {/*
+        The picture at a size somebody can actually look at. The same
+        permission-checked `/api/files/:id` route the face reads, so nothing
+        here is a second way to reach a record's bytes.
+      */}
+      <Modal open={previewing} onClose={() => setPreviewing(false)} title={name} size="lg">
+        {file && <img src={fileUrl(file.id)} alt={name} className="mx-auto max-h-[70vh] w-auto rounded-xl" />}
+      </Modal>
     </span>
   );
 }
 
 /**
- * The rings, drawn once.
+ * How complete a record is, as a bar.
  *
- * Thin on purpose — the owner asked for it twice — and the arc is `positive`
- * rather than a band of three colours: the number beside it already says how
- * full the record is, and a ring that changes colour as well says it twice in
- * a place where the eye is looking for a face.
+ * **3 October 2026, the owner:** *"Please Remove and Change profile strength
+ * circle in to bar, that bar will shown below the Full name of Record."* The
+ * ring was four circles around the face and a pill on top of it, which is a lot
+ * of drawing for one number; a bar says the same proportion at a glance and
+ * leaves the face to be a face.
+ *
+ * `role="img"` with the percentage spoken, because a bar with no words is
+ * nothing at all to a screen reader — the same label the ring carried, so
+ * `e2e/listDefaultView.spec.ts` still finds it.
  */
-function StrengthRings({ percent, size, name }: { percent: number; size: number; name: string }): JSX.Element {
-  /*
-    Thin, twice asked for: the arc is 4% of the face's width, where the ring it
-    replaced was nearly twice that. The two hairlines inside it are a single
-    pixel each — they are structure, not measurement, and at any more weight
-    they compete with the arc that is actually saying something.
-  */
-  const stroke = Math.max(3, Math.round(size * 0.04));
-  const r = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * r;
-  const hairline = size * 0.425;
-  const dashed = size * DASHED_RING;
-
+export function StrengthBar({ percent, className }: { percent: number; className?: string }): JSX.Element {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      className="absolute inset-0 -rotate-90"
+    <span
+      className={cn('flex items-center gap-1.5', className)}
       role="img"
-      aria-label={`${name}: record ${percent}% complete`}
+      aria-label={`Record ${percent}% complete`}
+      title={`This record is ${percent}% filled in`}
     >
-      {/* The pale track the arc runs on. */}
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-slate-200 dark:stroke-slate-700" />
-      {/* How much is filled in. `round` caps, as drawn. */}
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        className="stroke-positive"
-        strokeDasharray={`${(circumference * Math.max(0, Math.min(100, percent))) / 100} ${circumference}`}
-      />
-      {/* A full circle line after the arc, then the dashed hairline. */}
-      <circle cx={size / 2} cy={size / 2} r={hairline} fill="none" strokeWidth={1} className="stroke-slate-200 dark:stroke-slate-700" />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={dashed}
-        fill="none"
-        strokeWidth={1}
-        strokeDasharray="2 3"
-        className="stroke-slate-300 dark:stroke-slate-600"
-      />
-    </svg>
+      <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+        <span
+          className="block h-full rounded-full bg-positive transition-[width] duration-500"
+          style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
+        />
+      </span>
+      <span className="shrink-0 text-[10px] font-bold tabular-nums text-muted">{percent}%</span>
+    </span>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta } from '@ipropy/shared';
-import { cardArea, cardPrice, queueCardColumns, queueCardFields, unitDescription, withQueueCardColumns } from '../src/lib/queueCard';
+import { cardArea, cardPrice, oneOfEach, queueCardColumns, queueCardFields, unitDescription, withQueueCardColumns } from '../src/lib/queueCard';
 
 const field = (name: string, config: Record<string, unknown> = {}): FieldMeta =>
   ({ name, columnName: name, label: name, isActive: true, displayType: 'default', config }) as unknown as FieldMeta;
@@ -61,5 +61,38 @@ describe('queue card', () => {
     expect(cardPrice(0)).toBe('');
     expect(cardArea(2100, 'sqft')).toBe('2,100 sq.ft');
     expect(cardArea(null, 'sqft')).toBe('');
+  });
+});
+
+/**
+ * The middle line says each fact once.
+ *
+ * **3 October 2026, the owner:** *"in the left record pane, we see dual House
+ * No 'A-2029, A-2029', Please check duplicate and fix it."* Two fields on that
+ * module hold the same unit number and both are flagged for the line.
+ */
+describe('the queue card line', () => {
+  it('says a repeated fact once', () => {
+    expect(oneOfEach(['A-2029', 'A-2029', 'Single (Non CC)', 'Builder Floor']))
+      .toBe('A-2029, Single (Non CC), Builder Floor');
+  });
+
+  it('reads two spellings of one fact as one', () => {
+    // "A-2029" and "a-2029 " are one fact to a person, and a person is who
+    // reads this line.
+    expect(oneOfEach(['A-2029', ' a-2029 ', 'Builder Floor'])).toBe('A-2029, Builder Floor');
+  });
+
+  it('keeps the first spelling, which is the order the admin arranged', () => {
+    expect(oneOfEach(['Builder Floor', 'A-2029', 'BUILDER FLOOR'])).toBe('Builder Floor, A-2029');
+  });
+
+  it('drops blanks and the dash an empty field renders as', () => {
+    expect(oneOfEach(['', '—', '  ', 'Neharpar'])).toBe('Neharpar');
+  });
+
+  it('answers nothing when there is nothing to say', () => {
+    expect(oneOfEach([])).toBe('');
+    expect(oneOfEach(['', '—'])).toBe('');
   });
 });

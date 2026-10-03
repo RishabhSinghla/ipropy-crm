@@ -99,7 +99,7 @@ for (const module of MODULES) {
 
   test(`${module}: the note box opens on hover and holds a draft open`, async ({ page }) => {
     await openFirstRecord(page, module);
-    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Comments/ }).click();
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Notes/ }).click();
     const dock = page.getByTestId('note-dock');
     await expect(dock).toBeVisible();
     // Folded until the mouse is over it.
@@ -109,7 +109,9 @@ for (const module of MODULES) {
     await expect(box).toBeVisible();
     // A half-typed note is not a reason to fold the box it is in.
     await box.fill('Half a sentence');
-    await page.getByTestId('record-module-label').hover();
+    // Somewhere that is not the dock — the module label it used to hover left
+    // the header on 3 October 2026.
+    await page.getByTestId('record-menu-bar').hover();
     await expect(box).toBeVisible();
     await box.fill('');
   });

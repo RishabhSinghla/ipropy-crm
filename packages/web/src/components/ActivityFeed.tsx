@@ -19,13 +19,13 @@ import { relativeTime, type TimelineEntry } from '@ipropy/shared';
 import { Activity, Check, CheckCheck, History, Mail, MessageSquare, Paperclip, Pencil, Trash2, PhoneIncoming, PhoneMissed, PhoneOutgoing, RefreshCw, Sparkles } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
-import { cn } from '../lib/utils';
+import { cn, looksLikeHtml, sanitiseRichText } from '../lib/utils';
 import { Avatar, Skeleton } from './ui';
 
 /** The chips above the stream. `all` asks the server for every kind at once. */
 const FEED_FILTERS = [
   { key: 'all', label: 'All' },
-  { key: 'comment', label: 'Comments' },
+  { key: 'comment', label: 'Notes' },
   { key: 'message', label: 'Messages' },
   { key: 'call', label: 'Calls' },
   { key: 'audit', label: 'Changes' },
@@ -193,9 +193,29 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
         tone === 'in' && 'border-slate-200/70 bg-white dark:border-slate-700 dark:bg-slate-800',
         // WhatsApp's own "sent" green, which is what makes the stream read as a chat.
         tone === 'out' && 'border-emerald-200/80 bg-[#d9fdd3] dark:border-emerald-900 dark:bg-emerald-950',
-        tone === 'note' && 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950',
+        /*
+          **A note is a plain white card** — the owner, 3 October 2026: *"We
+          Want to Highlight comments/Note in the box with rich white
+          background, and the update date also will be in new style so that we
+          can see date, agent name and Note in easily and simple Manner."* It
+          was cream on a cream canvas, which is the one combination that makes
+          a card stop reading as a card.
+        */
+        tone === 'note' && 'border-[var(--border)] bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800',
       )}>
-        {(label || (tone !== 'in' && who)) && (
+        {/*
+          Who and when, on one line above the words — for a note, where the
+          two facts a reader needs before the sentence are the person and the
+          day. A chat bubble keeps its clock in the corner, where every chat
+          app puts it.
+        */}
+        {tone === 'note' ? (
+          <p className="mb-1.5 flex items-center gap-1.5 border-b border-[var(--border)] pb-1.5 text-[11px]">
+            <span className="flex items-center gap-1 text-brand-700 dark:text-brand-300">{label}</span>
+            {who && <span className="min-w-0 truncate font-bold text-slate-900 dark:text-white">{who}</span>}
+            <span className="ml-auto shrink-0 font-medium text-muted">{time}</span>
+          </p>
+        ) : (label || (tone !== 'in' && who)) && (
           <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
             {label}
             {tone !== 'in' && who && <span className="truncate">{label ? '· ' : ''}{who}</span>}
@@ -203,12 +223,14 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
         )}
         {/* `break-words`: a long number or link with no spaces would otherwise run off the bubble. */}
         <p className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]">{children}</p>
-        <p className="mt-1 flex items-center justify-end gap-1 text-[10px] text-slate-500 dark:text-slate-400">
-          {time}
-          {ticks === 'sent' && <Check className="h-3 w-3" aria-label="Sent" />}
-          {ticks === 'delivered' && <CheckCheck className="h-3 w-3" aria-label="Delivered" />}
-          {ticks === 'read' && <CheckCheck className="h-3 w-3 text-sky-600" aria-label="Read" />}
-        </p>
+        {tone !== 'note' && (
+          <p className="mt-1 flex items-center justify-end gap-1 text-[10px] text-slate-500 dark:text-slate-400">
+            {time}
+            {ticks === 'sent' && <Check className="h-3 w-3" aria-label="Sent" />}
+            {ticks === 'delivered' && <CheckCheck className="h-3 w-3" aria-label="Delivered" />}
+            {ticks === 'read' && <CheckCheck className="h-3 w-3 text-sky-600" aria-label="Read" />}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -224,6 +246,24 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
  * said before and when it changed — an edit is honest when the old words stay
  * readable.
  */
+/**
+ * A note's own words, however they were written.
+ *
+ * The Vtiger import carried thousands of notes across **as HTML**, so a note
+ * that reads "iska c block me flat h sale ke liye" is stored as `<div><strong>…`
+ * and was drawn as a wall of tags with the sentence buried inside it — the
+ * owner's screenshot of 3 October 2026. `RecordDetail` has sanitised and
+ * rendered these since the import; the activity stream simply never did.
+ *
+ * Sanitised, never trusted: `sanitiseRichText` is the one place that decides
+ * which tags survive, and a second copy of that judgement is the last thing
+ * this CRM should grow. Anything that is not HTML is printed as the text it is.
+ */
+function NoteWords({ text }: { text: string }): JSX.Element {
+  if (!looksLikeHtml(text)) return <>{text}</>;
+  return <span className="prose-ai block" dangerouslySetInnerHTML={{ __html: sanitiseRichText(text) }} />;
+}
+
 function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry; time: string; module: string; recordId: string }): JSX.Element {
   const me = useApp((s) => s.user);
   const queryClient = useQueryClient();
@@ -284,7 +324,7 @@ function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry
 
   const label = (
     <>
-      <MessageSquare className="h-3 w-3" /> Comment
+      <MessageSquare className="h-3 w-3" /> Note
       {history.length > 0 && <EditedMarker history={history} current={entry.body ?? ''} />}
     </>
   );
@@ -292,7 +332,7 @@ function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry
   return (
     <div className="group/comment relative">
       <Bubble side="right" tone="note" who={entry.actorName} time={time} label={label}>
-        {draft === null ? (entry.body || entry.title) : (
+        {draft === null ? <NoteWords text={entry.body || entry.title} /> : (
           <span className="block">
             <textarea
               value={draft}

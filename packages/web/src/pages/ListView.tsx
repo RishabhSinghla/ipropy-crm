@@ -23,7 +23,6 @@ import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import { ListPicker } from '../components/ListPicker';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
-import { StatusBreakdown } from '../components/StatusBreakdown';
 import {
   LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
 } from '../components/CallDispositionFilter';
@@ -474,24 +473,6 @@ export default function ListView(): JSX.Element {
     return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
   }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, picks, fieldsByName, dispositionPick]);
 
-  /*
-    What the breakdown counts is the view and the ad-hoc filter, but never the
-    stage choice itself — a bar that shrank to 100% of itself the moment it was
-    clicked would make the shape of the pipeline unreadable from inside it.
-  */
-  const breakdownFilter = useMemo<FilterGroup | undefined>(() => {
-    const conditions = [
-      ...filter.conditions,
-      ...(taskQueue ? taskFilters[taskQueue].conditions : []),
-      // The agent *is* included: picking somebody should reshape the bars to
-      // their pipeline, which is the question "how is Shikha doing" and the
-      // reason the chips sit inside this panel rather than beside it.
-      ...(agentPick && ownerField
-        ? [{ field: ownerField.name, operator: 'equals' as const, value: agentPick }]
-        : []),
-    ];
-    return conditions.length ? { logic: 'AND', conditions } : undefined;
-  }, [filter, taskFilters, taskQueue, agentPick, ownerField?.name]);
 
   /*
     A queue is a decision about *when* something is due, so it has to be
@@ -959,16 +940,13 @@ export default function ListView(): JSX.Element {
           )}
         </Dropdown>
 
-        <StatusBreakdown
-          moduleName={moduleName}
-          meta={meta}
-          viewId={activeView?.id}
-          baseFilter={breakdownFilter}
-          selected={stagePick}
-          agent={agentPick}
-          onApply={(values) => { setStagePick(values); setPage(1); }}
-          onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
-        />
+        {/*
+          **The stage button left this row on 3 October 2026** — the owner:
+          *"Please remove the status chip/button from left record pane, bcoz it
+          is already in the Quick Filter."* Only the button went: `stagePick` is
+          still the list's state and the Quick & Live Filters panel still sets
+          it, so a saved link that names a stage still narrows the list.
+        */}
 
         {taskQueuesEnabled && (
           <FollowUpQueue
@@ -1172,6 +1150,32 @@ export default function ListView(): JSX.Element {
           <p className="border-b border-[var(--border)] px-3 py-1.5 text-[11px] text-slate-600 tnum dark:text-slate-300">
             {recordRange(page, pageSize, rows.length, data?.total ?? 0)}
           </p>
+          {/*
+            **The answer sits under the box it is about** — the owner,
+            3 October 2026: *"if Result are not available then A massage also
+            display in and around the Search, Currantly the no search result
+            window go to another window."* A page-sized empty state in the
+            middle of the screen is a long way from the words somebody just
+            typed, and it says nothing about them.
+
+            It also says what else the box can do, because that is the moment
+            a rep is most likely to read it.
+          */}
+          {search && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100" data-testid="no-search-matches">
+              <span className="min-w-0">
+                Nothing matches <strong className="font-semibold">“{search}”</strong>.
+                {!search.includes(',') && ' Separate words with commas to narrow further — 3 BHK, Builder Floor, Neharpar.'}
+              </span>
+              <button
+                type="button"
+                className="btn-secondary btn-sm ml-auto shrink-0"
+                onClick={() => { setSearchInput(''); setSearch(''); setPage(1); }}
+              >
+                Clear search
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1248,6 +1252,12 @@ export default function ListView(): JSX.Element {
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
           </div>
         ) : rows.length === 0 ? (
+          /*
+            A search that found nothing is answered beside the box above, so
+            this page-sized panel would be the same news twice, the second
+            time far from the words that caused it.
+          */
+          search ? null : (
           <EmptyState
             icon={<ModuleIcon name={meta.icon} className="h-10 w-10" />}
             /*
@@ -1279,6 +1289,7 @@ export default function ListView(): JSX.Element {
                   </button>
                 : undefined}
           />
+          )
         ) : (
           <IpropyWorkspace
             /*
