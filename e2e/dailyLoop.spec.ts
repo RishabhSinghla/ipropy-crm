@@ -12,7 +12,7 @@
  * testing one.
  */
 import { expect, test } from '@playwright/test';
-import { waitForRecords, searchList, fieldEditor, openFromListByName } from './helpers';
+import { waitForRecords, searchList, fieldEditor, openDetailsPane, openFromListByName } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -51,6 +51,7 @@ test('they change the pipeline status without leaving the page', async ({ page }
     is what turns a thirty-second job into a reason not to bother.
   */
   await page.goto(recordUrl);
+  await openDetailsPane(page);
   await fieldEditor(page, /^Change Pipeline Status$/).click();
 
   // The stage list itself, by the option wanted: the split view has other

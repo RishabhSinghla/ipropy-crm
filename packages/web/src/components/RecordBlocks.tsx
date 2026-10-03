@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useRef, useState } from 'react';
+import { type JSX, type ReactNode, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { owesLostReason, picklistOptionForValue, relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
 import { FileText, LayoutList, MessageSquare, Mic, Send, Sparkles } from 'lucide-react';
@@ -476,10 +476,66 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
   );
 
   if (!docked) return box;
+  return <NoteDock phrases={phrases} hasDraft={note.trim().length > 0}>{box}</NoteDock>;
+}
+
+/**
+ * The note box at the foot of the record, which opens when the mouse is over
+ * it and folds away again when it is not.
+ *
+ * **3 October 2026, the owner:** *"Quick Note option in Middle pane Bottom
+ * should be auto open/close by mouse hover."* It stood open all day, and the
+ * phrases row above it with it, which is two or three lines of the timeline
+ * gone on every record.
+ *
+ * Three things keep it from eating somebody's work, and each is the bug that
+ * would otherwise be reported:
+ *
+ * * **A draft holds it open.** Half a sentence typed and a mouse moved away is
+ *   not a reason to fold the box it is in.
+ * * **Focus holds it open.** Otherwise reaching the box with Tab would close
+ *   it, and so would the emoji and voice controls inside it.
+ * * **It opens on a tap as well as a hover**, because a phone has no hover at
+ *   all and would otherwise have no note box.
+ */
+function NoteDock({ phrases, hasDraft, children }: {
+  phrases: ReactNode;
+  hasDraft: boolean;
+  children: ReactNode;
+}): JSX.Element {
+  const [near, setNear] = useState(false);
+  const [inside, setInside] = useState(false);
+  const open = near || inside || hasDraft;
   return (
-    <div className="shrink-0 border-t border-[var(--border)] bg-white dark:bg-slate-900" data-testid="note-dock">
-      {phrases && <div className="border-b border-[var(--border)] px-3.5 py-1.5">{phrases}</div>}
-      <div className="p-3">{box}</div>
+    <div
+      className="shrink-0 border-t border-[var(--border)] bg-white dark:bg-slate-900"
+      data-testid="note-dock"
+      data-open={open ? 'true' : undefined}
+      onMouseEnter={() => setNear(true)}
+      onMouseLeave={() => setNear(false)}
+      onFocusCapture={() => setInside(true)}
+      onBlurCapture={(event) => {
+        // `relatedTarget` is where focus is going. Still inside this dock means
+        // the rep moved between its own controls, which is not leaving.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setInside(false);
+      }}
+    >
+      {open ? (
+        <>
+          {phrases && <div className="border-b border-[var(--border)] px-3.5 py-1.5">{phrases}</div>}
+          <div className="p-3">{children}</div>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setInside(true)}
+          className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-slate-500 transition-colors hover:bg-[var(--surface-muted)] dark:text-slate-400 dark:hover:bg-slate-800"
+          data-testid="note-dock-handle"
+        >
+          <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+          <span>Write a note…</span>
+        </button>
+      )}
     </div>
   );
 }

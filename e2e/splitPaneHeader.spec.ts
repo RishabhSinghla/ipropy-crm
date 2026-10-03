@@ -49,7 +49,9 @@ for (const { module, demoted } of [
     const workspace = page.getByTestId('ipropy-workspace');
 
     // 1. The three dots, and a menu behind them rather than a dead button.
-    const more = page.getByRole('button', { name: 'More actions' });
+    //    It is the menu bar's own *More* since 3 October 2026: the header's
+    //    separate three-dot circle went, so there is one on this screen.
+    const more = page.getByTestId('record-menu-more');
     await expect(more).toBeVisible();
     await more.click();
     await expect(page.getByText('Summarise with AI')).toBeVisible();

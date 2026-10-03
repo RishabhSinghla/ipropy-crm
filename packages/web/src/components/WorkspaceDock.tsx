@@ -19,29 +19,29 @@
  * *"get rid of both of it"*. Settings is still in the menu under the avatar
  * at the top right, which is where it always was.
  */
-import { type JSX, type ReactNode, useCallback, useState } from 'react';
+import { type JSX, type ReactNode, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, LayoutDashboard, MessagesSquare, PhoneIncoming } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { ModuleIcon } from './Layout';
 
-const FOLDED_KEY = 'ipropy.dock.folded';
-
 /**
- * Folded or not is this browser's choice, like the right pane's.
+ * Folded or not, for as long as this tab is open.
  *
  * Exported because the header's hamburger folds it too (2 October 2026) — one
  * piece of state, read in two places, rather than two that drift apart.
+ *
+ * **Folded on arrival, every time** — the owner, 3 October 2026: *"the Right
+ * Pane Detail Form Window are by the default close, when we Refresh or Login
+ * to CRM, if we need i will open it, same are in the Left Toolbar pane."* So
+ * it is deliberately not remembered: the CRM opens with the work in the middle
+ * of the screen and the toolbar out of the way, and opening it is a decision
+ * for right now rather than a standing preference. Folded is **not** blank any
+ * more either — see below.
  */
 export function useDockFolded(): [boolean, (folded: boolean) => void] {
-  const [folded, setFoldedState] = useState(() => {
-    try { return localStorage.getItem(FOLDED_KEY) === '1'; } catch { return false; }
-  });
-  const setFolded = useCallback((next: boolean) => {
-    setFoldedState(next);
-    try { localStorage.setItem(FOLDED_KEY, next ? '1' : '0'); } catch { /* private window: forget on reload */ }
-  }, []);
+  const [folded, setFolded] = useState(true);
   return [folded, setFolded];
 }
 
@@ -70,13 +70,32 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
   const { modules } = useApp();
   const entityModules = modules.filter((module) => module.isEntity);
   const setFolded = onFoldChange;
+  /*
+    The same destinations either way, so folding changes how a row is *drawn*
+    and never which rows exist. Two lists would be two things to keep in step,
+    and the way that drifts is a module appearing in one and not the other.
+  */
+  const rows: Array<{ to: string; label: string; icon: JSX.Element; count?: number; tone?: 'whatsapp' }> = [
+    { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-[18px] w-[18px]" /> },
+    ...entityModules.map((module) => ({
+      to: `/${module.name}`,
+      label: module.label,
+      icon: <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />,
+      count: counts?.[module.name],
+    })),
+    { to: '/calls', label: 'Calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" /> },
+    { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, tone: 'whatsapp' as const },
+  ];
   return (
     <div
       className={cn(
         'relative hidden shrink-0 overflow-hidden border-r border-slate-200 transition-[width] duration-300 ease-in-out dark:border-slate-800 lg:block',
         // Wide enough for a name beside every icon — *"all icon have their
-        // names"* (2 October 2026). Folded it is the same slim strip it was.
-        folded ? 'w-7' : 'w-52',
+        // names"* (2 October 2026). Folded it is a column of those same icons,
+        // on his instruction of 3 October: *"when we close the window the the
+        // Icons of Module should be show instead of plane."* A blank strip
+        // meant a rep had to open the toolbar to find out what was in it.
+        folded ? 'w-14' : 'w-52',
       )}
       data-testid="workspace-dock-frame"
       data-folded={folded ? 'true' : undefined}
@@ -96,35 +115,43 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
           rep works, then the call log, then WhatsApp at the foot.
         */}
         <div className="flex flex-col gap-1 px-2">
-          <DockLink to="/dashboard" label="Dashboard">
-            <LayoutDashboard className="h-[18px] w-[18px]" />
-          </DockLink>
-          {entityModules.map((module) => (
-            <DockLink key={module.name} to={`/${module.name}`} label={module.label} count={counts?.[module.name]}>
-              <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />
+          {rows.map((row) => (
+            <DockLink key={row.to} to={row.to} label={row.label} count={row.count} tone={row.tone}>
+              {row.icon}
             </DockLink>
           ))}
-          <DockLink to="/calls" label="Calls">
-            <PhoneIncoming className="h-[18px] w-[18px]" />
-          </DockLink>
-          <DockLink to="/whatsapp" label="WhatsApp" tone="whatsapp">
-            <MessagesSquare className="h-[18px] w-[18px]" />
-          </DockLink>
         </div>
       </aside>
       {folded ? (
-        <button
-          type="button"
-          onClick={() => setFolded(false)}
-          title="Show the toolbar"
-          aria-label="Show the toolbar"
-          aria-expanded={false}
-          className="absolute inset-0 z-20 flex flex-col items-center gap-2 bg-brand-50 pt-3 text-brand-700 transition hover:bg-brand-100 dark:bg-slate-800 dark:text-brand-300 dark:hover:bg-slate-700"
-          data-testid="unfold-dock"
+        /*
+          **Folded is icons, not a blank strip** (3 October 2026). Every row is
+          the same destination, drawn as its icon alone with the name on hover
+          and for a screen reader, and the round chevron at the top opens the
+          toolbar rather than the whole strip being one button — a column you
+          cannot click through is a column that costs a click to use.
+        */
+        <nav
+          className="absolute inset-0 z-20 flex flex-col items-center gap-1 overflow-y-auto bg-[#f0f2f5] py-2 no-scrollbar dark:bg-slate-900"
+          aria-label="Workspace toolbar"
+          data-testid="workspace-dock-folded"
         >
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm"><ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} /></span>
-          <span className="text-[10px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180">Menu</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setFolded(false)}
+            title="Show the toolbar"
+            aria-label="Show the toolbar"
+            aria-expanded={false}
+            className="mb-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm transition hover:bg-brand-700"
+            data-testid="unfold-dock"
+          >
+            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
+          </button>
+          {rows.map((row) => (
+            <DockLink key={row.to} to={row.to} label={row.label} count={row.count} tone={row.tone} iconOnly>
+              {row.icon}
+            </DockLink>
+          ))}
+        </nav>
       ) : (
         <button
           type="button"
@@ -142,13 +169,15 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
   );
 }
 
-function DockLink({ to, label, count, tone, children }: {
+function DockLink({ to, label, count, tone, iconOnly = false, children }: {
   to: string;
   label: string;
   /** How many records this module holds. Absent for a destination that is not one. */
   count?: number;
   /** `whatsapp` keeps its own green, which is how a rep finds it without reading. */
   tone?: 'whatsapp';
+  /** The folded strip: the icon alone, with the name on hover and for a reader. */
+  iconOnly?: boolean;
   children: ReactNode;
 }): JSX.Element {
   // A module's icon stays lit on its records too (`/leads/…`).
@@ -156,17 +185,18 @@ function DockLink({ to, label, count, tone, children }: {
     <NavLink
       to={to}
       end={false}
-      title={label}
-      className={({ isActive }) => dockLook(isActive, tone)}
+      title={count ? `${label} — ${count.toLocaleString('en-IN')}` : label}
+      aria-label={label}
+      className={({ isActive }) => dockLook(isActive, tone, iconOnly)}
     >
       <span className="flex h-7 w-7 shrink-0 items-center justify-center">{children}</span>
-      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      {!iconOnly && <span className="min-w-0 flex-1 truncate text-left">{label}</span>}
       {/*
         The module's own size, and **not** an unread count — that feature is
         off the toolbar on the owner's instruction (2 October 2026). A count
         of nothing is not drawn: a grey zero beside every module is noise.
       */}
-      {count ? (
+      {count && !iconOnly ? (
         <span
           className="shrink-0 rounded-full bg-slate-200 px-1.5 text-[10px] font-bold leading-[1.1rem] text-slate-700 tnum dark:bg-slate-700 dark:text-slate-100"
           title={`${count.toLocaleString('en-IN')} ${label.toLowerCase()}`}
@@ -179,9 +209,10 @@ function DockLink({ to, label, count, tone, children }: {
 }
 
 /** The one look for a dock row: a white tile when it is where you are, a quiet one when it is not. */
-function dockLook(on: boolean, tone?: 'whatsapp'): string {
+function dockLook(on: boolean, tone?: 'whatsapp', iconOnly = false): string {
   return cn(
-    'flex h-10 w-full shrink-0 items-center gap-2.5 rounded-xl px-2 text-sm font-semibold transition',
+    'flex h-10 shrink-0 items-center rounded-xl text-sm font-semibold transition',
+    iconOnly ? 'w-10 justify-center' : 'w-full gap-2.5 px-2',
     /*
       `#0a7038`, not WhatsApp's own `#0B8043`, and the contrast scan is what
       said so: on this toolbar's `#f0f2f5` their green is **4.48:1**, which is

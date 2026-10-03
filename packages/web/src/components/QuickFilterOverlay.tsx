@@ -28,7 +28,7 @@ import {
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { api } from '../lib/api';
 import {
-  DATE_PRESETS, countActiveQuickFilters, pickIsActive, quickPickConditions, sectionLabel, parseTypedAmount, sliderStep, topValues,
+  DATE_PRESETS, EMPTY_PICK, countActiveQuickFilters, pickIsActive, quickPickConditions, sectionLabel, parseTypedAmount, sliderStep, topValues,
   type DatePreset, type QuickPick, type QuickPicks,
 } from '../lib/quickFilters';
 import { cn } from '../lib/utils';
@@ -310,12 +310,22 @@ function FoldingState({ section, title, icon, active, children }: {
 /* Lists: the top few, and a search for the rest                              */
 /* ------------------------------------------------------------------------ */
 
-function ChoiceList({ options, ticked, top, onTick, loading }: {
+function ChoiceList({ options, ticked, top, onTick, loading, always }: {
   options: Option[];
   ticked: string[];
   top: number;
   onTick: (value: string) => void;
   loading?: boolean;
+  /**
+   * A choice that is never cut from the list and never hidden by the search.
+   *
+   * "Not filled in" is the one row somebody comes to this panel *for* (3
+   * October 2026), and it is counted last by definition — a field nobody has
+   * filled in on many records would still rank below five common values. Left
+   * in the ordinary list it would sit past the "search to find one" line, on
+   * every field with more than a handful of options.
+   */
+  always?: Option;
 }): JSX.Element {
   const [search, setSearch] = useState('');
   const needle = search.trim().toLocaleLowerCase();
@@ -344,6 +354,11 @@ function ChoiceList({ options, ticked, top, onTick, loading }: {
       {!loading && !shown.length && <p className="px-4 py-1 text-[11px] text-muted">Nothing matches.</p>}
       {!needle && options.length > shown.length && (
         <p className="px-4 pt-0.5 text-[10px] text-muted">{options.length - shown.length} more — search to find one</p>
+      )}
+      {always && (
+        <div className="mt-1 border-t border-[var(--border)] pt-1">
+          <Choice option={always} checked={ticked.includes(always.value)} onClick={() => onTick(always.value)} />
+        </div>
       )}
     </div>
   );
@@ -374,11 +389,16 @@ function Choice({ option, checked, onClick }: { option: Option; checked: boolean
 function StageChoices({ module, field, ticked, top, onTick }: {
   module: string; field: FieldMeta; ticked: string[]; top: number; onTick: (value: string) => void;
 }): JSX.Element {
-  const { counts, loading } = useFacetCounts(module, field.name);
-  const options = (field.options ?? []).map((option) => ({
+  const { counts, blank, loading } = useFacetCounts(module, field.name);
+  const options: Option[] = (field.options ?? []).map((option) => ({
     value: option.value, label: option.label || option.value, color: option.color, count: loading ? undefined : counts.get(option.value) ?? 0,
   }));
-  return <ChoiceList options={options} ticked={ticked} top={top} onTick={onTick} />;
+  // A record with no stage at all is a real thing to go looking for, so the
+  // stage list offers the same "Not filled in" row every other dropdown does.
+  const notFilled = blank || ticked.includes(EMPTY_PICK)
+    ? { value: EMPTY_PICK, label: 'Not filled in', count: loading ? undefined : blank ?? 0 }
+    : undefined;
+  return <ChoiceList options={options} ticked={ticked} top={top} onTick={onTick} always={notFilled} />;
 }
 
 function AgentSection({ section, title, top, module, ownerField, agent, onAgent }: {
@@ -458,18 +478,33 @@ function ValuesSection({ section, title, module, field, top, props }: {
   const pick = props.picks[field.name];
   const ticked = pick?.kind === 'values' ? pick.values : [];
   const [open, setOpen] = useState(Boolean(section.open) || ticked.length > 0);
-  const { counts, loading: isLoading } = useFacetCounts(module, open ? field.name : undefined);
+  const { counts, blank, loading: isLoading } = useFacetCounts(module, open ? field.name : undefined);
   const options: Option[] = (field.options ?? [])
     .filter((option) => option.isActive !== false)
     .map((option) => ({ value: option.value, label: option.label || option.value, color: option.color, count: counts.get(option.value) ?? 0 }))
     .sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
+  /*
+    **The records nobody filled in**, last in the list and counted like the
+    rest — the owner, 3 October 2026. The server has always answered `blank`
+    beside the values; nothing had ever offered it as a choice, so the one
+    question a manager actually asks of a half-filled form — *who has not done
+    this* — could not be asked at all.
+
+    Offered only when there is something to find: a row reading "Not filled 0"
+    on every field is the kind of noise that teaches people to skip the panel.
+    It stays offered while it is ticked, or un-ticking it would mean reopening
+    the whole panel.
+  */
+  const notFilled = blank || ticked.includes(EMPTY_PICK)
+    ? { value: EMPTY_PICK, label: 'Not filled in', count: blank ?? 0 }
+    : undefined;
   const tick = (value: string): void => {
     const next = ticked.includes(value) ? ticked.filter((item) => item !== value) : [...ticked, value];
     props.onPick(field.name, next.length ? { kind: 'values', values: next } : null);
   };
   return (
     <Folding icon={<ListFilter className="h-3.5 w-3.5" />} title={title} active={ticked.length} open={open} onToggle={() => setOpen((value) => !value)}>
-      <ChoiceList options={options} ticked={ticked} top={top} loading={isLoading && open} onTick={tick} />
+      <ChoiceList options={options} ticked={ticked} top={top} loading={isLoading && open} onTick={tick} always={notFilled} />
     </Folding>
   );
 }

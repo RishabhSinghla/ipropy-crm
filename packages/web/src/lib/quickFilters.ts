@@ -21,6 +21,21 @@ export const DATE_PRESETS: Array<[DatePreset, string]> = [
   ['yesterday', 'Yesterday'], ['today', 'Today'], ['this_week', 'This week'], ['this_month', 'This month'],
 ];
 
+/**
+ * The choice that means *"nobody filled this in"*.
+ *
+ * **3 October 2026, the owner:** *"in the quick & Live filter we need unfilled
+ * Data of the form, which are not filled by my agent, i want to see those dat
+ * as empty/none in the filter list with record count."*
+ *
+ * It rides in the same `values` list as the real options, because that is how
+ * the panel, the counts and the ticking already work — one list, one tick, one
+ * count. It is a **sentinel**, not a value anybody can store: no picklist
+ * option may be blank, and `coerceValue` writes `''` for "cleared", so this
+ * string can never collide with something a rep actually chose.
+ */
+export const EMPTY_PICK = '__ipropy_empty__';
+
 /** What somebody has chosen in one field section. */
 export type QuickPick =
   | { kind: 'values'; values: string[] }
@@ -153,16 +168,37 @@ function dateConditions(field: string, isDateOnly: boolean, pick: Extract<QuickP
   return pick.preset ? [{ field, operator: pick.preset }] : [];
 }
 
+/**
+ * What one field's chosen values turn into.
+ *
+ * "Empty" is a different question from "is one of these", so a section with
+ * both ticked becomes an **OR** of the two: *status is New or Hot, **or** it
+ * was never filled in*. Ticked on its own it is the plain `is_empty`. Writing
+ * the two as separate AND conditions would ask for a field that is both a
+ * value and blank, which matches nothing — and would read on screen as the
+ * filter being broken rather than as the wrong question.
+ */
+function valueConditions(name: string, values: string[], field: FieldMeta | undefined): FilterCondition | FilterGroup | null {
+  const wantsEmpty = values.includes(EMPTY_PICK);
+  const real = values.filter((value) => value !== EMPTY_PICK);
+  // A multi-choice field holds a list, so it matches on any overlap.
+  const operator = field?.uitype === 'multipicklist' ? 'has_any' : 'in';
+  const chosen: FilterCondition = { field: name, operator, value: real };
+  const blank: FilterCondition = { field: name, operator: 'is_empty' };
+  if (!wantsEmpty) return real.length ? chosen : null;
+  if (!real.length) return blank;
+  return { logic: 'OR', conditions: [chosen, blank] };
+}
+
 /** What every field pick turns into, in the list's own filter grammar. */
-export function quickPickConditions(picks: QuickPicks, fields: Map<string, FieldMeta>): FilterCondition[] {
-  const conditions: FilterCondition[] = [];
+export function quickPickConditions(picks: QuickPicks, fields: Map<string, FieldMeta>): Array<FilterCondition | FilterGroup> {
+  const conditions: Array<FilterCondition | FilterGroup> = [];
   for (const [name, pick] of Object.entries(picks)) {
     if (!pickIsActive(pick)) continue;
     const field = fields.get(name);
     if (pick.kind === 'values') {
-      // A multi-choice field holds a list, so it matches on any overlap.
-      const operator = field?.uitype === 'multipicklist' ? 'has_any' : 'in';
-      conditions.push({ field: name, operator, value: pick.values });
+      const node = valueConditions(name, pick.values, field);
+      if (node) conditions.push(node);
     } else if (pick.kind === 'range') {
       if (pick.min != null) conditions.push({ field: name, operator: 'greater_or_equal', value: pick.min });
       if (pick.max != null) conditions.push({ field: name, operator: 'less_or_equal', value: pick.max });

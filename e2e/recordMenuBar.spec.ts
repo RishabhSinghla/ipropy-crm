@@ -35,21 +35,39 @@ async function openFirstRecord(page: import('@playwright/test').Page, module: st
 }
 
 for (const module of MODULES) {
-  test(`${module}: five on the bar and the rest under More`, async ({ page }) => {
+  test(`${module}: as many as fit on the bar, and More for the rest`, async ({ page }) => {
     await openFirstRecord(page, module);
     const bar = page.getByTestId('record-menu-bar');
-    // Five entries plus the More button. Fewer would mean nothing spilled, and
-    // then "More" would be a control with nothing behind it.
+    /*
+      **Not a fixed five.** Since 3 October 2026 the bar measures itself and
+      carries as many entries as the width allows — the owner's *"if Menu bar
+      is full otherwise all menus shown in toolbar till hidden/overlapping"*.
+      So the promise is that something is on it and that More is there, not a
+      number: a number would be a measurement of this machine's window.
+    */
     const more = page.getByTestId('record-menu-more');
     await expect(more).toBeVisible();
-    const onTheBar = await bar.locator('button').count();
-    expect(onTheBar).toBe(6);
+    expect(await bar.locator('button').count()).toBeGreaterThan(1);
 
     await more.click();
-    // Every entry the module offers is reachable — an entry that is neither on
-    // the bar nor in this list is a screen nobody can get to.
-    await expect(page.getByRole('button', { name: /Move .* to the front of the bar/ }).first()).toBeVisible();
+    // The record's own actions are in it, so it is never an empty control.
+    await expect(page.getByRole('button', { name: /Summarise with AI/ })).toBeVisible();
     await page.keyboard.press('Escape');
+  });
+
+  test(`${module}: nothing is lost when the bar runs out of room`, async ({ page }) => {
+    await openFirstRecord(page, module);
+    const bar = page.getByTestId('record-menu-bar');
+    const wide = await bar.locator('button').count();
+    await page.setViewportSize({ width: 900, height: 900 });
+    // Measured, not read off a number: narrow the window and the bar gives
+    // something up.
+    await expect(async () => {
+      expect(await bar.locator('button').count()).toBeLessThan(wide);
+    }).toPass({ timeout: 10_000 });
+    // And what left the bar is reachable, which is the half that matters.
+    await page.getByTestId('record-menu-more').click();
+    await expect(page.getByRole('button', { name: /Move .* to the front of the bar/ }).first()).toBeVisible();
   });
 
   test(`${module}: the activity tabs are in the bar, not a second row`, async ({ page }) => {
@@ -95,10 +113,16 @@ for (const module of MODULES) {
     await expect(page.locator('button[aria-label="Edit tags"]')).toHaveCount(0);
     await expect(page.locator('button[aria-label="Star this record"], button[aria-label="Remove from starred"]')).toHaveCount(0);
     // …and both still reachable, a few pixels away.
-    await page.locator('button[aria-label="More actions"]').first().click();
-    // `Dropdown`'s panel is a plain positioned div, not `role="menu"` — reading
-    // it as a menu finds nothing at all, which is how this spec first failed
-    // against markup that was perfectly correct.
+    /*
+      The menu bar's own *More* — the header's separate three-dot circle went on
+      3 October 2026, so there is one More on this screen rather than two a few
+      pixels apart.
+
+      `Dropdown`'s panel is a plain positioned div, not `role="menu"` — reading
+      it as a menu finds nothing at all, which is how this spec first failed
+      against markup that was perfectly correct.
+    */
+    await page.getByTestId('record-menu-more').click();
     await expect(page.getByRole('button', { name: /Star this record|Remove from starred/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Add a tag|^Tags \(/ })).toBeVisible();
   });

@@ -1666,3 +1666,188 @@ behind: five on the bar with a *More* behind it, the stream's second chip row
 gone, the action row putting the cursor in the right box, an arrangement
 surviving a reload, and the star and tag reachable from the menu while absent
 from the header.
+
+## Seven more, and a record you can ask for — 3 October 2026
+
+### The filter can find what nobody filled in
+
+*"in the quick & Live filter we need unfilled Data of the form, which are not
+filled by my agent, i want to see those dat as empty/none in the filter list
+with record count."*
+
+**The server has always counted them and nothing ever offered the choice.**
+`fieldFacets` answers `blank` beside the values; the panel read it and drew
+nothing. So the one question a manager actually asks of a half-filled form —
+*who has not done this* — could not be asked at all.
+
+Every dropdown section now ends in **Not filled in**, with its own count, under
+a hairline. Three decisions in it:
+
+* **It is never cut from the list and never hidden by the search.** It is last
+  by definition — a field nobody filled in still ranks below five common
+  values — so in the ordinary list it would sit past the *"search to find one"*
+  line on every field with more than a handful of options.
+* **Offered only when there is something to find.** A row reading "Not filled
+  in 0" on every field is the noise that teaches people to skip the panel. It
+  stays while it is ticked, or un-ticking it would mean reopening the panel.
+* **Ticked with real values, it becomes an OR**: *status is New or Hot, **or**
+  it was never filled in*. As two AND conditions it would ask for a field that
+  is both a value and blank, which matches nothing — and reads on screen as the
+  filter being broken rather than as the wrong question.
+
+`EMPTY_PICK` is a sentinel (`__ipropy_empty__`), not a value anybody can store:
+no picklist option may be blank and `coerceValue` writes `''` for cleared, so it
+cannot collide with something a rep chose. **The stage breakdown goes through
+the same translation**, rather than building its own `in` condition — a second
+reading of one tick is how two filters come to disagree.
+
+### One More on the record, and it measures the bar
+
+*"the Three dot of Dropdown fields (Star, Tags, Summarise withAI, Move to,
+Delete recored) Please move/merge all in to More button in the Menu bar … if
+Menu bar is full otherwise all menus shown in toolbar till hidden/overlapping …
+also remove the whatsapp icon and Search icon from the Middle header pane."*
+
+There were **two** More buttons a few pixels apart — the menu bar's, and the
+header's three-dot circle. There is one now, on the bar, and the record's own
+actions are rows in it under a rule. Search moved in with them as a row; the box
+still opens where the icon was, because that is where a rep is already looking.
+
+**`ON_THE_BAR = 5` is now only a starting guess.** How many buttons the bar
+carries is measured, so a wide screen shows eight and a narrow one shows three —
+*"till hidden/overlapping"*. The widths come from a **hidden row that never
+changes**, not from the buttons on screen: measuring the real ones oscillates,
+because hiding a button frees the width that said to hide it, which says to show
+it again, every frame. At least one always stays, since a row that is nothing
+but a More button says nothing about where you are.
+
+### The note box opens when you reach for it
+
+*"Quick Note option in Middle pane Bottom should be auto open/close by mouse
+hover."* It stood open all day with its phrases row above it, which is two or
+three lines of timeline gone on every record. Folded it is one line — *Write a
+note…* — and the mouse opens it.
+
+Three things keep it from eating somebody's work, and each is the bug that would
+otherwise be reported: **a draft holds it open** (half a sentence typed and a
+mouse moved away is not a reason to fold the box it is in), **focus holds it
+open** (or reaching it with Tab would close it), and **a tap opens it** (a phone
+has no hover at all, and would otherwise have no note box).
+
+### Both panes start closed
+
+*"the Right Pane Detail Form Window are by the default close, when we Refresh or
+Login to CRM, if we need i will open it, same are in the Left Toolbar pane."*
+
+So neither is remembered any more — deliberately, unlike the divider's width.
+Opening one is a decision about the record in front of you, not a standing
+preference, and a pane that reopens itself on every sign-in is the thing he
+asked to be rid of. Both stay open for as long as the tab is; a refresh starts
+clean. The stored keys are left in place: nothing reads them, so bringing this
+back is code rather than data recovery.
+
+### A folded toolbar is still a toolbar
+
+*"in the left Tolbar apne when we close the window the the Icons of Module
+should be show instead of plane, But When we open the toobar Then Icons and
+Module Name will be show."* It folded to a 28px strip with the word MENU down
+it, so finding anything meant opening it first. Folded it is `w-14` and carries
+every row as its icon, named on hover and for a screen reader, with the round
+chevron at the top. **One list of rows, drawn two ways** — two lists would be two
+things to keep in step, and the way that drifts is a module appearing in one and
+not the other.
+
+### The tags worth seeing, on the top bar
+
+*"i need to quick see tags of 'For Sale, For Rent, Visit Done' in the main
+screen … at the top of Main Toolbar after IPROPY Company name, The Tag Designed
+will be in Card format … Click and filter/Show tags Data as per modules
+accordingly."*
+
+**No tag is named in `TagCards.tsx`.** The three he listed are his tags today,
+and writing them in would mean the first tag an admin adds could never appear —
+the exact mistake `useRecordPanes` exists to prevent. The bar shows the **three
+most used**, which is what makes his three rise to the top of a real database on
+their own and what makes a new tag arrive the moment the team starts using it.
+
+* The count is the tag's own `usage_count`, already narrowed to live records of
+  the right module since the fix of 19 September.
+* A card opens **the module the tag belongs to** — the one on screen when the
+  tag is offered there, so clicking from Inventories does not jump to Contacts.
+* **A second click clears it.** A card that can only narrow is a dead end, which
+  the queue's own type filter already taught this repo once.
+* Colour is the admin's own through `badgeVars`, drawn with `.badge-tinted`
+  rather than `bg-[var(--badge-bg)]` — the dark theme's values are separate
+  properties selected in the stylesheet, so writing the light one into a class
+  is perfect in light mode and unreadable in dark.
+
+**The bug the browser found:** the card worked and the address did not survive
+it. `ListView` rewrites its own URL from its state, and a parameter that effect
+does not name is dropped a heartbeat later — so `?tag=` vanished and the card
+read as doing nothing. It is named now, beside `task` and `open`, which exist
+for the same reason.
+
+## A record you can ask for
+
+**3 October 2026, the owner:** *"When an Agent/user search any thing from the
+search then he didn't see the record, bcoz he is not actual owner of this record
+… i need a solution that if the agent/user search the any thing, then system
+will display the record name on the screen and if agent want to access the
+display record, he can ask to actual owner of record for the permission to
+assigned him, Now The actual user can change the owner of record."*
+
+A rep typing a customer's name got **"No matches"**, which is indistinguishable
+from the customer not existing. So the rep creates them again, and now two
+people are working one buyer.
+
+**Half of this already existed and only for numbers.** `assignedNumberLookup`
+has answered a phone-shaped search since September — *"already ours, assigned to
+Priya"* — carrying a name and an owner and **no record id**, so there was
+nothing to ask about. `outOfScopeMatches` does the same for words, and carries
+the id for one purpose: ringing the doorbell.
+
+What keeps it from becoming a way to browse the database:
+
+* **A name, the module, and who owns it. Nothing else.** No field values ever
+  travel on a restricted hit, so a mobile a profile masks is never re-served
+  through the search box. `getRecord` still refuses the id, which the
+  integration test proves rather than assumes.
+* **Only what the words actually match**, through the same search clause the
+  ordinary pass uses — there is no "list everything" shape of this query.
+* **Two characters at least**, so one letter cannot sweep a module; **five at
+  most**, however many match.
+* **Modules this profile may view at all.** A module somebody is shut out of
+  stays shut; this is about the *record* scope inside a module they work in.
+* **Logged** — who searched and how many were revealed — so it can be audited
+  rather than taken on trust.
+
+**Worth saying plainly, because it is the trade he asked for:** a rep can now
+confirm that a name or number is in the CRM, and who holds it, without being
+allowed to open it. That is the point — it is what stops the duplicate — and it
+is also a little more than a private module gave away yesterday.
+
+**Granting is an ordinary reassignment, not a second kind of permission.** There
+is no grant flag and no row that quietly widens somebody's scope: approving
+writes the new owner through `recordService.updateRecord`, so field permissions,
+validation, workflows and the audit trail apply exactly as if the owner had used
+the assignment field by hand. A permission system with two doors is a permission
+system with one door nobody has read.
+
+* **One open request per person per record** (a partial unique index). Asking
+  twice is the same person still waiting, and a queue full of duplicates is how
+  an owner stops reading the queue — so the second ask notifies nobody.
+* **The record's *current* owner decides**, not whoever it was addressed to: a
+  record reassigned since the ask is the new owner's to give away.
+* **The answer is on the record, not in a queue of its own**
+  (`AccessRequestBanner`), because that is where the decision is made — the
+  owner opens it, sees who is asking and why, and hands it over or keeps it. A
+  separate approvals screen is one more place to remember to look.
+* **A rep who can merely read the record is never told who else wants it.** The
+  server answers an empty list to anybody but the owner and an admin.
+* Both people are notified through `notify()`, so the row reaches the bell *and*
+  the phone.
+
+Migration `183`. Proved by `tests/integration/askTheOwnerForARecord.test.ts` (7)
+against a real database: the record is named but refused, asking twice makes one
+request, a stranger cannot answer their own, granting really moves the record,
+and an answered request cannot be answered again.

@@ -68,9 +68,22 @@ export function arrangeRecordMenu(available: MenuKey[], saved: MenuKey[] | null)
   return [...kept, ...appended, ...rest];
 }
 
-/** The first five, and the ones that spill into "More". */
-export function splitMenu(order: MenuKey[]): { bar: MenuKey[]; more: MenuKey[] } {
-  return { bar: order.slice(0, ON_THE_BAR), more: order.slice(ON_THE_BAR) };
+/**
+ * The ones that fit on the bar, and the ones that spill into "More".
+ *
+ * **3 October 2026, the owner:** *"if Menu bar is full otherwise all menus
+ * shown in toolbar till hidden/overlapping."* So the split is **measured**,
+ * not a fixed five: as many as the bar is wide enough to draw, and the rest
+ * behind More. `ON_THE_BAR` is only what to show before anything has been
+ * measured — a first paint has no widths yet, and starting at zero would make
+ * every button jump out of a menu a frame later.
+ *
+ * At least one always stays on the bar: a row that is nothing but a More
+ * button says nothing about where you are.
+ */
+export function splitMenu(order: MenuKey[], fits = ON_THE_BAR): { bar: MenuKey[]; more: MenuKey[] } {
+  const keep = Math.max(1, Math.min(fits, order.length));
+  return { bar: order.slice(0, keep), more: order.slice(keep) };
 }
 
 /**

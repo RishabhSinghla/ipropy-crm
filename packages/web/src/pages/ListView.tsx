@@ -170,6 +170,7 @@ export default function ListView(): JSX.Element {
     // arrival (dashboard drill-through lands on the records, not the builder).
     setShowFilters(false);
     setTaskQueue(taskFromAddress(searchParams.get('task')));
+    setTagPick(searchParams.get('tag'));
     setHydratedFor(moduleName ?? null);
   }, [moduleName]);
 
@@ -185,6 +186,20 @@ export default function ListView(): JSX.Element {
     setTaskQueue((current) => (current === wanted ? current : wanted));
     setPage(1);
   }, [taskParam]);
+
+  /*
+    The same trick for a tag, so the header's tag cards can narrow this list
+    from anywhere — the owner, 3 October 2026: *"Click and filter/Show tags
+    Data as per modules accordingly."* Reading it from the address rather than
+    from a click is what makes the card work when the rep is already standing
+    on another module's list, and what makes the narrowed list shareable.
+  */
+  const tagParam = searchParams.get('tag');
+  useEffect(() => {
+    if (hydratedFor !== moduleName) return;
+    setTagPick((current) => (current === tagParam ? current : tagParam));
+    setPage(1);
+  }, [tagParam]);
 
   useEffect(() => {
     setPageInput(String(page));
@@ -337,6 +352,13 @@ export default function ListView(): JSX.Element {
     // any page, can open a list on it — and a refresh keeps it.
     if (taskQueue) next.set('task', taskQueue);
     /*
+      And the tag, for the same reason: the header's tag cards narrow this list
+      from the address (3 October 2026), and a parameter this effect does not
+      name is dropped a heartbeat after the card is clicked — which reads
+      exactly like the card doing nothing.
+    */
+    if (tagPick) next.set('tag', tagPick);
+    /*
       **Carried, not rebuilt.** This effect writes the address from the list's
       own state, so anything it does not name is silently dropped — and `open`
       is named by somebody else entirely: global search, a chat, Save & Next.
@@ -359,7 +381,7 @@ export default function ListView(): JSX.Element {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, taskQueue, searchParams]);
+  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, taskQueue, tagPick, searchParams]);
 
   /**
    * Owner defaults to whoever is adding the record. Status and stage come from
@@ -417,10 +439,17 @@ export default function ListView(): JSX.Element {
   const effectiveFilter = useMemo<FilterGroup>(() => {
     const extra = [
       ...(taskQueue ? taskFilters[taskQueue].conditions : []),
-      // `in` rather than one condition per stage: the breakdown is a single
-      // question — which of these stages — and an AND of equals matches nothing.
+      /*
+        `in` rather than one condition per stage: the breakdown is a single
+        question — which of these stages — and an AND of equals matches nothing.
+
+        Through `quickPickConditions`, so the stage list's own **Not filled in**
+        row means the same thing here as in every other dropdown (3 October
+        2026) — a second translation of one choice is how two filters come to
+        disagree about the same tick.
+      */
       ...(stagePick.length && stageField
-        ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }]
+        ? quickPickConditions({ [stageField.name]: { kind: 'values', values: stagePick } }, fieldsByName)
         : []),
       ...(agentPick && ownerField
         ? [{ field: ownerField.name, operator: 'equals' as const, value: agentPick }]

@@ -1,15 +1,16 @@
 import { type JSX, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { relativeTime, type HeaderTab } from '@ipropy/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { relativeTime } from '@ipropy/shared';
 import {
   AtSign, Bell, Cake, Check, Flame, Lock, LogOut, Menu, Moon, Search, Settings, Shield, Sparkles, Sun, Upload, X, MessagesSquare, MapPin, Plus, ChevronDown,
 } from 'lucide-react';
 import { applyBrandColour, toast, useApp } from '../lib/store';
-import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
+import { api, authedFileUrl, type AccessRequest, type ModuleSummary, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 import { LiveCallDeck } from './LiveCallDeck';
 import { useDockFolded, WorkspaceDock } from './WorkspaceDock';
+import { TagCards } from './TagCards';
 import { AiBubble } from './AiBubble';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -135,6 +136,16 @@ export default function Layout(): JSX.Element {
               {brand?.orgName ?? 'iPropy'}
             </span>
           </Link>
+
+          {/*
+            The tags worth seeing from every screen, right after the company
+            name — *"i need to quick see tags of 'For Sale, For Rent, Visit
+            Done' in the main screen … at the top of Main Toolbar after IPROPY
+            Company name"* (3 October 2026). Which tags is the data's answer,
+            not a list written here: the most used ones, so the team's own
+            vocabulary decides and a new tag arrives on its own.
+          */}
+          <TagCards />
 
           {/*
             The module switcher and the green WhatsApp button stood here until
@@ -756,6 +767,73 @@ function NotificationBell(): JSX.Element {
   );
 }
 
+
+/**
+ * A record the words matched that this person is not allowed to open.
+ *
+ * **Not a link, because there is nothing to open.** The row exists to answer
+ * one question — *is this person already ours, and whose?* — and it carries a
+ * name and an owner and nothing else. Anything more would be a way around the
+ * sharing rules rather than a courtesy inside them.
+ *
+ * **3 October 2026, the owner:** *"if agent want to access the display record,
+ * he can ask to actual owner of record for the permission to assigned him, Now
+ * The actual user can change the owner of record."* So the row has one button.
+ * Pressing it writes a request and notifies the owner; it grants nothing by
+ * itself, and `getRecord` still refuses the record until the owner hands it
+ * over.
+ */
+function RestrictedHit({ hit }: { hit: SearchHit }): JSX.Element {
+  const [asked, setAsked] = useState(false);
+  const ask = useMutation({
+    mutationFn: () => api.requestAccess(hit.id),
+    onSuccess: (request: AccessRequest) => {
+      setAsked(true);
+      toast.success(
+        request.status === 'pending' && new Date(request.createdAt).getTime() < Date.now() - 5_000
+          ? 'You have already asked for this one'
+          : `Asked ${hit.ownerName ?? 'the owner'} for this record`,
+      );
+    },
+    onError: (error: Error) => toast.error('Could not ask for that record', error.message),
+  });
+  /*
+    A record with a real id is one the owner can be asked for. The phone-shaped
+    lookup answers `restricted:<module>` instead, deliberately — it carries no
+    id at all — so that row keeps saying what it always said and offers no
+    button rather than a button that could only fail.
+  */
+  const canAsk = !hit.id.startsWith('restricted:');
+  return (
+    <div
+      className="flex items-start gap-2 border-l-2 border-amber-400 bg-amber-50/60 px-3 py-2 dark:bg-amber-950/30"
+      data-testid="restricted-hit"
+    >
+      <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{hit.label}</p>
+        <p className="text-xs text-muted">
+          Already in {hit.moduleLabel}, assigned to{' '}
+          <strong className="font-medium text-slate-700 dark:text-slate-200">
+            {hit.ownerName ?? 'nobody yet'}
+          </strong>
+          . Not shared with you.
+        </p>
+      </div>
+      {canAsk && (
+        <button
+          type="button"
+          disabled={asked || ask.isPending}
+          onClick={(event) => { event.stopPropagation(); ask.mutate(); }}
+          className="btn-secondary btn-sm shrink-0"
+        >
+          {asked ? 'Asked' : ask.isPending ? 'Asking…' : 'Ask for access'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function GlobalSearch(): JSX.Element {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -817,29 +895,7 @@ function GlobalSearch(): JSX.Element {
             <p className="px-3 py-6 text-center text-xs text-muted">No matches for “{query}”</p>
           )}
           {results.map((r) => (r.restricted ? (
-            /*
-              Not a link, because there is nothing to open — this record is
-              outside what this user may see, and the row exists to answer one
-              question: is this number already ours, and whose? Anything more
-              would be a way around the sharing rules rather than a courtesy
-              inside them.
-            */
-            <div
-              key={r.id}
-              className="flex items-start gap-2 border-l-2 border-amber-400 bg-amber-50/60 px-3 py-2 dark:bg-amber-950/30"
-            >
-              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{r.label}</p>
-                <p className="text-xs text-muted">
-                  Already in {r.moduleLabel}, assigned to{' '}
-                  <strong className="font-medium text-slate-700 dark:text-slate-200">
-                    {r.ownerName ?? 'nobody yet'}
-                  </strong>
-                  . Not shared with you.
-                </p>
-              </div>
-            </div>
+            <RestrictedHit key={r.id} hit={r} />
           ) : (
             <PeekLink
               key={r.id}

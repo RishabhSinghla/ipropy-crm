@@ -20,6 +20,7 @@ import { EditableField, isInlineEditable } from './EditableField';
 import { NoteComposer } from './RecordBlocks';
 import { ActivityFeed, FEED_LIMIT, useActivityEntries } from './ActivityFeed';
 import { RecordInspector } from './RecordInspector';
+import { AccessRequestBanner } from './AccessRequestBanner';
 import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
@@ -29,7 +30,7 @@ import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from '.
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar } from './RecordAvatar';
 import {
-  activityKindOf, arrangeRecordMenu, loadRecordMenu, moveEntry, saveRecordMenu, splitMenu,
+  ON_THE_BAR, activityKindOf, arrangeRecordMenu, loadRecordMenu, moveEntry, saveRecordMenu, splitMenu,
   type MenuKey,
 } from '../lib/recordMenu';
 import { api } from '../lib/api';
@@ -405,14 +406,20 @@ export function IpropyWorkspace({
     });
   }, [rows, openRecord, module.name, neighbourContext, sortBy, sortDir, callQueueUrl, goToPage]);
 
-  // Folded or not is this browser's choice, remembered like the divider.
-  const [paneFolded, setPaneFoldedState] = useState(() => {
-    try { return localStorage.getItem(`${SPLIT_KEY}.detailsFolded`) === '1'; } catch { return false; }
-  });
-  const setPaneFolded = useCallback((folded: boolean) => {
-    setPaneFoldedState(folded);
-    try { localStorage.setItem(`${SPLIT_KEY}.detailsFolded`, folded ? '1' : '0'); } catch { /* see loadSplit */ }
-  }, []);
+  /*
+    **Folded on arrival, every time** — the owner, 3 October 2026: *"the Right
+    Pane Detail Form Window are by the default close, when we Refresh or Login
+    to CRM, if we need i will open it."*
+
+    So this is deliberately **not** remembered, unlike the divider's width.
+    Opening it is a decision about the record in front of you, not a standing
+    preference, and a pane that reopens itself on every sign-in is the thing he
+    asked to be rid of. It stays open for as long as the tab is, and a refresh
+    starts clean. The old stored key is left alone: nothing reads it, so
+    bringing this back is code rather than data recovery.
+  */
+  const [paneFolded, setPaneFoldedState] = useState(true);
+  const setPaneFolded = useCallback((folded: boolean) => setPaneFoldedState(folded), []);
 
   const resize = useCallback((delta: number) => {
     const [min, max] = QUEUE_LIMITS;
@@ -913,10 +920,13 @@ export function IpropyWorkspace({
               </button>
             </span>
               {/*
-                Search within this record — *"search icon … before tag icon and
-                after those record count"* (1 October 2026). It narrows the
-                timeline and the fields pane to what mentions the words, and
-                forgets them when another record opens.
+                Search within this record. **The icon left this bar on
+                3 October 2026** — *"remove the whatsapp icon and Search icon
+                from the Middle header pane"* — and the search itself is a row
+                in the menu bar's *More*. The box still opens here, where the
+                icon used to be, because that is where a rep is already
+                looking; it narrows the timeline and the fields pane to what
+                mentions the words, and forgets them when another record opens.
               */}
               {finding ? (
                 <span className="relative inline-flex items-center">
@@ -934,12 +944,7 @@ export function IpropyWorkspace({
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </span>
-              ) : (
-                <button type="button" aria-label="Search this record" title="Search this record" onClick={() => setFinding(true)} className={cn(ACTION_CIRCLE, 'hover:bg-brand-600')}>
-                  <Search className="h-4 w-4" />
-                </button>
-              )}
-              {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
+              ) : null}
               {/*
                 Write to them without leaving the pane — *"show email Icon in
                 Icon bar of middle pane, If Record have a Email Id, so that we
@@ -967,67 +972,16 @@ export function IpropyWorkspace({
                 </button>
               )}
               {/*
-                **The star and the tag icon are gone from this bar** — the
-                owner, 2 October 2026: *"after the Resign Middle Menu bar then
-                the extra icon of Header also will be remove from header like,
-                Star, Tag icons."* Neither function went anywhere: both are rows
-                in *More actions*, a few pixels to the right. What the bar keeps
-                is what a rep reaches for mid-call — search, WhatsApp, email.
+                **The three-dot menu is gone from this bar too** — the owner,
+                3 October 2026: *"the Three dot of Dropdown fields (Star, Tags,
+                Summarise withAI, Move to, Delete recored) Please move/merge all
+                in to More button in the Menu bar."* Two *More* buttons a few
+                pixels apart is what he was looking at; there is one now, on the
+                menu bar below, and `recordActions` is what fills it.
+
+                What this strip keeps is the one thing with an address behind
+                it: email, and only when there is an address to write to.
               */}
-              <Dropdown
-                align="right"
-                className="min-w-[15rem]"
-                trigger={(
-                  <button className={ACTION_CIRCLE} aria-label="More actions" title="More actions">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </button>
-                )}
-              >
-                {(close) => (
-                  <>
-                    <DropdownItem
-                      icon={<Star className={cn('h-3.5 w-3.5', active.starred && 'fill-amber-500 text-amber-500')} />}
-                      onClick={() => { close(); star.mutate(active); }}
-                    >
-                      {active.starred ? 'Remove from starred' : 'Star this record'}
-                    </DropdownItem>
-                    {canEdit && (
-                      <DropdownItem
-                        icon={<Tag className={cn('h-3.5 w-3.5', active.tags?.length && 'text-brand-600 dark:text-brand-300')} />}
-                        onClick={() => { close(); setTagging(true); }}
-                      >
-                        {active.tags?.length ? `Tags (${active.tags.length})` : 'Add a tag'}
-                      </DropdownItem>
-                    )}
-                    <DropdownItem
-                      icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                      onClick={() => {
-                        close();
-                        setSummarising(true);
-                        void api.summarise(module.name, active.id)
-                          .then((result) => setSummary(result.summary))
-                          .catch((err: Error) => toast.error('Summary failed', err.message))
-                          .finally(() => setSummarising(false));
-                      }}
-                    >
-                      {summarising ? 'Summarising…' : 'Summarise with AI'}
-                    </DropdownItem>
-                    {canEdit && onDelete && (module.name === 'leads' || module.name === 'properties') && (
-                      <DropdownItem
-                        icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
-                        onClick={() => { close(); setMoveTarget(module.name === 'leads' ? 'properties' : 'leads'); }}
-                      >
-                        Move to {module.name === 'leads' ? 'Inventories' : 'Leads'}
-                      </DropdownItem>
-                    )}
-                    {onDelete && (
-                      <DropdownItem icon={<Trash2 className="h-3.5 w-3.5" />} danger onClick={() => { close(); onDelete(active); }}>
-                        Delete record
-                      </DropdownItem>
-                    )}
-                  </>
-                )}
-              </Dropdown>
           </span>
         </header>
 
@@ -1055,7 +1009,61 @@ export function IpropyWorkspace({
           and they can choose button as per their priority and if button too
           much, then 'More hamburger' will be shown"*.
         */}
+        {/*
+          Somebody has asked for this record — and the person who can say yes is
+          the one looking at it (3 October 2026). Above the menu bar, because a
+          question about *who owns this* comes before anything the bar offers.
+        */}
+        <AccessRequestBanner module={module.name} recordId={active.id} />
+
         <RecordMenuBar
+          actions={(close) => (
+            <>
+              <DropdownItem icon={<Search className="h-3.5 w-3.5" />} onClick={() => { close(); setFinding(true); }}>
+                Search this record
+              </DropdownItem>
+              <DropdownItem
+                icon={<Star className={cn('h-3.5 w-3.5', active.starred && 'fill-amber-500 text-amber-500')} />}
+                onClick={() => { close(); star.mutate(active); }}
+              >
+                {active.starred ? 'Remove from starred' : 'Star this record'}
+              </DropdownItem>
+              {canEdit && (
+                <DropdownItem
+                  icon={<Tag className={cn('h-3.5 w-3.5', active.tags?.length && 'text-brand-600 dark:text-brand-300')} />}
+                  onClick={() => { close(); setTagging(true); }}
+                >
+                  {active.tags?.length ? `Tags (${active.tags.length})` : 'Add a tag'}
+                </DropdownItem>
+              )}
+              <DropdownItem
+                icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                onClick={() => {
+                  close();
+                  setSummarising(true);
+                  void api.summarise(module.name, active.id)
+                    .then((result) => setSummary(result.summary))
+                    .catch((err: Error) => toast.error('Summary failed', err.message))
+                    .finally(() => setSummarising(false));
+                }}
+              >
+                {summarising ? 'Summarising…' : 'Summarise with AI'}
+              </DropdownItem>
+              {canEdit && onDelete && (module.name === 'leads' || module.name === 'properties') && (
+                <DropdownItem
+                  icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
+                  onClick={() => { close(); setMoveTarget(module.name === 'leads' ? 'properties' : 'leads'); }}
+                >
+                  Move to {module.name === 'leads' ? 'Inventories' : 'Leads'}
+                </DropdownItem>
+              )}
+              {onDelete && (
+                <DropdownItem icon={<Trash2 className="h-3.5 w-3.5" />} danger onClick={() => { close(); onDelete(active); }}>
+                  Delete record
+                </DropdownItem>
+              )}
+            </>
+          )}
           order={menuOrder}
           shown={shownKey}
           onPick={setMenuPick}
@@ -1598,15 +1606,86 @@ function DeskTab({ active = false, onClick, label, count, children, drag }: {
  * `moveEntry`, pure and tested, because a drop landing one position short is
  * the classic bug here and no amount of reading the code finds it.
  */
-function RecordMenuBar({ order, shown, onPick, onReorder, label, count }: {
+/**
+ * How many menu entries the bar is wide enough to draw.
+ *
+ * **3 October 2026, the owner:** *"if Menu bar is full otherwise all menus
+ * shown in toolbar till hidden/overlapping."* It used to be a flat five, which
+ * on a wide screen left room for three more and on a narrow one scrolled
+ * sideways.
+ *
+ * The same rule `HeaderFieldStrip` holds to, with one difference that matters:
+ * the widths come from a **hidden row that never changes**, not from the
+ * buttons on screen. Measuring the real ones oscillates — hiding a button
+ * frees the width that said to hide it, which says to show it again, every
+ * frame.
+ */
+function useHowManyFit(total: number): {
+  fits: number;
+  barRef: React.RefObject<HTMLElement | null>;
+  ghostRef: React.RefObject<HTMLDivElement | null>;
+} {
+  const barRef = useRef<HTMLElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const [fits, setFits] = useState(ON_THE_BAR);
+
+  useEffect(() => {
+    const bar = barRef.current;
+    const ghost = ghostRef.current;
+    if (!bar || !ghost) return;
+    const measure = (): void => {
+      const children = Array.from(ghost.children) as HTMLElement[];
+      const more = children.find((child) => child.hasAttribute('data-more'));
+      const entries = children.filter((child) => child !== more);
+      if (!entries.length) return;
+      const GAP = 16; // gap-4, between every pair
+      // 32px for the bar's own px-4, and room for More unless everything fits.
+      const room = bar.clientWidth - 32;
+      const moreWidth = (more?.offsetWidth ?? 0) + GAP;
+      let used = 0;
+      let count = 0;
+      for (const entry of entries) {
+        used += entry.offsetWidth + (count ? GAP : 0);
+        // The last one needs no room for More, because there would be no More.
+        const needsMore = count + 1 < entries.length;
+        if (used + (needsMore ? moreWidth : 0) > room) break;
+        count += 1;
+      }
+      setFits(Math.max(1, count));
+    };
+    measure();
+    // The bar also narrows when the queue's divider is dragged, which moves no
+    // window — so the element is watched, not the window.
+    const watch = new ResizeObserver(measure);
+    watch.observe(bar);
+    watch.observe(ghost);
+    return () => watch.disconnect();
+  }, [total]);
+
+  return { fits, barRef, ghostRef };
+}
+
+function RecordMenuBar({ order, shown, onPick, onReorder, label, count, actions }: {
   order: MenuKey[];
   shown: MenuKey;
   onPick: (key: MenuKey) => void;
   onReorder: (from: number, to: number) => void;
   label: (key: MenuKey) => string;
   count: (key: MenuKey) => string | null;
+  /**
+   * What this record itself can have done to it — star, tag, summarise, move,
+   * delete, search.
+   *
+   * **3 October 2026, the owner:** *"You See Three dot of Dropdown fields
+   * (Star, Tags, Summarise withAI, Move to, Delete recored) Please move/merge
+   * all in to More button in the Menu bar."* So the header's own three-dot
+   * circle is gone and there is **one** More on this screen rather than two a
+   * few pixels apart, which is what he was looking at.
+   */
+  actions: (close: () => void) => ReactNode;
 }): JSX.Element {
-  const { bar, more } = splitMenu(order);
+  const { fits, barRef, ghostRef } = useHowManyFit(order.length);
+  const { bar, more } = splitMenu(order, fits);
   const [dragFrom, setDragFrom] = useState(-1);
   const pickUp = (index: number): void => setDragFrom(index);
   const drop = (to: number): void => {
@@ -1614,10 +1693,33 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count }: {
     setDragFrom(-1);
   };
   return (
+    <div className="relative shrink-0">
+      {/*
+        The measuring row: every entry at full size, drawn where nobody can see
+        it, so the widths it reports never change when the real bar below
+        decides to hide one. Measuring the *real* buttons would oscillate — the
+        count hides a button, which frees the width that said to hide it.
+
+        **Outside the `<nav>`, deliberately.** Inside it, every locator looking
+        for "the buttons on the menu bar" — a spec's, a screen reader's — found
+        these first, and clicking one clicks something nobody can see.
+      */}
+      <div ref={ghostRef} aria-hidden className="pointer-events-none absolute left-4 top-0 flex items-center gap-4" style={{ visibility: 'hidden' }}>
+        {order.map((key) => (
+          <DeskTab key={key} onClick={() => undefined} label={label(key)} count={count(key)}>
+            {MENU_ICON[key]}
+          </DeskTab>
+        ))}
+        <span data-more className="flex items-center gap-1.5 px-1.5 py-2 text-xs font-semibold">
+          <MoreHorizontal className="h-4 w-4" />
+          <span>More</span>
+        </span>
+      </div>
     <nav
-      className="flex shrink-0 items-center gap-4 overflow-x-auto border-b border-slate-200 bg-white px-4 text-slate-500 no-scrollbar dark:border-slate-800 dark:bg-slate-900"
+      className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 text-slate-500 dark:border-slate-800 dark:bg-slate-900"
       aria-label="Record workspace sections"
       data-testid="record-menu-bar"
+      ref={barRef}
     >
       {bar.map((key, index) => (
         <DeskTab
@@ -1631,16 +1733,21 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count }: {
           {MENU_ICON[key]}
         </DeskTab>
       ))}
-      {more.length > 0 && (
+      {/*
+        **Always here, even when nothing overflowed** — the record's own
+        actions live in it since 3 October 2026, so it is never an empty
+        control.
+      */}
+      <div className="ml-auto flex shrink-0 items-center">
         <Dropdown
           align="right"
-          className="min-w-[14rem]"
+          className="min-w-[15rem]"
           trigger={(
             <button
               type="button"
               className="flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-1.5 py-2 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-              aria-label={`More sections (${more.length})`}
-              title="More sections"
+              aria-label={more.length ? `More — ${more.length} more sections and record actions` : 'More record actions'}
+              title="More"
               data-testid="record-menu-more"
             >
               <MoreHorizontal className="h-4 w-4" />
@@ -1684,11 +1791,18 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count }: {
                   </div>
                 );
               })}
+              {/*
+                The record's own actions, under a rule. One More on this
+                screen, not two a few pixels apart (3 October 2026).
+              */}
+              {more.length > 0 && <div className="my-1 border-t border-[var(--border)]" />}
+              {actions(close)}
             </>
           )}
         </Dropdown>
-      )}
+      </div>
     </nav>
+    </div>
   );
 }
 
@@ -1706,6 +1820,28 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count }: {
  * only apologise is worse than no control, which is the rule the dead End
  * button on the call console already answers to.
  */
+/**
+ * Put the cursor in this record's note box, opening the dock first if it is
+ * folded.
+ *
+ * Since 3 October 2026 the box at the foot of the record draws one line until
+ * the mouse is over it, so on a click there is often **no box to focus yet** —
+ * the button looked like it did nothing. Pressing the dock's own handle is what
+ * opens it, and React renders on the next frame, which is what the retry waits
+ * for. The handle is pressed once and once only: clicking it on every retry
+ * would fold the dock again the moment it opened.
+ */
+function putTheCursorInTheNoteBox(recordId: string, framesLeft = 10, opened = false): void {
+  const box = document.querySelector<HTMLTextAreaElement>(`[data-testid="note-box"][data-record="${recordId}"]`);
+  if (box) {
+    box.focus();
+    box.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  if (!opened) document.querySelector<HTMLButtonElement>('[data-testid="note-dock-handle"]')?.click();
+  if (framesLeft > 0) requestAnimationFrame(() => putTheCursorInTheNoteBox(recordId, framesLeft - 1, true));
+}
+
 function RecordMenuAction({ shown, onStream, phone, recordId }: {
   shown: MenuKey;
   onStream: boolean;
@@ -1730,11 +1866,7 @@ function RecordMenuAction({ shown, onStream, phone, recordId }: {
       <button
         type="button"
         className="btn-secondary btn-sm"
-        onClick={() => {
-          const box = document.querySelector<HTMLTextAreaElement>(`[data-testid="note-box"][data-record="${recordId}"]`);
-          box?.focus();
-          box?.scrollIntoView({ block: 'nearest' });
-        }}
+        onClick={() => putTheCursorInTheNoteBox(recordId)}
       >
         <MessageSquare className="h-3.5 w-3.5" />
         Post a comment

@@ -7,7 +7,7 @@
  * record, pick Lost, and the CRM asks why before it saves — both in one save.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { unique } from './helpers';
+import { unique, openDetailsPane } from './helpers';
 
 test.use({ viewport: { width: 1600, height: 950 } });
 
@@ -48,6 +48,9 @@ test('picking Lost asks why, and saves the stage and the reason together', async
   expect(refused, 'Lost with no reason should be refused').toBe(422);
 
   await page.goto(`/leads?open=${created.id}`);
+  // The details pane is folded on arrival since 3 October 2026, and a folded
+  // pane is `inert` — the field is attached and cannot be reached.
+  await openDetailsPane(page);
   const pane = page.getByTestId('activity-pane');
   const change = pane.getByRole('button', { name: `Change ${status.label}` }).first();
   await expect(change).toBeAttached({ timeout: 30_000 });

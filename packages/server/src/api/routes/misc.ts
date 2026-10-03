@@ -30,6 +30,9 @@ import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 import { PHOTO_ORDER } from '../../core/media/ordering.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { recordCounts } from '../../core/entity/recordCounts.js';
+import {
+  decideAccessRequest, listAccessRequests, requestAccess, requestsForRecord,
+} from '../../core/entity/accessRequests.js';
 import { unseenCounts } from '../../core/entity/unseen.js';
 import {
   deletePushSubscription, ensureVapidKeys, notify, savePushSubscription,
@@ -97,6 +100,54 @@ miscRouter.get('/unseen-counts', asyncHandler(async (req, res) => {
  */
 miscRouter.get('/record-counts', asyncHandler(async (req, res) => {
   res.json(await recordCounts(getScope(req)));
+}));
+
+/* ------------------------------------------------------------------------ */
+/* Asking the owner of a record for it                                       */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * **3 October 2026, the owner:** a rep who searches and finds a record that is
+ * not theirs can ask for it, and the person it belongs to can hand it over.
+ *
+ * The reassignment itself goes through `recordService.updateRecord`, so this
+ * is not a second way to change who owns a record — see
+ * `core/entity/accessRequests.ts`.
+ */
+miscRouter.get('/access-requests', asyncHandler(async (req, res) => {
+  res.json(await listAccessRequests(getScope(req)));
+}));
+
+/** The open requests on one record — what its owner's banner reads. */
+miscRouter.get('/access-requests/record/:id', asyncHandler(async (req, res) => {
+  res.json(await requestsForRecord(getScope(req), req.params.id!));
+}));
+
+miscRouter.post('/access-requests', asyncHandler(async (req, res) => {
+  const body = z.object({
+    recordId: z.string().uuid(),
+    note: z.string().max(500).optional(),
+  }).parse(req.body);
+  res.status(201).json(await requestAccess(getScope(req), body.recordId, body.note ?? null));
+}));
+
+miscRouter.post('/access-requests/:id/:decision', asyncHandler(async (req, res) => {
+  const decision = req.params.decision === 'grant' ? 'granted' : req.params.decision === 'decline' ? 'declined' : null;
+  if (!decision) throw new BadRequestError('Answer a request with grant or decline');
+  const scope = getScope(req);
+  res.json(await decideAccessRequest(scope, req.params.id!, decision, async (moduleName, recordId, userId) => {
+    /*
+      Which field holds the owner is metadata, found by uitype — no route names
+      a field. `__record` is how a field says it lives on `ipy_record` rather
+      than on the module's payload table, and `owner_id` is the one that
+      matters; a module without one cannot be handed over, and says so rather
+      than quietly doing nothing.
+    */
+    const module = await registry.requireModule(moduleName);
+    const owner = module.fields.find((field) => field.uitype === 'owner' && field.isActive);
+    if (!owner) throw new BadRequestError(`${module.label} records are not assigned to anybody`);
+    await recordService.updateRecord(scope, moduleName, recordId, { [owner.name]: userId });
+  }));
 }));
 
 /**

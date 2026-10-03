@@ -13,7 +13,7 @@
  * costs a phone call to explain and some trust to repair.
  */
 import { expect, test } from '@playwright/test';
-import { fieldEditor, openFromListByName, waitForRecords } from './helpers';
+import { fieldEditor, openDetailsPane, openFromListByName, waitForRecords } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -88,6 +88,7 @@ test('and marking it Sold is what takes it back off', async ({ page }) => {
     terminal status is the real off switch.
   */
   await page.goto(recordUrl);
+  await openDetailsPane(page);
   await fieldEditor(page, /^Change (Availability )?Status$/i).click();
 
   await page.getByRole('option', { name: 'Sold' }).click().catch(async () => {

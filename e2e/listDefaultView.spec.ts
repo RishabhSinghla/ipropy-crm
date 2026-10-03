@@ -98,6 +98,15 @@ test('a value is typed in where it stands, and the change sticks', async ({ page
   const desk = page.getByTestId('ipropy-workspace');
   await expect(desk).toBeVisible({ timeout: 30_000 });
 
+  /*
+    The details pane is folded on arrival since 3 October 2026 — *"the Right
+    Pane Detail Form Window are by the default close, when we Refresh or Login
+    to CRM, if we need i will open it."* A folded pane is `inert` and cannot be
+    typed into, which is the point; this spec is about editing in place, so it
+    opens the pane the way a rep would.
+  */
+  await page.getByTestId('unfold-details').click();
+
   // Company is free text, optional, and on no list this suite asserts against.
   const marker = `Split edit ${Date.now()}`;
   const cell = fieldEditor(page, /^Change Company$/);
@@ -172,15 +181,22 @@ test('the desk offers the record, its fields and a way to delete it', async ({ p
   const desk = page.getByTestId('ipropy-workspace');
   await expect(desk).toBeVisible({ timeout: 30_000 });
 
-  // The field card is what makes the desk somewhere a value gets fixed rather
-  // than only read, and Delete is what makes it somewhere the work finishes.
-  // Delete moved into the three-dot menu on 19 September — one destructive
-  // action a thumb's width from Call was one accident waiting — so it is
-  // reached rather than sitting in the open.
+  /*
+    The field card is what makes the desk somewhere a value gets fixed rather
+    than only read, and Delete is what makes it somewhere the work finishes.
+    Delete moved into a menu on 19 September — one destructive action a thumb's
+    width from Call was one accident waiting — so it is reached rather than
+    sitting in the open.
+
+    **The menu is the menu bar's *More* since 3 October 2026**, not the
+    header's own three-dot circle: there were two of those a few pixels apart,
+    and the owner asked for one.
+  */
   await expect(desk.getByText('Basic Information')).toBeVisible();
-  // The menu's own Delete: a record with comments also carries one "Delete
-  // this comment" button per comment, and the newest-updated record is first.
-  await desk.getByRole('button', { name: 'More actions' }).click();
+  // A record with comments also carries one "Delete this comment" button per
+  // comment, and the newest-updated record is first — so this asks for the
+  // record's own row by its exact words.
+  await page.getByTestId('record-menu-more').click();
   await expect(page.getByRole('button', { name: 'Delete record' })).toBeVisible();
 });
 
@@ -234,12 +250,16 @@ test('the face, the name and the controls share one row', async ({ page }) => {
   const header = recordPane(page).locator('header').first();
   const name = header.getByRole('heading').first();
   /*
-    The *More actions* circle, not the star: the star and the tag left this bar
-    on 2 October 2026 for rows in that very menu — *"the extra icon of Header
-    also will be remove from header like, Star, Tag icons."* This button is the
-    last control on the row, which is what the measurement is about.
+    The record's own Next button, which is the control this row is guaranteed
+    to carry.
+
+    It was the star until 2 October and the three-dot circle until 3 October —
+    the owner took both off this bar, and what is left beside the counter is
+    conditional on the record (an email icon only where there is an address).
+    A measurement anchored to something optional reports the record it landed
+    on rather than the layout.
   */
-  const lastControl = header.locator('button[aria-label="More actions"]').first();
+  const lastControl = header.locator('button[aria-label="Next record"]').first();
   const faceBox = (await header.getByTestId('split-hero-avatar').boundingBox())!;
   const nameBox = (await name.boundingBox())!;
   const controlBox = (await lastControl.boundingBox())!;
@@ -334,8 +354,8 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
   const header = recordPane(page).locator('header').first();
   const dialog = page.getByRole('dialog');
   /*
-    Through *More actions*, because the tag icon left this bar on 2 October
-    2026 — *"the extra icon of Header also will be remove from header like,
+    Through the menu bar's *More*, because the tag icon left this bar on
+    2 October 2026 — *"the extra icon of Header also will be remove from header like,
     Star, Tag icons."* The chips stayed; only the icon went.
 
     Retried, because the "Tags updated" toast lands over this corner of the
@@ -343,7 +363,7 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
   */
   const openTheDialog = async (): Promise<void> => {
     await expect(async () => {
-      await header.locator('button[aria-label="More actions"]').first().click();
+      await page.getByTestId('record-menu-more').click();
       await page.getByRole('button', { name: /Add a tag|^Tags \(/ }).first().click();
       await expect(dialog).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 20_000 });
@@ -365,7 +385,10 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
 
   const chip = header.getByText(name, { exact: true }).first();
   await expect(chip).toBeVisible({ timeout: 10_000 });
-  const icons = header.locator('button[aria-label="More actions"]').first();
+  // The icon strip's own right edge: the chips must sit left of it. The
+  // record navigation is what that strip is guaranteed to carry since the
+  // star, the tag and the three-dot circle all left it.
+  const icons = header.locator('button[aria-label="Next record"]').first();
   const chipBox = (await chip.boundingBox())!;
   const iconsBox = (await icons.boundingBox())!;
   expect(chipBox.x, 'the tag chip is not before the icons').toBeLessThan(iconsBox.x);

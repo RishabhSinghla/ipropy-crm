@@ -4,6 +4,22 @@
  * A single fetch wrapper handles auth headers, token refresh on 401, and turns
  * server error envelopes into thrown ApiError objects the UI can render.
  */
+/** A rep's open ask for a record somebody else owns. */
+export interface AccessRequest {
+  id: string;
+  recordId: string;
+  module: string;
+  recordLabel: string;
+  requestedBy: string;
+  requesterName: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  note: string | null;
+  status: 'pending' | 'granted' | 'declined';
+  createdAt: string;
+  decidedAt: string | null;
+}
+
 import type {
   AuthUser, BuyerMatch, CustomView, Dashboard, FieldMeta, FilterGroup, ListQuery, ListResult, ModuleMeta,
   PropertyMatch, RecordEnvelope, TimelineEntry,
@@ -1213,6 +1229,16 @@ export const api = {
 
   // --- misc ---------------------------------------------------------------
   search: (q: string) => get<SearchHit[]>(`/api/search${qs({ q })}`),
+
+  /*
+    Asking the owner of a record for it (3 October 2026). Asking grants
+    nothing: the record is handed over by its owner, through the ordinary
+    assignment field, and until then every read of it is refused as before.
+  */
+  requestAccess: (recordId: string, note?: string) => post<AccessRequest>('/api/access-requests', { recordId, note }),
+  accessRequests: () => get<{ incoming: AccessRequest[]; mine: AccessRequest[] }>('/api/access-requests'),
+  accessRequestsFor: (recordId: string) => get<AccessRequest[]>(`/api/access-requests/record/${recordId}`),
+  answerAccessRequest: (id: string, decision: 'grant' | 'decline') => post<AccessRequest>(`/api/access-requests/${id}/${decision}`, {}),
   recent: () => get<{ id: string; label: string; module_name: string }[]>('/api/recent'),
   // --- branding & the company's own social accounts ------------------------
   /** Public: the sign-in screen renders before there is a session. */

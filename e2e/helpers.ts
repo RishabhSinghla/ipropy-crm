@@ -336,3 +336,20 @@ export async function openFromListByName(page: Page, module: string, name: strin
   expect(id, `could not find "${name}"`).not.toBe('');
   return `/${module}/${id}`;
 }
+
+/**
+ * Open the record's details pane if it is folded.
+ *
+ * **Folded on arrival since 3 October 2026** — the owner: *"the Right Pane
+ * Detail Form Window are by the default close … if we need i will open it."* A
+ * folded pane is `inert`, so a field inside it exists and cannot be typed into,
+ * which presents as a click that times out rather than as a locator that finds
+ * nothing.
+ *
+ * A no-op when the pane is already open, so it is safe to call before any spec
+ * that edits a field.
+ */
+export async function openDetailsPane(page: Page): Promise<void> {
+  const unfold = page.getByTestId('unfold-details');
+  if (await unfold.count()) await unfold.click();
+}

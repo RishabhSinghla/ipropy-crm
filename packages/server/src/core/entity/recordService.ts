@@ -1785,13 +1785,23 @@ export interface SearchHit {
   label: string;
   recordNumber: string | null;
   /**
-   * A number that exists in the CRM on a record this user cannot open.
+   * A record this user cannot open, shown by name alone.
    *
-   * Carries a name and an owner and nothing else — no id to follow, no
-   * fields. See `assignedNumberLookup`.
+   * Carries a name, who owns it, and the record's id — and **nothing else**.
+   * No field values ever travel on one of these, so a mobile a profile masks
+   * is never re-served through the search box.
+   *
+   * The id is here since 3 October 2026, for one purpose: asking the owner for
+   * it. The owner, that day: *"if the agent/user search the any thing, then
+   * system will display the record name on the screen and if agent want to
+   * access the display record, he can ask to actual owner of record for the
+   * permission."* Nothing opens from a restricted hit — the screen offers
+   * *Ask for access*, and `getRecord` still refuses the id to anybody the
+   * scope does not allow, so carrying it grants nothing.
    */
   restricted?: true;
   ownerName?: string | null;
+  ownerId?: string | null;
 }
 
 /**
@@ -1877,6 +1887,81 @@ async function assignedNumberLookup(
   return null;
 }
 
+/**
+ * Records that match the words but belong to somebody else.
+ *
+ * **3 October 2026, the owner:** *"When an Agent/user search any thing from the
+ * search then he didn't see the record, bcoz he is not actual owner of this
+ * record, so the agent didn't search the record."* A rep typing a customer's
+ * name got "nothing found", which is indistinguishable from the customer not
+ * existing — so the rep creates them again, and now two people are working one
+ * buyer.
+ *
+ * This runs **outside** the searcher's record scope, deliberately, and that is
+ * why what comes back is cut to the bone: the record's name, which module it is
+ * in, and who owns it. No field values, no record number, no stage, no phone —
+ * `getRecord` still refuses the id to anybody the scope does not allow, so a
+ * restricted hit is a doorbell and not a key.
+ *
+ * What keeps it from becoming a way to browse the database:
+ *
+ *  * **Only what the words actually match**, through the same search clause the
+ *    ordinary pass uses — there is no "list everything" shape of this query.
+ *  * **Two characters at least**, so a single letter cannot sweep a module.
+ *  * **Five at most**, however many match: enough to recognise the person you
+ *    were looking for, not enough to build a list from.
+ *  * **Modules this profile may view at all.** A module somebody is shut out of
+ *    stays shut; this is about the *record* scope within a module they work in.
+ *  * **Logged**, with who searched and how many were revealed, so the thing can
+ *    be audited rather than taken on trust.
+ */
+async function outOfScopeMatches(
+  ctx: ServiceContext,
+  term: string,
+  modules: ModuleMeta[],
+  labelByName: Map<string, string>,
+  seen: Set<string>,
+): Promise<SearchHit[]> {
+  if (term.trim().length < 2 || ctx.system) return [];
+  const params = new SqlParams();
+  const search = buildSearchClause(term, params);
+  const moduleIds = params.add(modules.map((module) => module.id));
+  const res = await db.query<{ id: string; module_name: string; label: string; owner_id: string | null; owner_name: string | null }>(
+    `SELECT ${RECORD_ALIAS}.id,
+            m.name AS module_name,
+            ${RECORD_ALIAS}.label,
+            ${RECORD_ALIAS}.owner_id,
+            nullif(trim(u.first_name || ' ' || u.last_name), '') AS owner_name
+       FROM ipy_record ${RECORD_ALIAS}
+       JOIN ipy_module m ON m.id = ${RECORD_ALIAS}.module_id
+       LEFT JOIN ipy_user u ON u.id = ${RECORD_ALIAS}.owner_id
+      WHERE ${RECORD_ALIAS}.module_id = ANY(${moduleIds}::uuid[])
+        AND ${RECORD_ALIAS}.is_deleted = false
+        AND ${search}
+      ORDER BY ${RECORD_ALIAS}.updated_at DESC
+      LIMIT 25`,
+    params.all(),
+  );
+
+  // Anything the ordinary pass already returned is in scope and is not this.
+  const hidden = res.rows.filter((row) => !seen.has(row.id)).slice(0, 5);
+  if (!hidden.length) return [];
+  logger.info(
+    { userId: ctx.user.id, term: term.length, revealed: hidden.length },
+    'search named records outside this user\'s scope',
+  );
+  return hidden.map((row) => ({
+    id: row.id,
+    module: row.module_name,
+    moduleLabel: labelByName.get(row.module_name) ?? row.module_name,
+    label: row.label,
+    recordNumber: null,
+    restricted: true as const,
+    ownerName: row.owner_name,
+    ownerId: row.owner_id,
+  }));
+}
+
 /** Global search across every module the user can see. */
 export async function globalSearch(
   ctx: ServiceContext,
@@ -1948,6 +2033,18 @@ export async function globalSearch(
   if (!ctx.system && !found.length) {
     const assigned = await assignedNumberLookup(ctx, term, labelByName);
     if (assigned) found.push(assigned);
+  }
+
+  /*
+    And the same courtesy for words, not only numbers (3 October 2026): the
+    records that match but belong to somebody else, by name alone, so a rep can
+    ask the owner rather than create the customer a second time. Always offered
+    — a rep searching a name they half-remember is exactly the case where the
+    in-scope pass returns something *else* and the silence is still wrong.
+  */
+  if (!ctx.system) {
+    const seen = new Set(found.map((hit) => hit.id));
+    found.push(...await outOfScopeMatches(ctx, term, allowed, labelByName, seen));
   }
 
   /**

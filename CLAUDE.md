@@ -253,10 +253,10 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 874 unit tests, no DB: 734 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 1,177 unit tests, no DB: 840 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers), 132 in `packages/web` (colour contrast, safe markdown, header-tab
+  serving headers), 329 in `packages/web` (colour contrast, safe markdown, header-tab
   arrangement, and the rich-text
   sanitiser that renders the imported Vtiger notes), and 8 in `packages/mcp` (tool-output
   formatting). The web suite runs on `node` except where a file asks for `jsdom` with a

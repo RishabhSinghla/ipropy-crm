@@ -8,7 +8,7 @@
  * to the report so the next fix has an address.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { searchList, fieldEditor } from './helpers';
+import { searchList, fieldEditor, openDetailsPane } from './helpers';
 
 type Finding = { page: string; kind: string; detail: string };
 const findings: Finding[] = [];
@@ -131,6 +131,7 @@ test.describe('lead lifecycle through the UI', () => {
     // Overview form. Take the Overview one: its trigger is the value box, and
     // the button inside it is `sr-only`, so clicking the button itself times
     // out on a 1px clipped element.
+    await openDetailsPane(page);
     await fieldEditor(detail, /^Change Full Name$/).click();
     const input = detail.getByRole('textbox', { name: /full name/i }).first();
     await input.fill(renamed);
@@ -148,10 +149,12 @@ test.describe('lead lifecycle through the UI', () => {
     await row(renamed).locator('button').first().click();
     const detail = page;
     await expect(detail.getByRole('heading', { name: renamed })).toBeVisible({ timeout: 15_000 });
-    // Delete lives in the More-actions dropdown, and the dialog confirms with
-    // a plain "Delete" button.
-    await expect(detail.getByRole('button', { name: 'More actions' })).toBeVisible({ timeout: 5_000 });
-    await detail.getByRole('button', { name: 'More actions' }).click();
+    // Delete lives in the menu bar's *More* since 3 October 2026 — the header's
+    // own three-dot circle went, so there is one More on this screen — and the
+    // dialog confirms with a plain "Delete" button.
+    const more = detail.getByTestId('record-menu-more');
+    await expect(more).toBeVisible({ timeout: 5_000 });
+    await more.click();
     await expect(detail.getByText('Delete record')).toBeVisible({ timeout: 5_000 });
     await detail.getByText('Delete record').click();
     // The confirmation's own button: in the split view the selection bar has a

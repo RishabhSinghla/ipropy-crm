@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useState } from 'react';
+import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tag } from 'lucide-react';
 import { api } from '../lib/api';
@@ -79,11 +79,21 @@ export function TagButton({ module, recordId, tags, canEdit, className, iconClas
   });
 
   /*
-    Seed what is ticked from the record every time the dialog opens — here
-    rather than in the trigger's own click, because the caller may be the one
-    opening it now (the record's *More actions* menu).
+    Seed what is ticked from the record **as the dialog opens** — here rather
+    than in the trigger's own click, because the caller may be the one opening
+    it now (the record's *More* menu).
+
+    `openedJustNow` is the whole of it. Seeding whenever `tags` changes looks
+    equivalent and is not: the record's own array arrives fresh on re-renders,
+    so every tick was wiped a frame later and Save wrote back exactly what was
+    already there — a dialog that worked perfectly and saved nothing.
   */
-  useEffect(() => { if (open) setDraft(tags ?? []); }, [open, tags]);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    const openedJustNow = open && !wasOpen.current;
+    if (openedJustNow) setDraft(tags ?? []);
+    wasOpen.current = open;
+  }, [open, tags]);
 
   if (!canEdit) return null;
   const count = tags?.length ?? 0;
