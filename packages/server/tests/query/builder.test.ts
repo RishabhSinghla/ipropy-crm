@@ -80,7 +80,10 @@ describe('system fields', () => {
     expect(isSystemField('created_at')).toBe(true);
     expect(isSystemField('record_tags')).toBe(true);
     expect(isSystemField('favourite')).toBe(true);
-    expect(isSystemField('unread')).toBe(true);
+    // `unread` was one of these until 3 October 2026, when the owner removed
+    // the feature. A saved view still naming it would be refused here, which is
+    // why migration 184 deletes those views rather than only the seeded one.
+    expect(isSystemField('unread')).toBe(false);
     expect(isSystemField('owner_id')).toBe(true);
     expect(isSystemField('status')).toBe(false);
   });
@@ -243,7 +246,7 @@ describe('buildWhere — operator coverage', () => {
     expect(p.all()).toEqual([['vip', 'hot']]);
   });
 
-  it('filters shared tags, favourites and unread state without payload fields', async () => {
+  it('filters shared tags and favourites without payload fields', async () => {
     const tags = new SqlParams();
     const tagWhere = await buildWhere(leads(), { logic: 'AND', conditions: [{ field: 'record_tags', operator: 'has_all', value: ['vip', 'hot'] }] }, tags, ctx());
     expect(tagWhere.sql).toContain('ipy_tag_link');
@@ -253,12 +256,6 @@ describe('buildWhere — operator coverage', () => {
     const favouriteWhere = await buildWhere(leads(), { logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }, favourite, ctx());
     expect(favouriteWhere.sql).toContain('ipy_starred');
     expect(favourite.all()).toEqual(['u_1']);
-
-    const unread = new SqlParams();
-    const unreadWhere = await buildWhere(leads(), { logic: 'AND', conditions: [{ field: 'unread', operator: 'is_true' }] }, unread, ctx());
-    expect(unreadWhere.sql).toContain('ipy_module_seen');
-    expect(unreadWhere.sql).toContain('ipy_recent_view');
-    expect(unread.all()).toEqual(['u_1']);
   });
 
   it('AND/OR and nested groups combine with the right joiners', async () => {

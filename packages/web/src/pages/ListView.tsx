@@ -777,11 +777,6 @@ export default function ListView(): JSX.Element {
     if (moduleName && data?.rows) saveListNav(moduleName, data.rows.map((r) => r.id));
   }, [moduleName, data]);
 
-  // Attention is driven by the actual sales state, not a separate per-user
-  // "seen" inbox. A contact is never silently cleared just because someone
-  // visited the list.
-  const unseen = useMemo(() => new Set<string>(), []);
-
   if (!moduleName) return <div />;
 
   // `:module` is the catch-all for every single-segment URL, so it is what
@@ -1308,7 +1303,6 @@ export default function ListView(): JSX.Element {
             // chat, or Save & Next. It may not be on this page at all.
             openId={searchParams.get('open')}
             selected={selected}
-            attentionIds={unseen}
             onToggleSelect={(id, checked) => {
               setSelectedAll(false);
               setSelected((current) => {

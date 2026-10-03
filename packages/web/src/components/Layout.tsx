@@ -69,14 +69,6 @@ export default function Layout(): JSX.Element {
     staleTime: 300_000,
   });
 
-  const { data: unseenCounts } = useQuery({
-    queryKey: ['unseen-counts'],
-    queryFn: () => api.unseenCounts(),
-    enabled: Boolean(user),
-    refetchInterval: 20_000,
-    refetchOnWindowFocus: true,
-  });
-
   const { data: brand } = useQuery({
     queryKey: ['brand'],
     queryFn: () => api.brand(),
@@ -218,7 +210,6 @@ export default function Layout(): JSX.Element {
             drawer keeps the full navigation for anything that is not on it. */}
         <MobileNav
           modules={menuModules}
-          unseenCounts={unseenCounts}
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
         />
@@ -390,18 +381,6 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
   );
 }
 
-export function UnseenBadge({ count, module }: { count: number; module: string }): JSX.Element {
-  return (
-    <span
-      className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
-      title={module === 'leads'
-        ? `${count} lead${count === 1 ? '' : 's'} still in New status`
-        : `${count} new — not opened yet`}
-    >
-      {count > 99 ? '99+' : count}
-    </span>
-  );
-}
 
 /**
  * Settings, Admin panel and sign-out live here — "things about you
@@ -419,7 +398,7 @@ function UserMenu(): JSX.Element {
         to find out who was signed in was to open the menu.
 
         The designation is the user's **role** — the one the CRM already knows
-        and the one the menu's badge has always shown. `hidden sm:flex` on the
+        and the one the menu has always shown. `hidden sm:flex` on the
         words: on a phone the face alone is right, and the header has no room
         for two more lines.
       */
@@ -472,10 +451,9 @@ function UserMenu(): JSX.Element {
  * hiding mid-work needs Settings without a detour.
  */
 function MobileNav({
-  modules, unseenCounts, open, onClose,
+  modules, open, onClose,
 }: {
   modules: { name: string; label: string; icon: string }[];
-  unseenCounts?: Record<string, number>;
   open: boolean;
   onClose: () => void;
 }): JSX.Element {
@@ -512,7 +490,6 @@ function MobileNav({
                 to={`/${m.name}`}
                 icon={m.icon}
                 label={m.label}
-                badge={unseenCounts?.[m.name]}
               />
             ))}
             <DrawerLink to="/capture" icon="map-pin" label="Site visit" />
@@ -532,42 +509,40 @@ function MobileNav({
       {/* The bottom tab bar a thumb reaches: the five destinations this desk
           lives on, WhatsApp-style. The active tab is the brand colour and the
           rest are quiet, so the eye lands without reading. */}
-      <BottomTabs modules={modules} unseenCounts={unseenCounts} />
+      <BottomTabs modules={modules} />
     </>
   );
 }
 
 function DrawerLink({
-  to, icon, label, badge,
-}: { to: string; icon: string; label: string; badge?: number }): JSX.Element {
+  to, icon, label,
+}: { to: string; icon: string; label: string }): JSX.Element {
   return (
     <NavLink
       to={to}
       className={({ isActive }) => cn('nav-item', isActive && 'nav-item-active')}
-      aria-label={badge ? `${label} — ${badge} new` : label}
+      aria-label={label}
     >
       <span className="shrink-0"><ModuleIcon name={icon} /></span>
       <span className="flex-1 truncate">{label}</span>
-      {badge ? <UnseenBadge count={badge} module={to.slice(1)} /> : undefined}
     </NavLink>
   );
 }
 
 function BottomTabs({
-  modules, unseenCounts,
+  modules,
 }: {
   modules: { name: string; label: string; icon: string }[];
-  unseenCounts?: Record<string, number>;
 }): JSX.Element {
   const leads = modules.find((m) => m.name === 'leads');
   const properties = modules.find((m) => m.name === 'properties');
   const tabs = [
     { to: '/dashboard', icon: 'layout-dashboard', label: 'Dashboard' },
-    leads && { to: `/${leads.name}`, icon: leads.icon, label: leads.label, badge: unseenCounts?.[leads.name] },
-    properties && { to: `/${properties.name}`, icon: properties.icon, label: properties.label, badge: unseenCounts?.[properties.name] },
+    leads && { to: `/${leads.name}`, icon: leads.icon, label: leads.label },
+    properties && { to: `/${properties.name}`, icon: properties.icon, label: properties.label },
     { to: '/capture', icon: 'map-pin', label: 'Site visit' },
     { to: '/settings', icon: 'settings', label: 'You' },
-  ].filter(Boolean) as { to: string; icon: string; label: string; badge?: number }[];
+  ].filter(Boolean) as { to: string; icon: string; label: string }[];
 
   /*
     The bar measures itself and publishes the result as `--bottom-nav-h`.
@@ -613,10 +588,7 @@ function BottomTabs({
             isActive ? 'text-brand-600 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400',
           )}
         >
-          <span className="relative">
-            <ModuleIcon name={tab.icon} className="h-5 w-5" />
-            {tab.badge ? <span className="absolute -right-1.5 -top-1 h-1.5 w-1.5 rounded-full bg-brand-600" /> : undefined}
-          </span>
+          <ModuleIcon name={tab.icon} className="h-5 w-5" />
           <span className="w-full truncate text-center">{tab.label}</span>
         </NavLink>
       ))}
@@ -655,7 +627,16 @@ function BrandMark({ logoUrl, name }: { logoUrl: string | null; name: string }):
     Plain brand steps, never an opacity modifier: these resolve to a bare
     `var(--brand-…)`, so `ring-brand-600/40` would compile to nothing at all.
   */
-  const circle = 'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full ring-[3px] ring-brand-600 shadow-sm dark:ring-brand-400';
+  /*
+    **Smaller again, 3 October 2026:** *"decrease the size company logo avtar,
+    bcoz the circle overlap the padding."* A ring is drawn *outside* the box, so
+    a 36px circle with a 3px ring is 42px of header — taller than the row's own
+    padding allows, and it pressed against the edges. 32px with a 2px ring is
+    36px in all, which is what the circle used to occupy before the ring was
+    thickened earlier this evening. The ring keeps the dark brand step he asked
+    for; only its weight came back down.
+  */
+  const circle = 'flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-brand-600 shadow-sm dark:ring-brand-400';
   if (logoUrl && !failed) {
     return (
       <span className={`${circle} bg-white`} data-testid="brand-mark">

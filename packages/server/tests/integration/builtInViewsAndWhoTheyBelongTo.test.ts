@@ -69,7 +69,8 @@ describe('the built-in views', () => {
   it('are what the switcher opens with', async () => {
     const list = await views(adminToken);
     const builtIn = list.filter((v) => v.isSystem).map((v) => v.name).sort();
-    expect(builtIn).toEqual(['All Leads', 'Favourite Leads', 'My Leads', 'Unread Leads']);
+    // "Unread Leads" went on 3 October 2026, with the whole unread feature.
+    expect(builtIn).toEqual(['All Leads', 'Favourite Leads', 'My Leads']);
   });
 
   it('count what each one would actually list', async () => {
@@ -85,8 +86,8 @@ describe('the built-in views', () => {
     expect(res.status).toBe(200);
 
     const counted = (res.body as { name: string; count?: number }[])
-      .filter((v) => ['All Leads', 'My Leads', 'Unread Leads', 'Favourite Leads'].includes(v.name));
-    expect(counted).toHaveLength(4);
+      .filter((v) => ['All Leads', 'My Leads', 'Favourite Leads'].includes(v.name));
+    expect(counted).toHaveLength(3);
     for (const v of counted) {
       expect(typeof v.count, `${v.name} has no count`).toBe('number');
       expect(v.count).toBeGreaterThanOrEqual(0);
@@ -97,35 +98,14 @@ describe('the built-in views', () => {
     for (const v of counted) expect(v.count!).toBeLessThanOrEqual(all);
   });
 
-  it('filter Unread Leads to records this person has never opened', async () => {
-    /*
-      `unread` is a system filter field with no column behind it — it reads the
-      module watermark and the recently-viewed table. Opening a record has to
-      take it out of the list, which is the half a filter test on its own
-      cannot see.
-    */
-    const unread = (await views(adminToken)).find((v) => v.name === 'Unread Leads')!;
-    const listed = async (): Promise<{ total: number; firstId?: string }> => {
-      const res = await request(app)
-        .get(`/api/records/leads?view=${unread.id}&pageSize=1`)
-        .set('Authorization', `Bearer ${adminToken}`);
-      expect(res.status).toBe(200);
-      return { total: res.body.total as number, firstId: res.body.rows[0]?.id as string | undefined };
-    };
-
-    const before = await listed();
-    if (!before.firstId) return; // nothing unread for this user; the operator still ran
-
-    await request(app)
-      .get(`/api/records/leads/${before.firstId}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-
-    const after = await listed();
-    expect(after.total).toBe(before.total - 1);
-    expect(after.firstId).not.toBe(before.firstId);
-  });
-
+  /*
+    **The "Unread Leads" test went on 3 October 2026**, with the feature: the
+    owner asked for unread *"completely"* removed from every module. What it used
+    to prove — that opening a record took it out of that list — has nothing left
+    to be true about. Migration 184 deletes the view and tombstones it, and the
+    `unread` system filter field is gone from the query builder, so the two
+    assertions above are now the whole of what "the built-in views" means.
+  */
   it('cannot be deleted by anyone, administrator included', async () => {
     const all = (await views(adminToken)).find((v) => v.name === 'All Leads')!;
     const res = await request(app)

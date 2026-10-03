@@ -2004,3 +2004,74 @@ on `main` before any of this, which is worth writing down: a spec that names a
 control the owner has just removed fails for the right reason and still has to be
 pointed at where the promise went, or the next person reads a red run as a
 regression.
+
+### Six more, and unread is gone from the CRM
+
+Still 3 October 2026, later again. Four are adjustments; one is a new control;
+one removes a whole feature.
+
+* **Call moved again** — *"Move the call icon after record number in Middle
+  header pane."* It spent an hour on the completeness bar's row under the name
+  and is now inside the record-position group, immediately after the `3 / 22,988`.
+  **And it cost the record's name on a phone**: that group grew by one 32px
+  button, which was enough to start truncating the heading at 390px — measured
+  at 36px lost. The group takes its own row below `xl` now (`basis-full`), which
+  is what `flex-wrap` was already there for; the name is the one thing on this
+  header that has to be readable whole, so the controls yield the line rather
+  than squeezing it.
+* **A tag section in the Quick & Live Filters panel** — *"need Tag Filter in
+  quick Filter."* The cards on the top bar show the three most-used and choose
+  one; this is the whole list, as many at a time as you like. **A tag is not a
+  field**, so `TAGS_KEY` is recognised by `quickPickConditions` and turned into
+  the shared `record_tags has_any` condition — the same one the cards send.
+  Sent as a field of that name the request is refused, or worse matches nothing,
+  which on screen reads as the tick doing nothing.
+  **The master was already there.** *"Create a master also in Admin Quick
+  Filters"* — Admin → Quick Filters has existed since the panel did, storing
+  `ui.quick_filters` per module; the tag section simply joins it, so it can be
+  renamed, reordered, opened by default or switched off like every other
+  section. Nothing new was built for that half.
+* **The company circle is smaller again.** *"decrease the size company logo
+  avtar, bcoz the circle overlap the padding."* A ring is painted **outside**
+  the box, so the 36px circle with the 3px ring asked for an hour earlier
+  occupied 42px of a header whose padding does not allow it. 32px with a 2px
+  ring is 36px in all. The ring keeps its dark brand step; only its weight came
+  back down.
+* **More air between queue rows** — `py-2.5` to `py-4`. The padding is the gap:
+  each card draws the hairline under *itself*, so growing the rule's margin
+  would have moved the line rather than the breathing room. The inline-editor
+  stand-in took the same padding, or the row jumps when somebody double-clicks
+  a name.
+* **Unread is gone, everywhere** — *"remove unread list from all modules list
+  completely and also remove unread functionality from all records."*
+
+**What went, and the one thing that made it dangerous.** The list (`Unread
+Leads`, after `Unread Inventories` on 1 October), the badges in the drawer and
+the phone's bottom bar, `GET /api/unseen-counts`, `POST /:module/unseen`,
+`POST /:module/seen`, `core/entity/unseen.ts`, the amber "needs attention" dot
+on a queue row, and the `unread` **system filter field** in the query builder.
+
+That last one is why migration `184` deletes rows rather than only the seeded
+view: with the field gone, *any* saved view, dashboard tile or report still
+naming it would be refused the moment somebody opened it. So the migration
+tombstones and deletes every `Unread %` built-in on every module, then deletes
+anything hand-built whose filter JSON names the field, and the same inside
+`ipy_dashboard_widget` and `ipy_report`. A chart that refuses to load is harder
+for somebody to explain than one that is simply not there.
+
+**`ipy_module_seen` is deliberately not dropped.** Nothing reads it, and a
+migration here never destroys a table — if unread is ever wanted back it starts
+from the watermarks the team already has.
+
+**Three tests came out with it**, and that is the honest accounting rather than
+a loss: the built-in-views suite no longer expects a fourth view, the live-list
+suite no longer clears a highlight that cannot exist, and the query builder's
+`isSystemField` now asserts `unread` is **false** — which is exactly the
+assertion that would catch somebody reintroducing the field without the data
+behind it.
+
+**And a spec trap worth writing down, because it can only ever fail.** The new
+tag choice was located as `button[aria-pressed="false"]`, then clicked, then
+asserted to be pressed — so the moment it was ticked it stopped matching and
+`.first()` resolved to the *next* unticked tag, false for ever. A locator must
+not name the state the test is about to change.

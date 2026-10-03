@@ -253,10 +253,10 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 1,187 unit tests, no DB: 840 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 1,189 unit tests, no DB: 841 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers), 339 in `packages/web` (colour contrast, safe markdown, header-tab
+  serving headers), 340 in `packages/web` (colour contrast, safe markdown, header-tab
   arrangement, and the rich-text
   sanitiser that renders the imported Vtiger notes), and 8 in `packages/mcp` (tool-output
   formatting). The web suite runs on `node` except where a file asks for `jsdom` with a
@@ -1489,6 +1489,12 @@ the screen a rep lives in.
 > completeness bar is three quarters the width in red/amber/green by percentage;
 > the email circle moved into the menu bar's *More* and Call moved under the name
 > — see `SCREENS.md`, *Nine more, the same evening*.
+> **3 October 2026, later:** Call sits after the record number; the Quick & Live
+> Filters panel has a tag section (its master is Admin → Quick Filters, already
+> there); **unread is removed from the whole CRM** — the list on every module,
+> the badges, the endpoints and the `unread` filter field, with migration `184`
+> deleting every saved view, tile and report that named it — see `SCREENS.md`,
+> *Six more, and unread is gone from the CRM*.
 
 **Reports is folded into that page, on the same instruction** — *"merge this
 reports module into this whatsapp module only"*. It is the same `Reports`
@@ -3448,12 +3454,20 @@ per-process and not regenerated on boot.
 
 ---
 
-## "New since you last looked"
+## "New since you last looked" — removed, 3 October 2026
 
-`core/entity/unseen.ts`. A record is new for a user when it was created after that user's
-`ipy_module_seen` watermark **and** they have never opened it (`ipy_recent_view`). Both halves
-matter: no watermark means first login lights up every historical record; no open-check means a
-lead you already worked stays bold forever.
+**Gone on the owner's instruction:** *"remove unread list from all modules list completely and
+also remove unread functionality from all records."* `core/entity/unseen.ts` is deleted, along
+with the `Unread` lists, the navigation badges, `GET /api/unseen-counts`,
+`POST /:module/unseen`, `POST /:module/seen` and the `unread` **system filter field** in the
+query builder.
 
-Deliberately *not* part of `listRecords` — that engine is shared with exports, reports, widgets and
-the portal, none of which have a reader for something to be unread for.
+**Migration `184` is the half that matters.** With the field gone, any saved view, dashboard
+tile or report still naming it would be refused the moment somebody opened it — so the migration
+tombstones and deletes every `Unread %` built-in on every module, then deletes anything
+hand-built whose filter JSON names `unread`, in `ipy_view`, `ipy_dashboard_widget` and
+`ipy_report`.
+
+**`ipy_module_seen` is still there**, with everybody's watermarks. Nothing reads it, and no
+migration in this repo destroys a table: a rebuild later starts from data. `ipy_recent_view`
+stays in active use — it is what "recently viewed" reads, which is a different feature.

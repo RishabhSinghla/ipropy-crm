@@ -13,7 +13,6 @@ import { Select } from './ui';
 const SYSTEM_FIELDS: FieldMeta[] = ([
   { name: 'record_tags', label: 'Tags', uitype: 'tags' },
   { name: 'favourite', label: 'Favourite', uitype: 'boolean' },
-  { name: 'unread', label: 'Unread', uitype: 'boolean' },
   { name: 'owner_id', label: 'Assigned To', uitype: 'owner' },
   { name: 'created_at', label: 'Created At', uitype: 'datetime' },
   { name: 'updated_at', label: 'Modified At', uitype: 'datetime' },

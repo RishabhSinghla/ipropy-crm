@@ -33,12 +33,12 @@ import { Spinner } from '../../components/ui';
 const SETTING = 'ui.quick_filters';
 
 const KIND_LABEL: Record<QuickFilterSection['kind'], string> = {
-  agent: 'People', list: 'Saved lists', stage: 'Pipeline', calls: 'Last call', task: 'Follow-up date',
+  agent: 'People', list: 'Saved lists', tags: 'Tags', stage: 'Pipeline', calls: 'Last call', task: 'Follow-up date',
   values: 'Tick list', range: 'Min–max slider', date: 'Date presets',
 };
 
 /** Kinds that show a list of values, and so have a "top N" before their search. */
-const LISTS = new Set<QuickFilterSection['kind']>(['agent', 'list', 'stage', 'calls', 'values']);
+const LISTS = new Set<QuickFilterSection['kind']>(['agent', 'list', 'tags', 'stage', 'calls', 'values']);
 
 export default function QuickFiltersAdmin(): JSX.Element {
   const { modules, refreshUser } = useApp();

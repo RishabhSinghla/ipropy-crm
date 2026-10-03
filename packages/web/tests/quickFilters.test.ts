@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta } from '@ipropy/shared';
 import {
-  arrangeQuickSections, defaultQuickSections, localDayBounds, pickIsActive, quickPickConditions, topValues,
+  TAGS_KEY, arrangeQuickSections, defaultQuickSections, localDayBounds, pickIsActive, quickPickConditions, topValues,
 } from '../src/lib/quickFilters';
 
 function field(name: string, uitype: string, extra: Partial<FieldMeta> = {}): FieldMeta {
@@ -26,7 +26,8 @@ describe('the panel a module gets when nobody has arranged it', () => {
   const keys = sections.map((section) => section.key);
 
   it('opens with the CRM’s own questions, then created and updated', () => {
-    expect(keys.slice(0, 7)).toEqual(['agent', 'list', 'stage', 'calls', 'task', 'created_at', 'updated_at']);
+    // Tags arrived on 3 October 2026, after the saved list and before the stage.
+    expect(keys.slice(0, 8)).toEqual(['agent', 'list', 'tags', 'stage', 'calls', 'task', 'created_at', 'updated_at']);
   });
 
   it('offers money and sizes as sliders before lists', () => {
@@ -47,6 +48,8 @@ describe('the panel a module gets when nobody has arranged it', () => {
     expect(bare).not.toContain('stage');
     expect(bare).not.toContain('task');
     expect(bare).toContain('city');
+    // Tags need nothing from the module: every module has them.
+    expect(bare).toContain('tags');
   });
 });
 
@@ -89,6 +92,19 @@ describe('what a choice turns into', () => {
     }, byName);
     expect(conditions).toContainEqual({ field: 'lost_reason', operator: 'in', value: ['Budget'] });
     expect(conditions).toContainEqual({ field: 'configuration', operator: 'has_any', value: ['3 BHK', '4 BHK'] });
+  });
+
+  it('ticked tags are record_tags, never a field of that name', () => {
+    /*
+      A tag is not a field on the module. Sent as one the request is refused —
+      or worse, silently matches nothing — so the tag section's key has to be
+      recognised and turned into the shared `record_tags` condition, the same
+      one the tag cards on the top bar send.
+    */
+    expect(quickPickConditions({ [TAGS_KEY]: { kind: 'values', values: ['hot', 'for sale'] } }, byName))
+      .toEqual([{ field: 'record_tags', operator: 'has_any', value: ['hot', 'for sale'] }]);
+    // Nothing ticked asks nothing.
+    expect(quickPickConditions({ [TAGS_KEY]: { kind: 'values', values: [] } }, byName)).toEqual([]);
   });
 
   it('a slider gives a floor, a ceiling, or both', () => {

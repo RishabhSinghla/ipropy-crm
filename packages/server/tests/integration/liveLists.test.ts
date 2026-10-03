@@ -31,23 +31,12 @@ beforeAll(async () => {
 });
 
 describe('live list attention and favourites', () => {
-  it('clears a lead\'s highlight the moment it is opened, like an unread email', async () => {
-    const marker = randomUUID().slice(0, 8);
-    const created = await auth('post', '/api/records/leads').send({
-      full_name: `Pipeline New ${marker}`,
-      mobile: `98${Math.floor(10_000_000 + Math.random() * 89_999_999)}`,
-      status: 'New',
-    }).expect(201);
-    const id = created.body.id as string;
-
-    const attention = () => auth('post', '/api/records/leads/unseen').send({ ids: [id] });
-    expect((await attention().expect(200)).body.unseen).toEqual([id]);
-
-    // Opening it is what clears the highlight — status is irrelevant now.
-    await auth('get', `/api/records/leads/${id}`).expect(200);
-    expect((await attention().expect(200)).body.unseen).toEqual([]);
-  });
-
+  /*
+    **The unread highlight went on 3 October 2026** — the owner: *"remove unread
+    functionality from all records."* `POST /:module/unseen` and the amber dot it
+    fed are gone, so there is nothing here to clear. Favourites, below, are the
+    other half of what this suite was about and are untouched.
+  */
   it('returns per-user favourite state with every list row', async () => {
     const marker = `Gold favourite ${randomUUID()}`;
     const created = await auth('post', '/api/records/properties').send({ full_name: marker, mobile: `98${Math.floor(10_000_000 + Math.random() * 89_999_999)}` }).expect(201);

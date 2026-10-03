@@ -286,11 +286,11 @@ export interface UiSettings {
  * any field, drawn by its type: a list of its values, a min–max slider, or a
  * date with presets.
  */
-export type QuickFilterKind = 'agent' | 'list' | 'stage' | 'calls' | 'task' | 'values' | 'range' | 'date';
+export type QuickFilterKind = 'agent' | 'list' | 'tags' | 'stage' | 'calls' | 'task' | 'values' | 'range' | 'date';
 
 /** One section of the Quick & Live Filters panel. */
 export interface QuickFilterSection {
-  /** `agent`, `list`, `stage`, `calls`, `task` — or the field's name. */
+  /** `agent`, `list`, `tags`, `stage`, `calls`, `task` — or the field's name. */
   key: string;
   kind: QuickFilterKind;
   /** The admin's own heading; the field's label when absent. */

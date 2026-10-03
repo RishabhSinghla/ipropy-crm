@@ -176,12 +176,12 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
  *    place, and sitting between the name and when it was last touched.
  */
 export function IpropyWorkspace({
-  module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
+  module, rows, selected, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
   queueTools, queueFooter, filterBar, onShowing,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
-  selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
+  selected: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
   /** Tick every row on this page, for the bulk-edit bar the list already has. */
   onToggleAll?: (checked: boolean) => void;
   /** Absent when this profile may not delete — the button is not offered at all. */
@@ -792,7 +792,6 @@ export function IpropyWorkspace({
               row={row}
               active={row.id === active?.id}
               checked={selected.has(row.id)}
-              attention={attentionIds.has(row.id)}
               card={cardFields}
               queueFields={queueFields}
               moduleName={module.name}
@@ -936,25 +935,30 @@ export function IpropyWorkspace({
               reads as a proportion at a glance.
             */}
             {/*
-              The bar and the Call button share the line under the name —
-              *"middle header call icon move to after the full Name and bar and
-              aligned also from name and Bar"* (3 October 2026). Both start at
-              the name's own left edge, so the three read as one column.
+              The bar under the name, three quarters of the width it was — *"the
+              bar of profile strength long please make it 75% of current size"*
+              (3 October 2026).
 
-              **Three quarters of the width it was** — *"the bar of profile
-              strength long please make it 75% of current size"*, the same
-              message.
+              **Call is not here any more.** It shared this line for an hour and
+              he moved it again the same evening: *"Move the call icon after
+              record number in Middle header pane"* — so it now sits beside the
+              queue position on the right, which is where that number is.
             */}
-            <span className="flex min-w-0 items-center gap-2">
-              <StrengthBar
-                percent={recordStrength(module.fields, active.values).percent}
-                className="max-w-[10.5rem] flex-1"
-              />
-              {phoneValue && <span className="shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
-            </span>
+            <StrengthBar
+              percent={recordStrength(module.fields, active.values).percent}
+              className="max-w-[10.5rem]"
+            />
           </span>
 
-          <span className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5" data-testid="split-hero-actions-status">
+          {/*
+            **Its own row on a phone** (`basis-full` below `xl`). Call joined this
+            group on 3 October 2026 and the group grew by a button, which was
+            enough to start cutting the record's name on a 390px screen —
+            measured at 36px lost. The name is the one thing on this header that
+            has to be readable whole, so the group yields the line rather than
+            squeezing it, which is what `flex-wrap` was already here for.
+          */}
+          <span className="ml-auto flex shrink-0 basis-full flex-wrap items-center justify-end gap-1.5 xl:basis-auto" data-testid="split-hero-actions-status">
             {/*
               **The module's name left this header on 3 October 2026** —
               *"Remove inventory/Lead labels/text from this middle header."*
@@ -973,6 +977,11 @@ export function IpropyWorkspace({
               <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
+              {/* *"Move the call icon after record number in Middle header
+                  pane"* (3 October 2026) — immediately after the `3 / 22,988`,
+                  inside the same group, so the two cannot drift apart when the
+                  header wraps on a phone. */}
+              {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
             </span>
               {/*
                 Search within this record. **The icon left this bar on
@@ -1336,13 +1345,12 @@ export function IpropyWorkspace({
  * HTML, and a screen reader cannot reach the inner one.
  */
 function QueueCard({
-  row, active, checked, attention, card, queueFields,
+  row, active, checked, card, queueFields,
   moduleName, nameField, assignedField, agentPhotos, canEdit, onEdited, onSelect, onToggle,
 }: {
   row: RecordEnvelope;
   active: boolean;
   checked: boolean;
-  attention: boolean;
   card: CardFields;
   queueFields?: FieldMeta[];
   moduleName: string;
@@ -1413,7 +1421,7 @@ function QueueCard({
 
   if (editing && editField) {
     return (
-      <div ref={self} data-testid="queue-card" className="group relative border-b border-[var(--border)] px-3 py-2.5">
+      <div ref={self} data-testid="queue-card" className="group relative border-b border-[var(--border)] px-3 py-4">
         <EditableField
           module={moduleName}
           recordId={row.id}
@@ -1455,7 +1463,11 @@ function QueueCard({
         onClick={onSelect}
         aria-current={active ? 'true' : undefined}
         className={cn(
-          'relative block w-full cursor-pointer py-2.5 pl-[3.75rem] pr-3 text-left transition-colors',
+          /* **More air between records** — *"Give more space in between rows of
+             record in the left record pane"* (3 October 2026). The padding is
+             the gap: each card draws the hairline under itself, so growing the
+             rule's margin would move the line rather than the breathing room. */
+          'relative block w-full cursor-pointer py-4 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1530,7 +1542,6 @@ function QueueCard({
           </span>
           {/* No contact-type chip beside the name since 2 October 2026 —
               *"I don't need to see it there"*. It is in the fields pane. */}
-          {attention && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Needs attention" />}
           {/* How stale it is, top right — the prototype's "6h ago". */}
           {row.updatedAt && (
             <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[11px] font-medium', active ? 'text-brand-700 dark:text-brand-100' : 'text-muted')}>

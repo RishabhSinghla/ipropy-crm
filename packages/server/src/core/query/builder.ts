@@ -122,7 +122,6 @@ export const SYSTEM_FIELDS: Record<string, SystemField> = {
   // same filter language as the list screen.
   record_tags: { uitype: 'tags', label: 'Tags', column: 'record_tags' },
   favourite: { uitype: 'boolean', label: 'Favourite', column: 'favourite' },
-  unread: { uitype: 'boolean', label: 'Unread', column: 'unread' },
   /*
     The last call, read from the calls themselves.
 
@@ -281,13 +280,12 @@ async function buildCondition(
   joins: Map<string, string>,
 ): Promise<string> {
   /*
-   * Tags, favourites and unread are per-record/per-user state, not metadata
+   * Tags and favourites are per-record/per-user state, not metadata
    * fields. Keep them here (rather than pretending they are payload columns)
    * so they remain safe, composable members of every FilterGroup.
    */
   if (cond.field === 'record_tags') return buildRecordTagsCondition(cond, params);
   if (cond.field === 'favourite') return buildFavouriteCondition(cond, params, ctx);
-  if (cond.field === 'unread') return buildUnreadCondition(cond, params, ctx);
 
   const path = cond.path ?? cond.field;
   const resolved = await resolveFieldPath(module, path, joins);
@@ -431,14 +429,6 @@ function buildFavouriteCondition(cond: FilterCondition, params: SqlParams, ctx: 
   if (cond.operator === 'is_true') return exists;
   if (cond.operator === 'is_false') return `NOT ${exists}`;
   throw new BadRequestError(`Unsupported favourite filter operator '${cond.operator}'`);
-}
-
-function buildUnreadCondition(cond: FilterCondition, params: SqlParams, ctx: BuildContext): string {
-  const user = params.add(ctx.userId);
-  const unread = `(${RECORD_ALIAS}.created_at > COALESCE((SELECT ms.seen_at FROM ipy_module_seen ms WHERE ms.user_id = ${user}::uuid AND ms.module_name = ${RECORD_ALIAS}.module_name), (SELECT u.created_at FROM ipy_user u WHERE u.id = ${user}::uuid)) AND NOT EXISTS (SELECT 1 FROM ipy_recent_view rv WHERE rv.user_id = ${user}::uuid AND rv.record_id = ${RECORD_ALIAS}.id))`;
-  if (cond.operator === 'is_true') return unread;
-  if (cond.operator === 'is_false') return `NOT ${unread}`;
-  throw new BadRequestError(`Unsupported unread filter operator '${cond.operator}'`);
 }
 
 function dateRange(expr: string, startSql: string, intervalSql: string, _p: SqlParams, _ctx: BuildContext): string {

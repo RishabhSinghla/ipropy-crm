@@ -33,7 +33,6 @@ import { recordCounts } from '../../core/entity/recordCounts.js';
 import {
   decideAccessRequest, listAccessRequests, requestAccess, requestsForRecord,
 } from '../../core/entity/accessRequests.js';
-import { unseenCounts } from '../../core/entity/unseen.js';
 import {
   deletePushSubscription, ensureVapidKeys, notify, savePushSubscription,
 } from '../../core/notifications/index.js';
@@ -83,14 +82,6 @@ miscRouter.get('/recent', asyncHandler(async (req, res) => {
     [getUser(req).id],
   );
   res.json(rows.rows);
-}));
-
-/**
- * Per-module counts of records this user has not opened yet — the sidebar
- * badges. Scoped, so the number only counts records the user can actually open.
- */
-miscRouter.get('/unseen-counts', asyncHandler(async (req, res) => {
-  res.json(await unseenCounts(getScope(req)));
 }));
 
 /**

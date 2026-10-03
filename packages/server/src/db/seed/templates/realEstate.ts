@@ -305,19 +305,13 @@ const MODULES: ModuleDef[] = [
         filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] },
       },
       /*
-        The badge in the header, as a list you can open.
-
-        "Leads 99+" says how many arrived that nobody has looked at, and until
-        now there was no way to *see* them — you knew the number and had to go
-        hunting. `unread` is a system filter field (see the query builder), and
-        it is the same definition the badge uses in `core/entity/unseen.ts`: it
-        arrived after you last opened the module, and you have never opened it.
+        **No "Unread Leads" since 3 October 2026** — the owner: *"remove unread
+        list from all modules list completely and also remove unread
+        functionality from all records."* "Unread Inventories" went on 1 October
+        (migration 182) and this is the other half. The seed only ever creates
+        views, so migration 184 deletes the live row and tombstones it; without
+        that tombstone the next cold start would make it again.
       */
-      {
-        name: 'Unread Leads',
-        columns: [],
-        filter: { logic: 'AND', conditions: [{ field: 'unread', operator: 'is_true' }] },
-      },
       /*
         The star, as a list.
 
@@ -574,7 +568,7 @@ const MODULES: ModuleDef[] = [
         filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] },
       },
       // No "Unread Inventories" since 1 October 2026 — the owner asked for it
-      // gone (migration 182). Leads keeps its unread list.
+      // gone (migration 182), and Leads lost its own on 3 October.
       // And the starred ones, same as Leads above.
       {
         name: 'Favourite Inventories',

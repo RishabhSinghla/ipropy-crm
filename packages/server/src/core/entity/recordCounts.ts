@@ -26,8 +26,8 @@ export async function recordCounts(ctx: ScopeContext, conn: Tx = db): Promise<Re
     const clauses = [`r.module_id = ${moduleParam}::uuid`, 'r.is_deleted = false'];
 
     // `recordScopeSql` writes its predicates against the `r` alias, which is
-    // why the alias here has to be `r` — the same contract `unseenCounts` and
-    // the analytics queries hold to.
+    // why the alias here has to be `r` — the same contract the analytics
+    // queries hold to.
     const scope = await recordScopeSql(ctx, module.name, params);
     if (scope) clauses.push(scope);
 

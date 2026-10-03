@@ -100,26 +100,13 @@ for (const module of MODULES) {
     }
   });
 
-  // 9 — *"call icon move to after the full Name and bar and aligned also from name and Bar"*
-  test(`${module}: Call sits under the name, level with the bar`, async ({ page }) => {
-    await openFirstRecord(page, module);
-    const header = page.getByTestId('split-hero-layout');
-    const call = header.getByRole('button', { name: /^Call / }).first();
-    if (!(await call.count())) test.skip(true, 'the first record has no number');
-
-    const name = header.getByRole('heading').first();
-    const bar = header.getByRole('img', { name: /Record \d+% complete/ }).first();
-    const [nameBox, barBox, callBox] = await Promise.all([name.boundingBox(), bar.boundingBox(), call.boundingBox()]);
-
-    // Below the name…
-    expect(callBox!.y, 'Call should sit under the name, not beside it').toBeGreaterThan(nameBox!.y + 2);
-    // …on the bar's own row, and after it.
-    expect(Math.abs((callBox!.y + callBox!.height / 2) - (barBox!.y + barBox!.height / 2)))
-      .toBeLessThan(16);
-    expect(callBox!.x, 'Call should come after the bar').toBeGreaterThan(barBox!.x);
-    // And all three start from the same left edge, which is what "aligned" means.
-    expect(Math.abs(barBox!.x - nameBox!.x), 'the bar should start where the name does').toBeLessThan(6);
-  });
+  /*
+    **Call moved again the same evening** — *"Move the call icon after record
+    number in Middle header pane"* — so the promise this test held (under the
+    name, level with the bar) is no longer the one in force.
+    `ownerSixOctober3.spec.ts` measures where it went. The bar's own width and
+    its colours are still proved above; only Call's position moved.
+  */
 
   // 8 — *"if profile Picture available, the the profile pic will be shown on Agent/User Avtar"*
   test(`${module}: the agent on a queue row carries a face`, async ({ page }) => {
@@ -153,13 +140,13 @@ test('the company circle is a bold dark ring, and a logo is fitted rather than c
     };
   });
   /*
-    The ring is a `box-shadow`, which is how Tailwind draws `ring-*`. Measured
-    as "three pixels of something that is not nearly-white": the brand colour is
-    an admin's to change, so the hue cannot be asserted — what was wrong was a
-    1px hairline in the palest step there is.
+    The ring is a `box-shadow`, which is how Tailwind draws `ring-*`. Asserted as
+    "there is one", not as a width: it went to 3px when he asked for bold, and
+    back to 2px an hour later when the thicker ring made the circle overlap the
+    header's padding — `ownerSixOctober3.spec.ts` is what measures that it fits.
+    The hue is never asserted: the brand colour is an admin's to change.
   */
   expect(ring.shadow, 'the circle should carry a ring at all').not.toBe('none');
-  expect(ring.shadow).toContain('3px');
   // A logo, when there is one, is shown whole rather than cropped to its middle.
   if (ring.fit) expect(ring.fit).toBe('contain');
 });

@@ -23,12 +23,12 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { formatIndianPrice, type FieldMeta, type FilterGroup, type ModuleMeta, type QuickFilterSection } from '@ipropy/shared';
 import {
   CalendarDays, Check, ChevronDown, Clock3, Filter, Hash, ListFilter, PhoneOutgoing,
-  Search, SlidersHorizontal, UserRound, X,
+  Search, SlidersHorizontal, Tag, UserRound, X,
 } from 'lucide-react';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { api } from '../lib/api';
 import {
-  DATE_PRESETS, EMPTY_PICK, countActiveQuickFilters, pickIsActive, quickPickConditions, sectionLabel, parseTypedAmount, sliderStep, topValues,
+  DATE_PRESETS, EMPTY_PICK, TAGS_KEY, countActiveQuickFilters, pickIsActive, quickPickConditions, sectionLabel, parseTypedAmount, sliderStep, topValues,
   type DatePreset, type QuickPick, type QuickPicks,
 } from '../lib/quickFilters';
 import { cn } from '../lib/utils';
@@ -239,6 +239,8 @@ function SectionFor({ section, title, props, fields }: {
           />
         </FoldingState>
       );
+    case 'tags':
+      return <TagsSection section={section} title={title} top={top} module={props.module.name} props={props} />;
     case 'stage':
       return props.stageField ? (
         <FoldingState section={section} title={title} icon={<span className="h-2.5 w-2.5 rounded-full bg-brand-500" />} active={props.stages.length}>
@@ -505,6 +507,53 @@ function ValuesSection({ section, title, module, field, top, props }: {
   return (
     <Folding icon={<ListFilter className="h-3.5 w-3.5" />} title={title} active={ticked.length} open={open} onToggle={() => setOpen((value) => !value)}>
       <ChoiceList options={options} ticked={ticked} top={top} loading={isLoading && open} onTick={tick} always={notFilled} />
+    </Folding>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/* Tags                                                                      */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * The module's own tags, ticked as many as you like.
+ *
+ * **3 October 2026, the owner:** *"need Tag Filter in quick Filter."* The cards
+ * on the top bar show the three most-used and choose one; this is the whole
+ * list, and more than one at a time.
+ *
+ * Two things it does not do, both deliberate. It does not name a tag — the list
+ * is whatever `GET /api/tags?module=` answers, which is already narrowed to the
+ * tags this module is offered. And the count is that endpoint's own
+ * `usage_count`, the same number the cards and the list picker print, rather
+ * than a second count of its own that could disagree with them.
+ */
+function TagsSection({ section, title, top, module, props }: {
+  section: QuickFilterSection; title: string; top: number; module: string; props: QuickFilterPanelProps;
+}): JSX.Element {
+  const pick = props.picks[TAGS_KEY];
+  const ticked = pick?.kind === 'values' ? pick.values : [];
+  const [open, setOpen] = useState(Boolean(section.open) || ticked.length > 0);
+  const { data: tags, isLoading } = useQuery({
+    queryKey: ['tags', module],
+    queryFn: () => api.tags(module),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const options: Option[] = (tags ?? [])
+    .map((tag) => ({ value: tag.name, label: tag.name, color: tag.color, count: tag.usage_count }))
+    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
+  const tick = (value: string): void => {
+    const next = ticked.includes(value) ? ticked.filter((item) => item !== value) : [...ticked, value];
+    props.onPick(TAGS_KEY, next.length ? { kind: 'values', values: next } : null);
+  };
+  return (
+    <Folding icon={<Tag className="h-3.5 w-3.5" />} title={title} active={ticked.length} open={open} onToggle={() => setOpen((value) => !value)}>
+      {/* Named so a spec can address "the tag choices" rather than "the second
+          button in the panel", which is what it had to guess at first. */}
+      <span data-testid="quick-filter-tags">
+        <ChoiceList options={options} ticked={ticked} top={top} loading={isLoading && open} onTick={tick} />
+      </span>
     </Folding>
   );
 }

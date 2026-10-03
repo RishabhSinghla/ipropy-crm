@@ -1264,10 +1264,6 @@ export const api = {
     post<{ ok: true }>('/api/push/app-token', data),
 
   // --- "new since you last looked" ----------------------------------------
-  unseen: (module: string, ids: string[]) =>
-    post<{ unseen: string[] }>(`/api/records/${module}/unseen`, { ids }),
-  markModuleSeen: (module: string) => post(`/api/records/${module}/seen`, {}),
-  unseenCounts: () => get<Record<string, number>>('/api/unseen-counts'),
   /** How many records each module holds, as this user may see them — the left toolbar's counts. */
   recordCounts: () => get<Record<string, number>>('/api/record-counts'),
 

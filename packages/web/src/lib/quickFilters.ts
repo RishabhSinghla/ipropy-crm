@@ -45,6 +45,15 @@ export type QuickPick =
 /** Field name → what is chosen in it. */
 export type QuickPicks = Record<string, QuickPick>;
 
+/**
+ * The tag section's key.
+ *
+ * Named here rather than typed as `'tags'` in four files: it is both a section
+ * key and the thing `quickPickConditions` recognises to write `record_tags`
+ * instead of a field, and those two must never drift apart.
+ */
+export const TAGS_KEY = 'tags';
+
 /** The record's own dates: every module has them, and neither is a field row. */
 export const SYSTEM_DATES: Array<{ key: string; label: string }> = [
   { key: 'created_at', label: 'Created date' },
@@ -87,6 +96,14 @@ export function defaultQuickSections(fields: FieldMeta[], covered: CoveredFields
   const fixed: QuickFilterSection[] = [
     ...(covered.ownerField ? [{ key: 'agent', kind: 'agent' as const }] : []),
     { key: 'list', kind: 'list' },
+    /*
+      **Tags, 3 October 2026:** *"need Tag Filter in quick Filter."* Every
+      module has tags, so this needs nothing from `covered` — and it is a
+      **fixed** section rather than a field, because a tag is not a field: it
+      reaches the server as `record_tags`, which is why `quickPickConditions`
+      gives this one key its own line.
+    */
+    { key: TAGS_KEY, kind: 'tags' },
     ...(covered.stageField ? [{ key: 'stage', kind: 'stage' as const }] : []),
     { key: 'calls', kind: 'calls' },
     ...(covered.taskField ? [{ key: 'task', kind: 'task' as const }] : []),
@@ -131,6 +148,7 @@ export function sectionLabel(section: QuickFilterSection, fields: Map<string, Fi
     case 'stage': return `${stageLabel ?? 'Status'} wise`;
     case 'calls': return 'Call log wise';
     case 'task': return 'Task wise';
+    case TAGS_KEY: return 'Tag wise';
     default: break;
   }
   const system = SYSTEM_DATES.find((date) => date.key === section.key);
@@ -196,6 +214,16 @@ export function quickPickConditions(picks: QuickPicks, fields: Map<string, Field
   for (const [name, pick] of Object.entries(picks)) {
     if (!pickIsActive(pick)) continue;
     const field = fields.get(name);
+    /*
+      A tag is not a field on the module, so it cannot be asked for as one: it
+      reaches the server as `record_tags` with `has_any`, the same condition the
+      tag cards on the top bar send. Sent as a field name the request is refused
+      — or worse, silently matches nothing.
+    */
+    if (name === TAGS_KEY && pick.kind === 'values') {
+      conditions.push({ field: 'record_tags', operator: 'has_any', value: pick.values });
+      continue;
+    }
     if (pick.kind === 'values') {
       const node = valueConditions(name, pick.values, field);
       if (node) conditions.push(node);
