@@ -923,9 +923,6 @@ export function IpropyWorkspace({
               three characters of the one thing that has to be readable is the
               fault this header has already met once.
             */}
-            {(active.tags?.length ?? 0) > 0 && (
-              <TagChips module={module.name} tags={active.tags} className="shrink-0 overflow-hidden" />
-            )}
             </span>
             {/*
               How complete the record is, under the name — *"Remove and Change
@@ -967,6 +964,9 @@ export function IpropyWorkspace({
               front of you is not somewhere you arrive by accident.
             */}
             {/* Where this record sits in the queue, and a step either way. */}
+            {(active.tags?.length ?? 0) > 0 && (
+              <TagChips module={module.name} tags={active.tags} className="flex shrink-0 items-center justify-center overflow-hidden" />
+            )}
             <span className="mr-1 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-slate-500" aria-label="Record navigation">
               <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -1556,7 +1556,7 @@ function QueueCard({
         {/* 2. Which unit, cut short with "…" rather than wrapped — and not
             drawn at all when there is nothing to say, rather than a dash. */}
         {description && <span className={cn(
-          'mt-0.5 block min-w-0 truncate text-xs',
+          'mt-2 block min-w-0 truncate text-xs',
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
@@ -1570,7 +1570,7 @@ function QueueCard({
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        {(price || area || agent) && <span className="mt-0.5 flex items-center gap-2 text-xs">
+        {(price || area || agent) && <span className="mt-2 flex items-center gap-2 text-xs">
           {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.

@@ -126,19 +126,9 @@ export default function Layout(): JSX.Element {
 
           <Link to="/dashboard" className="flex shrink-0 items-center gap-2.5 overflow-hidden" aria-label={brand?.orgName ?? 'iPropy'}>
             <BrandMark logoUrl={brand?.logoUrl ?? null} name={brand?.orgName ?? 'iPropy'} />
-            {/*
-              **The name is printed only when there is no logo.** A company's
-              logo almost always *is* its name written out, so the two side by
-              side said it twice and between them took a third of the bar — the
-              other half of *"Poor Alignment & Size adjustment"* (4 October
-              2026). The `aria-label` on this link still carries the name, so a
-              screen reader says it either way.
-            */}
-            {!brand?.logoUrl && (
-              <span className="hidden truncate text-base font-semibold leading-tight tracking-tight sm:block">
+              <span className="max-w-[10rem] truncate text-base font-semibold leading-tight tracking-tight">
                 {brand?.orgName ?? 'iPropy'}
               </span>
-            )}
           </Link>
 
           {/*
@@ -647,16 +637,14 @@ function BrandMark({ logoUrl, name }: { logoUrl: string | null; name: string }):
   */
   if (logoUrl && !failed) {
     return (
-      <span className="flex h-9 shrink-0 items-center" data-testid="brand-mark">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-brand-700 bg-white p-0.5" data-testid="brand-mark">
         {/* A CRM-hosted logo is permission-checked, and an <img> cannot send
             the session header — so the token rides in the query string.
-            `h-full w-auto` is what keeps its own proportions: a width this code
-            picked would squash somebody's logo on the one screen they look at
-            most. */}
+            `object-contain` preserves the full logo inside the ring. */}
         <img
           src={authedFileUrl(logoUrl)}
           alt=""
-          className="h-full w-auto max-w-[8rem] object-contain object-left sm:max-w-[11rem]"
+          className="h-full w-full object-contain"
           onError={() => setFailed(true)}
         />
       </span>
@@ -664,7 +652,7 @@ function BrandMark({ logoUrl, name }: { logoUrl: string | null; name: string }):
   }
   return (
     <span
-      className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white shadow-sm"
+      className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-brand-700 bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white shadow-sm"
       data-testid="brand-mark"
       aria-hidden
     >
@@ -994,7 +982,7 @@ function GlobalSearch(): JSX.Element {
   const showRecent = open && query.trim().length < 2 && recent.length > 0;
 
   return (
-    <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-auto lg:max-w-xs xl:max-w-sm" ref={ref}>
+    <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-[32rem] lg:max-w-[32rem] lg:min-w-0 lg:shrink xl:w-[40rem] xl:max-w-[40rem]" ref={ref}>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         ref={inputRef}
