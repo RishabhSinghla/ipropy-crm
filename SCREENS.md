@@ -2261,3 +2261,16 @@ not the whole module. New (created today) uses the same scope. Empty queues
 keep the split workspace and controls, with a no-matches message and reset.
 Call, Star and Tag are plain header icons, in that order. Star and Tag no
 longer duplicate actions under More.
+# 4 October evening: search and loading
+
+Search options has a compact, metadata-driven two-column form (agent, locality,
+stage, contact type, tasks, created date, tags and price range), plus the full
+filter builder without its large empty-state box. Search results retain two
+lines: name/mobile/agent/update on the first, price/house/accommodation/portion/
+category/location on the second. Hidden fields and phone masking still apply.
+Selected tag chips are solid; a tagged record's header Tag is dark blue.
+Email and AI summary are plain header icons, not More actions; record-search
+has left More. Dock arrows are removed; the main hamburger still folds it.
+Favourites highlights from the parsed filter, including URLs with view/page
+parameters. Lists wait for view hydration and retain search handoff state.
+Display names are batched once per page, and view counts no longer load rows.

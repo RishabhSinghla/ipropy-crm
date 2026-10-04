@@ -28,13 +28,14 @@ const SYSTEM_FIELDS: FieldMeta[] = ([
 }));
 
 export function FilterBuilder({
-  module, value, onChange, nested = false,
+  module, value, onChange, nested = false, compact = false,
 }: {
   module: ModuleMeta;
   value: FilterGroup;
   onChange: (filter: FilterGroup) => void;
   /** True for a group inside another group — see the panel below. */
   nested?: boolean;
+  compact?: boolean;
 }): JSX.Element {
   /*
     One entry per idea, in alphabetical order.
@@ -134,7 +135,7 @@ export function FilterBuilder({
         or which of the two an ordinary person wants. Ninety-nine times out of a
         hundred the answer is one condition.
       */}
-      {!value.conditions.length && !nested && (
+      {!value.conditions.length && !nested && !compact && (
         <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center dark:border-slate-700">
           <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
             No filters — showing every {module.singularLabel.toLowerCase()}
@@ -186,7 +187,7 @@ export function FilterBuilder({
       */}
       {/* `nested` too: a group is created empty, and hiding its own Add button
           until it has something in it leaves a bracket nothing can go into. */}
-      {(Boolean(value.conditions.length) || nested) && (
+      {(Boolean(value.conditions.length) || nested || compact) && (
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
           <button type="button" onClick={addCondition} className="btn-secondary btn-sm">
             <Plus className="h-3 w-3" /> Add filter

@@ -113,7 +113,8 @@ test('writing to them is in More, only when there is an address', async ({ page 
     .getByRole('button', { name: `Email ${made.email}` })).toHaveCount(0);
   await page.getByTestId('record-menu-more').click();
 
-  const write = page.getByRole('button', { name: `Email ${made.email}` });
+  await page.keyboard.press('Escape');
+  const write = page.getByRole('button', { name: 'Send email', exact: true });
   await expect(write).toBeVisible();
   await write.click();
   // It opens the CRM's own composer, not the operating system's mail client.

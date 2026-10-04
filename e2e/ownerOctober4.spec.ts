@@ -17,6 +17,7 @@ for (const module of ['leads', 'properties', 'associates']) {
     await expect(chip).toHaveAttribute('aria-pressed', 'false');
     await page.getByTestId('workspace-dock-folded').getByRole('link', { name: 'Favourites', exact: true }).click();
     await expect(page).toHaveURL(/favourite/);
+    await expect(page.getByTestId('workspace-dock-folded').getByRole('link', { name: 'Favourites', exact: true })).toHaveClass(/bg-brand-100/);
   });
 }
 
@@ -25,6 +26,18 @@ test('profile strength master offers field weights', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Profile strength master' })).toBeVisible();
   await expect(page.getByLabel('Profile strength module')).toBeVisible();
   await expect(page.getByRole('spinbutton').first()).toBeVisible();
+});
+
+test('search options offers compact two-column defaults', async ({ page }) => {
+  await page.goto('/leads');
+  await page.getByRole('button', { name: 'Search options', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'CRM search options' });
+  await expect(panel.getByTestId('default-search-fields')).toBeVisible();
+  await expect(panel.getByText('Agent', { exact: true })).toBeVisible();
+  await expect(panel.getByText('Location', { exact: true })).toBeVisible();
+  await expect(panel.getByLabel('Created date', { exact: true })).toBeVisible();
+  await expect(panel.getByLabel('Budget or demand maximum slider')).toBeVisible();
+  await expect(panel.getByText(/No filters —/)).toHaveCount(0);
 });
 
 test('zero records keep the workspace and reset controls', async ({ page }) => {

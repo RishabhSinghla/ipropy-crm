@@ -131,8 +131,8 @@ export function TagCards({ moduleName }: { moduleName?: string }): JSX.Element |
               in a browser, in dark mode, on the element that has it.
             */
             className={cn(
-              'badge-tinted flex min-w-0 flex-1 items-center justify-center gap-2 border-0 px-2.5 py-1.5 text-left transition hover:brightness-95 first:rounded-l-full last:rounded-r-full',
-              narrowed ? 'font-bold underline underline-offset-4' : '',
+              'flex min-w-0 flex-1 items-center justify-center gap-2 border-0 px-2.5 py-1.5 text-left transition hover:brightness-95 first:rounded-l-full last:rounded-r-full',
+              narrowed ? 'badge-solid font-bold' : 'badge-tinted',
             )}
           >
             <span className="min-w-0 truncate text-[11px] font-bold leading-tight">{tag.name}</span>

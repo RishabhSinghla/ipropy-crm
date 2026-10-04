@@ -288,6 +288,12 @@ export async function prepareList(ctx: ServiceContext, moduleName: string, q: Li
   return { module, params, from, orderBy, effectiveFilter, effectiveColumns, buildCtx };
 }
 
+export async function countRecords(ctx: ServiceContext, moduleName: string, q: ListQuery = {}): Promise<number> {
+  const { params, from } = await prepareList(ctx, moduleName, q, db);
+  const row = await db.queryOne<{ count: number }>(`SELECT COUNT(*)::int AS count ${from}`, params.all());
+  return row?.count ?? 0;
+}
+
 export async function listRecords(
   ctx: ServiceContext,
   moduleName: string,
@@ -316,11 +322,14 @@ export async function listRecords(
   const rollups = await computeRollups(conn, module, rowsRes.rows.map((r) => String(r.id)), buildCtx);
   const rows = await Promise.all(
     rowsRes.rows.map((r) => rowToEnvelope(module, r, {
-      withDisplay: true,
+      withDisplay: false,
       conn,
       rollups: rollups.get(String(r.id)),
     })),
   );
+
+  const lookup = await displayLookups(module, rows.map((row) => row.values), conn);
+  await Promise.all(rows.map(async (row) => { row.display = await resolveDisplayValues(module, row.values, conn, lookup); }));
 
   // Favourite state belongs to the signed-in user, not the record. Resolve it
   // once for the page so every list/card/kanban renderer can keep the gold
@@ -585,6 +594,7 @@ async function resolveDisplayValues(
   module: ModuleMeta,
   values: Record<string, unknown>,
   conn: Tx,
+  lookup?: DisplayLookups,
 ): Promise<Record<string, string>> {
   const display: Record<string, string> = {};
   const recordIds = new Set<string>();
@@ -633,6 +643,42 @@ async function resolveDisplayValues(
   if (values.created_by) userIds.add(String(values.created_by));
   if (values.modified_by) userIds.add(String(values.modified_by));
 
+  const { recMap, recModuleMap, principalMap } = lookup ?? await displayLookups(module, [values], conn);
+
+  for (const f of module.fields) {
+    const v = values[f.name];
+    if (isEmpty(v)) continue;
+    if (f.uitype === 'reference') {
+      display[f.name] = recMap.get(String(v)) ?? '';
+      display[`${f.name}__module`] = recModuleMap.get(String(v)) ?? '';
+    } else if (f.uitype === 'multireference' && Array.isArray(v)) {
+      display[f.name] = v.map((x) => recMap.get(String(x)) ?? '').filter(Boolean).join(', ');
+    } else if (f.uitype === 'user' || f.uitype === 'owner') {
+      display[f.name] = principalMap.get(String(v)) ?? '';
+    }
+  }
+  if (values.owner_id) display.owner_id = principalMap.get(String(values.owner_id)) ?? '';
+  if (values.created_by) display.created_by = principalMap.get(String(values.created_by)) ?? '';
+  if (values.modified_by) display.modified_by = principalMap.get(String(values.modified_by)) ?? '';
+  return display;
+}
+
+interface DisplayLookups { recMap: Map<string, string>; recModuleMap: Map<string, string>; principalMap: Map<string, string> }
+
+/** Resolve names once per page, not once per record. */
+async function displayLookups(module: ModuleMeta, rows: Record<string, unknown>[], conn: Tx): Promise<DisplayLookups> {
+  const recordIds = new Set<string>();
+  const userIds = new Set<string>();
+  for (const values of rows) {
+    for (const field of module.fields) {
+      const value = values[field.name];
+      if (isEmpty(value)) continue;
+      if (field.uitype === 'reference') recordIds.add(String(value));
+      else if (field.uitype === 'multireference' && Array.isArray(value)) value.forEach((id) => recordIds.add(String(id)));
+      else if (field.uitype === 'user' || field.uitype === 'owner') userIds.add(String(value));
+    }
+    for (const key of ['owner_id', 'created_by', 'modified_by']) if (values[key]) userIds.add(String(values[key]));
+  }
   const [recRes, userRes, groupRes] = await Promise.all([
     recordIds.size
       ? conn.query<{ id: string; label: string; module_name: string }>(
@@ -658,23 +704,7 @@ async function resolveDisplayValues(
     ...groupRes.rows.map((r) => [r.id, r.name] as [string, string]),
   ]);
 
-  for (const f of module.fields) {
-    const v = values[f.name];
-    if (isEmpty(v)) continue;
-    if (f.uitype === 'reference') {
-      display[f.name] = recMap.get(String(v)) ?? '';
-      display[`${f.name}__module`] = recModuleMap.get(String(v)) ?? '';
-    } else if (f.uitype === 'multireference' && Array.isArray(v)) {
-      display[f.name] = v.map((x) => recMap.get(String(x)) ?? '').filter(Boolean).join(', ');
-    } else if (f.uitype === 'user' || f.uitype === 'owner') {
-      display[f.name] = principalMap.get(String(v)) ?? '';
-    }
-  }
-  if (values.owner_id) display.owner_id = principalMap.get(String(values.owner_id)) ?? '';
-  if (values.created_by) display.created_by = principalMap.get(String(values.created_by)) ?? '';
-  if (values.modified_by) display.modified_by = principalMap.get(String(values.modified_by)) ?? '';
-
-  return display;
+  return { recMap, recModuleMap, principalMap };
 }
 
 // ---------------------------------------------------------------------------
@@ -1784,6 +1814,8 @@ export interface SearchHit {
   moduleLabel: string;
   label: string;
   recordNumber: string | null;
+  mobile?: string;
+  details?: string;
   /**
    * A record this user cannot open, shown by name alone.
    *
@@ -2038,6 +2070,30 @@ export async function globalSearch(
     updatedAt: r.updated_at,
   }));
 
+  // Only enrich already-authorised hits. Hidden fields and masked phones stay
+  // protected exactly as they are on the module's ordinary list.
+  await Promise.all(allowed.map(async (module) => {
+    const hits = found.filter((hit) => hit.module === module.name);
+    if (!hits.length) return;
+    const records = await db.query<Record<string, unknown>>(
+      `SELECT r.*, e.* FROM ipy_record r JOIN ${quoteIdent(module.tableName)} e ON e.record_id = r.id WHERE r.id = ANY($1::uuid[])`,
+      [hits.map((hit) => hit.id)],
+    );
+    const envelopes = await Promise.all(records.rows.map((row) => rowToEnvelope(module, row, { withDisplay: false, conn: db })));
+    const lookup = await displayLookups(module, envelopes.map((record) => record.values), db);
+    const hidden = ctx.system ? new Set<string>() : await hiddenFieldsFor(ctx, module.name);
+    const masked = ctx.system ? new Set<string>() : await maskedPhoneFields(ctx.user, module.name, null);
+    for (const record of envelopes) {
+      record.display = await resolveDisplayValues(module, record.values, db, lookup);
+      if (!ctx.system) { stripHidden(record, hidden); if (record.ownerId !== ctx.user.id) maskPhones(record, masked); }
+      const read = (field?: FieldMeta): string => field ? record.display?.[field.name] ?? String(record.values[field.name] ?? '') : '';
+      const named = (names: string[]): FieldMeta | undefined => module.fields.find((field) => field.isActive && field.displayType !== 'hidden' && (names.includes(field.name) || names.includes(field.columnName)));
+      const hit = hits.find((item) => item.id === record.id)!;
+      hit.mobile = read(module.fields.find((field) => field.isActive && field.uitype === 'phone'));
+      hit.details = [read(named(['budget', 'demand', 'asking_price'])), read(named(['unit_no', 'unit_number'])), read(named(['configuration', 'bedrooms'])), read(named(['portion', 'portion_type'])), read(named(['category'])), read(named(['preferred_locations', 'locality']))].filter((text) => text && text !== '—').join(', ');
+    }
+  }));
+
   /*
     "Nobody has this number" and "you cannot see who does" look identical from
     the search box, and only one of them is true. A rep who dials a number
@@ -2101,6 +2157,7 @@ export async function globalSearch(
 export const recordService = {
   getRecord,
   listRecords,
+  countRecords,
   locateInList,
   createRecord,
   updateRecord,

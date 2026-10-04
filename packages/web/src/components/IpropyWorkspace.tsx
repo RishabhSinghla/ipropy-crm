@@ -1,7 +1,7 @@
 import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SummaryText } from './SummaryText';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
@@ -251,6 +251,7 @@ export function IpropyWorkspace({
   const [showing, setShowing] = useState<'list' | 'record'>('list');
   useEffect(() => { onShowing?.(showing); }, [showing, onShowing]);
   const [, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const queryClient = useQueryClient();
 
   /*
@@ -357,8 +358,8 @@ export function IpropyWorkspace({
     setShowing('record');
     const next = new URLSearchParams(window.location.search);
     next.set('open', id);
-    setSearchParams(next, { replace: true });
-  }, [setSearchParams]);
+    setSearchParams(next, { replace: true, state: location.state });
+  }, [setSearchParams, location.state]);
 
   /*
     Up and down arrows move through the queue, the way they move through
@@ -984,7 +985,12 @@ export function IpropyWorkspace({
                   header wraps on a phone. */}
               {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly plain active={onCall} /></span>}
               <button type="button" aria-label={active.starred ? 'Remove from starred' : 'Star this record'} title="Favourite" onClick={() => star.mutate(active)} className="p-1 text-slate-500 hover:text-amber-500"><Star className={cn('h-4 w-4', active.starred && 'fill-amber-500 text-amber-500')} /></button>
-              {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className="p-1 text-slate-500 hover:text-brand-600"><Tag className="h-4 w-4" /></button>}
+              {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-800 dark:text-blue-300' : 'text-slate-500')}><Tag className="h-4 w-4" /></button>}
+              {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
+              <button type="button" aria-label="Summarise with AI" title="Summarise with AI" disabled={summarising} className="p-1 text-slate-500 hover:text-brand-600 disabled:opacity-50" onClick={() => {
+                setSummarising(true);
+                void api.summarise(module.name, active.id).then((result) => setSummary(result.summary)).catch((err: Error) => toast.error('Summary failed', err.message)).finally(() => setSummarising(false));
+              }}>{summarising ? <Spinner className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}</button>
             </span>
               {/*
                 Search within this record. **The icon left this bar on
@@ -1057,9 +1063,6 @@ export function IpropyWorkspace({
         <RecordMenuBar
           actions={(close) => (
             <>
-              <DropdownItem icon={<Search className="h-3.5 w-3.5" />} onClick={() => { close(); setFinding(true); }}>
-                Search this record
-              </DropdownItem>
               {/*
                 Write to them — *"Move email icons from Middle heade pane to
                 Menu bar more tab"* (3 October 2026). It was a circle on the
@@ -1075,24 +1078,6 @@ export function IpropyWorkspace({
                 reply threads back onto the record, and a rep on a phone has no
                 desktop mail client to hand it to.
               */}
-              {emailValue && (
-                <DropdownItem icon={<Mail className="h-3.5 w-3.5" />} onClick={() => { close(); setComposing(true); }}>
-                  Email {emailValue}
-                </DropdownItem>
-              )}
-              <DropdownItem
-                icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                onClick={() => {
-                  close();
-                  setSummarising(true);
-                  void api.summarise(module.name, active.id)
-                    .then((result) => setSummary(result.summary))
-                    .catch((err: Error) => toast.error('Summary failed', err.message))
-                    .finally(() => setSummarising(false));
-                }}
-              >
-                {summarising ? 'Summarising…' : 'Summarise with AI'}
-              </DropdownItem>
               {canEdit && onDelete && (module.name === 'leads' || module.name === 'properties') && (
                 <DropdownItem
                   icon={<ArrowRightLeft className="h-3.5 w-3.5" />}

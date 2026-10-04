@@ -78,7 +78,7 @@ for (const module of MODULES) {
     await expect(header.getByRole('button', { name: /WhatsApp/i })).toHaveCount(0);
     // Everything that was in the three-dot menu is in the bar's More.
     await page.getByTestId('record-menu-more').click();
-    for (const row of [/Star this record|Remove from starred/, /Add a tag|^Tags \(/, /Summarise with AI/, /Delete record/, /Search this record/]) {
+    for (const row of [/Star this record|Remove from starred/, /Edit record tags/, /Summarise with AI/, /Delete record/]) {
       await expect(page.getByRole('button', { name: row })).toBeVisible();
     }
   });
@@ -120,7 +120,7 @@ for (const module of MODULES) {
 test('both panes start closed, however they were left', async ({ page }) => {
   await openList(page, 'leads');
   // Open them…
-  await page.getByTestId('unfold-dock').click();
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await expect(page.getByTestId('workspace-dock')).toBeVisible();
   const details = page.getByTestId('activity-pane');
   await expect(details).toHaveAttribute('data-folded', 'true');
@@ -139,7 +139,7 @@ test('the folded toolbar is icons, not a blank strip', async ({ page }) => {
   await expect(folded.getByRole('link', { name: 'Dashboard' })).toBeVisible();
   await expect(folded.getByRole('link', { name: 'WhatsApp' })).toBeVisible();
   // Opening it brings the names back.
-  await page.getByTestId('unfold-dock').click();
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await expect(page.getByTestId('workspace-dock').getByText('Dashboard', { exact: true })).toBeVisible();
 });
 

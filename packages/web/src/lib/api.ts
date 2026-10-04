@@ -261,6 +261,8 @@ export type ImportResolution = 'merged' | 'skipped' | 'created';
 export type ImportSection = 'created' | 'updated' | 'skipped' | 'failed' | 'duplicates' | 'all';
 
 export interface SearchHit {
+  mobile?: string;
+  details?: string;
   id: string;
   module: string;
   moduleLabel: string;

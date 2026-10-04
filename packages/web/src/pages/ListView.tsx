@@ -1,7 +1,7 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TagCards } from '../components/TagCards';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, isFilterGroup } from '@ipropy/shared';
 import {
@@ -46,6 +46,7 @@ const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 export default function ListView(): JSX.Element {
   const { module: moduleName } = useParams<{ module: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { user } = useApp();
 
@@ -387,9 +388,9 @@ export default function ListView(): JSX.Element {
     if (dial) next.set('dial', dial);
 
     if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
+      setSearchParams(next, { replace: true, state: location.state });
     }
-  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, taskQueue, tagPick, searchParams]);
+  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, taskQueue, tagPick, searchParams, location.state]);
 
   /**
    * Owner defaults to whoever is adding the record. Status and stage come from
@@ -523,7 +524,7 @@ export default function ListView(): JSX.Element {
   const todayQuery: ListQuery = { view: query.view, search: query.search, page: 1, pageSize: 1,
     filter: { logic: 'AND', conditions: [effectiveFilter, { field: 'created_at', operator: 'today' }] } };
   const { data: todayRecords } = useQuery({ queryKey: ['created-today', moduleName, todayQuery],
-    queryFn: () => api.list(moduleName!, todayQuery), enabled: Boolean(moduleName), refetchInterval: 60_000 });
+    queryFn: () => api.list(moduleName!, todayQuery), enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName), staleTime: 60_000 });
 
   // The call deck must resume this *exact* queue after Save & Next. The URL's
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a
@@ -534,7 +535,7 @@ export default function ListView(): JSX.Element {
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
     queryFn: () => api.list(moduleName!, query),
-    enabled: Boolean(moduleName && meta),
+    enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName),
     /*
       Keep the last page on screen while the next one loads — but only within
       one module. Across a switch the "last page" is the other module's rows,
@@ -973,12 +974,12 @@ export default function ListView(): JSX.Element {
         )}
 
         <button className={cn('flex shrink-0 items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700', newToday && 'ring-2 ring-brand-400')}
-          aria-pressed={newToday} title="Records created today" onClick={() => {
+          aria-pressed={newToday} aria-busy={newToday && isFetching} title="Records created today" onClick={() => {
             setFilter({ logic: 'AND', conditions: newToday
               ? filter.conditions.filter((item) => isFilterGroup(item) || item.field !== 'created_at' || item.operator !== 'today')
               : [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), { field: 'created_at', operator: 'today' }] });
             setPage(1);
-          }}>New <span className="rounded-full bg-brand-100 px-1.5">{todayRecords?.total ?? 0}</span></button>
+          }}>New {newToday && isFetching ? <Spinner className="h-3 w-3" /> : <span className="rounded-full bg-brand-100 px-1.5">{todayRecords?.total ?? 0}</span>}</button>
         {/*
           **The Hot chip left this row on 3 October 2026** — the owner: *"Now i
           need to remove hot tag/Icon from Left Record Pane after the List and

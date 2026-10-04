@@ -1084,13 +1084,12 @@ function GlobalSearch(): JSX.Element {
                 >
                   <Avatar name={hit.label} size={28} className="shrink-0" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{hit.label}</span>
+                    <span className="flex min-w-0 items-center gap-2 text-sm font-semibold"><span className="truncate">{hit.label}</span>{hit.mobile && <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">{hit.mobile}</span>}<span className="ml-auto truncate text-[10px] font-normal text-muted">{[hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)].filter(Boolean).join(' · ')}</span></span>
                     {/* What tells two people of the same name apart. Each part
                         is skipped when it is empty rather than printed as a
                         dash — a sub-line of separators says nothing. */}
-                    <span className="block truncate text-[11px] text-muted">
-                      {[hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)]
-                        .filter(Boolean).join(' · ')}
+                    <span className="block truncate text-[11px] text-muted" title={hit.details}>
+                      {hit.details || [hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)].filter(Boolean).join(' · ')}
                     </span>
                   </span>
                 </PeekLink>
