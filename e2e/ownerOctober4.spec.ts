@@ -10,7 +10,7 @@ for (const module of ['leads', 'properties', 'associates']) {
     await expect(page).toHaveURL(/created_at/);
     await chip.click();
     await expect(chip).toHaveAttribute('aria-pressed', 'false');
-    await page.getByRole('link', { name: 'Favourites', exact: true }).filter({ visible: true }).click();
+    await page.getByTestId('workspace-dock-folded').getByRole('link', { name: 'Favourites', exact: true }).click();
     await expect(page).toHaveURL(/favourite/);
   });
 }
