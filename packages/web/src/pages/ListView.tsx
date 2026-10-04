@@ -1340,6 +1340,7 @@ export default function ListView(): JSX.Element {
             onShowing={setPaneShowing}
             filterBar={{
               open: showFilters,
+              onToggle: () => setShowFilters((value) => !value),
               // Drawn inside the right-hand pane, in its exact shape. It is
               // opened by the filter button over the queue; the pane's own bar
               // for it went on 3 October 2026 as a duplicate of that button.

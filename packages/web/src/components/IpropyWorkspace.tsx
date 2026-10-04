@@ -6,7 +6,7 @@ import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } fro
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
   History, Mail, MessageCircle, MessageSquare, MessagesSquare, MoreHorizontal, Phone, Search, Send,
-  Sparkles, Star, Tag, Trash2, Users, X,
+  Sparkles, Star, Tag, Trash2, Users, X, Filter,
 } from 'lucide-react';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
@@ -217,7 +217,7 @@ export function IpropyWorkspace({
    * the panel itself — drawn inside the right-hand pane, in its exact shape.
    */
   /** The Quick & Live Filters panel, drawn in the right pane; `open` unfolds a folded pane while it shows. */
-  filterBar?: { open: boolean; panel?: ReactNode };
+  filterBar?: { open: boolean; panel?: ReactNode; onToggle?: () => void };
   /**
    * Which pane a small screen is on — so the page around this one can get out
    * of the way. The list's phone pager is the caller: it belongs to the list,
@@ -956,6 +956,11 @@ export function IpropyWorkspace({
             squeezing it, which is what `flex-wrap` was already here for.
           */}
           <span className="ml-auto flex shrink-0 basis-full flex-wrap items-center justify-end gap-1.5 xl:basis-auto" data-testid="split-hero-actions-status">
+            {filterBar?.onToggle && <button type="button" onClick={filterBar.onToggle}
+              aria-label="Quick filters" aria-pressed={filterBar.open} title="Quick filters"
+              className="btn-secondary btn-sm rounded-full p-2">
+              <Filter className="h-4 w-4" />
+            </button>}
             {/*
               **The module's name left this header on 3 October 2026** —
               *"Remove inventory/Lead labels/text from this middle header."*
@@ -1467,7 +1472,7 @@ function QueueCard({
              record in the left record pane"* (3 October 2026). The padding is
              the gap: each card draws the hairline under itself, so growing the
              rule's margin would move the line rather than the breathing room. */
-          'relative block w-full cursor-pointer py-4 pl-[3.75rem] pr-3 text-left transition-colors',
+          'relative block w-full cursor-pointer py-3 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1556,7 +1561,7 @@ function QueueCard({
         {/* 2. Which unit, cut short with "…" rather than wrapped — and not
             drawn at all when there is nothing to say, rather than a dash. */}
         {description && <span className={cn(
-          'mt-2 block min-w-0 truncate text-xs',
+          'mt-1 block min-w-0 truncate text-xs',
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
@@ -1570,7 +1575,7 @@ function QueueCard({
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        {(price || area || agent) && <span className="mt-2 flex items-center gap-2 text-xs">
+        {(price || area || agent) && <span className="mt-1 flex items-center gap-2 text-xs">
           {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.

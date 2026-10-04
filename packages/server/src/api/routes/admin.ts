@@ -5,7 +5,7 @@ import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, invalidatePermissions } from '../../core/permissions/index.js';
+import { assertCapability, invalidatePermissions, buildScopeContext, hierarchyVisibleOwnerIds } from '../../core/permissions/index.js';
 import { registry } from '../../core/metadata/registry.js';
 import { AUTOMATION_USER_ID } from '../../core/auth/systemAccounts.js';
 import {
@@ -42,6 +42,10 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
     them — so nobody meets the rule as a red toast.
   */
   const caller = getUser(req);
+  const filterModule = typeof req.query.filterModule === 'string' ? req.query.filterModule : null;
+  const filterOwnerIds = filterModule && !caller.isAdmin
+    ? [caller.id, ...await hierarchyVisibleOwnerIds(await buildScopeContext(caller), filterModule)]
+    : null;
   const rows = await db.query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone,
             u.is_admin, u.is_active, u.role_id, u.profile_id, u.last_login_at,
@@ -55,7 +59,9 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
        -- a picker or the Users screen (27 September 2026, the owner).
        AND u.id <> '${AUTOMATION_USER_ID}'
        ${adminOnly ? 'AND (u.is_admin = true OR r.depth = 0)' : ''}
+       ${filterOwnerIds ? 'AND u.id = ANY($1::uuid[])' : ''}
      ORDER BY u.first_name, u.last_name`,
+    filterOwnerIds ? [filterOwnerIds] : [],
   );
   /*
     Two shapes: the directory everyone needs, and the record only an admin does.

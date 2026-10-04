@@ -1004,8 +1004,8 @@ export const api = {
 
   // --- admin --------------------------------------------------------------
   /** `assignableOnly` narrows the directory to people this caller may hand a record to. */
-  users: (includeInactive = false, adminOnly = false, assignableOnly = false) =>
-    get<Record<string, unknown>[]>(`/api/admin/users${qs({ includeInactive, adminOnly, assignableOnly })}`),
+  users: (includeInactive = false, adminOnly = false, assignableOnly = false, filterModule?: string) =>
+    get<Record<string, unknown>[]>(`/api/admin/users${qs({ includeInactive, adminOnly, assignableOnly, filterModule })}`),
   createUser: (data: Record<string, unknown>) => post('/api/admin/users', data),
   updateUser: (id: string, data: Record<string, unknown>) => patch(`/api/admin/users/${id}`, data),
   roles: () => get<{ tree: Record<string, unknown>[]; flat: Record<string, unknown>[] }>('/api/admin/roles'),

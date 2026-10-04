@@ -982,7 +982,7 @@ function GlobalSearch(): JSX.Element {
   const showRecent = open && query.trim().length < 2 && recent.length > 0;
 
   return (
-    <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-[32rem] lg:max-w-[32rem] lg:min-w-0 lg:shrink xl:w-[40rem] xl:max-w-[40rem]" ref={ref}>
+    <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-auto lg:min-w-0 lg:flex-1 lg:max-w-[26rem] xl:max-w-[32rem]" ref={ref}>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         ref={inputRef}

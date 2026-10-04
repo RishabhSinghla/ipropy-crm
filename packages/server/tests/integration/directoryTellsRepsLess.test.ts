@@ -48,6 +48,25 @@ beforeAll(async () => {
 });
 
 describe('the staff directory', () => {
+  it('limits follow-up filter agents to self when a rep has no hierarchy role', async () => {
+    const rep = await db.queryOne<{ id: string }>('SELECT id FROM ipy_user WHERE email = $1', [REP_EMAIL]);
+    for (const module of ['leads', 'properties']) {
+      const res = await request(app).get(`/api/admin/users?filterModule=${module}`)
+        .set('Authorization', `Bearer ${repToken}`).expect(200);
+      expect(res.body.map((user: { id: string }) => user.id)).toEqual([rep!.id]);
+    }
+    // This read-only filter scope must not narrow the assignment directory.
+    const directory = await request(app).get('/api/admin/users?assignableOnly=true')
+      .set('Authorization', `Bearer ${repToken}`).expect(200);
+    expect(directory.body.length).toBeGreaterThan(1);
+  });
+
+  it('keeps all active agents available to the admin follow-up filter', async () => {
+    const res = await request(app).get('/api/admin/users?filterModule=leads')
+      .set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(res.body.length).toBeGreaterThan(1);
+  });
+
   it('still gives a rep everything a picker needs', async () => {
     // The reason it is open at all. Take this away and owner dropdowns and
     // @mentions go blank for everyone who is not an admin.
