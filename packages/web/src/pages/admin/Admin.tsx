@@ -1,4 +1,5 @@
 import SettingsAdmin from './SettingsAdmin';
+import ProfileStrengthAdmin from './ProfileStrengthAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
@@ -84,6 +85,7 @@ const SECTIONS = [
       { path: 'import', capability: 'records.import', label: 'Import Data', icon: Database, element: <ImportAdmin /> },
       { path: 'matching', capability: 'admin.access', label: 'Matching Setup', icon: Link2, element: <MatchingSetupAdmin /> },
       { path: 'units', capability: 'admin.fields', label: 'Area & Pricing Units', icon: Ruler, element: <UnitMasterAdmin /> },
+      { path: 'profile-strength', capability: 'admin.fields', label: 'Profile Strength', icon: SlidersHorizontal, element: <ProfileStrengthAdmin /> },
     ],
   },
   {

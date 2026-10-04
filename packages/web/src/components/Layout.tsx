@@ -21,7 +21,6 @@ import { flattenGroups, groupHits, moveHighlight } from '../lib/searchGroups';
 import { readRecent, withRecent, withoutRecent, writeRecent } from '../lib/searchHistory';
 import RecordForm from './RecordForm';
 import { SearchOptions } from './SearchOptions';
-import { CompanyAvatar } from './CompanyAvatar';
 
 /* Lazy, because capture carries the camera and EXIF machinery and the shell is
    on every page. Nobody pays for it until they open the menu and choose it. */
@@ -126,7 +125,6 @@ export default function Layout(): JSX.Element {
           </button>
 
           <div className="flex shrink-0 items-center gap-2.5">
-            <CompanyAvatar logoUrl={brand?.logoUrl ?? null} name={brand?.orgName ?? 'iPropy'} />
               <Link to="/dashboard" className="max-w-[10rem] truncate text-base font-semibold leading-tight tracking-tight">
                 {brand?.orgName ?? 'iPropy'}
               </Link>

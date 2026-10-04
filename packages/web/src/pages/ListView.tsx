@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { TagCards } from '../components/TagCards';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
+import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, isFilterGroup } from '@ipropy/shared';
 import {
   ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, X,
@@ -85,6 +85,12 @@ export default function ListView(): JSX.Element {
   const [picks, setPicks] = useState<QuickPicks>({});
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
+  const newToday = filter.conditions.some((item) => !isFilterGroup(item) && item.field === 'created_at' && item.operator === 'today');
+  const { data: todayRecords } = useQuery({
+    queryKey: ['created-today', moduleName],
+    queryFn: () => api.list(moduleName!, { page: 1, pageSize: 1, filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'today' }] } }),
+    enabled: Boolean(moduleName), refetchInterval: 60_000,
+  });
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -967,6 +973,13 @@ export default function ListView(): JSX.Element {
           />
         )}
 
+        <button className={cn('flex shrink-0 items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700', newToday && 'ring-2 ring-brand-400')}
+          aria-pressed={newToday} title="Records created today" onClick={() => {
+            setFilter({ logic: 'AND', conditions: newToday
+              ? filter.conditions.filter((item) => isFilterGroup(item) || item.field !== 'created_at' || item.operator !== 'today')
+              : [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), { field: 'created_at', operator: 'today' }] });
+            setPage(1);
+          }}>New today <span className="rounded-full bg-brand-100 px-1.5">{todayRecords?.total ?? 0}</span></button>
         {/*
           **The Hot chip left this row on 3 October 2026** — the owner: *"Now i
           need to remove hot tag/Icon from Left Record Pane after the List and

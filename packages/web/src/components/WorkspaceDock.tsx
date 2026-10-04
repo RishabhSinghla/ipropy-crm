@@ -20,8 +20,8 @@
  * at the top right, which is where it always was.
  */
 import { type JSX, type ReactNode, useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, LayoutDashboard, MessagesSquare, PhoneIncoming } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, LayoutDashboard, MessagesSquare, PhoneIncoming, Star } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { ModuleIcon } from './Layout';
@@ -68,6 +68,9 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
   onFoldChange: (folded: boolean) => void;
 }): JSX.Element {
   const { modules } = useApp();
+  const here = useLocation().pathname.split('/')[1];
+  const favouriteModule = modules.find((module) => module.isEntity && module.name === here)?.name
+    ?? modules.find((module) => module.isEntity)?.name ?? 'leads';
   const entityModules = modules.filter((module) => module.isEntity);
   const setFolded = onFoldChange;
   /*
@@ -84,6 +87,7 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
       count: counts?.[module.name],
     })),
     { to: '/calls', label: 'Calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" /> },
+    { to: `/${favouriteModule}?filter=${encodeURIComponent(JSON.stringify({ logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }))}`, label: 'Favourites', icon: <Star className="h-[18px] w-[18px]" /> },
     { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, tone: 'whatsapp' as const },
   ];
   return (
@@ -181,13 +185,15 @@ function DockLink({ to, label, count, tone, iconOnly = false, children }: {
   children: ReactNode;
 }): JSX.Element {
   // A module's icon stays lit on its records too (`/leads/…`).
+  const location = useLocation();
   return (
     <NavLink
+      state={label === 'Favourites' ? { searchHandoff: Date.now() } : undefined}
       to={to}
       end={false}
       title={count ? `${label} — ${count.toLocaleString('en-IN')}` : label}
       aria-label={label}
-      className={({ isActive }) => dockLook(isActive, tone, iconOnly)}
+      className={({ isActive }) => dockLook(isActive && (label !== 'Favourites' || location.search === to.slice(to.indexOf('?'))), tone, iconOnly)}
     >
       <span className="flex h-7 w-7 shrink-0 items-center justify-center">{children}</span>
       {!iconOnly && <span className="min-w-0 flex-1 truncate text-left">{label}</span>}

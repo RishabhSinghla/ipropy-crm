@@ -896,11 +896,11 @@ function CurrencyInput({
   };
 
   const amount = (
-    <div className={cn('relative', unitField && 'min-w-0 flex-1')}>
+    <div className={cn('relative', unitField && 'min-w-[6rem] flex-1')}>
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">₹</span>
       <input
         id={id}
-        className={cn(className, 'pl-7 tnum', unitField && 'rounded-r-none')}
+        className={cn(className, 'w-full min-w-0 pl-7 tnum', unitField && 'rounded-r-none')}
         value={focused ? text : (value ? formatIndianPrice(Number(value)).replace('₹', '') : '')}
         onFocus={() => { setFocused(true); setText(value ? String(value) : ''); }}
         onBlur={() => { setFocused(false); onChange(parse(text)); }}
@@ -908,7 +908,7 @@ function CurrencyInput({
         disabled={readOnly}
         placeholder="e.g. 1.5 Cr or 12500000"
       />
-      {focused && text && parse(text) !== null && (
+      {focused && !unitField && text && parse(text) !== null && (
         <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 text-2xs text-muted sm:block">
           {formatIndianPrice(parse(text)!)}
         </span>
@@ -919,7 +919,7 @@ function CurrencyInput({
   if (!unitField || !unitOptions) return amount;
 
   return (
-    <div className="flex items-stretch">
+    <div className="flex w-full min-w-0 flex-wrap items-stretch gap-y-1">
       {amount}
       <div className="relative shrink-0">
         <select

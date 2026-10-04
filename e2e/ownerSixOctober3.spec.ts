@@ -107,20 +107,10 @@ for (const module of MODULES) {
 }
 
 // 3 — *"decrease the size company logo avtar, bcoz the circle overlap the padding"*
-test('the company circle fits inside the header', async ({ page }) => {
+test('the header no longer contains a company avatar', async ({ page }) => {
   await openList(page, 'leads');
   const mark = page.getByTestId('brand-mark');
-  await expect(mark).toBeVisible();
-
-  const box = (await mark.boundingBox())!;
-  const header = (await page.locator('header').first().boundingBox())!;
-  // A ring is drawn outside the box, so what matters is the painted circle plus
-  // its ring against the header's own height — not the element's width alone.
-  const ring = await mark.evaluate((el) => getComputedStyle(el).boxShadow);
-  expect(box.width).toBeLessThanOrEqual(34);
-  expect(box.height + 4, 'the circle and its ring should clear the header with room either side')
-    .toBeLessThan(header.height - 6);
-  expect(ring, 'the ring should still be there').not.toBe('none');
+  await expect(mark).toHaveCount(0);
 });
 
 // 4, the other half — *"remove unread functionality from all records"*

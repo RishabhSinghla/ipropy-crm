@@ -460,7 +460,7 @@ export function IpropyWorkspace({
   const [savedMenu, setSavedMenu] = useState<MenuKey[] | null>(() => loadRecordMenu(module.name));
   useEffect(() => { setSavedMenu(loadRecordMenu(module.name)); }, [module.name]);
   const availableMenu = useMemo<MenuKey[]>(
-    () => [...tabs.map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
+    () => [...tabs.filter((item) => item.key !== 'timeline').map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
     [tabs],
   );
   const menuOrder = useMemo(() => arrangeRecordMenu(availableMenu, savedMenu), [availableMenu, savedMenu]);

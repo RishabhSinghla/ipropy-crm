@@ -2243,3 +2243,14 @@ from him rather than from this file before changing it.
 itself** — the nudge does nothing until one is set, so every test would otherwise
 trip over the refusal and prove nothing past it. Same rule as the WhatsApp send
 that died on a line no test had ever reached.
+### 4 October: compact workspace and weighted profile strength
+
+Company avatar is removed from the main toolbar; the company name remains.
+Tag segments fill the available strip with rounded first/last ends. Each entity
+list has a New today chip (created date today), and the dock has Favourites
+between Calls and WhatsApp. The duplicate Activity tab is removed; Changes stays.
+Strength is solid red below 50%, yellow from 50% through 70%, green above 70%.
+Admin → Profile Strength configures relative field weights per module, with zero
+excluding a field from scoring; bars, filters and reminders use the same weights.
+Currency editors allow room for both amount and unit; the price unit label is
+Total, without rewriting stored values or amounts.
