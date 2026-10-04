@@ -68,7 +68,7 @@ export function usePeek(): ((target: PeekTarget) => void) | null {
  * mouse.
  */
 export function PeekLink({
-  module, id, label, className, title, children, onNavigate,
+  module, id, label, className, title, children, onNavigate, selected,
 }: {
   module: string;
   id: string;
@@ -78,6 +78,16 @@ export function PeekLink({
   children: ReactNode;
   /** Fires only on an ordinary left click — a modified click leaves this page alone. */
   onNavigate?: () => void;
+  /**
+   * This is the row the arrow keys have walked to.
+   *
+   * Forwarded as `aria-selected`, so a screen reader announces the move and a
+   * test can find the one row ↵ would open. Passed through here rather than
+   * written by the caller on a wrapper, because the thing that is selected is
+   * the link itself — a wrapper saying so is a wrapper a keyboard user's
+   * software cannot connect to the link inside it.
+   */
+  selected?: boolean;
 }): JSX.Element {
   const peek = usePeek();
   const press = usePressPreview(
@@ -95,6 +105,8 @@ export function PeekLink({
         onNavigate?.();
       }}
       className={className}
+      aria-selected={selected}
+      data-selected={selected ? 'true' : undefined}
     >
       {children}
     </Link>

@@ -118,11 +118,12 @@ export function ActivityFeed({ module, recordId, customerName, find = '', filter
             <p className="mt-1 text-xs text-muted">{find.trim() ? 'Try other words, or clear the search above.' : 'Notes, messages, calls and changes to this record appear here.'}</p>
           </div>
         ) : (
-          entries.map((entry, index) => (
-            <div key={entry.id}>
-              {!sameDay(entry.at, entries[index - 1]?.at) && <DayChip at={entry.at} />}
-              <FeedItem entry={entry} customerName={customerName} module={module} recordId={recordId} />
-            </div>
+          entries.map((entry) => (
+            /* No day divider any more: every card carries its own date, in
+               `clock`, so a note read out of context still says when it was
+               written. The chip it replaces is the one the owner was looking at
+               on 4 October 2026. */
+            <FeedItem key={entry.id} entry={entry} customerName={customerName} module={module} recordId={recordId} />
           ))
         )}
         <div ref={bottom} />
@@ -464,24 +465,31 @@ function SystemLine({ children }: { children: ReactNode }): JSX.Element {
   );
 }
 
-function DayChip({ at }: { at: string }): JSX.Element {
-  return (
-    <div className="my-2 flex justify-center">
-      <span className="rounded-full border border-slate-200 bg-white px-3 py-0.5 text-[11px] font-semibold text-slate-600 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-        {new Date(at).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-      </span>
-    </div>
-  );
-}
-
-/** Calendar days in this browser's own time, never hours elapsed — 11pm and 1am are two days. */
-function sameDay(a: string, b: string | undefined): boolean {
-  if (!b) return false;
-  return new Date(a).toDateString() === new Date(b).toDateString();
-}
-
+/**
+ * When this happened — **the day and the time, in the card itself**.
+ *
+ * **4 October 2026, the owner, with a screenshot of the stream:** *"the Note
+ * date are separate from comment/note box, we want to see note/comment date in
+ * same box of comment/note just like agent name and updated time, please put it
+ * perfectly display."*
+ *
+ * The date used to live in a chip down the middle of the feed, one per day, so
+ * a note read "Rahul Kumar · 4:12 pm" and the only way to know *which* 4:12 pm
+ * was to scroll up until a chip came into view. A note is a thing somebody
+ * comes back to on its own; it has to say its own date.
+ *
+ * Today says the time alone — "today at 4:12 pm" is three words to say "now-ish"
+ * — and anything older carries the day with it. The year appears only when it
+ * is not this one, because printing 2026 on every row of 2026 is noise.
+ */
 function clock(at: string): string {
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return relativeTime(at);
-  return when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  const time = when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  const today = new Date();
+  if (when.toDateString() === today.toDateString()) return time;
+  const day = when.toLocaleDateString('en-IN', when.getFullYear() === today.getFullYear()
+    ? { weekday: 'short', day: 'numeric', month: 'short' }
+    : { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${day}, ${time}`;
 }

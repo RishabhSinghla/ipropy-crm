@@ -540,6 +540,23 @@ function NoteDock({ phrases, hasDraft, children }: {
   );
 }
 
+/**
+ * `Sun 20 Sep, 4:12 pm` — the day and time a note was written.
+ *
+ * The year is printed only when it is not this one: 2026 on every row of 2026
+ * is noise, and a note from 2021 without it is a note nobody can place.
+ */
+function noteStamp(at: string): string {
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return '';
+  const time = when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  const thisYear = when.getFullYear() === new Date().getFullYear();
+  const day = when.toLocaleDateString('en-IN', thisYear
+    ? { weekday: 'short', day: 'numeric', month: 'short' }
+    : { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${day}, ${time}`;
+}
+
 function NoteEntry({ entry, flush = false }: { entry: TimelineEntry; flush?: boolean }): JSX.Element {
   return <article className={cn(flush && 'rounded-xl border border-slate-200/70 bg-cream-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/60')}>
     {/* A div, not a p: the avatar is a div, and a div inside a p is invalid
@@ -547,7 +564,18 @@ function NoteEntry({ entry, flush = false }: { entry: TimelineEntry; flush?: boo
     <div className="flex items-center gap-1.5 text-xs">
       {entry.actorName && <Avatar name={entry.actorName} size={20} />}
       <span className="truncate font-bold text-slate-900 dark:text-slate-100">{entry.actorName ?? 'iPROPY'}</span>
-      <span className="shrink-0 text-[10px] text-muted">· {relativeTime(entry.at)}</span>
+      {/*
+        **The date is in the card, beside the name.** 4 October 2026, the
+        owner: *"we want to see note/comment date in same box of comment/note
+        just like agent name and updated time."* It said "2 days ago" alone,
+        which is enough to know a note is recent and no use at all for one from
+        last December — and the actual date was in a chip somewhere up the
+        feed. Both now: the day for the record, the relative words for the
+        glance.
+      */}
+      <span className="shrink-0 text-[10px] text-muted">
+        · {noteStamp(entry.at)} · {relativeTime(entry.at)}
+      </span>
     </div>
     <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{entry.title}</p>
     {entry.body && <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-700 dark:text-slate-300">{entry.body}</p>}

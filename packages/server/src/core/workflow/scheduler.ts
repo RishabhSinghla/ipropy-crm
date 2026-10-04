@@ -519,7 +519,19 @@ async function housekeeping(): Promise<void> {
     // the rest of it defensible: it answers nothing after a few weeks, and the
     // cheapest way to keep it safe is not to keep it.
     prunePastLocations(),
+    /*
+      One nudge a day to whoever owns a record that is still mostly empty —
+      *"you can pushing hem time to time from crm/system"* (4 October 2026).
+      Does nothing at all until an administrator sets a target, and nothing for
+      twenty-two hours of the day once they have.
+    */
+    nudgeThinProfiles(),
   ]);
+}
+
+async function nudgeThinProfiles(): Promise<void> {
+  const { nudgeThinRecords } = await import('../quality/profileStrength.js');
+  await nudgeThinRecords();
 }
 
 let lastIndexAt = 0;

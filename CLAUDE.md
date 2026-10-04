@@ -69,6 +69,12 @@ session, without being asked for again.
   check is reported as **pass**, **fail** or **couldn't tell**. That third word
   is the one that matters: without it, anything unobserved gets rounded up to a
   pass, which is exactly how a feature is called finished when it is not.
+* **A record is never blocked for being thin.** Asked for on 4 October 2026 and recorded in
+  `SCREENS.md`: the owner wants the team pushed to fill fields in, and the CRM pushes with a
+  **target plus a daily reminder** (`data.min_profile_strength`, Admin → Settings → Record quality,
+  seeded 0 = off), never by making fields mandatory. A rep on the phone has to get a lead in with
+  a name and a number, and the automated sources carry only what the customer gave — a mandatory
+  field there silently *throws the lead away*, which migration `026` already did once.
 * **Keep the docs true.** Any `.md` a change makes stale is updated in the same piece of work.
   That is part of the task, not a follow-up.
 * **Decide without asking.** He has granted standing permission for ordinary work. Ask only
@@ -253,11 +259,11 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 1,204 unit tests, no DB: 841 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 1,218 unit tests, no DB: 842 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers), 355 in `packages/web` (colour contrast, safe markdown, T9 dialler matching, header-tab
-  arrangement, and the rich-text
+  serving headers), 368 in `packages/web` (colour contrast, safe markdown, T9 dialler matching, header-tab
+  arrangement, the search panel's grouping and remembered searches, and the rich-text
   sanitiser that renders the imported Vtiger notes), and 8 in `packages/mcp` (tool-output
   formatting). The web suite runs on `node` except where a file asks for `jsdom` with a
   `@vitest-environment` pragma — the sanitiser leans on the browser's own parser, so testing it

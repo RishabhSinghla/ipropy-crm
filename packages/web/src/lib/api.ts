@@ -270,7 +270,17 @@ export interface SearchHit {
    * owner and nothing else — there is no id to follow.
    */
   restricted?: true;
+  /**
+   * Who the record belongs to, and when it was last touched.
+   *
+   * The sub-line under each name in the search panel. Two people called Sharma
+   * read identically without them, so the only way to tell them apart was to
+   * open both — which is the whole reason the owner asked for a better search
+   * on 4 October 2026.
+   */
   ownerName?: string | null;
+  updatedAt?: string | null;
+  recordNumber?: string | null;
 }
 
 export interface ShareLink {

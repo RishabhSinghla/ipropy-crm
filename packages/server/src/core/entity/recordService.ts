@@ -1998,9 +1998,27 @@ export async function globalSearch(
 
   const limitParam = params.add(limit);
 
-  const res = await db.query<{ id: string; module_name: string; label: string; record_number: string | null }>(
-    `SELECT ${RECORD_ALIAS}.id, ${RECORD_ALIAS}.module_name, ${RECORD_ALIAS}.label, ${RECORD_ALIAS}.record_number
+  /*
+    **The owner and the last touch come back with every hit** — 4 October 2026,
+    the owner, asking for the search panel to group its answers and say more
+    about each one: *"we can search everything, the result shown in list. by
+    source of result."*
+
+    A row of bare names is the thing it replaces: two people called Sharma look
+    identical in it, so the only way to tell them apart was to open both. Who
+    the record belongs to and when it was last touched are enough to choose, and
+    both are already on `ipy_record` — one LEFT JOIN, no payload table, so this
+    costs nothing a search box would notice.
+  */
+  const res = await db.query<{
+    id: string; module_name: string; label: string; record_number: string | null;
+    owner_name: string | null; updated_at: string | null;
+  }>(
+    `SELECT ${RECORD_ALIAS}.id, ${RECORD_ALIAS}.module_name, ${RECORD_ALIAS}.label,
+            ${RECORD_ALIAS}.record_number, ${RECORD_ALIAS}.updated_at,
+            nullif(trim(owner.first_name || ' ' || owner.last_name), '') AS owner_name
      FROM ipy_record ${RECORD_ALIAS}
+     LEFT JOIN ipy_user owner ON owner.id = ${RECORD_ALIAS}.owner_id
      WHERE (${branches.join(' OR ')})
        AND ${RECORD_ALIAS}.is_deleted = false
        AND ${search}
@@ -2016,6 +2034,8 @@ export async function globalSearch(
     moduleLabel: labelByName.get(r.module_name) ?? r.module_name,
     label: r.label,
     recordNumber: r.record_number,
+    ownerName: r.owner_name,
+    updatedAt: r.updated_at,
   }));
 
   /*

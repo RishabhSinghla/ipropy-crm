@@ -92,6 +92,13 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
     blurb: 'What happens when somebody clicks a row or a value. Nothing here changes your data — '
       + 'only how it is reached.',
   },
+  {
+    id: 'data_quality',
+    title: 'Record quality',
+    blurb: 'How complete a record is expected to be, and who hears about the ones that are not. '
+      + 'It never blocks a save — a lead taken down mid-call has to get in with a name and a number — '
+      + 'so this is a reminder, not a gate. Leave it at 0 and nobody is reminded of anything.',
+  },
   { id: 'sharing', title: 'Share links', blurb: 'What a buyer sees when you send them a property.' },
   { id: 'telephony', title: 'Calls', blurb: 'Call recording.' },
   { id: 'ai', title: 'AI', blurb: 'Which parts of the CRM the AI is allowed to do on its own.' },

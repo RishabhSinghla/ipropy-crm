@@ -2075,3 +2075,150 @@ tag choice was located as `button[aria-pressed="false"]`, then clicked, then
 asserted to be pressed — so the moment it was ticked it stopped matching and
 `.first()` resolved to the *next* unticked tag, false for ever. A locator must
 not name the state the test is about to change.
+
+---
+
+## Four on 4 October: the logo, the search, a note's date, and chasing an empty record
+
+Three of his seven that morning were already written and pushed on 3 October and
+had simply **not reached production** — CI had been red since that evening on one
+stale assertion (migration `184` took "Unread Leads" out and a count eleven lines
+down still said four), and `render.yaml` can gate the deploy on checks. Worth the
+reflex: before rebuilding something the owner reports as missing, **check whether
+it shipped**. `gh api repos/.../actions/runs` answers it in one call, and a red run
+looks exactly like a slow deploy.
+
+### The company logo is not a circle
+
+*"See the first screenshot of the Company Profile Logo, Poor Alignment & Size
+adjustment."*
+
+**A circle is the wrong frame for a company logo, and that was the whole fault.**
+`BrandMark` drew a 32px round box with a ring round it, so a wide wordmark — which
+is what almost every company's logo is — had to fit its entire width inside 32px
+of height and came out a few pixels tall; and the ring, drawn *outside* the box,
+made the mark 36px in a row whose padding allows less, so it pressed against both
+edges. Three separate evenings were spent making that circle bigger, then darker,
+then smaller again, which is the clue that **the shape was never the thing to
+adjust**.
+
+A real logo is now drawn as the shape it is: `h-9 w-auto`, capped at 8rem on a
+phone and 11rem above, `object-contain object-left`, no ring and no crop. The
+round badge stays for the **initial**, which is the one case a circle fits,
+because a single letter has no width of its own. And the company name beside it is
+printed **only when there is no logo** — a wordmark already *is* the name, so the
+two together said it twice and took a third of the bar. The link's `aria-label`
+still carries the name either way.
+
+### The search panel
+
+*"We need search as a more/much dynamic in the Main/top toolbar, we can search
+everything, the result shown in list. by source of result and last search also
+shown in below … we want word's all dynamic features in this search, means most
+advance label search engine of our crm."*
+
+**Nothing about the searching changed, and that is why this was a day.**
+`GET /api/search` already reads as the person asking, already narrows a
+comma-separated list, and already says when a number belongs to a colleague's
+customer. What changed is the panel over it:
+
+* **Grouped by the module the answer came from**, with a count on each heading and
+  a **See all** that opens that module's own list with the same words in its box
+  (`?q=`, which `ListView` has always read). `lib/searchGroups.ts` is the rule,
+  pure: a group appears **where its first hit appeared** and keeps the server's
+  order inside it — sorting groups by size would put the module nobody asked for
+  at the top whenever it happened to match more. A record somebody cannot open is
+  grouped with its own kind rather than collected into an "other" bucket: it is
+  the answer to *"does anybody already have this number"*, so it belongs beside
+  the ones that can be opened.
+* **A sub-line that tells two people of the same name apart** — record number,
+  who owns it, when it was last touched. `globalSearch` returns the owner and
+  `updated_at` now, one `LEFT JOIN ipy_user`, no payload table, so a search box
+  does not notice the cost.
+* **↑ ↓ and ↵.** The flat list the arrows walk is **derived from the groups**
+  (`flattenGroups`) and never from the server's own array — the two would disagree
+  the moment grouping reordered anything, and then the arrows would highlight one
+  row while ↵ opened another. It wraps both ways, because a short list is read by
+  holding one key. ↵ with **nothing** highlighted opens the first group's full
+  list rather than guessing the top answer: pressing it means "show me these", and
+  opening a record because it happened to be first is how a rep lands on somebody
+  else's customer with no idea why.
+* **The last five searches** under an empty box, each with an ×
+  (`lib/searchHistory.ts`). In this browser, like the split view's width: it is
+  nobody else's business and a round trip to recall it is slow at exactly the
+  wrong moment. The same search typed twice is one entry, matched without regard
+  to case or spaces — otherwise the row fills with one word and the other four
+  fall off. Remembered when a search is **acted on**, never per keystroke.
+
+Two things only a browser could have shown, and both were found that way:
+`PeekLink` does not forward arbitrary props, so `aria-selected` written on the
+caller reached nothing and the arrow keys highlighted a row no test and no screen
+reader could find — it takes a `selected` prop now, on the link itself, because a
+wrapper saying "selected" is one a keyboard user's software cannot connect to the
+link inside it. And the panel scrolls, so ↓ past the sixth row highlighted
+something off screen: the highlight is scrolled into view with `block: 'nearest'`.
+
+### A note says its own date
+
+*"the Note date are separate from comment/note box, we want to see note/comment
+date in same box of comment/note just like agent name and updated time."*
+
+The feed put the date in a chip down the middle, one per day, so a note read
+"Rahul Kumar · 4:12 pm" and the only way to learn *which* 4:12 pm was to scroll up
+until a chip came into view. A note is a thing somebody comes back to on its own.
+
+`DayChip` and `sameDay` are gone from `ActivityFeed.tsx`; `clock` carries the day
+as well as the time, and `NoteEntry` in `RecordBlocks.tsx` prints it beside the
+agent's name — it said "2 days ago" alone, which is enough for a glance and no use
+at all for a note from last December, so it now says both. **Today shows the time
+alone** (three words to say "now-ish" is noise) and **the year only when it is not
+this one**.
+
+### Chasing a record nobody has filled in
+
+*"i am pushing my team/agents that, they are fill the form fields maximum … but
+alls are slacker … can you make an option for that they are bound to filled
+maximum or all the fields in leads/inventory module, or you can pushing hem time
+to time from crm/system."*
+
+He offered two roads and this takes the second, deliberately. **Making every field
+mandatory would break the one thing this CRM is fastest at.** A rep on the phone
+types a name and a number and saves — that is how a lead arrives at all rather
+than on the back of an envelope — and a form that refuses until twenty-five fields
+are answered is a form nobody uses, so the records would stop arriving rather than
+arrive fuller. Worse, the automated sources carry what the customer gave and
+nothing more, so a mandatory field there means the lead is **thrown away**: this
+repo has lived through exactly that once, when migration `026` made two fields
+stricter and every automated lead failed validation in silence for weeks.
+
+So the pressure is applied after the record exists, where being wrong costs
+nothing — `core/quality/profileStrength.ts`:
+
+* **`profile_strength` is ordinary filter grammar now.** It could only be *sorted*
+  by before, so "every contact of mine under 60%" could not be asked at all —
+  which means it could not be a saved view, a quick filter, a dashboard tile, or
+  the thing a nightly count reads. `strengthPercentExpr` is the sorting's own
+  `strengthExpr` turned into a percentage, so the bar on the record and this
+  filter can never disagree about what 60% means. It is **not** in `SYSTEM_FIELDS`
+  because that table is static and this answer depends on the module's own field
+  list — which is the point: adding a field moves every record's strength, with no
+  deploy.
+* **A target he sets** — `data.min_profile_strength`, Admin → Settings → Record
+  quality, migration `185`, seeded **0** which means off. Nothing nags anybody on
+  the day it ships. Clamped to 100 rather than trusted: a mistyped 400 would mark
+  every record in the business thin, every day, for ever.
+* **One nudge a day to whoever owns the record**, between nine and eleven, naming
+  the count and linking at *their own* thin records weakest first — the link is
+  `?filter=` with `owner_id is_me`, so it is one link that shows each person only
+  theirs, and no new screen. **One notification per person, never one per record**:
+  forty notifications is forty notifications somebody switches off, and then the
+  useful ones go with them. Keyed on the calendar day, not hours elapsed, so a
+  restart at 09:01 cannot send a second copy.
+
+**Nothing here blocks a save.** That is the whole design, and the thing to get
+from him rather than from this file before changing it.
+
+`tests/integration/profileStrengthNudge.test.ts` (13) had to **set the target
+itself** — the nudge does nothing until one is set, so every test would otherwise
+trip over the refusal and prove nothing past it. Same rule as the WhatsApp send
+that died on a line no test had ever reached.

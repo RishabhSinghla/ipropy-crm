@@ -18,6 +18,8 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { Avatar, Badge, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
 import { PeekLink, PeekProvider } from './PeekLink';
+import { flattenGroups, groupHits, moveHighlight } from '../lib/searchGroups';
+import { readRecent, withRecent, withoutRecent, writeRecent } from '../lib/searchHistory';
 import RecordForm from './RecordForm';
 
 /* Lazy, because capture carries the camera and EXIF machinery and the shell is
@@ -124,9 +126,19 @@ export default function Layout(): JSX.Element {
 
           <Link to="/dashboard" className="flex shrink-0 items-center gap-2.5 overflow-hidden" aria-label={brand?.orgName ?? 'iPropy'}>
             <BrandMark logoUrl={brand?.logoUrl ?? null} name={brand?.orgName ?? 'iPropy'} />
-            <span className="hidden truncate text-base font-semibold leading-tight tracking-tight sm:block">
-              {brand?.orgName ?? 'iPropy'}
-            </span>
+            {/*
+              **The name is printed only when there is no logo.** A company's
+              logo almost always *is* its name written out, so the two side by
+              side said it twice and between them took a third of the bar — the
+              other half of *"Poor Alignment & Size adjustment"* (4 October
+              2026). The `aria-label` on this link still carries the name, so a
+              screen reader says it either way.
+            */}
+            {!brand?.logoUrl && (
+              <span className="hidden truncate text-base font-semibold leading-tight tracking-tight sm:block">
+                {brand?.orgName ?? 'iPropy'}
+              </span>
+            )}
           </Link>
 
           {/*
@@ -611,43 +623,51 @@ function BrandMark({ logoUrl, name }: { logoUrl: string | null; name: string }):
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [logoUrl]);
   /*
-    **3 October 2026, the owner:** *"Company Avtar Circle of Company Picture
-    should be Dark and Bold as per Theme, current circle line is thin, and i
-    cant see company picture/logo."*
+    **4 October 2026, the owner, with a screenshot of the header:** *"Company
+    Profile Logo, Poor Alignment & Size adjustment."*
 
-    Two changes, and the second is the one that makes a logo appear at all. The
-    ring was `brand-100` — the palest step there is — on a white header, which
-    is a hairline nobody can see; it is the brand's own dark step now, and a
-    step thicker. And the picture was `object-cover`, which fills the circle by
-    **cropping** — a wide wordmark came out as an unreadable slice of its middle,
-    which is what "I can't see the logo" looks like. `object-contain` fits the
-    whole of it inside the circle instead, with a little room so it is not
-    pressed against the ring.
+    **A circle is the wrong frame for a company logo, and that is the whole
+    fault.** It was a 32px round box with a ring round it, so a wide wordmark —
+    which is what almost every company's logo is — had to fit its whole width
+    inside 32px of height, coming out a few pixels tall and unreadable; and the
+    ring, drawn *outside* the box, pressed against the row's own padding, which
+    is the "poor alignment" half. Three evenings of this file were spent making
+    that circle bigger, darker, then smaller again, which is the clue that the
+    shape was never the thing to adjust.
+
+    So a real logo is now drawn **as the shape it is**: full height of the bar's
+    comfortable 36px, whatever width that gives it, capped so it cannot push the
+    rest of the bar off a phone. No ring and no crop — a logo is already a
+    finished piece of design and a border round it is one more thing to clash
+    with. The round badge stays for the **initial**, which is the one case a
+    circle fits, because a single letter has no width of its own.
 
     Plain brand steps, never an opacity modifier: these resolve to a bare
     `var(--brand-…)`, so `ring-brand-600/40` would compile to nothing at all.
   */
-  /*
-    **Smaller again, 3 October 2026:** *"decrease the size company logo avtar,
-    bcoz the circle overlap the padding."* A ring is drawn *outside* the box, so
-    a 36px circle with a 3px ring is 42px of header — taller than the row's own
-    padding allows, and it pressed against the edges. 32px with a 2px ring is
-    36px in all, which is what the circle used to occupy before the ring was
-    thickened earlier this evening. The ring keeps the dark brand step he asked
-    for; only its weight came back down.
-  */
-  const circle = 'flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-brand-600 shadow-sm dark:ring-brand-400';
   if (logoUrl && !failed) {
     return (
-      <span className={`${circle} bg-white`} data-testid="brand-mark">
+      <span className="flex h-9 shrink-0 items-center" data-testid="brand-mark">
         {/* A CRM-hosted logo is permission-checked, and an <img> cannot send
-            the session header — so the token rides in the query string. */}
-        <img src={authedFileUrl(logoUrl)} alt="" className="h-full w-full p-0.5 object-contain" onError={() => setFailed(true)} />
+            the session header — so the token rides in the query string.
+            `h-full w-auto` is what keeps its own proportions: a width this code
+            picked would squash somebody's logo on the one screen they look at
+            most. */}
+        <img
+          src={authedFileUrl(logoUrl)}
+          alt=""
+          className="h-full w-auto max-w-[8rem] object-contain object-left sm:max-w-[11rem]"
+          onError={() => setFailed(true)}
+        />
       </span>
     );
   }
   return (
-    <span className={`${circle} bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white`} data-testid="brand-mark" aria-hidden>
+    <span
+      className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white shadow-sm"
+      data-testid="brand-mark"
+      aria-hidden
+    >
       {name.trim().charAt(0).toUpperCase() || 'i'}
     </span>
   );
@@ -833,12 +853,38 @@ function RestrictedHit({ hit }: { hit: SearchHit }): JSX.Element {
 }
 
 function GlobalSearch(): JSX.Element {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
+  const [recent, setRecent] = useState<string[]>(() => readRecent());
+  const [highlight, setHighlight] = useState(-1);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /*
+    **4 October 2026, the owner, with a design of the panel he wants:** *"We need
+    search as a more/much dynamic in the Main/top toolbar, we can search
+    everything, the result shown in list. by source of result and last search
+    also shown in below … we want word's all dynamic features in this search,
+    means most advance label search engine of our crm."*
+
+    What it replaced was a flat list of names with the module on a chip at the
+    end of each row. Four things changed, and none of them is a new search
+    engine: the answers are **grouped by the module they came from** with a count
+    on each heading; each row says who owns the record and when it was last
+    touched, so two people called Sharma can be told apart without opening both;
+    **↑ ↓ and ↵** walk and open them; and the **last five searches** sit under
+    the box with an × each.
+
+    The searching itself is the same one endpoint — `GET /api/search` — which is
+    the whole reason this was a day and not a month. It already reads as the
+    person asking, already narrows a comma-separated list, and already says when
+    a number belongs to a colleague's customer.
+  */
+  const groups = useMemo(() => groupHits(results), [results]);
+  const flat = useMemo(() => flattenGroups(groups), [groups]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -871,6 +917,82 @@ function GlobalSearch(): JSX.Element {
     return () => clearTimeout(timer);
   }, [query]);
 
+  /*
+    A new **question** starts with nothing highlighted, so ↵ cannot open a row
+    that has just been replaced by a different record under the cursor.
+
+    Keyed on the query and deliberately **not** on the answers: the answers
+    arrive a beat after the typing stops, and resetting on them threw away a ↓
+    pressed in that beat — which is exactly when a fast typist presses it. The
+    highlight then stayed at nothing and ↵ did something else entirely. Found in
+    a browser; nothing else could have shown it.
+  */
+  useEffect(() => setHighlight(-1), [query]);
+
+  /*
+    Keep the walked-to row on screen. The panel scrolls, and ten answers in two
+    groups is taller than it — so ↓ past the sixth highlighted a row nobody could
+    see, and ↵ then opened a record that had never been in front of anybody.
+    `block: 'nearest'` so an already-visible row does not jump the list about.
+  */
+  useEffect(() => {
+    if (highlight < 0) return;
+    ref.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [highlight]);
+
+  /** Remember what was searched — only once it has been acted on, never per keystroke. */
+  const remember = (term: string): void => {
+    const next = withRecent(recent, term);
+    setRecent(next);
+    writeRecent(next);
+  };
+
+  const forget = (term: string): void => {
+    const next = withoutRecent(recent, term);
+    setRecent(next);
+    writeRecent(next);
+  };
+
+  const openHit = (hit: SearchHit): void => {
+    if (hit.restricted) return;
+    remember(query);
+    setOpen(false);
+    setQuery('');
+    navigate(`/${hit.module}/${hit.id}`);
+  };
+
+  /** Everything this module matched, in its own list, where it can be filtered further. */
+  const openModule = (module: string): void => {
+    remember(query);
+    setOpen(false);
+    const term = query;
+    setQuery('');
+    navigate(`/${module}?q=${encodeURIComponent(term)}`);
+  };
+
+  const onBoxKey = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === 'Escape') { setOpen(false); return; }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setOpen(true);
+      setHighlight((current) => moveHighlight(current, event.key === 'ArrowDown' ? 1 : -1, flat.length));
+      return;
+    }
+    if (event.key === 'Enter') {
+      /*
+        ↵ with nothing highlighted opens the first module's full list rather than
+        guessing a record. Pressing it is "show me these", and opening the top
+        answer because it happened to be first is how a rep ends up on somebody
+        else's record with no idea why.
+      */
+      const chosen = flat[highlight];
+      if (chosen) openHit(chosen);
+      else if (groups[0]) openModule(groups[0].module);
+    }
+  };
+
+  const showRecent = open && query.trim().length < 2 && recent.length > 0;
+
   return (
     <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-auto lg:max-w-xs xl:max-w-sm" ref={ref}>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -879,37 +1001,121 @@ function GlobalSearch(): JSX.Element {
         className="input py-1.5 pl-8 pr-12"
         placeholder="Search everything…"
         value={query}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls="global-search-results"
         onFocus={() => setOpen(true)}
+        onKeyDown={onBoxKey}
         onChange={(e) => setQuery(e.target.value)}
       />
       <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-muted dark:border-slate-700 sm:block">
         ⌘K
       </kbd>
 
+      {/* The last five searches, with the box still empty — his *"last search
+          also shown in below"*. Offered only where it would say something: an
+          empty row of nothing is worse than no row. */}
+      {showRecent && (
+        <div className="popover absolute z-40 mt-1 w-full p-2" data-testid="search-recent">
+          <p className="px-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted">Last search</p>
+          <div className="flex flex-wrap gap-1.5">
+            {recent.map((term) => (
+              <span
+                key={term}
+                className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-white py-1 pl-2.5 pr-1 text-xs dark:bg-slate-800"
+              >
+                <button
+                  type="button"
+                  className="max-w-[9rem] truncate font-medium"
+                  onClick={() => { setQuery(term); inputRef.current?.focus(); }}
+                >
+                  {term}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Forget “${term}”`}
+                  className="rounded-full p-0.5 text-muted hover:bg-slate-100 dark:hover:bg-slate-700"
+                  onClick={() => forget(term)}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {open && query.trim().length >= 2 && (
-        <div className="popover absolute z-40 mt-1 max-h-96 w-full overflow-y-auto">
+        <div className="popover absolute z-40 mt-1 max-h-[26rem] w-full overflow-y-auto" id="global-search-results" role="listbox">
           {loading && <div className="flex justify-center py-6"><Spinner className="text-slate-400" /></div>}
           {!loading && results.length === 0 && (
             <p className="px-3 py-6 text-center text-xs text-muted">No matches for “{query}”</p>
           )}
-          {results.map((r) => (r.restricted ? (
-            <RestrictedHit key={r.id} hit={r} />
-          ) : (
-            <PeekLink
-              key={r.id}
-              module={r.module}
-              id={r.id}
-              label={r.label}
-              // A modified click opens a background tab and the browser leaves
-              // this page alone — so clearing the box would throw away the
-              // results somebody is deliberately working through one at a time.
-              onNavigate={() => { setOpen(false); setQuery(''); }}
-              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 [-webkit-touch-callout:none] dark:hover:bg-slate-800"
-            >
-              <span className="truncate text-sm">{r.label}</span>
-              <Badge className="shrink-0">{r.moduleLabel}</Badge>
-            </PeekLink>
-          )))}
+
+          {groups.map((group) => (
+            <div key={group.module}>
+              {/* The heading says where these came from, how many, and is the
+                  way to the module's own list with the same words in its box. */}
+              <div className="sticky top-0 flex items-center gap-2 bg-[var(--surface-muted)] px-3 py-1.5">
+                <span className="truncate text-[10px] font-bold uppercase tracking-wider text-muted">{group.label}</span>
+                <Badge className="shrink-0">{group.hits.length}</Badge>
+                <button
+                  type="button"
+                  className="ml-auto shrink-0 text-[10px] font-semibold text-brand-700 hover:underline dark:text-brand-300"
+                  onClick={() => openModule(group.module)}
+                >
+                  See all
+                </button>
+              </div>
+              {group.hits.map((hit) => (hit.restricted ? (
+                <RestrictedHit key={hit.id} hit={hit} />
+              ) : (
+                <PeekLink
+                  key={hit.id}
+                  module={hit.module}
+                  id={hit.id}
+                  label={hit.label}
+                  // A modified click opens a background tab and the browser leaves
+                  // this page alone — so clearing the box would throw away the
+                  // results somebody is deliberately working through one at a time.
+                  onNavigate={() => { remember(query); setOpen(false); setQuery(''); }}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 px-3 py-2 text-left [-webkit-touch-callout:none]',
+                    /*
+                      One class string per state, never two `bg-*` utilities in
+                      one list: Tailwind decides between them by where they sit
+                      in its own stylesheet, not by the order they are typed.
+                    */
+                    flat[highlight]?.id === hit.id
+                      ? 'bg-brand-50 dark:bg-slate-700'
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-800',
+                  )}
+                  selected={flat[highlight]?.id === hit.id}
+                >
+                  <Avatar name={hit.label} size={28} className="shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{hit.label}</span>
+                    {/* What tells two people of the same name apart. Each part
+                        is skipped when it is empty rather than printed as a
+                        dash — a sub-line of separators says nothing. */}
+                    <span className="block truncate text-[11px] text-muted">
+                      {[hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)]
+                        .filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                </PeekLink>
+              )))}
+            </div>
+          ))}
+
+          {/* The keys, said once at the foot — his design's own footer. */}
+          {!loading && flat.length > 0 && (
+            <p className="flex items-center gap-3 border-t border-[var(--border)] px-3 py-1.5 text-[10px] text-muted">
+              <span><kbd className="font-sans">↑↓</kbd> to move</span>
+              <span><kbd className="font-sans">↵</kbd> to open</span>
+              <span className="ml-auto"><kbd className="font-sans">esc</kbd> to close</span>
+            </p>
+          )}
         </div>
       )}
     </div>

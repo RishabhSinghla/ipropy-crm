@@ -190,6 +190,26 @@ export async function resolveFieldPath(
   joinRegistry: Map<string, string>,
 ): Promise<ResolvedField> {
   if (!path.includes('.')) {
+    /*
+      **Profile strength, as a number anybody can filter on** — 4 October 2026,
+      the owner: *"i am pushing my team/agents that, they are fill the form
+      fields maximum, so that the profile strength more stronger, but alls are
+      slacker … can you make an option for that they are bound to filled maximum
+      … or you can pushing hem time to time from crm/system."*
+
+      Until now strength could only be *sorted* by, so "show me every contact
+      under 60%" could not be asked — which means it could not be a saved view, a
+      quick filter, a dashboard tile, or the thing a nightly nudge counts. It is
+      the same `strengthExpr` the sorting uses, turned into a percentage, so the
+      bar on screen and this filter can never disagree about what 60% means.
+
+      It is not in `SYSTEM_FIELDS` because that table is static and this answer
+      depends on the module's own field list, which is exactly the point: adding
+      a field moves every record's strength, with no deploy.
+    */
+    if (path === 'profile_strength') {
+      return { expr: strengthPercentExpr(module), field: null, uitype: 'percent', joins: [] };
+    }
     if (isSystemField(path)) {
       return { expr: systemFieldExpr(path), field: null, uitype: SYSTEM_FIELDS[path].uitype, joins: [] };
     }
@@ -627,6 +647,21 @@ function strengthExpr(module: ModuleMeta): string {
     return `(CASE WHEN ${expr} IS NULL OR ${expr}::text IN ('', '[]', '{}') THEN 0 ELSE 1 END)`;
   });
   return `(${filled.join(' + ')})`;
+}
+
+/**
+ * The same count as a whole-number percentage, 0 to 100.
+ *
+ * Sorting does not need the division — every row in a module is out of the same
+ * total — but a filter does: "under 60%" has to mean the number on the bar, and
+ * a count would mean a different threshold on each module. `ROUND` so the filter
+ * and the bar agree to the digit; a module with nothing answerable reads 100,
+ * because a record with no questions to answer has answered all of them.
+ */
+export function strengthPercentExpr(module: ModuleMeta): string {
+  const answerable = module.fields.filter(isAnswerable);
+  if (!answerable.length) return '100';
+  return `ROUND((${strengthExpr(module)})::numeric * 100 / ${answerable.length})`;
 }
 
 export async function buildOrderBy(
