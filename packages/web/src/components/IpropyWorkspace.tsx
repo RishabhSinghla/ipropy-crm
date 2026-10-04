@@ -1255,7 +1255,7 @@ export function IpropyWorkspace({
         </aside>
       )}
       </div>}
-      {!active && <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950" data-testid="empty-workspace"><Search className="h-8 w-8 text-slate-300" /><h2 className="font-semibold">No matching records</h2><p className="text-sm text-muted">Try another tag or adjust your search and filters.</p>{emptyAction}{filterBar?.open && filterBar.panel}</div>}
+      {!active && <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950" data-testid="empty-workspace"><Search className="h-8 w-8 text-slate-300" /><h2 className="font-semibold">No matching records</h2><p className="text-sm text-muted">Try another tag or adjust your search and filters.</p>{emptyAction}</div>}
     </div>
 
     {/*
