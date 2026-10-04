@@ -10,6 +10,8 @@ import { FilterBuilder } from './FilterBuilder';
 import { FieldInput } from './FieldRenderer';
 import { assignmentField, followUpFieldOf, pipelineFieldOf } from '../lib/fields';
 import { followUpFilters, type TaskQueue } from './FollowUpQueue';
+import { useCallDispositionOptions } from '../lib/callDispositions';
+import { LAST_CALL_DISPOSITION } from './CallDispositionFilter';
 
 /** Temporary search criteria, not an edit to anybody's saved list. */
 export function SearchOptions({ words, onWordsChange, onOpen }: { words: string; onWordsChange: (value: string) => void; onOpen: () => void }): JSX.Element {
@@ -32,17 +34,18 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
   const contactType = fields.find((field) => field.config.picklist === 'contact_type' || field.columnName === 'contact_type');
   const money = fields.find((field) => field.uitype === 'currency' && /budget|demand|asking|price/i.test(`${field.name} ${field.label}`)) ?? fields.find((field) => field.uitype === 'currency');
   const size = fields.find((field) => ['area', 'number', 'decimal', 'integer'].includes(field.uitype) && /size|area/i.test(`${field.name} ${field.label}`));
-  const disposition = fields.find((field) => /call_disposition|call_log/.test(`${field.name} ${field.config.picklist ?? ''}`));
+  const dispositions = useCallDispositionOptions();
   const lostReason = fields.find((field) => /lost_reason/.test(`${field.name} ${field.config.picklist ?? ''}`));
   const choose = (key: string, value: unknown): void => setChoices((previous) => ({ ...previous, [key]: value }));
   const quickConditions: Array<FilterCondition | FilterGroup> = [];
-  for (const field of [owner, status, locationField, contactType, disposition, lostReason]) {
+  for (const field of [owner, status, locationField, contactType, lostReason]) {
     const value = field && choices[field.name];
     if (field && value !== undefined && value !== null && value !== '') quickConditions.push({ field: field.name, operator: Array.isArray(value) ? 'has_any' : 'equals', value });
   }
   if (due && choices.task) quickConditions.push(followUpFilters(due.name)[choices.task as TaskQueue]);
   if (choices.created) quickConditions.push({ field: 'created_at', operator: choices.created as 'today' | 'yesterday' | 'this_week' | 'this_month' });
   if (choices.tag) quickConditions.push({ field: 'record_tags', operator: 'has_any', value: [choices.tag] });
+  if (choices.disposition) quickConditions.push({ field: LAST_CALL_DISPOSITION, operator: 'equals', value: choices.disposition });
   if (money) {
     if (choices.min !== undefined && choices.min !== '') quickConditions.push({ field: money.name, operator: 'greater_or_equal', value: Number(choices.min) });
     if (choices.max !== undefined && choices.max !== '') quickConditions.push({ field: money.name, operator: 'less_or_equal', value: Number(choices.max) });
@@ -76,7 +79,7 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
         {due && <label className="space-y-1 text-xs font-medium text-muted">Task wise<select className="input" value={String(choices.task ?? '')} onChange={(event) => choose('task', event.target.value)}><option value="">Any task</option><option value="pending">Overdue</option><option value="today">Today</option><option value="tomorrow">Tomorrow</option><option value="upcoming">Upcoming</option></select></label>}
         <label className="space-y-1 text-xs font-medium text-muted">Created date<select className="input" value={String(choices.created ?? '')} onChange={(event) => choose('created', event.target.value)}><option value="">Any date</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="this_week">This week</option><option value="this_month">This month</option></select></label>
         <label className="space-y-1 text-xs font-medium text-muted">Tag wise<select className="input" value={String(choices.tag ?? '')} onChange={(event) => choose('tag', event.target.value)}><option value="">Any tag</option>{tags?.map((tag) => <option key={tag.id} value={tag.name}>{tag.name}</option>)}</select></label>
-        {quickField(disposition, 'Call disposition / log')}{quickField(lostReason, 'Lost reason')}
+        <label className="space-y-1 text-xs font-medium text-muted">Call disposition / log<select className="input" value={String(choices.disposition ?? '')} onChange={(event) => choose('disposition', event.target.value)}><option value="">Any call disposition</option>{dispositions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>{quickField(lostReason, 'Lost reason')}
         <div className="hidden sm:block" />
         {money && <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{money.label} range (₹)</span><div className="flex gap-2"><input aria-label="Minimum budget or demand" className="input min-w-0" type="number" min="0" placeholder="Min" value={String(choices.min ?? '')} onChange={(event) => choose('min', event.target.value)} /><input aria-label="Maximum budget or demand" className="input min-w-0" type="number" min={Number(choices.min) || 0} placeholder="Max" value={String(choices.max ?? '')} onChange={(event) => choose('max', event.target.value)} /></div><input aria-label="Budget or demand maximum slider" className="w-full accent-brand-600" type="range" min={Number(choices.min) || 0} max={Math.max(1_000_000_000, Number(choices.max) || 0, Number(choices.min) || 0)} step="100000" value={Number(choices.max) || 1_000_000_000} onChange={(event) => choose('max', event.target.value)} /></div>}
         {size && <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{size.label} range</span><div className="flex gap-2"><input aria-label="Minimum size" className="input min-w-0" type="number" min="0" placeholder="Min" value={String(choices.sizeMin ?? '')} onChange={(event) => choose('sizeMin', event.target.value)} /><input aria-label="Maximum size" className="input min-w-0" type="number" min={Number(choices.sizeMin) || 0} placeholder="Max" value={String(choices.sizeMax ?? '')} onChange={(event) => choose('sizeMax', event.target.value)} /></div><input aria-label="Size maximum slider" className="w-full accent-brand-600" type="range" min={Number(choices.sizeMin) || 0} max={Math.max(10000, Number(choices.sizeMax) || 0, Number(choices.sizeMin) || 0)} value={Number(choices.sizeMax) || 10000} onChange={(event) => choose('sizeMax', event.target.value)} /></div>}
