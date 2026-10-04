@@ -1,5 +1,15 @@
 # The screens a rep lives in
 
+## Toolbar update, 4 October 2026
+
+Universal search is a wide, rounded main-toolbar input. The current module's
+Quick & Live Filters control sits inside it; import/export and list options sit
+beside it, preserving their existing permissions. The record pane no longer
+duplicates those controls. Its replacement is one horizontally scrolling,
+segmented strip of the current module's used tags, with vertical separators.
+Tag clicks preserve the selected view and filters and reset pagination.
+The former list-search browser checks now exercise universal search instead.
+
 The split view and tags. Read it before changing how a list, a record or a tag
 looks or behaves.
 

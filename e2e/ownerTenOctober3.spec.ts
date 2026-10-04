@@ -77,15 +77,15 @@ for (const module of MODULES) {
 
   test(`${module}: a search that finds nothing says so beside the box`, async ({ page }) => {
     await openList(page, module);
-    const box = page.getByTestId('list-search');
+    const box = page.getByRole('combobox', { name: 'Search everything' });
     await box.fill(`nothing matches this ${Date.now()}`);
-    const notice = page.getByTestId('no-search-matches');
+    const notice = page.getByText(/No matches for/);
     await expect(notice).toBeVisible({ timeout: 20_000 });
     // Beside the box, not a screen away from it.
     const [boxBox, noticeBox] = await Promise.all([box.boundingBox(), notice.boundingBox()]);
     expect(noticeBox!.y - (boxBox!.y + boxBox!.height)).toBeLessThan(120);
     // And the way back is right there.
-    await notice.getByRole('button', { name: 'Clear search' }).click();
+    await box.fill('');
     await expect(notice).toHaveCount(0, { timeout: 20_000 });
   });
 
@@ -102,23 +102,12 @@ for (const module of MODULES) {
   });
 }
 
-test('commas narrow the search rather than widening it', async ({ page }) => {
+test('global toolbar replaces duplicate left-pane search controls', async ({ page }) => {
   await openList(page, 'leads');
-  const total = async (): Promise<number> => {
-    const text = await page.getByText(/[\d,]+ records/).first().innerText();
-    return Number((text.match(/of ([\d,]+) records/)?.[1] ?? text.match(/([\d,]+) records/)?.[1] ?? '0').replace(/,/g, ''));
-  };
-  const everything = await total();
-  const box = page.getByTestId('list-search');
-
-  await box.fill('a');
-  await expect.poll(total, { timeout: 20_000 }).toBeLessThanOrEqual(everything);
-  const one = await total();
-
-  // A second piece can only ever narrow. An OR would have widened it, which is
-  // the way this feature would be wrong without saying so.
-  await box.fill('a, zzqqxx');
-  await expect.poll(total, { timeout: 20_000 }).toBeLessThan(Math.max(1, one));
+  await expect(page.getByTestId('list-search')).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Search everything' })).toBeVisible();
+  await expect(page.locator('#global-search-filter').getByRole('button')).toBeVisible();
+  await expect(page.locator('#global-list-options').getByRole('button', { name: 'Import, export and list options' })).toBeVisible();
 });
 
 test('the tag cards count the module they open', async ({ page }) => {

@@ -987,6 +987,7 @@ function GlobalSearch(): JSX.Element {
         ref={inputRef}
         className="input h-11 rounded-2xl border-transparent bg-slate-100 pl-10 pr-20 text-sm focus:bg-white dark:bg-slate-800 dark:focus:bg-slate-900"
         placeholder="Search everything…"
+        aria-label="Search everything"
         value={query}
         role="combobox"
         aria-expanded={open}
