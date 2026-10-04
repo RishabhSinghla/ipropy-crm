@@ -6,7 +6,7 @@ import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } fro
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
   History, Mail, MessageCircle, MessageSquare, MessagesSquare, MoreHorizontal, Phone, Search, Send,
-  Sparkles, Star, Tag, Trash2, Users, X, Filter,
+  Sparkles, Star, Tag, Trash2, Users, X,
 } from 'lucide-react';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
@@ -956,11 +956,6 @@ export function IpropyWorkspace({
             squeezing it, which is what `flex-wrap` was already here for.
           */}
           <span className="ml-auto flex shrink-0 basis-full flex-wrap items-center justify-end gap-1.5 xl:basis-auto" data-testid="split-hero-actions-status">
-            {filterBar?.onToggle && <button type="button" onClick={filterBar.onToggle}
-              aria-label="Quick filters" aria-pressed={filterBar.open} title="Quick filters"
-              className="btn-secondary btn-sm rounded-full p-2">
-              <Filter className="h-4 w-4" />
-            </button>}
             {/*
               **The module's name left this header on 3 October 2026** —
               *"Remove inventory/Lead labels/text from this middle header."*

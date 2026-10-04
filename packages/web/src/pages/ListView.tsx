@@ -95,7 +95,7 @@ export default function ListView(): JSX.Element {
   const [showFilters, setShowFilters] = useState(false);
   const [toolbarSlots, setToolbarSlots] = useState<{ filter: HTMLElement | null; options: HTMLElement | null }>({ filter: null, options: null });
   useEffect(() => {
-    setToolbarSlots({ filter: document.getElementById('global-search-filter'), options: document.getElementById('global-list-options') });
+    setToolbarSlots({ filter: document.getElementById('global-quick-filter'), options: document.getElementById('global-list-options') });
   }, []);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -979,6 +979,7 @@ export default function ListView(): JSX.Element {
       </div>
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
         <TagCards moduleName={meta.name} />
+        {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}
               className={cn('btn-secondary btn-sm px-2', quickFilterCount > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
@@ -992,6 +993,7 @@ export default function ListView(): JSX.Element {
                 <span className="rounded-full bg-brand-600 px-1.5 text-2xs text-white">{quickFilterCount}</span>
               )}
             </button>
+        , toolbarSlots.filter)}
 
         {toolbarSlots.options && createPortal(
             <Dropdown

@@ -105,7 +105,7 @@ export default function Layout(): JSX.Element {
         {/* Top bar: brand and primary navigation on the left, search and
             actions on the right. One row, every width — the old sidebar spent
             its whole height saying what a 12px tab now says. */}
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 dark:bg-slate-900 sm:gap-3 sm:px-4">
+        <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 dark:bg-slate-900 sm:gap-3 sm:px-4">
           {/*
             One hamburger, two jobs, and the job is whichever navigation this
             screen has — *"the toolbar also have hamburg function before ipropy
@@ -191,6 +191,7 @@ export default function Layout(): JSX.Element {
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
             <NewRecordButton modules={menuModules} />
             <GlobalSearch />
+            <div id="global-quick-filter" className="shrink-0" />
             <div id="global-list-options" className="shrink-0" />
 
             <div className="flex shrink-0 items-center gap-1">

@@ -108,9 +108,16 @@ test('global toolbar replaces duplicate left-pane search controls', async ({ pag
   await expect(page.getByTestId('list-search')).toHaveCount(0);
   await expect(page.getByRole('combobox', { name: 'Search everything' })).toBeVisible();
   await expect(page.locator('#global-search-filter').getByRole('button')).toBeVisible();
+  await expect(page.locator('#global-quick-filter').getByTestId('quick-filter-button')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Quick filters', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Search options', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'CRM search options' })).toBeVisible();
   await expect(page.getByLabel('Search in')).toBeVisible();
+  // The header dropdown must win hit testing over the sticky record tabs.
+  await expect.poll(() => page.getByRole('dialog', { name: 'CRM search options' }).evaluate((panel) => {
+    const box = panel.getBoundingClientRect();
+    return panel.contains(document.elementFromPoint(box.left + box.width / 2, box.top + 120));
+  })).toBe(true);
   await page.getByLabel('Has the words').fill('toolbar search check');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await expect(page).toHaveURL(/q=toolbar\+search\+check/);

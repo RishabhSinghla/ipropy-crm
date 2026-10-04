@@ -23,7 +23,7 @@ export function CompanyAvatar({ name, logoUrl }: { name: string; logoUrl: string
   };
   return <>
     <input ref={input} type="file" accept="image/*" className="hidden" aria-label="Upload company photo" onChange={(event) => { const file = event.target.files?.[0]; if (file) void save(file); }} />
-    <Dropdown align="left" trigger={<button disabled={busy} className="shrink-0 rounded-full border-[3px] border-brand-700 p-0.5" aria-label={`Company photo of ${name}`} title="Preview or manage company photo"><Avatar name={name} src={logoUrl ? authedFileUrl(logoUrl) : undefined} size={36} /></button>}>
+    <Dropdown align="left" trigger={<button disabled={busy} className="shrink-0 rounded-full border-[3px] border-brand-700 p-0.5" aria-label={`Company photo of ${name}`} title="Preview or manage company photo"><Avatar name={name} src={logoUrl} size={36} /></button>}>
       {(close) => <>
         {logoUrl && <DropdownItem onClick={() => { setPreview(true); close(); }}>Preview photo</DropdownItem>}
         {user?.isAdmin && <DropdownItem onClick={() => { input.current?.click(); close(); }}>{logoUrl ? 'Replace company photo' : 'Add company photo'}</DropdownItem>}
