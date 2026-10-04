@@ -895,7 +895,7 @@ export default function ListView(): JSX.Element {
               /* "On" means this button is narrowing the list. The module's
                  own All-Leads view is a system view and narrows nothing, so
                  it must not sit lit from the moment the page opens. */
-              className={toolbarButton(Boolean(activeView && !activeView.isSystem), 'max-w-[14rem]')}
+              className={toolbarButton(Boolean(!tagPick && activeView && !activeView.isSystem), 'max-w-[14rem]')}
               aria-label="Choose or manage list views"
               title={activeView?.name ?? `All ${meta.label}`}
             >
@@ -904,7 +904,7 @@ export default function ListView(): JSX.Element {
                 tag**, so it says which: red when a tag is narrowing the list,
                 blue when a saved list is.
               */}
-              <Filter className={filterIcon('list', Boolean(activeView && !activeView.isSystem))} />
+              <Filter className={filterIcon('list', Boolean(!tagPick && activeView && !activeView.isSystem))} />
               {/* No chevron — *"remove arrow key from all Buttons, so that
                   we can See neet and clean Toolbar"* (28 September 2026).
                   The icon on the left already says what this opens. */}
@@ -917,7 +917,7 @@ export default function ListView(): JSX.Element {
                 the row.
               */}
               <span className="min-w-0 truncate">{activeView?.name ?? `All ${meta.label}`}</span>
-              <span className={toolbarCount(Boolean(activeView && !activeView.isSystem))}>
+              <span className={toolbarCount(Boolean(!tagPick && activeView && !activeView.isSystem))}>
                 {(data?.total ?? 0).toLocaleString('en-IN')}
               </span>
             </button>
