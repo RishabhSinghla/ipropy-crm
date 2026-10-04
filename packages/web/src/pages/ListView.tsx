@@ -5,7 +5,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
 import {
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
+  ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -206,6 +206,16 @@ export default function ListView(): JSX.Element {
   }, [tagParam]);
 
   useEffect(() => {
+    const apply = (event: Event): void => {
+      const detail = (event as CustomEvent<{ module: string; filter: FilterGroup; search: string }>).detail;
+      if (detail.module !== moduleName) return;
+      setFilter(detail.filter); setSearch(detail.search); setSearchInput(detail.search); setPage(1);
+    };
+    window.addEventListener('crm-search-options', apply);
+    return () => window.removeEventListener('crm-search-options', apply);
+  }, [moduleName]);
+
+  useEffect(() => {
     setPageInput(String(page));
   }, [page]);
 
@@ -344,6 +354,9 @@ export default function ListView(): JSX.Element {
   useEffect(() => {
     // Never write the URL from state that has not read it yet.
     if (!moduleName || hydratedFor !== moduleName) return;
+    // A tag navigation must finish hydrating before state writes the address back.
+    // Otherwise the old tag and new address repeatedly overwrite one another.
+    if (tagParam !== tagPick) return;
     const next = new URLSearchParams();
     if (activeView?.id) next.set('view', activeView.id);
     if (search) next.set('q', search);
@@ -882,18 +895,16 @@ export default function ListView(): JSX.Element {
               /* "On" means this button is narrowing the list. The module's
                  own All-Leads view is a system view and narrows nothing, so
                  it must not sit lit from the moment the page opens. */
-              className={toolbarButton(Boolean(tagPick || (activeView && !activeView.isSystem)), 'max-w-[14rem]')}
+              className={toolbarButton(Boolean(activeView && !activeView.isSystem), 'max-w-[14rem]')}
               aria-label="Choose or manage list views"
-              title={tagPick ?? activeView?.name ?? `All ${meta.label}`}
+              title={activeView?.name ?? `All ${meta.label}`}
             >
               {/*
                 One button, two of his four colours — it picks a **list or a
                 tag**, so it says which: red when a tag is narrowing the list,
                 blue when a saved list is.
               */}
-              {tagPick
-                ? <Tag className={filterIcon('tag', true)} />
-                : <Filter className={filterIcon('list', Boolean(activeView && !activeView.isSystem))} />}
+              <Filter className={filterIcon('list', Boolean(activeView && !activeView.isSystem))} />
               {/* No chevron — *"remove arrow key from all Buttons, so that
                   we can See neet and clean Toolbar"* (28 September 2026).
                   The icon on the left already says what this opens. */}
@@ -905,8 +916,8 @@ export default function ListView(): JSX.Element {
                 has its own ceiling, so a long list name cannot push Task off
                 the row.
               */}
-              <span className="min-w-0 truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
-              <span className={toolbarCount(Boolean(tagPick || (activeView && !activeView.isSystem)))}>
+              <span className="min-w-0 truncate">{activeView?.name ?? `All ${meta.label}`}</span>
+              <span className={toolbarCount(Boolean(activeView && !activeView.isSystem))}>
                 {(data?.total ?? 0).toLocaleString('en-IN')}
               </span>
             </button>
@@ -978,7 +989,6 @@ export default function ListView(): JSX.Element {
       </div>
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
         <TagCards moduleName={meta.name} />
-        {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}
               className={cn('btn-secondary btn-sm px-2', quickFilterCount > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
@@ -992,11 +1002,10 @@ export default function ListView(): JSX.Element {
                 <span className="rounded-full bg-brand-600 px-1.5 text-2xs text-white">{quickFilterCount}</span>
               )}
             </button>
-        , toolbarSlots.filter)}
 
         {toolbarSlots.options && createPortal(
             <Dropdown
-              trigger={<button className="btn-secondary btn-sm rounded-xl" aria-label="Import, export and list options" title="Import / Export"><Upload className="h-3.5 w-3.5" /><Download className="h-3.5 w-3.5" /></button>}
+              trigger={<button className="btn-secondary btn-sm rounded-xl" aria-label="Import, export and list options" title="Import / Export"><ArrowLeftRight className="h-3.5 w-3.5" /></button>}
             >
               {(close) => (
                 <>

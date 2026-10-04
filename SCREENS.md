@@ -3,11 +3,18 @@
 ## Toolbar update, 4 October 2026
 
 Universal search is a wide, rounded main-toolbar input. The current module's
-Quick & Live Filters control sits inside it; import/export and list options sit
+Gmail-style Search Options dropdown sits inside it, independently of Quick &
+Live Filters. It offers module selection, words and metadata-driven field
+conditions, applied temporarily without saving a view. Quick Filters remains
+available in the record pane and middle header. Import/export and list options sit
 beside it, preserving their existing permissions. The record pane no longer
 duplicates those controls. Its replacement is one horizontally scrolling,
 segmented strip of the current module's used tags, with vertical separators.
 Tag clicks preserve the selected view and filters and reset pagination.
+Tag URL hydration finishes before URL write-back, preventing a tag navigation
+from oscillating. The list selector keeps its own name and does not impersonate
+the selected tag. Company photo management is available from the header avatar;
+only administrators can replace or remove the organisation photo.
 The former list-search browser checks now exercise universal search instead.
 
 The split view and tags. Read it before changing how a list, a record or a tag

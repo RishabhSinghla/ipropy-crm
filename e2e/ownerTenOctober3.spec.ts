@@ -108,6 +108,12 @@ test('global toolbar replaces duplicate left-pane search controls', async ({ pag
   await expect(page.getByTestId('list-search')).toHaveCount(0);
   await expect(page.getByRole('combobox', { name: 'Search everything' })).toBeVisible();
   await expect(page.locator('#global-search-filter').getByRole('button')).toBeVisible();
+  await page.getByRole('button', { name: 'Search options', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'CRM search options' })).toBeVisible();
+  await expect(page.getByLabel('Search in')).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search filters' }).click();
+  await page.getByTestId('quick-filter-button').click();
+  await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
   await expect(page.locator('#global-list-options').getByRole('button', { name: 'Import, export and list options' })).toBeVisible();
 });
 
@@ -118,9 +124,12 @@ test('the tag cards count the module they open', async ({ page }) => {
   const first = cards.locator('button').first();
   const promised = Number((await first.innerText()).replace(/[^\d]/g, ''));
   await first.click();
+  const tagAddress = page.url();
   // The number on the card is the number the list comes back with.
   await expect.poll(async () => {
     const text = await page.getByText(/[\d,]+ records/).first().innerText();
     return Number((text.match(/of ([\d,]+) records/)?.[1] ?? text.match(/([\d,]+) records/)?.[1] ?? '0').replace(/,/g, ''));
   }, { timeout: 20_000 }).toBe(promised);
+  await expect(page).toHaveURL(tagAddress);
+  await expect(page.getByRole('button', { name: 'Choose or manage list views' })).not.toContainText((await first.innerText()).replace(/[\d,]+$/, '').trim());
 });

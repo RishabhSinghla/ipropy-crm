@@ -20,6 +20,8 @@ import { PeekLink, PeekProvider } from './PeekLink';
 import { flattenGroups, groupHits, moveHighlight } from '../lib/searchGroups';
 import { readRecent, withRecent, withoutRecent, writeRecent } from '../lib/searchHistory';
 import RecordForm from './RecordForm';
+import { SearchOptions } from './SearchOptions';
+import { CompanyAvatar } from './CompanyAvatar';
 
 /* Lazy, because capture carries the camera and EXIF machinery and the shell is
    on every page. Nobody pays for it until they open the menu and choose it. */
@@ -123,12 +125,12 @@ export default function Layout(): JSX.Element {
             <Menu className="h-4.5 w-4.5" />
           </button>
 
-          <Link to="/dashboard" className="flex shrink-0 items-center gap-2.5 overflow-hidden" aria-label={brand?.orgName ?? 'iPropy'}>
-            <BrandMark logoUrl={brand?.logoUrl ?? null} name={brand?.orgName ?? 'iPropy'} />
-              <span className="max-w-[10rem] truncate text-base font-semibold leading-tight tracking-tight">
+          <div className="flex shrink-0 items-center gap-2.5">
+            <CompanyAvatar logoUrl={brand?.logoUrl ?? null} name={brand?.orgName ?? 'iPropy'} />
+              <Link to="/dashboard" className="max-w-[10rem] truncate text-base font-semibold leading-tight tracking-tight">
                 {brand?.orgName ?? 'iPropy'}
-              </span>
-          </Link>
+              </Link>
+          </div>
 
           {/*
             The tags worth seeing from every screen, right after the company
@@ -996,7 +998,7 @@ function GlobalSearch(): JSX.Element {
         onKeyDown={onBoxKey}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <div id="global-search-filter" className="absolute right-2 top-1/2 -translate-y-1/2" />
+      <div id="global-search-filter" className="absolute right-2 top-1/2 -translate-y-1/2"><SearchOptions words={query} onWordsChange={setQuery} onOpen={() => setOpen(false)} /></div>
       <kbd className="pointer-events-none absolute right-12 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-muted dark:border-slate-700 sm:block">
         ⌘K
       </kbd>
