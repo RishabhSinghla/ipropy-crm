@@ -178,7 +178,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
 export function IpropyWorkspace({
   module, rows, selected, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
-  queueTools, queueFooter, filterBar, onShowing,
+  queueTools, queueFooter, filterBar, onShowing, emptyAction,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -212,6 +212,7 @@ export function IpropyWorkspace({
   queueTools?: ReactNode;
   /** The record range and the page arrows, at the foot of the queue. */
   queueFooter?: ReactNode;
+  emptyAction?: ReactNode;
   /**
    * Whether the list's quick filters are on, how to open or clear them, and
    * the panel itself — drawn inside the right-hand pane, in its exact shape.
@@ -334,7 +335,7 @@ export function IpropyWorkspace({
   }, [notThere, rows]);
   // The row stands in while the record loads, so the pane never blanks between
   // two selections. Its values are right, there are simply fewer of them.
-  const active = fetched && fetched.id === activeId ? fetched : listRow;
+  const active = rows.length === 0 ? null : fetched && fetched.id === activeId ? fetched : listRow;
   // A search belongs to the record it was typed on.
   useEffect(() => { setFindText(''); setFinding(false); }, [activeId]);
 
@@ -981,7 +982,9 @@ export function IpropyWorkspace({
                   pane"* (3 October 2026) — immediately after the `3 / 22,988`,
                   inside the same group, so the two cannot drift apart when the
                   header wraps on a phone. */}
-              {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
+              {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly plain active={onCall} /></span>}
+              <button type="button" aria-label={active.starred ? 'Remove from starred' : 'Star this record'} title="Favourite" onClick={() => star.mutate(active)} className="p-1 text-slate-500 hover:text-amber-500"><Star className={cn('h-4 w-4', active.starred && 'fill-amber-500 text-amber-500')} /></button>
+              {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className="p-1 text-slate-500 hover:text-brand-600"><Tag className="h-4 w-4" /></button>}
             </span>
               {/*
                 Search within this record. **The icon left this bar on
@@ -1024,14 +1027,14 @@ export function IpropyWorkspace({
           The tag dialog lives out here, not in the menu panel above: a panel
           unmounts the moment it closes, and the dialog would go with it.
         */}
-        <TagButton
+        {active && <TagButton
           module={module.name}
           recordId={active.id}
           tags={active.tags}
           canEdit={canEdit}
           open={tagging}
           onOpenChange={setTagging}
-        />
+        />}
 
         {/*
           **30 September 2026, the owner's prototype:** the tabs are icons, each
@@ -1075,20 +1078,6 @@ export function IpropyWorkspace({
               {emailValue && (
                 <DropdownItem icon={<Mail className="h-3.5 w-3.5" />} onClick={() => { close(); setComposing(true); }}>
                   Email {emailValue}
-                </DropdownItem>
-              )}
-              <DropdownItem
-                icon={<Star className={cn('h-3.5 w-3.5', active.starred && 'fill-amber-500 text-amber-500')} />}
-                onClick={() => { close(); star.mutate(active); }}
-              >
-                {active.starred ? 'Remove from starred' : 'Star this record'}
-              </DropdownItem>
-              {canEdit && (
-                <DropdownItem
-                  icon={<Tag className={cn('h-3.5 w-3.5', active.tags?.length && 'text-brand-600 dark:text-brand-300')} />}
-                  onClick={() => { close(); setTagging(true); }}
-                >
-                  {active.tags?.length ? `Tags (${active.tags.length})` : 'Add a tag'}
                 </DropdownItem>
               )}
               <DropdownItem
@@ -1266,6 +1255,7 @@ export function IpropyWorkspace({
         </aside>
       )}
       </div>}
+      {!active && <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950" data-testid="empty-workspace"><Search className="h-8 w-8 text-slate-300" /><h2 className="font-semibold">No matching records</h2><p className="text-sm text-muted">Try another tag or adjust your search and filters.</p>{emptyAction}{filterBar?.open && filterBar.panel}</div>}
     </div>
 
     {/*

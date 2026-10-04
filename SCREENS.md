@@ -2254,3 +2254,10 @@ Admin → Profile Strength configures relative field weights per module, with ze
 excluding a field from scoring; bars, filters and reminders use the same weights.
 Currency editors allow room for both amount and unit; the price unit label is
 Total, without rewriting stored values or amounts.
+### 4 October: list-scoped counts and stable empty results
+
+Quick filter option counts use the current saved view, search and filters,
+not the whole module. New (created today) uses the same scope. Empty queues
+keep the split workspace and controls, with a no-matches message and reset.
+Call, Star and Tag are plain header icons, in that order. Star and Tag no
+longer duplicate actions under More.

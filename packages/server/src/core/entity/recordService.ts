@@ -189,7 +189,7 @@ function stripHidden(envelope: RecordEnvelope, hidden: Set<string>): void {
  * "3 / 25,458" counts the very same list the screen shows — two copies of
  * this reasoning is how the counter once counted a different order.
  */
-async function prepareList(ctx: ServiceContext, moduleName: string, q: ListQuery, conn: Tx) {
+export async function prepareList(ctx: ServiceContext, moduleName: string, q: ListQuery, conn: Tx) {
   const module = await registry.requireModule(moduleName);
   if (!ctx.system) await assertModuleAccess(ctx.user, moduleName, 'view');
 

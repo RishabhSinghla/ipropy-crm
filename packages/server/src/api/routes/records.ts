@@ -120,12 +120,14 @@ recordsRouter.get('/:module/lookup', asyncHandler(async (req, res) => {
 recordsRouter.get('/:module/facet', asyncHandler(async (req, res) => {
   const scope = getScope(req);
   await assertModuleAccess(scope.user, req.params.module, 'view');
-  const { field, search, limit } = z.object({
+  const { field, search, limit, context } = z.object({
     field: z.string().min(1),
     search: z.string().max(100).optional(),
     limit: z.coerce.number().int().min(1).max(50).optional(),
+    context: z.string().max(20000).optional(),
   }).parse(req.query);
-  res.json(await fieldFacets(scope, req.params.module, field, { search, limit }));
+  const parsedContext = context ? z.object({ view: z.string().uuid().optional(), search: z.string().max(500).optional(), filter: filterSchema.optional() }).parse(JSON.parse(context)) : undefined;
+  res.json(await fieldFacets(scope, req.params.module, field, { search, limit, context: parsedContext }));
 }));
 
 recordsRouter.get('/:module/facet-range', asyncHandler(async (req, res) => {

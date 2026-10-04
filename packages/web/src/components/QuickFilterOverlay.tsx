@@ -18,9 +18,9 @@
  * Filters (`lib/quickFilters.ts` holds the rules). Every choice narrows the
  * list the moment it is made — there is no Apply to forget to press.
  */
-import { type JSX, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, type JSX, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { formatIndianPrice, type FieldMeta, type FilterGroup, type ModuleMeta, type QuickFilterSection } from '@ipropy/shared';
+import { formatIndianPrice, type FieldMeta, type FilterGroup, type ListQuery, type ModuleMeta, type QuickFilterSection } from '@ipropy/shared';
 import {
   CalendarDays, Check, ChevronDown, Clock3, Filter, Hash, ListFilter, PhoneOutgoing,
   Search, SlidersHorizontal, Tag, UserRound, X,
@@ -39,6 +39,7 @@ import { Spinner } from './ui';
 
 type ViewChoice = { id: string; name: string; isDefault?: boolean; count?: number };
 type Option = { value: string; label: string; color?: string | null; count?: number };
+const CountContext = createContext<ListQuery>({});
 
 /*
   Every filter says how many records each choice holds — the owner, 3 October
@@ -47,9 +48,10 @@ type Option = { value: string; label: string; color?: string | null; count?: num
   opened, so a folded heading costs nothing.
 */
 function useFacetCounts(module: string, field: string | undefined): { counts: Map<string, number>; blank: number | undefined; loading: boolean } {
+  const context = useContext(CountContext);
   const { data, isLoading } = useQuery({
-    queryKey: ['facet', module, field],
-    queryFn: () => api.facet(module, field!, undefined, 50),
+    queryKey: ['facet', module, field, context],
+    queryFn: () => api.facet(module, field!, undefined, 50, context),
     enabled: Boolean(field),
     staleTime: 60_000,
   });
@@ -62,10 +64,11 @@ function useFacetCounts(module: string, field: string | undefined): { counts: Ma
 
 /** How many records each chip's filter matches — one small count per chip. */
 function useChipCounts<T extends string>(module: string, filters: Array<[T, FilterGroup]>): Partial<Record<T, number>> {
+  const context = useContext(CountContext);
   const results = useQueries({
     queries: filters.map(([key, filter]) => ({
-      queryKey: ['chip-count', module, key, JSON.stringify(filter)],
-      queryFn: () => api.list(module, { filter, page: 1, pageSize: 1 }),
+      queryKey: ['chip-count', module, key, filter, context],
+      queryFn: () => api.list(module, { ...context, filter: { logic: 'AND', conditions: [filter, ...(context.filter ? [context.filter] : [])] }, page: 1, pageSize: 1 }),
       staleTime: 60_000,
     })),
   });
@@ -82,6 +85,7 @@ const TASK_CHOICES: Array<[TaskQueue, string]> = [
 ];
 
 export interface QuickFilterPanelProps {
+  countContext?: ListQuery;
   open: boolean;
   onClose: () => void;
   /** `pane` fills the right-hand pane it was opened from; `floating` sits at the screen's right edge. */
@@ -152,7 +156,7 @@ export function QuickFilterOverlay(props: QuickFilterPanelProps): JSX.Element | 
     .filter(({ title }) => !needle || title.toLocaleLowerCase().includes(needle));
 
   return (
-    <div
+    <CountContext.Provider value={props.countContext ?? {}}><div
       className={cn('z-40', placement === 'pane' ? 'absolute inset-0' : 'fixed bottom-0 right-0 top-12 w-full max-w-[22.5rem]')}
       data-testid="quick-filter-overlay"
     >
@@ -210,7 +214,7 @@ export function QuickFilterOverlay(props: QuickFilterPanelProps): JSX.Element | 
           </Folding>
         </div>
       </aside>
-    </div>
+    </div></CountContext.Provider>
   );
 }
 

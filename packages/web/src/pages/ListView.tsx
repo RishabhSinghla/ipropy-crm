@@ -86,11 +86,6 @@ export default function ListView(): JSX.Element {
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const newToday = filter.conditions.some((item) => !isFilterGroup(item) && item.field === 'created_at' && item.operator === 'today');
-  const { data: todayRecords } = useQuery({
-    queryKey: ['created-today', moduleName],
-    queryFn: () => api.list(moduleName!, { page: 1, pageSize: 1, filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'today' }] } }),
-    enabled: Boolean(moduleName), refetchInterval: 60_000,
-  });
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -525,6 +520,10 @@ export default function ListView(): JSX.Element {
       (meta?.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config as { queueFields?: string[] } | undefined)?.queueFields,
     ),
   }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta]);
+  const todayQuery: ListQuery = { view: query.view, search: query.search, page: 1, pageSize: 1,
+    filter: { logic: 'AND', conditions: [effectiveFilter, { field: 'created_at', operator: 'today' }] } };
+  const { data: todayRecords } = useQuery({ queryKey: ['created-today', moduleName, todayQuery],
+    queryFn: () => api.list(moduleName!, todayQuery), enabled: Boolean(moduleName), refetchInterval: 60_000 });
 
   // The call deck must resume this *exact* queue after Save & Next. The URL's
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a
@@ -979,7 +978,7 @@ export default function ListView(): JSX.Element {
               ? filter.conditions.filter((item) => isFilterGroup(item) || item.field !== 'created_at' || item.operator !== 'today')
               : [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), { field: 'created_at', operator: 'today' }] });
             setPage(1);
-          }}>New today <span className="rounded-full bg-brand-100 px-1.5">{todayRecords?.total ?? 0}</span></button>
+          }}>New <span className="rounded-full bg-brand-100 px-1.5">{todayRecords?.total ?? 0}</span></button>
         {/*
           **The Hot chip left this row on 3 October 2026** — the owner: *"Now i
           need to remove hot tag/Icon from Left Record Pane after the List and
@@ -1101,6 +1100,7 @@ export default function ListView(): JSX.Element {
       onClose={() => setShowFilters(false)}
       placement={placement}
       module={meta}
+      countContext={{ view: query.view, search: query.search, filter: query.filter }}
       sections={quickSections}
       count={data?.total}
       counting={isFetching}
@@ -1149,9 +1149,8 @@ export default function ListView(): JSX.Element {
         only way to undo it off the screen with it.
       */}
       <h1 className="sr-only">{meta.label}</h1>
-      {rows.length === 0 && !(isLoading && !data) && (
+      {rows.length === 0 && search && !(isLoading && !data) && (
         <div className="shrink-0 bg-white dark:bg-slate-900">
-          {queueTools}
           {/* The count stays on screen too — "0 records" is the answer somebody
               filtering is looking for, and the paging footer is not drawn. */}
           <p className="border-b border-[var(--border)] px-3 py-1.5 text-[11px] text-slate-600 tnum dark:text-slate-300">
@@ -1258,45 +1257,6 @@ export default function ListView(): JSX.Element {
           <div className="space-y-2 p-4 sm:p-6">
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
           </div>
-        ) : rows.length === 0 ? (
-          /*
-            A search that found nothing is answered beside the box above, so
-            this page-sized panel would be the same news twice, the second
-            time far from the words that caused it.
-          */
-          search ? null : (
-          <EmptyState
-            icon={<ModuleIcon name={meta.icon} className="h-10 w-10" />}
-            /*
-              The quick filter counts as a filter here. Without it a list
-              narrowed to a kind nobody has read *"Create your first contact
-              to get started"* over a database holding 22,988 of them — which
-              is alarming rather than helpful, and says nothing about the one
-              thing that caused it.
-            */
-            title={search || countConditions(effectiveFilter) ? 'No matching records' : `No ${meta.label.toLowerCase()} yet`}
-            body={search || countConditions(effectiveFilter)
-              ? 'Try adjusting your search or filters.'
-              : `Create your first ${meta.singularLabel.toLowerCase()} to get started.`}
-            /*
-              The quick filter lives in the queue's own header, and an empty
-              result replaces the whole workspace — header and all. So the one
-              control that could undo it goes off the screen with it, and
-              "Try adjusting your filters" points at something that is no
-              longer there. Every other picker on this page is in the toolbar
-              above, which stays; this one needs its own way back.
-            */
-            action={quickFilterCount
-              ? <button className="btn-secondary btn-sm" onClick={clearQuickFilters}>
-                  Clear filters
-                </button>
-              : canCreate && !search && !countConditions(filter)
-                ? <button className="btn-primary btn-sm" onClick={() => setShowQuickCreate(true)}>
-                    <Plus className="h-3.5 w-3.5" /> New {meta.singularLabel}
-                  </button>
-                : undefined}
-          />
-          )
         ) : (
           <IpropyWorkspace
             /*
@@ -1308,6 +1268,7 @@ export default function ListView(): JSX.Element {
             key={meta.name}
             module={meta}
             rows={rows}
+            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { clearQuickFilters(); setTagPick(null); setSearchInput(''); setSearch(''); }}>Clear search and filters</button>}
             // `?open=` — a record named in the address, from global search, a
             // chat, or Save & Next. It may not be on this page at all.
             openId={searchParams.get('open')}

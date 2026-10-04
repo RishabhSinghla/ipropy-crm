@@ -201,6 +201,8 @@ export interface DashboardWidget {
 }
 
 export interface WidgetConfig {
+  /** Temporary text search used by list-scoped facet counts. */
+  search?: string;
   module?: string;
   /** aggregation */
   aggregate?: 'count' | 'sum' | 'avg' | 'min' | 'max';

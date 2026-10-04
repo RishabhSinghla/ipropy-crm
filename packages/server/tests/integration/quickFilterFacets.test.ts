@@ -24,6 +24,14 @@ beforeAll(async () => {
 });
 
 describe('quick filter facets', () => {
+  it('counts the same filtered search as the visible list', async () => {
+    const context = { search: `facet-no-match-${Date.now()}`, filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'today' }] } };
+    const list = await request(app).get('/api/records/leads').query({ ...context, filter: JSON.stringify(context.filter), pageSize: 1 }).set('Authorization', `Bearer ${token}`).expect(200);
+    const facet = await request(app).get('/api/records/leads/facet').query({ field: 'status', limit: 50, context: JSON.stringify(context) }).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(list.body.total).toBe(0);
+    expect(facet.body.values).toEqual([]);
+    expect(facet.body.blank).toBe(0);
+  });
   it('answers a picklist field with its values, most used first', async () => {
     const res = await request(app).get('/api/records/leads/facet')
       .query({ field: 'status', limit: 10 })

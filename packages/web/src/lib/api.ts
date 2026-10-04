@@ -849,10 +849,10 @@ export const api = {
   lookup: (module: string, q: string, filter?: unknown) =>
     get<{ id: string; label: string; recordNumber: string | null }[]>(`/api/records/${module}/lookup${qs({ q, filter })}`),
   /** A field's most common values, for a quick filter's top five and its search. */
-  facet: (module: string, field: string, search?: string, limit?: number) =>
+  facet: (module: string, field: string, search?: string, limit?: number, context?: ListQuery) =>
     // `blank`: records with no value at all — "Never called", for the call outcome.
     get<{ values: { value: string; label: string; count: number; color: string | null }[]; blank: number }>(
-      `/api/records/${module}/facet${qs({ field, search: search || undefined, limit })}`,
+      `/api/records/${module}/facet${qs({ field, search: search || undefined, limit, context })}`,
     ),
   /** A number field's lowest and highest value — the ends of its slider. */
   facetRange: (module: string, field: string) =>
