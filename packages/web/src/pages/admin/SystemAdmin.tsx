@@ -216,7 +216,7 @@ export default function SystemAdmin(): JSX.Element {
             <EmptyState title="No audit entries" />
           ) : (
             <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-              {(audit as { id: string; action: string; module_name: string; record_label: string | null; user_name: string | null; changes: { label?: string; from?: unknown; to?: unknown }[]; created_at: string; source: string }[])
+              {(audit as { id: string; action: string; module_name: string; record_label: string | null; user_name: string | null; changes: { label?: string; from?: unknown; to?: unknown; fromDisplay?: string; toDisplay?: string }[]; created_at: string; source: string }[])
                 .map((entry) => (
                   <li key={entry.id} className="px-4 py-2.5">
                     <div className="flex flex-wrap items-center gap-2">
@@ -238,7 +238,7 @@ export default function SystemAdmin(): JSX.Element {
                         {entry.changes.slice(0, 4).map((c, i) => (
                           <li key={i} className="text-2xs text-muted">
                             <span className="font-medium">{c.label}</span>:{' '}
-                            <span className="line-through opacity-60">{fmt(c.from)}</span> → {fmt(c.to)}
+                            <span className="line-through opacity-60">{c.fromDisplay ?? fmt(c.from)}</span> → {c.toDisplay ?? fmt(c.to)}
                           </li>
                         ))}
                         {entry.changes.length > 4 && (

@@ -122,7 +122,7 @@ export function TagCards({ moduleName }: { moduleName?: string }): JSX.Element |
               text lands around 2–3:1, which is the rule this repo writes down
               every time somebody paints a tint by hand.
             */
-            style={badgeVars(tag.color)}
+            style={badgeVars(narrowed ? '#2563eb' : tag.color)}
             /*
               `.badge-tinted` rather than `bg-[var(--badge-bg)]`: the dark
               theme's values are separate properties, selected in the

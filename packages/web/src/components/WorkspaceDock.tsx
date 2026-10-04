@@ -86,9 +86,9 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
       icon: <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />,
       count: counts?.[module.name],
     })),
-    { to: '/calls', label: 'Calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" /> },
-    { to: `/${favouriteModule}?filter=${encodeURIComponent(JSON.stringify({ logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }))}`, label: 'Favourites', icon: <Star className="h-[18px] w-[18px]" /> },
-    { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, tone: 'whatsapp' as const },
+    { to: '/calls', label: 'Calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" />, count: counts?.calls },
+    { to: `/${favouriteModule}?filter=${encodeURIComponent(JSON.stringify({ logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }))}`, label: 'Favourites', icon: <Star className="h-[18px] w-[18px]" />, count: counts?.[`favourites:${favouriteModule}`] },
+    { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, count: counts?.whatsapp, tone: 'whatsapp' as const },
   ];
   return (
     <div
@@ -184,9 +184,9 @@ function DockLink({ to, label, count, tone, iconOnly = false, children }: {
         off the toolbar on the owner's instruction (2 October 2026). A count
         of nothing is not drawn: a grey zero beside every module is noise.
       */}
-      {count && !iconOnly ? (
+      {count !== undefined ? (
         <span
-          className="shrink-0 rounded-full bg-slate-200 px-1.5 text-[10px] font-bold leading-[1.1rem] text-slate-700 tnum dark:bg-slate-700 dark:text-slate-100"
+          className={cn('shrink-0 rounded-full bg-slate-200 px-1.5 text-[10px] font-bold leading-[1.1rem] text-slate-700 tnum dark:bg-slate-700 dark:text-slate-100', iconOnly && 'absolute -right-1 -top-1 text-[8px] px-1')}
           title={`${count.toLocaleString('en-IN')} ${label.toLowerCase()}`}
         >
           {count > 999 ? `${Math.floor(count / 1000)}k` : count}
@@ -199,7 +199,7 @@ function DockLink({ to, label, count, tone, iconOnly = false, children }: {
 /** The one look for a dock row: a white tile when it is where you are, a quiet one when it is not. */
 function dockLook(on: boolean, tone?: 'whatsapp', iconOnly = false): string {
   return cn(
-    'flex h-10 shrink-0 items-center rounded-xl text-sm font-semibold transition',
+    'relative flex h-10 shrink-0 items-center rounded-xl text-sm font-semibold transition',
     iconOnly ? 'w-10 justify-center' : 'w-full gap-2.5 px-2',
     /*
       `#0a7038`, not WhatsApp's own `#0B8043`, and the contrast scan is what

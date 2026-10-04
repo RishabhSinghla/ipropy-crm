@@ -14,7 +14,7 @@
 import { db, type Tx } from '../../db/pool.js';
 import { SqlParams } from '../query/builder.js';
 import { registry } from '../metadata/registry.js';
-import { recordScopeSql, type ScopeContext } from '../permissions/index.js';
+import { hasCapability, recordScopeSql, type ScopeContext } from '../permissions/index.js';
 
 export async function recordCounts(ctx: ScopeContext, conn: Tx = db): Promise<Record<string, number>> {
   const modules = await registry.getModules({ entityOnly: true });
@@ -36,13 +36,29 @@ export async function recordCounts(ctx: ScopeContext, conn: Tx = db): Promise<Re
       This runs on every page; one bad module must not take the navigation
       down with it.
     */
-    const row = await conn.queryOne<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM ipy_record r WHERE ${clauses.join(' AND ')}`,
+    const userParam = params.add(ctx.user.id);
+    const row = await conn.queryOne<{ count: number; favourites: number }>(
+      `SELECT COUNT(*)::int AS count,
+       COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM ipy_starred s WHERE s.record_id = r.id AND s.user_id = ${userParam}::uuid))::int AS favourites
+       FROM ipy_record r WHERE ${clauses.join(' AND ')}`,
       params.all(),
     ).catch(() => null);
 
-    if (row) counts[module.name] = row.count;
+    if (row) { counts[module.name] = row.count; counts[`favourites:${module.name}`] = row.favourites; }
   }
+
+  // These match the visibility rules of the destination screens, not unread counts.
+  const allCalls = ctx.user.isAdmin || await hasCapability(ctx.user, 'telephony.listen_recordings');
+  const calls = await conn.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM ipy_call${allCalls ? '' : ' WHERE user_id = $1::uuid'}`,
+    allCalls ? [] : [ctx.user.id],
+  );
+  const whatsapp = await conn.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM ipy_conversation WHERE channel = 'whatsapp'${ctx.user.isAdmin ? '' : ' AND (assigned_to = $1::uuid OR assigned_to IS NULL)'}`,
+    ctx.user.isAdmin ? [] : [ctx.user.id],
+  );
+  counts.calls = calls?.count ?? 0;
+  counts.whatsapp = whatsapp?.count ?? 0;
 
   return counts;
 }

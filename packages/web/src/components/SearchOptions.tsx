@@ -26,19 +26,17 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
   const { data: tags } = useQuery({ queryKey: ['tags', selected], queryFn: () => api.tags(selected), enabled: Boolean(selected), staleTime: 60_000 });
   const fields = meta?.fields.filter((field) => field.isActive && field.displayType !== 'hidden' && field.config.filterable !== false) ?? [];
   const owner = assignmentField(fields);
-  const nameField = fields.find((field) => field.columnName === 'full_name' || meta?.labelFields.includes(field.name));
-  const phoneField = fields.find((field) => field.uitype === 'phone');
   const status = meta ? pipelineFieldOf(meta) : undefined;
   const due = followUpFieldOf(fields);
   const locationField = fields.find((field) => field.config.picklist === 'locality' || field.columnName === 'locality');
   const contactType = fields.find((field) => field.config.picklist === 'contact_type' || field.columnName === 'contact_type');
   const money = fields.find((field) => field.uitype === 'currency' && /budget|demand|asking|price/i.test(`${field.name} ${field.label}`)) ?? fields.find((field) => field.uitype === 'currency');
+  const size = fields.find((field) => ['area', 'number', 'decimal', 'integer'].includes(field.uitype) && /size|area/i.test(`${field.name} ${field.label}`));
+  const disposition = fields.find((field) => /call_disposition|call_log/.test(`${field.name} ${field.config.picklist ?? ''}`));
+  const lostReason = fields.find((field) => /lost_reason/.test(`${field.name} ${field.config.picklist ?? ''}`));
   const choose = (key: string, value: unknown): void => setChoices((previous) => ({ ...previous, [key]: value }));
   const quickConditions: Array<FilterCondition | FilterGroup> = [];
-  for (const field of [nameField, phoneField]) {
-    if (field && choices[field.name]) quickConditions.push({ field: field.name, operator: 'contains', value: choices[field.name] });
-  }
-  for (const field of [owner, status, locationField, contactType]) {
+  for (const field of [owner, status, locationField, contactType, disposition, lostReason]) {
     const value = field && choices[field.name];
     if (field && value !== undefined && value !== null && value !== '') quickConditions.push({ field: field.name, operator: Array.isArray(value) ? 'has_any' : 'equals', value });
   }
@@ -49,7 +47,11 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
     if (choices.min !== undefined && choices.min !== '') quickConditions.push({ field: money.name, operator: 'greater_or_equal', value: Number(choices.min) });
     if (choices.max !== undefined && choices.max !== '') quickConditions.push({ field: money.name, operator: 'less_or_equal', value: Number(choices.max) });
   }
-  const quickField = (field: FieldMeta | undefined, label: string): JSX.Element | null => field ? <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{label}</span><FieldInput field={{ ...field, isReadonly: false, displayType: 'default', isMandatory: false }} value={choices[field.name] ?? null} onChange={(value) => choose(field.name, value)} /><button type="button" className="text-[10px] text-muted hover:text-brand-600" onClick={() => choose(field.name, '')}>Any {label.toLowerCase()}</button></div> : null;
+  if (size) {
+    if (choices.sizeMin !== undefined && choices.sizeMin !== '') quickConditions.push({ field: size.name, operator: 'greater_or_equal', value: Number(choices.sizeMin) });
+    if (choices.sizeMax !== undefined && choices.sizeMax !== '') quickConditions.push({ field: size.name, operator: 'less_or_equal', value: Number(choices.sizeMax) });
+  }
+  const quickField = (field: FieldMeta | undefined, label: string): JSX.Element | null => field ? <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{label}</span><FieldInput field={{ ...field, config: { ...field.config, placeholder: `Any ${label.toLowerCase()}` }, isReadonly: false, displayType: 'default', isMandatory: false }} value={choices[field.name] ?? null} onChange={(value) => choose(field.name, value)} /></div> : null;
   const apply = (close: () => void, clear = false): void => {
     const criteria: FilterGroup = clear ? { logic: 'AND', conditions: [] } : { logic: 'AND', conditions: [...quickConditions, ...(filter.conditions.length ? [filter] : [])] };
     const search = clear ? '' : words.trim();
@@ -70,13 +72,14 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
       <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Search in</span><select className="input" value={selected} onChange={(event) => { setModuleName(event.target.value); setChoices({}); setFilter({ logic: 'AND', conditions: [] }); }}>{entities.map((module) => <option key={module.name} value={module.name}>{module.label}</option>)}</select></label>
       <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Has the words</span><input className="input" value={words} onChange={(event) => onWordsChange(event.target.value)} placeholder="Name, phone, property or comma-separated words" /></label>
       <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2" data-testid="default-search-fields">
-        {nameField && <label className="space-y-1 text-xs font-medium text-muted">Full name<input className="input" value={String(choices[nameField.name] ?? '')} onChange={(event) => choose(nameField.name, event.target.value)} placeholder="Any name" /></label>}
-        {phoneField && <label className="space-y-1 text-xs font-medium text-muted">Mobile<input className="input" type="tel" value={String(choices[phoneField.name] ?? '')} onChange={(event) => choose(phoneField.name, event.target.value)} placeholder="Any mobile number" /></label>}
         {quickField(owner, 'Agent')}{quickField(locationField, 'Location')}{quickField(status, `${meta?.singularLabel ?? 'Record'} status`)}{quickField(contactType, 'Contact type')}
         {due && <label className="space-y-1 text-xs font-medium text-muted">Task wise<select className="input" value={String(choices.task ?? '')} onChange={(event) => choose('task', event.target.value)}><option value="">Any task</option><option value="pending">Overdue</option><option value="today">Today</option><option value="tomorrow">Tomorrow</option><option value="upcoming">Upcoming</option></select></label>}
         <label className="space-y-1 text-xs font-medium text-muted">Created date<select className="input" value={String(choices.created ?? '')} onChange={(event) => choose('created', event.target.value)}><option value="">Any date</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="this_week">This week</option><option value="this_month">This month</option></select></label>
         <label className="space-y-1 text-xs font-medium text-muted">Tag wise<select className="input" value={String(choices.tag ?? '')} onChange={(event) => choose('tag', event.target.value)}><option value="">Any tag</option>{tags?.map((tag) => <option key={tag.id} value={tag.name}>{tag.name}</option>)}</select></label>
+        {quickField(disposition, 'Call disposition / log')}{quickField(lostReason, 'Lost reason')}
+        <div className="hidden sm:block" />
         {money && <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{money.label} range (₹)</span><div className="flex gap-2"><input aria-label="Minimum budget or demand" className="input min-w-0" type="number" min="0" placeholder="Min" value={String(choices.min ?? '')} onChange={(event) => choose('min', event.target.value)} /><input aria-label="Maximum budget or demand" className="input min-w-0" type="number" min={Number(choices.min) || 0} placeholder="Max" value={String(choices.max ?? '')} onChange={(event) => choose('max', event.target.value)} /></div><input aria-label="Budget or demand maximum slider" className="w-full accent-brand-600" type="range" min={Number(choices.min) || 0} max={Math.max(1_000_000_000, Number(choices.max) || 0, Number(choices.min) || 0)} step="100000" value={Number(choices.max) || 1_000_000_000} onChange={(event) => choose('max', event.target.value)} /></div>}
+        {size && <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{size.label} range</span><div className="flex gap-2"><input aria-label="Minimum size" className="input min-w-0" type="number" min="0" placeholder="Min" value={String(choices.sizeMin ?? '')} onChange={(event) => choose('sizeMin', event.target.value)} /><input aria-label="Maximum size" className="input min-w-0" type="number" min={Number(choices.sizeMin) || 0} placeholder="Max" value={String(choices.sizeMax ?? '')} onChange={(event) => choose('sizeMax', event.target.value)} /></div><input aria-label="Size maximum slider" className="w-full accent-brand-600" type="range" min={Number(choices.sizeMin) || 0} max={Math.max(10000, Number(choices.sizeMax) || 0, Number(choices.sizeMin) || 0)} value={Number(choices.sizeMax) || 10000} onChange={(event) => choose('sizeMax', event.target.value)} /></div>}
       </div>
       <p className="text-xs text-muted">Temporary search only — saved views stay unchanged.</p>
       {meta && <FilterBuilder compact module={meta} value={filter} onChange={setFilter} />}

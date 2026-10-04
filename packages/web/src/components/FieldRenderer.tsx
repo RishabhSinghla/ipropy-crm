@@ -601,7 +601,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
             disabled={readOnly}
             autoFocus={autoFocus}
           >
-            <option value="">— Select —</option>
+            <option value="">{String(field.config.placeholder || '— Select —')}</option>
             {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -625,7 +625,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     }
 
     case 'multipicklist':
-      return <MultiSelect options={options} value={(value as string[]) ?? []} onChange={onChange} disabled={readOnly} />;
+      return <MultiSelect options={options} value={(value as string[]) ?? []} onChange={onChange} disabled={readOnly} placeholder={field.config.placeholder as string} />;
 
     case 'tags':
       return <TagInput value={(value as string[]) ?? []} onChange={onChange} disabled={readOnly} />;
@@ -635,7 +635,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
 
     case 'owner':
     case 'user':
-      return <UserPicker id={id} label={field.label} value={value as string | null} onChange={onChange} disabled={readOnly} />;
+      return <UserPicker id={id} label={field.label} value={value as string | null} onChange={onChange} disabled={readOnly} placeholder={field.config.placeholder as string} />;
 
     case 'address':
       return <AddressInput value={value as Record<string, unknown> | null} onChange={onChange} disabled={readOnly} />;
@@ -1074,12 +1074,13 @@ function GalleryThumb({ url, onRemove }: { url: string; onRemove?: () => void })
 // ---------------------------------------------------------------------------
 
 export function MultiSelect({
-  options, value, onChange, disabled,
+  options, value, onChange, disabled, placeholder,
 }: {
   options: PicklistOption[];
   value: string[];
   onChange: (v: string[]) => void;
   disabled?: boolean;
+  placeholder?: string;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -1105,7 +1106,7 @@ export function MultiSelect({
         className={cn('input flex min-h-[2.375rem] flex-wrap items-center gap-1 py-1.5', disabled && 'bg-slate-50 dark:bg-slate-800')}
         onClick={() => !disabled && setOpen(true)}
       >
-        {value.length === 0 && <span className="text-muted">— Select —</span>}
+        {value.length === 0 && <span className="text-muted">{placeholder || '— Select —'}</span>}
         {value.map((v) => {
           const o = picklistOptionForValue(options, v);
           const remove = !disabled && <button type="button" onClick={(e) => { e.stopPropagation(); toggle(v); }} className="ml-0.5 opacity-60 hover:opacity-100" aria-label={`Remove ${o?.label ?? v}`}><X className="h-2.5 w-2.5" /></button>;
@@ -1373,7 +1374,7 @@ export function ReferencePicker({
 // ---------------------------------------------------------------------------
 
 export function UserPicker({
-  value, onChange, disabled, id, label,
+  value, onChange, disabled, id, label, placeholder,
 }: {
   value: string | null;
   onChange: (v: string | null) => void;
@@ -1381,6 +1382,7 @@ export function UserPicker({
   id?: string;
   /** Fallback accessible name when no <label htmlFor> points at this select. */
   label?: string;
+  placeholder?: string;
 }): JSX.Element {
   const [users, setUsers] = useState<{ id: string; fullName: string }[]>([]);
 
@@ -1426,7 +1428,7 @@ export function UserPicker({
           honestly instead of silently showing whoever happens to sort first.
           Once somebody is chosen there is no way back to empty.
         */}
-        {!value && <option value="" disabled>— Select —</option>}
+        {(!value || placeholder) && <option value="" disabled={!placeholder}>{placeholder || '— Select —'}</option>}
         {users.map((u) => (
           <option key={u.id} value={u.id}>{u.fullName}</option>
         ))}

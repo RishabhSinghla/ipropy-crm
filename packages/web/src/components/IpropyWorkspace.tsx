@@ -718,6 +718,7 @@ export function IpropyWorkspace({
               <ModuleIcon name={module.icon} className="h-3 w-3 shrink-0 text-slate-400" />
               <span className="truncate">{module.label}</span>
               <span className="shrink-0 font-normal text-muted">({rows.length})</span>
+              {active && rows.some((row) => row.id === active.id) && <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 normal-case tracking-normal dark:bg-blue-950 dark:text-blue-200" aria-label="Selected record on this page">{rows.findIndex((row) => row.id === active.id) + 1} / {rows.length}</span>}
             </span>
           </span>
           {/*
@@ -889,7 +890,7 @@ export function IpropyWorkspace({
               recordId={active.id}
               name={active.label}
               canEdit={canEdit}
-              size={56}
+              size={40}
             />
           </span>
           <span className="flex min-w-[8rem] flex-1 flex-col justify-center gap-0.5 overflow-hidden">
@@ -985,7 +986,7 @@ export function IpropyWorkspace({
                   header wraps on a phone. */}
               {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly plain active={onCall} /></span>}
               <button type="button" aria-label={active.starred ? 'Remove from starred' : 'Star this record'} title="Favourite" onClick={() => star.mutate(active)} className="p-1 text-slate-500 hover:text-amber-500"><Star className={cn('h-4 w-4', active.starred && 'fill-amber-500 text-amber-500')} /></button>
-              {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-800 dark:text-blue-300' : 'text-slate-500')}><Tag className="h-4 w-4" /></button>}
+              {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
               {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
               <button type="button" aria-label="Summarise with AI" title="Summarise with AI" disabled={summarising} className="p-1 text-slate-500 hover:text-brand-600 disabled:opacity-50" onClick={() => {
                 setSummarising(true);

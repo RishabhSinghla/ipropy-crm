@@ -37,6 +37,11 @@ test('search options offers compact two-column defaults', async ({ page }) => {
   await expect(panel.getByText('Location', { exact: true })).toBeVisible();
   await expect(panel.getByLabel('Created date', { exact: true })).toBeVisible();
   await expect(panel.getByLabel('Budget or demand maximum slider')).toBeVisible();
+  await expect(panel.getByLabel('Size maximum slider')).toBeVisible();
+  await expect(panel.getByLabel('Full name', { exact: true })).toHaveCount(0);
+  await expect(panel.getByLabel('Mobile', { exact: true })).toHaveCount(0);
+  await expect(panel.getByText('Call disposition / log', { exact: true })).toBeVisible();
+  await expect(panel.getByText('Lost reason', { exact: true })).toBeVisible();
   await expect(panel.getByText(/No filters —/)).toHaveCount(0);
 });
 

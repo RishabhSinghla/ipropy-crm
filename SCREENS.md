@@ -1,5 +1,18 @@
 # The screens a rep lives in
 
+## Search and record indicators, 5 October 2026
+
+Search Options no longer duplicates name/mobile inputs: use universal search for
+those. Metadata-driven agent, location, status, contact type, call disposition,
+lost reason, task/date and tag criteria use two columns, with price and size ranges
+side by side at the bottom. Empty-field hints live inside their controls.
+Selected tag segments are solid blue regardless of their tag's normal colour;
+the header tag icon is filled blue when the record has tags. Both record avatars
+are 40px. The list header highlights the active record's position on the current
+page. Dock counts are totals visible to the user (favourites for the current
+module, call history and WhatsApp conversations), never unread badges.
+The admin audit log uses the server's readable before/after values, not raw IDs.
+
 ## Toolbar update, 4 October 2026
 
 Universal search is a wide, rounded main-toolbar input. The current module's
