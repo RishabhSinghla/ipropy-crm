@@ -1,4 +1,6 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { TagCards } from '../components/TagCards';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
@@ -91,6 +93,10 @@ export default function ListView(): JSX.Element {
   const [selectedAll, setSelectedAll] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [toolbarSlots, setToolbarSlots] = useState<{ filter: HTMLElement | null; options: HTMLElement | null }>({ filter: null, options: null });
+  useEffect(() => {
+    setToolbarSlots({ filter: document.getElementById('global-search-filter'), options: document.getElementById('global-list-options') });
+  }, []);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
   /** Open when somebody is naming a new view built from what is on screen. */
@@ -971,22 +977,8 @@ export default function ListView(): JSX.Element {
 
       </div>
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            data-testid="list-search"
-            className="w-full rounded-md border-none bg-slate-100 py-1.5 pl-8 pr-7 text-xs text-slate-800 placeholder-slate-500 focus:ring-1 focus:ring-brand-500 dark:bg-slate-800 dark:text-slate-100"
-            placeholder={`Search ${meta.label.toLowerCase()}…`}
-            aria-label={`Search ${meta.label}`}
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
-          {searchInput && (
-            <button className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted hover:bg-slate-200 dark:hover:bg-slate-700" aria-label="Clear list search" onClick={() => setSearchInput('')}>
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        <TagCards moduleName={meta.name} />
+        {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}
               className={cn('btn-secondary btn-sm px-2', quickFilterCount > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
@@ -1000,9 +992,11 @@ export default function ListView(): JSX.Element {
                 <span className="rounded-full bg-brand-600 px-1.5 text-2xs text-white">{quickFilterCount}</span>
               )}
             </button>
+        , toolbarSlots.filter)}
 
+        {toolbarSlots.options && createPortal(
             <Dropdown
-              trigger={<button className="btn-secondary btn-sm" aria-label="List options"><Settings2 className="h-3.5 w-3.5" /></button>}
+              trigger={<button className="btn-secondary btn-sm rounded-xl" aria-label="Import, export and list options" title="Import / Export"><Upload className="h-3.5 w-3.5" /><Download className="h-3.5 w-3.5" /></button>}
             >
               {(close) => (
                 <>
@@ -1050,6 +1044,7 @@ export default function ListView(): JSX.Element {
                 </>
               )}
             </Dropdown>
+        , toolbarSlots.options)}
 
       </div>
     </div>

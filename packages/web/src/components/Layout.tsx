@@ -10,7 +10,6 @@ import { api, authedFileUrl, type AccessRequest, type ModuleSummary, type Search
 import { useRealtime } from '../lib/realtime';
 import { LiveCallDeck } from './LiveCallDeck';
 import { useDockFolded, WorkspaceDock } from './WorkspaceDock';
-import { TagCards } from './TagCards';
 import { AiBubble } from './AiBubble';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -139,7 +138,6 @@ export default function Layout(): JSX.Element {
             not a list written here: the most used ones, so the team's own
             vocabulary decides and a new tag arrives on its own.
           */}
-          <TagCards />
 
           {/*
             The module switcher and the green WhatsApp button stood here until
@@ -188,9 +186,10 @@ export default function Layout(): JSX.Element {
           </NavLink>
 
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
-          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none">
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
             <NewRecordButton modules={menuModules} />
             <GlobalSearch />
+            <div id="global-list-options" className="shrink-0" />
 
             <div className="flex shrink-0 items-center gap-1">
               <NotificationBell />
@@ -982,11 +981,11 @@ function GlobalSearch(): JSX.Element {
   const showRecent = open && query.trim().length < 2 && recent.length > 0;
 
   return (
-    <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-auto lg:min-w-0 lg:flex-1 lg:max-w-[26rem] xl:max-w-[32rem]" ref={ref}>
+    <div className="relative ml-auto min-w-0 flex-1 max-w-[48rem]" ref={ref}>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         ref={inputRef}
-        className="input py-1.5 pl-8 pr-12"
+        className="input h-11 rounded-2xl border-transparent bg-slate-100 pl-10 pr-20 text-sm focus:bg-white dark:bg-slate-800 dark:focus:bg-slate-900"
         placeholder="Search everything…"
         value={query}
         role="combobox"
@@ -996,7 +995,8 @@ function GlobalSearch(): JSX.Element {
         onKeyDown={onBoxKey}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-muted dark:border-slate-700 sm:block">
+      <div id="global-search-filter" className="absolute right-2 top-1/2 -translate-y-1/2" />
+      <kbd className="pointer-events-none absolute right-12 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-muted dark:border-slate-700 sm:block">
         ⌘K
       </kbd>
 
