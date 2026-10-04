@@ -28,8 +28,14 @@ DELETE FROM ipy_view WHERE filter::text LIKE '%"field":"unread"%';
 -- 3. A dashboard tile or a saved report asking the same question would break
 --    identically — and a chart that refuses to load is harder for somebody to
 --    explain than one that is simply not there.
-DELETE FROM ipy_dashboard_widget WHERE config::text LIKE '%"field":"unread"%';
-DELETE FROM ipy_report WHERE config::text LIKE '%"field":"unread"%';
+-- Older installations can have a report table without the newer `config`
+-- column. Read the optional key from the row's JSON representation: a missing
+-- key is NULL (no match), rather than a startup-blocking undefined column.
+-- PostgreSQL JSONB text includes spaces, so allow them around the colon too.
+DELETE FROM ipy_dashboard_widget
+ WHERE (to_jsonb(ipy_dashboard_widget)->'config')::text ~ '"field"\s*:\s*"unread"';
+DELETE FROM ipy_report
+ WHERE (to_jsonb(ipy_report)->'config')::text ~ '"field"\s*:\s*"unread"';
 
 -- `ipy_module_seen` is deliberately NOT dropped. Nothing reads it now, and a
 -- migration in this repo never destroys a table — if unread is ever wanted back,
