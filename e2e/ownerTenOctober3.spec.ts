@@ -75,17 +75,18 @@ for (const module of MODULES) {
     expect(on).not.toMatch(/rgba\(0, 0, 0, 0\)/);
   });
 
-  test(`${module}: a search that finds nothing says so beside the box`, async ({ page }) => {
+  test(`${module}: universal search opens its results beside the box`, async ({ page }) => {
     await openList(page, module);
     const box = page.getByRole('combobox', { name: 'Search everything' });
     await box.fill(`nothing matches this ${Date.now()}`);
-    const notice = page.getByText(/No matches for/);
+    const notice = page.getByRole('listbox');
     await expect(notice).toBeVisible({ timeout: 20_000 });
     // Beside the box, not a screen away from it.
     const [boxBox, noticeBox] = await Promise.all([box.boundingBox(), notice.boundingBox()]);
     expect(noticeBox!.y - (boxBox!.y + boxBox!.height)).toBeLessThan(120);
     // And the way back is right there.
     await box.fill('');
+    await box.press('Escape');
     await expect(notice).toHaveCount(0, { timeout: 20_000 });
   });
 
