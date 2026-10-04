@@ -22,14 +22,13 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
   const apply = (close: () => void, clear = false): void => {
     const criteria = clear ? { logic: 'AND' as const, conditions: [] } : filter;
     const search = clear ? '' : words.trim();
-    if (current === selected) {
-      window.dispatchEvent(new CustomEvent('crm-search-options', { detail: { module: selected, filter: criteria, search } }));
-    } else {
-      const params = new URLSearchParams();
-      if (search) params.set('q', search);
-      if (criteria.conditions.length) params.set('filter', JSON.stringify(criteria));
-      navigate(`/${selected}?${params}`);
-    }
+    const params = new URLSearchParams(current === selected ? location.search : '');
+    params.delete('q'); params.delete('filter'); params.delete('page');
+    if (search) params.set('q', search);
+    if (criteria.conditions.length) params.set('filter', JSON.stringify(criteria));
+    // The list hydrates its queue on arrival. A deliberate search handoff gives
+    // it one clean hydration without reloading the app or editing the saved view.
+    navigate(`/${selected}?${params}`, { state: { searchHandoff: Date.now() } });
     if (clear) { onWordsChange(''); setFilter(criteria); }
     close();
   };

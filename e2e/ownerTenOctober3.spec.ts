@@ -111,7 +111,12 @@ test('global toolbar replaces duplicate left-pane search controls', async ({ pag
   await page.getByRole('button', { name: 'Search options', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'CRM search options' })).toBeVisible();
   await expect(page.getByLabel('Search in')).toBeVisible();
+  await page.getByLabel('Has the words').fill('toolbar search check');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page).toHaveURL(/q=toolbar\+search\+check/);
+  await page.getByRole('button', { name: 'Search options', exact: true }).click();
   await page.getByRole('button', { name: 'Clear search filters' }).click();
+  await expect(page).not.toHaveURL(/[?&]q=/);
   await page.getByTestId('quick-filter-button').click();
   await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
   await expect(page.locator('#global-list-options').getByRole('button', { name: 'Import, export and list options' })).toBeVisible();

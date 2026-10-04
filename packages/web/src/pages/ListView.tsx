@@ -206,16 +206,6 @@ export default function ListView(): JSX.Element {
   }, [tagParam]);
 
   useEffect(() => {
-    const apply = (event: Event): void => {
-      const detail = (event as CustomEvent<{ module: string; filter: FilterGroup; search: string }>).detail;
-      if (detail.module !== moduleName) return;
-      setFilter(detail.filter); setSearch(detail.search); setSearchInput(detail.search); setPage(1);
-    };
-    window.addEventListener('crm-search-options', apply);
-    return () => window.removeEventListener('crm-search-options', apply);
-  }, [moduleName]);
-
-  useEffect(() => {
     setPageInput(String(page));
   }, [page]);
 
