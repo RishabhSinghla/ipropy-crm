@@ -113,8 +113,9 @@ describe('the built-in views', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(403);
 
-    // Still there, and still one of four.
-    expect((await views(adminToken)).filter((v) => v.isSystem)).toHaveLength(4);
+    // Still there, and still one of the three. It was four until 3 October
+    // 2026, when migration 184 took "Unread Leads" out with the feature.
+    expect((await views(adminToken)).filter((v) => v.isSystem)).toHaveLength(3);
   });
 
   it('put a starred record into Favourite Leads and an unstarred one out', async () => {
