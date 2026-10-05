@@ -2393,6 +2393,18 @@ The first column stays a plain link to the house. It is how a rep gets to the
 record, and it is the one thing in a row that must not turn into an edit box
 under the cursor.
 
+**And the button that sends it had never existed.** `ShareLinksPanel` has
+been in the repo for months, with its own Copy and WhatsApp hand-off, and
+**nothing opened it**: `RecordDetail.tsx` holds the dialog behind a `sharing`
+flag that no control ever sets, and the split view — which since 27 September
+is the *only* view — had no entry at all. So the one way to a brochure link
+was the API. *Send to a buyer* now sits in the record menu's **More**,
+gated on `canShareRecords`, opening the same panel: one component, so the
+wording, the copy button and the WhatsApp hand-off cannot drift between the
+two places a link is made. It is deliberately absent on Contacts — a link
+renders a property to a stranger, and pointing one at a person would show a
+buyer somebody's number and budget.
+
 **A brochure can be sent from here** (migration `191`). `settings.shareable`
 is the per-module switch `canShareRecords` already reads; the public page and
 `loadSharedRecord` were made module-generic when this module landed, so this

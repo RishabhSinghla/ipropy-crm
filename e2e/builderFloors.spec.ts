@@ -245,3 +245,33 @@ test('search, filter, sort, edit and call, in the table itself', async ({ page }
   await page.reload();
   await expect(table.getByRole('row').filter({ hasText: HOUSE_MARK }).first()).toContainText('North', { timeout: 30_000 });
 });
+
+/*
+  **A house can be sent to a buyer** — *"i can send a brochure of property
+  details to client on whatsapp, directly from CRM."*
+
+  `ShareLinksPanel` had existed all along, with its own WhatsApp hand-off, and
+  nothing opened it: the record page holds the dialog behind a flag no control
+  ever sets, and the split view — the only view — had no entry at all. What is
+  proved here is the entry, and that it is **not** offered on Contacts: a link
+  renders a property to a stranger, and pointing one at a person would show a
+  buyer somebody's number and budget.
+*/
+test('a brochure link can be made from the record, and never for a person', async ({ page }) => {
+  await page.goto('/builder_floors');
+  await expect(page.getByTestId(QUEUE_READY).first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /More/i }).first().click();
+  await page.getByText('Send to a buyer').click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('to a buyer');
+  await dialog.getByRole('button', { name: /Make a link/i }).click();
+  // The WhatsApp hand-off is an `<a>` to wa.me, not a button: the sender picks
+  // the contact in WhatsApp themselves, so nothing is sent from the CRM.
+  await expect(dialog.getByRole('link', { name: /WhatsApp/i }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(dialog.getByRole('button', { name: /Copy/i }).first()).toBeVisible();
+
+  await page.goto('/leads');
+  await expect(page.getByTestId('queue-card').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /More/i }).first().click();
+  await expect(page.getByText('Send to a buyer')).toHaveCount(0);
+});

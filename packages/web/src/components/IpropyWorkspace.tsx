@@ -30,6 +30,8 @@ import { cardArea, cardPrice, oneOfEach, queueCardFields, unitDescription, type 
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
+import { ShareLinksPanel } from './ShareLinks';
+import { canShareRecords } from '../lib/sharing';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar, StrengthBar } from './RecordAvatar';
 import {
@@ -232,6 +234,7 @@ export function IpropyWorkspace({
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [menuPick, setMenuPick] = useState<MenuKey | null>(null);
+  const [sharing, setSharing] = useState(false);
   const [finding, setFinding] = useState(false);
   const [findText, setFindText] = useState('');
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
@@ -1159,6 +1162,31 @@ export function IpropyWorkspace({
                 reply threads back onto the record, and a rep on a phone has no
                 desktop mail client to hand it to.
               */}
+              {/*
+                **Send this one to a buyer** — 5 October 2026, the owner: *"i
+                can send a brochure of property details to client on whatsapp,
+                directly from CRM."*
+
+                `ShareLinksPanel` has existed all along, with its own WhatsApp
+                hand-off, and **nothing opened it**: the record page holds the
+                dialog behind a `sharing` flag no control ever sets, and the
+                split view — which is the only view — had no entry at all. So
+                the one way to a brochure was the API. This is the button, not
+                a second brochure.
+
+                Offered only where the module allows it (`canShareRecords`,
+                `settings.shareable`): a link renders a property to a stranger,
+                and pointing one at a person would show a buyer somebody's
+                number and budget.
+              */}
+              {canShareRecords(module.name, module.settings) && (
+                <DropdownItem
+                  icon={<Send className="h-3.5 w-3.5" />}
+                  onClick={() => { close(); setSharing(true); }}
+                >
+                  Send to a buyer
+                </DropdownItem>
+              )}
               {canEdit && onDelete && (module.name === 'leads' || module.name === 'properties') && (
                 <DropdownItem
                   icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
@@ -1375,6 +1403,17 @@ export function IpropyWorkspace({
       body="Matching values, files, and call history move to the new record. The original record is removed from its current module."
       confirmLabel={move.isPending ? 'Moving…' : 'Move record'}
     />
+
+    {/*
+      The brochure link, in the panel the record page already had — one
+      component, so the wording, the copy button and the WhatsApp hand-off
+      cannot drift between the two places a link is made.
+    */}
+    {active && (
+      <Modal open={sharing} onClose={() => setSharing(false)} title={`Send ${active.label} to a buyer`}>
+        <ShareLinksPanel module={module.name} recordId={active.id} />
+      </Modal>
+    )}
 
     {/* The CRM's own composer, the same one the record page opens, so a
         reply threads back onto the record either way. */}
