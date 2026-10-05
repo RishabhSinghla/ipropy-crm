@@ -43,6 +43,7 @@ import {
 import { evaluateFormula } from './formula.js';
 import { nextNumber } from './numbering.js';
 import { computeRollups } from './rollups.js';
+import { assertMobileIdentityAvailable } from './mobileIdentity.js';
 import {
   assertModuleAccess,
   assertCapability,
@@ -738,6 +739,7 @@ export async function createRecord(
 
     const prepared = await prepareValues(module, payload, { isCreate: true, conn });
     if (!ctx.system) assertNextFollowUpIsNotPast(module, prepared.values);
+    await assertMobileIdentityAvailable(conn, module, prepared.values);
 
     if (!opts.skipDuplicateCheck && module.duplicateCheckFields.length) {
       const dup = await findDuplicate(conn, module, prepared.values);
@@ -839,10 +841,13 @@ export async function updateRecord(
   input = canonicaliseRecordFields(module, input);
 
   const run = async (conn: Tx): Promise<{ envelope: RecordEnvelope; changed: boolean }> => {
+    await conn.query('SELECT id FROM ipy_record WHERE id = $1 FOR UPDATE', [recordId]);
     const before = await getRecord({ ...ctx, system: true }, moduleName, recordId, { conn, withDisplay: false });
     const payload = ctx.system ? { ...input } : await filterWritableFields(ctx.user, moduleName, input);
 
     const prepared = await prepareValues(module, payload, { isCreate: false, conn, existing: before.values });
+    await assertMobileIdentityAvailable(conn, module, { ...before.values, ...prepared.values },
+      { existing: before.values, excludeId: recordId });
 
     if (!ctx.system) assertNextFollowUpIsNotPast(module, prepared.values);
 
@@ -1093,6 +1098,9 @@ export async function moveRecord(
   values.owner_id = source.ownerId;
 
   return transaction(async (tx) => {
+    // Retire the source inside the same transaction, so a legitimate move does
+    // not collide with itself. A failed target save rolls this back as well.
+    await tx.query('UPDATE ipy_record SET is_deleted = true WHERE id = $1', [recordId]);
     const moved = await createRecord(ctx, targetModuleName, values, { conn: tx });
 
     // Keep the useful work attached to the new row. Files have no module of
@@ -1125,12 +1133,22 @@ export async function moveRecord(
 
 export async function restoreRecord(ctx: ServiceContext, moduleName: string, recordId: string): Promise<void> {
   await assertModuleAccess(ctx.user, moduleName, 'edit');
-  await db.query(
-    `UPDATE ipy_record SET is_deleted = false, deleted_at = NULL, deleted_by = NULL WHERE id = $1`,
-    [recordId],
-  );
-  await writeAudit(db, {
-    recordId, module: moduleName, userId: ctx.user.id, action: 'restore', changes: [], source: 'app',
+  const module = await registry.requireModule(moduleName);
+  await transaction(async conn => {
+    const row = await conn.queryOne<Record<string, unknown>>(
+      `SELECT r.*, e.* FROM ipy_record r JOIN ${quoteIdent(module.tableName)} e ON e.record_id = r.id
+       WHERE r.id = $1 AND r.module_id = $2 FOR UPDATE OF r`, [recordId, module.id]);
+    if (!row) throw new NotFoundError(`${module.singularLabel} not found`);
+    if (row.is_deleted === false) return;
+    const envelope = await rowToEnvelope(module, row, { conn, withDisplay: false });
+    await assertMobileIdentityAvailable(conn, module, envelope.values, { excludeId: recordId });
+    await conn.query(
+      `UPDATE ipy_record SET is_deleted = false, deleted_at = NULL, deleted_by = NULL WHERE id = $1`,
+      [recordId],
+    );
+    await writeAudit(conn, {
+      recordId, module: moduleName, userId: ctx.user.id, action: 'restore', changes: [], source: 'app',
+    });
   });
   /*
     The event bus and realtime.ts both know `record.restored` — a restored
@@ -1256,6 +1274,7 @@ async function prepareValues(
     if (!field.isUnique || !(field.name in out.values)) continue;
     const v = out.values[field.name];
     if (isEmpty(v)) continue;
+    if (!opts.isCreate && valuesEqual(v, opts.existing?.[field.name])) continue;
     const exists = await opts.conn.queryOne<{ id: string }>(
       `SELECT r.id FROM ipy_record r
        JOIN ${quoteIdent(module.tableName)} e ON e.record_id = r.id

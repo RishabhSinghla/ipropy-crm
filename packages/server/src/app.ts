@@ -257,6 +257,9 @@ export function createApp(): Express {
       status: dbOk ? 'ok' : 'degraded',
       database: dbOk ? 'connected' : 'unreachable',
       version: '1.0.0',
+      // Public repository revision, not a credential. Proves which server
+      // actually landed rather than mistaking a healthy old instance for it.
+      buildCommit: process.env.RENDER_GIT_COMMIT ?? null,
       uptimeSeconds: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
     });

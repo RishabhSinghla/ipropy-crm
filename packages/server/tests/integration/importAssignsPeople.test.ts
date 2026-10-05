@@ -22,7 +22,8 @@ let token = '';
 let owner = { id: '', name: '', email: '', first: '' };
 /** Looked up, not assumed: the owner field is named differently across seeds. */
 let ownerField = 'assigned_to';
-const MOBILES = ['9800000051', '9800000052', '9800000053'];
+const mobileStem = `69${String(Date.now()).slice(-6)}`;
+const MOBILES = ['51', '52', '53'].map(suffix => mobileStem + suffix);
 
 async function dryRun(rows: string[]): Promise<{ row: number; outcome: string;
   problems: string[]; values: Record<string, unknown> }[]> {

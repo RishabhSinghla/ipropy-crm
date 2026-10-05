@@ -1,8 +1,7 @@
 /**
  * Two contacts, one number — which record does the call attach to?
  *
- * It happens constantly and it is not a data-quality problem to be fixed: a
- * husband and wife on one handset, a broker's number against three of their
+ * Legacy records include a husband and wife on one handset, a broker's number against three of their
  * clients, a number entered as somebody's mobile and somebody else's alternate.
  * The sync has to pick one, and the rep has to be able to predict which, or the
  * call lands on a record nobody looks at and the follow-up never happens.
@@ -37,12 +36,13 @@ beforeAll(async () => {
   app = createApp();
   token = await signIn(app, 'admin@ipropy.com');
 
-  // The number is one contact's mobile and the other's alternate — the shape
-  // this actually turns up in, and both are matched against.
+  // Keep testing this legacy shape even though future saves now refuse it.
   dormant = await lead('QA Dormant', { mobile: SHARED, lead_status: 'New' });
   inPlay = await lead('QA InPlay', {
-    mobile: `92${String(stamp).slice(-8)}`, alternate_phone: SHARED, lead_status: 'Negotiation',
+    mobile: `92${String(stamp).slice(-8)}`, lead_status: 'Negotiation',
   });
+  // Legacy duplicates remain in production; new writes now refuse them.
+  await db.query('UPDATE ipy_e_leads SET alternate_phone = $2 WHERE record_id = $1', [inPlay, SHARED]);
 
   // Touch the dormant one last, so "most recent" alone would pick the wrong
   // record and only the pipeline rule gets this right.

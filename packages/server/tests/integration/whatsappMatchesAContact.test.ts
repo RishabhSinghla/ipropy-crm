@@ -73,9 +73,10 @@ describe('matching a WhatsApp number to a contact', () => {
     const twin = await recordService.createRecord(ctx, 'leads', {
       full_name: `WhatsApp Match Twin ${stamp}`,
       mobile: String(Number(national) - 1),
-      alternate_phone: national,
     });
     created.push(twin.id);
+    // Simulate a pre-existing duplicate; new writes cannot create this now.
+    await db.query('UPDATE ipy_e_leads SET alternate_phone = $2 WHERE record_id = $1', [twin.id, national]);
 
     const match = await matchContact('leads', `+91${national}`);
     expect(match.kind).toBe('ambiguous');

@@ -73,14 +73,11 @@ beforeAll(async () => {
 
   await lead('One', { mobile: `98${String(stamp).slice(-8)}` });
   await lead('Two', { mobile: SHARED_NUMBER });
-  /*
-    The same handset as Two, reached through a different field — which is the
-    only way this happens, because `createRecord` already refuses a second
-    record with the same *mobile*. An alternate number matching somebody
-    else's mobile is nobody's mistake and is not checked anywhere, and an
-    import bypasses the duplicate check entirely.
-  */
-  await lead('Three', { alternate: SHARED_NUMBER });
+  // Legacy data can reach one handset through two records and different phone
+  // fields. Campaigns must still deduplicate it after new saves are guarded.
+  const legacy = await lead('Three', {});
+  // Keep testing pre-existing duplicates without bypassing the new write rule.
+  await db.query('UPDATE ipy_e_leads SET alternate_phone = $2 WHERE record_id = $1', [legacy, SHARED_NUMBER]);
   // No number at all.
   await lead('Four', {});
 

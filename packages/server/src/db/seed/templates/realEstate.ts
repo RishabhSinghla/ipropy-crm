@@ -63,7 +63,7 @@ const MODULES: ModuleDef[] = [
       and produced it permanently. Neither field is mandatory now; the pair is.
     */
     // `shortLabel` is the tag on a WhatsApp chat saying which module it belongs to.
-    settings: { requireOneOf: [['mobile', 'email']], shortLabel: 'LD' },
+    settings: { requireOneOf: [['mobile', 'email']], shortLabel: 'LD', mobileIdentityGroup: 'crm-contact-mobile' },
     supportsConversion: true,
     blocks: [
       {
@@ -364,7 +364,7 @@ const MODULES: ModuleDef[] = [
     // One owner / contact number means one Property record in this CRM. Unit
     // numbers can repeat across projects and are descriptive, not an identity.
     duplicateCheckFields: ['mobile'],
-    settings: { duplicateCheckMode: 'all', shortLabel: 'INV' },
+    settings: { duplicateCheckMode: 'all', shortLabel: 'INV', mobileIdentityGroup: 'crm-contact-mobile' },
     blocks: [
       {
         name: 'property_information',
