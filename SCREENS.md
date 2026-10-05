@@ -1,5 +1,12 @@
 # The screens a rep lives in
 
+## Expandable quick-filter choices, 5 October 2026
+
+Every shared choice list offers a clickable "N more — show all" and "Show fewer"
+alongside its existing search. Colour markers reserve the same space even when
+an option has no colour, keeping all option labels aligned. This applies to all
+fields and modules using Quick & Live Filters.
+
 ## Search and record indicators, 5 October 2026
 
 Search Options no longer duplicates name/mobile inputs: use universal search for
