@@ -53,6 +53,12 @@ export function isAnswered(value: unknown): boolean {
   return true;
 }
 
+/** Relative percentage weight. Unconfigured fields retain equal importance. */
+export function strengthWeight(field: FieldMeta): number {
+  const weight = Number(field.config.strengthWeight ?? 1);
+  return Number.isFinite(weight) ? Math.max(0, Math.min(100, weight)) : 1;
+}
+
 /**
  * How much of a record is filled in, as a percentage of the fields a person
  * could answer.
@@ -67,14 +73,16 @@ export function recordStrength(
   const answerable = fields.filter(isAnswerable);
   const missing: MissingField[] = [];
   let filled = 0;
+  let answeredWeight = 0;
 
   for (const field of answerable) {
-    if (isAnswered(values[field.name])) filled += 1;
+    if (isAnswered(values[field.name])) { filled += 1; answeredWeight += strengthWeight(field); }
     else missing.push({ name: field.name, label: field.label, isMandatory: field.isMandatory });
   }
 
   missing.sort((a, b) => Number(b.isMandatory) - Number(a.isMandatory));
 
   const total = answerable.length;
-  return { filled, total, percent: total ? Math.round((filled / total) * 100) : 100, missing };
+  const weightTotal = answerable.reduce((sum, field) => sum + strengthWeight(field), 0);
+  return { filled, total, percent: weightTotal ? Math.round((answeredWeight / weightTotal) * 100) : 100, missing };
 }

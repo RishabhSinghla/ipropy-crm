@@ -10,7 +10,7 @@ import { db, type Tx } from '../../db/pool.js';
 import { BadRequestError } from '../../utils/errors.js';
 import { registry } from '../metadata/registry.js';
 import {
-  ENTITY_ALIAS, RECORD_ALIAS, SqlParams, buildWhere, fieldExpr,
+  ENTITY_ALIAS, RECORD_ALIAS, SqlParams, buildWhere, buildSearchClause, fieldExpr,
   quoteIdent, resolveFieldPath, type BuildContext,
 } from '../query/builder.js';
 import { recordScopeSql, type ScopeContext } from '../permissions/index.js';
@@ -61,6 +61,7 @@ async function baseQuery(
   moduleName: string,
   filter: WidgetConfig['filter'],
   extraJoins: Map<string, string> = new Map(),
+  search?: string,
 ): Promise<QueryPieces> {
   const module = await registry.requireModule(moduleName);
   const params = new SqlParams();
@@ -81,6 +82,7 @@ async function baseQuery(
     if (w.sql) clauses.push(w.sql);
     for (const j of w.joins) extraJoins.set(j, j);
   }
+  if (search?.trim()) clauses.push(buildSearchClause(search, params));
 
   const scope = await recordScopeSql(ctx, moduleName, params);
   if (scope) clauses.push(scope);
@@ -323,7 +325,7 @@ async function runGrouped(ctx: ScopeContext, config: WidgetConfig, conn: Tx, typ
   const module = await registry.requireModule(config.module);
   const joins = new Map<string, string>();
   const grouped = await resolveFieldPath(module, config.groupBy, joins);
-  const { from, where, params } = await baseQuery(ctx, config.module, config.filter, joins);
+  const { from, where, params } = await baseQuery(ctx, config.module, config.filter, joins, config.search);
 
   const aggField = config.aggregateField ? module.fields.find((f) => f.name === config.aggregateField) : null;
   const expr = aggField ? fieldExpr(aggField) : null;

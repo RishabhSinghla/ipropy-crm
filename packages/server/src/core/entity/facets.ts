@@ -7,7 +7,9 @@
  * is only ever counted the records they are allowed to see, and a field their
  * profile hides is refused rather than summarised.
  */
-import type { FilterGroup } from '@ipropy/shared';
+import type { FilterGroup, ListQuery } from '@ipropy/shared';
+import { db } from '../../db/pool.js';
+import { prepareList } from './recordService.js';
 import { runWidget } from '../analytics/widgets.js';
 import { registry } from '../metadata/registry.js';
 import { isSystemField } from '../query/builder.js';
@@ -47,19 +49,23 @@ export async function fieldFacets(
   ctx: ScopeContext,
   moduleName: string,
   fieldName: string,
-  options: { search?: string; limit?: number } = {},
+  options: { search?: string; limit?: number; context?: ListQuery } = {},
 ): Promise<{ values: FacetValue[]; blank: number }> {
   await readableField(ctx, moduleName, fieldName);
   const search = options.search?.trim();
-  const filter: FilterGroup | undefined = search
+  const valueFilter: FilterGroup | undefined = search
     ? { logic: 'AND', conditions: [{ field: fieldName, operator: 'contains', value: search }] }
     : undefined;
+  const scope = options.context ? await prepareList(ctx, moduleName, options.context, db) : undefined;
+  const filters = [scope?.effectiveFilter, valueFilter].filter((item): item is FilterGroup => Boolean(item));
+  const filter: FilterGroup | undefined = filters.length ? { logic: 'AND', conditions: filters } : undefined;
   const result = await runWidget(ctx, 'bar', {
     module: moduleName,
     groupBy: fieldName,
     aggregate: 'count',
     limit: Math.min(Math.max(options.limit ?? 5, 1), 50),
     filter,
+    search: options.context?.search,
   });
   const series = result.series ?? [];
   return {

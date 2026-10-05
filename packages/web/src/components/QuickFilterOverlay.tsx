@@ -9,7 +9,7 @@
  *    it was opened from, and slides away again;
  *  * the **live record count** sits in its header and moves as you choose;
  *  * **every section folds** — a heading to tap, open only when it is in use;
- *  * a list longer than five shows its **top five and a search**;
+ *  * a list longer than five shows its **top five, a search and Show all / Show fewer**;
  *  * money and sizes are a **min–max slider**; dates have **Yesterday, Today,
  *    This week, This month and a date picker**; tasks **Overdue, Today,
  *    Tomorrow, Upcoming and a date**.
@@ -18,9 +18,9 @@
  * Filters (`lib/quickFilters.ts` holds the rules). Every choice narrows the
  * list the moment it is made — there is no Apply to forget to press.
  */
-import { type JSX, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, type JSX, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { formatIndianPrice, type FieldMeta, type FilterGroup, type ModuleMeta, type QuickFilterSection } from '@ipropy/shared';
+import { formatIndianPrice, type FieldMeta, type FilterGroup, type ListQuery, type ModuleMeta, type QuickFilterSection } from '@ipropy/shared';
 import {
   CalendarDays, Check, ChevronDown, Clock3, Filter, Hash, ListFilter, PhoneOutgoing,
   Search, SlidersHorizontal, Tag, UserRound, X,
@@ -39,6 +39,7 @@ import { Spinner } from './ui';
 
 type ViewChoice = { id: string; name: string; isDefault?: boolean; count?: number };
 type Option = { value: string; label: string; color?: string | null; count?: number };
+const CountContext = createContext<ListQuery>({});
 
 /*
   Every filter says how many records each choice holds — the owner, 3 October
@@ -47,9 +48,10 @@ type Option = { value: string; label: string; color?: string | null; count?: num
   opened, so a folded heading costs nothing.
 */
 function useFacetCounts(module: string, field: string | undefined): { counts: Map<string, number>; blank: number | undefined; loading: boolean } {
+  const context = useContext(CountContext);
   const { data, isLoading } = useQuery({
-    queryKey: ['facet', module, field],
-    queryFn: () => api.facet(module, field!, undefined, 50),
+    queryKey: ['facet', module, field, context],
+    queryFn: () => api.facet(module, field!, undefined, 50, context),
     enabled: Boolean(field),
     staleTime: 60_000,
   });
@@ -62,10 +64,11 @@ function useFacetCounts(module: string, field: string | undefined): { counts: Ma
 
 /** How many records each chip's filter matches — one small count per chip. */
 function useChipCounts<T extends string>(module: string, filters: Array<[T, FilterGroup]>): Partial<Record<T, number>> {
+  const context = useContext(CountContext);
   const results = useQueries({
     queries: filters.map(([key, filter]) => ({
-      queryKey: ['chip-count', module, key, JSON.stringify(filter)],
-      queryFn: () => api.list(module, { filter, page: 1, pageSize: 1 }),
+      queryKey: ['chip-count', module, key, filter, context],
+      queryFn: () => api.list(module, { ...context, filter: { logic: 'AND', conditions: [filter, ...(context.filter ? [context.filter] : [])] }, page: 1, pageSize: 1 }),
       staleTime: 60_000,
     })),
   });
@@ -82,6 +85,7 @@ const TASK_CHOICES: Array<[TaskQueue, string]> = [
 ];
 
 export interface QuickFilterPanelProps {
+  countContext?: ListQuery;
   open: boolean;
   onClose: () => void;
   /** `pane` fills the right-hand pane it was opened from; `floating` sits at the screen's right edge. */
@@ -152,7 +156,7 @@ export function QuickFilterOverlay(props: QuickFilterPanelProps): JSX.Element | 
     .filter(({ title }) => !needle || title.toLocaleLowerCase().includes(needle));
 
   return (
-    <div
+    <CountContext.Provider value={props.countContext ?? {}}><div
       className={cn('z-40', placement === 'pane' ? 'absolute inset-0' : 'fixed bottom-0 right-0 top-12 w-full max-w-[22.5rem]')}
       data-testid="quick-filter-overlay"
     >
@@ -210,7 +214,7 @@ export function QuickFilterOverlay(props: QuickFilterPanelProps): JSX.Element | 
           </Folding>
         </div>
       </aside>
-    </div>
+    </div></CountContext.Provider>
   );
 }
 
@@ -330,11 +334,12 @@ function ChoiceList({ options, ticked, top, onTick, loading, always }: {
   always?: Option;
 }): JSX.Element {
   const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const needle = search.trim().toLocaleLowerCase();
   const searchable = options.length > top;
   const shown = needle
     ? options.filter((option) => option.label.toLocaleLowerCase().includes(needle) || ticked.includes(option.value))
-    : topValues(options, ticked, top);
+    : expanded ? options : topValues(options, ticked, top);
   return (
     <div>
       {searchable && (
@@ -355,7 +360,12 @@ function ChoiceList({ options, ticked, top, onTick, loading, always }: {
       ))}
       {!loading && !shown.length && <p className="px-4 py-1 text-[11px] text-muted">Nothing matches.</p>}
       {!needle && options.length > shown.length && (
-        <p className="px-4 pt-0.5 text-[10px] text-muted">{options.length - shown.length} more — search to find one</p>
+        <button type="button" aria-expanded={expanded} onClick={() => setExpanded(true)} className="px-4 py-1 text-[11px] font-medium text-brand-700 hover:underline dark:text-brand-300">
+          {options.length - shown.length} more — show all
+        </button>
+      )}
+      {!needle && expanded && searchable && (
+        <button type="button" aria-expanded={expanded} onClick={() => setExpanded(false)} className="px-4 py-1 text-[11px] font-medium text-brand-700 hover:underline dark:text-brand-300">Show fewer</button>
       )}
       {always && (
         <div className="mt-1 border-t border-[var(--border)] pt-1">
@@ -380,7 +390,7 @@ function Choice({ option, checked, onClick }: { option: Option; checked: boolean
       <span className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border', checked ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 dark:border-slate-600')}>
         {checked && <Check className="h-2.5 w-2.5" />}
       </span>
-      {option.color && <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: option.color }} />}
+      <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: option.color || undefined }} />
       <span className="min-w-0 flex-1 truncate">{option.label}</span>
       {option.count !== undefined && <span className="text-[10px] tabular-nums text-muted">{option.count.toLocaleString('en-IN')}</span>}
     </button>

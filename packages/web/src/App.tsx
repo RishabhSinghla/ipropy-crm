@@ -45,7 +45,8 @@ const ListView = lazy(() => import('./pages/ListView'));
  */
 function ListRoute(): JSX.Element {
   const { state } = useLocation();
-  const handoff = (state as { callDeckHandoff?: number } | null)?.callDeckHandoff;
+  const arrival = state as { callDeckHandoff?: number; searchHandoff?: number } | null;
+  const handoff = arrival?.callDeckHandoff ?? arrival?.searchHandoff;
   return <ListView key={handoff ? `handoff-${handoff}` : undefined} />;
 }
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));

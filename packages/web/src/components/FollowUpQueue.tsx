@@ -1,14 +1,12 @@
 import { type JSX } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Clock, ChevronRight, Phone, Sparkles } from 'lucide-react';
-import type { FieldMeta, FilterGroup, ListQuery, RecordEnvelope } from '@ipropy/shared';
+import { Clock, Sparkles } from 'lucide-react';
+import type { FieldMeta, FilterGroup, ListQuery } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
-import { dial } from '../lib/nativeActions';
-import { phoneOf } from '../mobile/rows';
-import { Avatar, Dropdown } from './ui';
+import { Dropdown } from './ui';
 import { AgentPicker } from './AgentPicker';
 
 export type TaskQueue = 'pending' | 'today' | 'tomorrow' | 'upcoming' | 'week' | 'month';
@@ -165,7 +163,7 @@ export function FollowUpQueue({
             total={total}
             active={active}
             onPick={(queue) => { onPick(queue); close(); }}
-            agentPicker={ownerField ? <AgentPicker agent={agent} onPickAgent={onPickAgent} /> : null}
+            agentPicker={ownerField ? <AgentPicker moduleName={moduleName} agent={agent} onPickAgent={onPickAgent} /> : null}
           />
         )}
       </Dropdown>
@@ -188,7 +186,7 @@ export function FollowUpQueue({
 
 /** Mounted only while the panel is open, so its queries cost nothing when it is shut. */
 function QueuePanel({
-  moduleName, fieldName, viewId, fieldMap, filters, counts, total, active, onPick, agentPicker,
+  moduleName, fieldName, viewId, filters, counts, total, active, onPick, agentPicker,
 }: {
   moduleName: string;
   fieldName: string;
@@ -219,20 +217,23 @@ function QueuePanel({
     screen telling them there is nothing to do.
   */
   const next: TaskQueue = counts.pending > 0 ? 'pending' : counts.today > 0 ? 'today' : 'tomorrow';
-  const nextCount = counts[next as 'pending' | 'today' | 'tomorrow'];
 
   const { data: upNext } = useQuery({
     queryKey: ['task-next', moduleName, viewId, next, filters[next]],
     // Oldest first: the point of the queue is who has waited longest.
     queryFn: () => api.list(moduleName, {
-      view: viewId, page: 1, pageSize: 3, filter: filters[next], sortBy: fieldName, sortDir: 'asc',
+      view: viewId, page: 1, pageSize: 1, filter: filters[next], sortBy: fieldName, sortDir: 'asc',
     }),
   });
   const rows = upNext?.rows ?? [];
 
   const start = (): void => {
     onPick(next);
-    if (rows[0]) navigate(`/${moduleName}/${rows[0].id}`);
+    if (rows[0]) {
+      const params = new URLSearchParams({ open: rows[0].id, filter: JSON.stringify(filters[next]), sortBy: fieldName, sortDir: 'asc' });
+      if (viewId) params.set('view', viewId);
+      navigate(`/${moduleName}?${params}`);
+    }
   };
 
   return (
@@ -252,7 +253,7 @@ function QueuePanel({
           onClick={start}
           disabled={!rows.length}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-brand-700 disabled:opacity-40"
-          title={rows.length ? `Open ${rows[0]?.label} and work down the queue` : 'Nothing is waiting'}
+          title="Open the first follow-up record; press Call when ready. No automatic call is placed."
         >
           <Sparkles className="h-3 w-3" />
           Start calling
@@ -288,34 +289,6 @@ function QueuePanel({
         })}
       </div>
 
-      <div className="p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted">
-            Up next — {QUEUE_LABEL[next].toLowerCase()} ({Math.min(rows.length, nextCount)} of {nextCount.toLocaleString('en-IN')})
-          </span>
-          {nextCount > rows.length && (
-            <button
-              type="button"
-              onClick={() => onPick(next)}
-              className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-brand-600 hover:text-brand-700 dark:text-brand-400"
-            >
-              View all {nextCount.toLocaleString('en-IN')}
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-
-        {rows.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-[11px] text-muted dark:border-slate-700">
-            Nothing is waiting. Every follow-up is done.
-          </p>
-        ) : (
-          <ul className="space-y-1.5">
-            {rows.map((row) => <UpNextRow key={row.id} row={row} moduleName={moduleName} fieldMap={fieldMap} />)}
-          </ul>
-        )}
-      </div>
-
       <div className="flex items-center gap-3 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
         <button type="button" onClick={() => onPick('week')} className="text-[11px] font-semibold text-slate-600 hover:text-brand-600 dark:text-slate-300">
           This week ({week.toLocaleString('en-IN')})
@@ -331,52 +304,5 @@ function QueuePanel({
         )}
       </div>
     </div>
-  );
-}
-
-/** One person in the queue: who, what they want, and the one action worth offering. */
-function UpNextRow({
-  row, moduleName, fieldMap,
-}: { row: RecordEnvelope; moduleName: string; fieldMap: Map<string, FieldMeta> }): JSX.Element {
-  const navigate = useNavigate();
-  const phone = phoneOf(row, fieldMap);
-  // Read through display, which is already formatted — ₹2.1 Cr rather than 21000000.
-  const subtitle = ['contact_type', 'unit_number', 'unit_no']
-    .map((name) => row.display?.[name])
-    .filter((v): v is string => Boolean(v && v !== '—'));
-  const budget = row.display?.budget ?? row.display?.budget_max;
-
-  return (
-    <li>
-      <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200/90 bg-white p-2 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">
-        <button
-          type="button"
-          onClick={() => navigate(`/${moduleName}/${row.id}`)}
-          className="flex min-w-0 items-center gap-2.5 text-left"
-        >
-          <Avatar name={row.label} size={28} className="text-[10px]" />
-          <span className="min-w-0">
-            <span className="flex items-center gap-1.5">
-              <span className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{row.label}</span>
-              {budget && <span className="shrink-0 text-[10px] font-medium text-muted">{budget}</span>}
-            </span>
-            {subtitle.length > 0 && (
-              <span className="mt-0.5 block truncate text-[10px] text-muted">{subtitle.join(' • ')}</span>
-            )}
-          </span>
-        </button>
-        {phone && (
-          <button
-            type="button"
-            title={`Call ${row.label}`}
-            aria-label={`Call ${row.label}`}
-            onClick={() => dial(phone)}
-            className="shrink-0 rounded-md bg-brand-50 p-1.5 text-brand-600 transition-colors hover:bg-brand-600 hover:text-white dark:bg-brand-950/50 dark:text-brand-300"
-          >
-            <Phone className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-    </li>
   );
 }

@@ -1,5 +1,46 @@
 # The screens a rep lives in
 
+## Expandable quick-filter choices, 5 October 2026
+
+Every shared choice list offers a clickable "N more — show all" and "Show fewer"
+alongside its existing search. Colour markers reserve the same space even when
+an option has no colour, keeping all option labels aligned. This applies to all
+fields and modules using Quick & Live Filters.
+
+## Search and record indicators, 5 October 2026
+
+Search Options no longer duplicates name/mobile inputs: use universal search for
+those. Metadata-driven agent, location, status, contact type, call disposition,
+lost reason, task/date and tag criteria use two columns, with price and size ranges
+side by side at the bottom. Empty-field hints live inside their controls.
+Selected tag segments are solid blue regardless of their tag's normal colour;
+the header tag icon is filled blue when the record has tags. Both record avatars
+are 40px. The list header highlights the active record's position on the current
+page. Dock counts are totals visible to the user (favourites for the current
+module, call history and WhatsApp conversations), never unread badges.
+The admin audit log uses the server's readable before/after values, not raw IDs.
+
+## Toolbar update, 4 October 2026
+
+Universal search is a wide, rounded main-toolbar input. The current module's
+Gmail-style Search Options dropdown sits inside it, independently of Quick &
+Live Filters. It offers module selection, words and metadata-driven field
+conditions, applied temporarily without saving a view. Quick Filters remains
+available beside universal search, before Import/Export; the duplicate record-pane
+and middle-header filter buttons are removed. The main header owns a higher
+stacking layer so its search dropdown covers record tabs and note cards.
+Import/export and list options preserve their existing permissions. The record pane no longer
+duplicates those controls. Its replacement is one horizontally scrolling,
+segmented strip of the current module's used tags, with vertical separators.
+Tag clicks preserve the selected view and filters and reset pagination.
+Tag URL hydration finishes before URL write-back, preventing a tag navigation
+from oscillating. The list selector keeps its own name and does not impersonate
+the selected tag. Company photo management is available from the header avatar;
+only administrators can replace or remove the organisation photo. Pass the raw
+photo URL to Avatar, which adds file authentication itself; adding it twice breaks
+the thumbnail URL.
+The former list-search browser checks now exercise universal search instead.
+
 The split view and tags. Read it before changing how a list, a record or a tag
 looks or behaves.
 
@@ -2286,9 +2327,12 @@ letting it grow — so a twelfth is a deliberate act. The test carries the reaso
 
 ### The three halves a new module needs, and the one that fails silently
 
-* **A migration** (`186_builder_floors.sql`) creates `ipy_e_builder_floors`. It
+* **A migration** (`187_builder_floors.sql`) creates `ipy_e_builder_floors`. It
   declares only `record_id`, `custom_fields` and the **five columns an index
-  needs**; the seed's `ensureColumn` adds the other forty-odd. The first cut
+  needs**; it was written as 186 and renumbered on merge, because a parallel
+  session had shipped its own 186 the same day — two migrations on one number
+  both apply (the runner keys on the filename) but the folder stops reading as a
+  sequence, so the later one moves; the seed's `ensureColumn` adds the other forty-odd. The first cut
   declared none of them and guarded each `CREATE INDEX` behind an `IF EXISTS` on
   its column — which on a fresh database is every guard failing and **no index
   created, silently**, because *migrations run before the seed*. Found by looking
@@ -2394,3 +2438,36 @@ the seeded `locality` dropdown does not carry, so an import would be refused on
 every row until he adds them in Admin → Dropdowns, and `T`/`M` need his answer
 first. **SMS and email from this view** have not been exercised here. And the
 Floor Plan / Elevation images do not reach a brochure, as above.
+
+---
+### 4 October: compact workspace and weighted profile strength
+
+Company avatar is removed from the main toolbar; the company name remains.
+Tag segments fill the available strip with rounded first/last ends. Each entity
+list has a New today chip (created date today), and the dock has Favourites
+between Calls and WhatsApp. The duplicate Activity tab is removed; Changes stays.
+Strength is solid red below 50%, yellow from 50% through 70%, green above 70%.
+Admin → Profile Strength configures relative field weights per module, with zero
+excluding a field from scoring; bars, filters and reminders use the same weights.
+Currency editors allow room for both amount and unit; the price unit label is
+Total, without rewriting stored values or amounts.
+### 4 October: list-scoped counts and stable empty results
+
+Quick filter option counts use the current saved view, search and filters,
+not the whole module. New (created today) uses the same scope. Empty queues
+keep the split workspace and controls, with a no-matches message and reset.
+Call, Star and Tag are plain header icons, in that order. Star and Tag no
+longer duplicate actions under More.
+# 4 October evening: search and loading
+
+Search options has a compact, metadata-driven two-column form (agent, locality,
+stage, contact type, tasks, created date, tags and price range), plus the full
+filter builder without its large empty-state box. Search results retain two
+lines: name/mobile/agent/update on the first, price/house/accommodation/portion/
+category/location on the second. Hidden fields and phone masking still apply.
+Selected tag chips are solid; a tagged record's header Tag is dark blue.
+Email and AI summary are plain header icons, not More actions; record-search
+has left More. Dock arrows are removed; the main hamburger still folds it.
+Favourites highlights from the parsed filter, including URLs with view/page
+parameters. Lists wait for view hydration and retain search handoff state.
+Display names are batched once per page, and view counts no longer load rows.

@@ -75,17 +75,18 @@ for (const module of MODULES) {
     expect(on).not.toMatch(/rgba\(0, 0, 0, 0\)/);
   });
 
-  test(`${module}: a search that finds nothing says so beside the box`, async ({ page }) => {
+  test(`${module}: universal search opens its results beside the box`, async ({ page }) => {
     await openList(page, module);
-    const box = page.getByTestId('list-search');
+    const box = page.getByRole('combobox', { name: 'Search everything' });
     await box.fill(`nothing matches this ${Date.now()}`);
-    const notice = page.getByTestId('no-search-matches');
+    const notice = page.getByRole('listbox');
     await expect(notice).toBeVisible({ timeout: 20_000 });
     // Beside the box, not a screen away from it.
     const [boxBox, noticeBox] = await Promise.all([box.boundingBox(), notice.boundingBox()]);
     expect(noticeBox!.y - (boxBox!.y + boxBox!.height)).toBeLessThan(120);
     // And the way back is right there.
-    await notice.getByRole('button', { name: 'Clear search' }).click();
+    await box.fill('');
+    await box.press('Escape');
     await expect(notice).toHaveCount(0, { timeout: 20_000 });
   });
 
@@ -102,23 +103,30 @@ for (const module of MODULES) {
   });
 }
 
-test('commas narrow the search rather than widening it', async ({ page }) => {
+test('global toolbar replaces duplicate left-pane search controls', async ({ page }) => {
   await openList(page, 'leads');
-  const total = async (): Promise<number> => {
-    const text = await page.getByText(/[\d,]+ records/).first().innerText();
-    return Number((text.match(/of ([\d,]+) records/)?.[1] ?? text.match(/([\d,]+) records/)?.[1] ?? '0').replace(/,/g, ''));
-  };
-  const everything = await total();
-  const box = page.getByTestId('list-search');
-
-  await box.fill('a');
-  await expect.poll(total, { timeout: 20_000 }).toBeLessThanOrEqual(everything);
-  const one = await total();
-
-  // A second piece can only ever narrow. An OR would have widened it, which is
-  // the way this feature would be wrong without saying so.
-  await box.fill('a, zzqqxx');
-  await expect.poll(total, { timeout: 20_000 }).toBeLessThan(Math.max(1, one));
+  await expect(page.getByTestId('list-search')).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Search everything' })).toBeVisible();
+  await expect(page.locator('#global-search-filter').getByRole('button')).toBeVisible();
+  await expect(page.locator('#global-quick-filter').getByTestId('quick-filter-button')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Quick filters', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Search options', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'CRM search options' })).toBeVisible();
+  await expect(page.getByLabel('Search in')).toBeVisible();
+  // The header dropdown must win hit testing over the sticky record tabs.
+  await expect.poll(() => page.getByRole('dialog', { name: 'CRM search options' }).evaluate((panel) => {
+    const box = panel.getBoundingClientRect();
+    return panel.contains(document.elementFromPoint(box.left + box.width / 2, box.top + 120));
+  })).toBe(true);
+  await page.getByLabel('Has the words').fill('toolbar search check');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page).toHaveURL(/q=toolbar\+search\+check/);
+  await page.getByRole('button', { name: 'Search options', exact: true }).click();
+  await page.getByRole('button', { name: 'Clear search filters' }).click();
+  await expect(page).not.toHaveURL(/[?&]q=/);
+  await page.getByTestId('quick-filter-button').click();
+  await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
+  await expect(page.locator('#global-list-options').getByRole('button', { name: 'Import, export and list options' })).toBeVisible();
 });
 
 test('the tag cards count the module they open', async ({ page }) => {
@@ -128,9 +136,12 @@ test('the tag cards count the module they open', async ({ page }) => {
   const first = cards.locator('button').first();
   const promised = Number((await first.innerText()).replace(/[^\d]/g, ''));
   await first.click();
+  const tagAddress = page.url();
   // The number on the card is the number the list comes back with.
   await expect.poll(async () => {
     const text = await page.getByText(/[\d,]+ records/).first().innerText();
     return Number((text.match(/of ([\d,]+) records/)?.[1] ?? text.match(/([\d,]+) records/)?.[1] ?? '0').replace(/,/g, ''));
   }, { timeout: 20_000 }).toBe(promised);
+  await expect(page).toHaveURL(tagAddress);
+  await expect(page.getByRole('button', { name: 'Choose or manage list views' })).not.toContainText((await first.innerText()).replace(/[\d,]+$/, '').trim());
 });

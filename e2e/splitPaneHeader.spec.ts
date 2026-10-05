@@ -54,7 +54,7 @@ for (const { module, demoted } of [
     const more = page.getByTestId('record-menu-more');
     await expect(more).toBeVisible();
     await more.click();
-    await expect(page.getByText('Summarise with AI')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Summarise with AI', exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
 
     // 2. Every queue row's status, under its date. Read from the rows rather

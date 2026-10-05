@@ -47,14 +47,15 @@ test('a note written in the box under the timeline appears in it', async ({ page
   await expect(page.getByTestId('activity-feed').getByText(text)).toBeVisible({ timeout: 15_000 });
 });
 
-test('the tabs are icons with names for a screen reader, and the timeline comes first', async ({ page }) => {
+test('the tabs have accessible names, and Notes replaces duplicate Activity', async ({ page }) => {
   await page.goto('/leads');
   await waitForRecords(page);
   const nav = page.getByRole('navigation', { name: 'Record workspace sections' });
-  await expect(nav.getByRole('button').first()).toHaveAccessibleName(/^Activity/);
+  await expect(nav.getByRole('button').first()).toHaveAccessibleName(/^Notes/);
+  await expect(nav.getByRole('button', { name: /^Activity/ })).toHaveCount(0);
   await nav.getByRole('button', { name: /^Files/ }).click();
   await expect(page.getByTestId('activity-feed')).toHaveCount(0);
-  await nav.getByRole('button', { name: /^Activity/ }).click();
+  await nav.getByRole('button', { name: /^Notes/ }).click();
   await expect(page.getByTestId('activity-feed')).toBeVisible();
 });
 

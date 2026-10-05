@@ -13,13 +13,14 @@ import { Avatar } from './ui';
  * and the task counts together. Two copies would drift, and the way they drift
  * is that one panel says Vijay while the list shows everybody.
  */
-export function AgentPicker({ agent, onPickAgent }: {
+export function AgentPicker({ agent, onPickAgent, moduleName }: {
+  moduleName?: string;
   agent: string | null;
   onPickAgent: (userId: string | null) => void;
 }): JSX.Element | null {
   const { data: rawUsers } = useQuery({
-    queryKey: ['users', 'assignable'],
-    queryFn: () => api.users(false, false, true),
+    queryKey: ['users', 'filter-agents', moduleName],
+    queryFn: () => api.users(false, false, true, moduleName),
   });
   // `api.users` is untyped on purpose (the admin screens read many shapes off
   // it); narrow to the two fields this needs rather than casting inline.

@@ -495,6 +495,8 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
               // any further than it must.
               : field.uitype === 'phone'
                 ? 'w-64'
+                : field.uitype === 'currency' && field.config.unitField
+                  ? 'w-72'
                 : field.uitype === 'area' && field.config.unitField
                   ? 'w-52'
                 : compact ? 'w-40' : 'w-52'),

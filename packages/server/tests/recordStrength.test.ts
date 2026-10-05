@@ -11,6 +11,14 @@
 import { describe, expect, it } from 'vitest';
 import { recordStrength, isAnswered, type FieldMeta, type UIType } from '@ipropy/shared';
 
+it('weights important fields and excludes zero-weight fields', () => {
+  const budget = { ...field('budget'), config: { strengthWeight: 80 } };
+  const name = { ...field('name'), config: { strengthWeight: 20 } };
+  const ignored = { ...field('ignored'), config: { strengthWeight: 0 } };
+  expect(recordStrength([budget, name, ignored], { budget: 100 }).percent).toBe(80);
+  expect(recordStrength([budget, name], { name: 'Buyer' }).percent).toBe(20);
+});
+
 function field(name: string, uitype: UIType = 'string', over: Partial<FieldMeta> = {}): FieldMeta {
   return {
     id: name, internalId: `fld_${name}`, moduleId: 'm', moduleName: 'leads', blockId: null,

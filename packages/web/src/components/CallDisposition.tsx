@@ -217,7 +217,7 @@ export function CallDispositionProvider({
   );
 }
 
-export function CallButton({ to, iconOnly = false, round = false, active = false }: { to: string; iconOnly?: boolean; round?: boolean; active?: boolean }): JSX.Element {
+export function CallButton({ to, iconOnly = false, round = false, plain = false, active = false }: { to: string; iconOnly?: boolean; round?: boolean; plain?: boolean; active?: boolean }): JSX.Element {
   const calls = useCallDisposition();
   return (
     <button
@@ -229,7 +229,7 @@ export function CallButton({ to, iconOnly = false, round = false, active = false
       // record's action strip, neutral at rest — four tinted circles in a
       // line read as four warnings — and filling with its own colour under
       // the cursor, so it says what it is exactly when that matters.
-      className={round
+      className={plain ? cn('inline-flex items-center justify-center p-1 text-slate-500 hover:text-brand-600', active && 'text-emerald-600') : round
         ? cn('inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors', active
           ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500'
           : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-transparent hover:bg-blue-600 hover:text-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300')

@@ -10,7 +10,6 @@ import { api, authedFileUrl, type AccessRequest, type ModuleSummary, type Search
 import { useRealtime } from '../lib/realtime';
 import { LiveCallDeck } from './LiveCallDeck';
 import { useDockFolded, WorkspaceDock } from './WorkspaceDock';
-import { TagCards } from './TagCards';
 import { AiBubble } from './AiBubble';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -21,6 +20,7 @@ import { PeekLink, PeekProvider } from './PeekLink';
 import { flattenGroups, groupHits, moveHighlight } from '../lib/searchGroups';
 import { readRecent, withRecent, withoutRecent, writeRecent } from '../lib/searchHistory';
 import RecordForm from './RecordForm';
+import { SearchOptions } from './SearchOptions';
 
 /* Lazy, because capture carries the camera and EXIF machinery and the shell is
    on every page. Nobody pays for it until they open the menu and choose it. */
@@ -104,7 +104,7 @@ export default function Layout(): JSX.Element {
         {/* Top bar: brand and primary navigation on the left, search and
             actions on the right. One row, every width — the old sidebar spent
             its whole height saying what a 12px tab now says. */}
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 dark:bg-slate-900 sm:gap-3 sm:px-4">
+        <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 dark:bg-slate-900 sm:gap-3 sm:px-4">
           {/*
             One hamburger, two jobs, and the job is whichever navigation this
             screen has — *"the toolbar also have hamburg function before ipropy
@@ -124,22 +124,11 @@ export default function Layout(): JSX.Element {
             <Menu className="h-4.5 w-4.5" />
           </button>
 
-          <Link to="/dashboard" className="flex shrink-0 items-center gap-2.5 overflow-hidden" aria-label={brand?.orgName ?? 'iPropy'}>
-            <BrandMark logoUrl={brand?.logoUrl ?? null} name={brand?.orgName ?? 'iPropy'} />
-            {/*
-              **The name is printed only when there is no logo.** A company's
-              logo almost always *is* its name written out, so the two side by
-              side said it twice and between them took a third of the bar — the
-              other half of *"Poor Alignment & Size adjustment"* (4 October
-              2026). The `aria-label` on this link still carries the name, so a
-              screen reader says it either way.
-            */}
-            {!brand?.logoUrl && (
-              <span className="hidden truncate text-base font-semibold leading-tight tracking-tight sm:block">
+          <div className="flex shrink-0 items-center gap-2.5">
+              <Link to="/dashboard" className="max-w-[10rem] truncate text-base font-semibold leading-tight tracking-tight">
                 {brand?.orgName ?? 'iPropy'}
-              </span>
-            )}
-          </Link>
+              </Link>
+          </div>
 
           {/*
             The tags worth seeing from every screen, right after the company
@@ -149,7 +138,6 @@ export default function Layout(): JSX.Element {
             not a list written here: the most used ones, so the team's own
             vocabulary decides and a new tag arrives on its own.
           */}
-          <TagCards />
 
           {/*
             The module switcher and the green WhatsApp button stood here until
@@ -198,9 +186,11 @@ export default function Layout(): JSX.Element {
           </NavLink>
 
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
-          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none">
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
             <NewRecordButton modules={menuModules} />
             <GlobalSearch />
+            <div id="global-quick-filter" className="shrink-0" />
+            <div id="global-list-options" className="shrink-0" />
 
             <div className="flex shrink-0 items-center gap-1">
               <NotificationBell />
@@ -647,16 +637,14 @@ function BrandMark({ logoUrl, name }: { logoUrl: string | null; name: string }):
   */
   if (logoUrl && !failed) {
     return (
-      <span className="flex h-9 shrink-0 items-center" data-testid="brand-mark">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-brand-700 bg-white p-0.5" data-testid="brand-mark">
         {/* A CRM-hosted logo is permission-checked, and an <img> cannot send
             the session header — so the token rides in the query string.
-            `h-full w-auto` is what keeps its own proportions: a width this code
-            picked would squash somebody's logo on the one screen they look at
-            most. */}
+            `object-contain` preserves the full logo inside the ring. */}
         <img
           src={authedFileUrl(logoUrl)}
           alt=""
-          className="h-full w-auto max-w-[8rem] object-contain object-left sm:max-w-[11rem]"
+          className="h-full w-full object-contain"
           onError={() => setFailed(true)}
         />
       </span>
@@ -664,7 +652,7 @@ function BrandMark({ logoUrl, name }: { logoUrl: string | null; name: string }):
   }
   return (
     <span
-      className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white shadow-sm"
+      className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-brand-700 bg-gradient-to-br from-brand-500 to-brand-700 text-base font-bold text-white shadow-sm"
       data-testid="brand-mark"
       aria-hidden
     >
@@ -994,12 +982,13 @@ function GlobalSearch(): JSX.Element {
   const showRecent = open && query.trim().length < 2 && recent.length > 0;
 
   return (
-    <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-auto lg:max-w-xs xl:max-w-sm" ref={ref}>
+    <div className="relative ml-auto min-w-0 flex-1 max-w-[48rem]" ref={ref}>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         ref={inputRef}
-        className="input py-1.5 pl-8 pr-12"
+        className="input h-11 rounded-2xl border-transparent bg-slate-100 pl-10 pr-20 text-sm focus:bg-white dark:bg-slate-800 dark:focus:bg-slate-900"
         placeholder="Search everything…"
+        aria-label="Search everything"
         value={query}
         role="combobox"
         aria-expanded={open}
@@ -1008,7 +997,8 @@ function GlobalSearch(): JSX.Element {
         onKeyDown={onBoxKey}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-muted dark:border-slate-700 sm:block">
+      <div id="global-search-filter" className="absolute right-2 top-1/2 -translate-y-1/2"><SearchOptions words={query} onWordsChange={setQuery} onOpen={() => setOpen(false)} /></div>
+      <kbd className="pointer-events-none absolute right-12 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-muted dark:border-slate-700 sm:block">
         ⌘K
       </kbd>
 
@@ -1094,13 +1084,12 @@ function GlobalSearch(): JSX.Element {
                 >
                   <Avatar name={hit.label} size={28} className="shrink-0" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{hit.label}</span>
+                    <span className="flex min-w-0 items-center gap-2 text-sm font-semibold"><span className="truncate">{hit.label}</span>{hit.mobile && <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">{hit.mobile}</span>}<span className="ml-auto truncate text-[10px] font-normal text-muted">{[hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)].filter(Boolean).join(' · ')}</span></span>
                     {/* What tells two people of the same name apart. Each part
                         is skipped when it is empty rather than printed as a
                         dash — a sub-line of separators says nothing. */}
-                    <span className="block truncate text-[11px] text-muted">
-                      {[hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)]
-                        .filter(Boolean).join(' · ')}
+                    <span className="block truncate text-[11px] text-muted" title={hit.details}>
+                      {hit.details || [hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)].filter(Boolean).join(' · ')}
                     </span>
                   </span>
                 </PeekLink>

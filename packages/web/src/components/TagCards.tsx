@@ -35,11 +35,11 @@ import { cn } from '../lib/utils';
  */
 const ON_THE_BAR = 3;
 
-export function TagCards(): JSX.Element | null {
+export function TagCards({ moduleName }: { moduleName?: string }): JSX.Element | null {
   const navigate = useNavigate();
   const location = useLocation();
   const { modules } = useApp();
-  const entityModules = modules.filter((module) => module.isEntity);
+  const entityModules = modules.filter((module) => module.isEntity && (!moduleName || module.name === moduleName));
 
   /** Which module this tag's card should open. */
   const moduleFor = (offered: string[]): string | null => {
@@ -89,11 +89,11 @@ export function TagCards(): JSX.Element | null {
     }
   });
 
-  const cards = [...byName.values()].sort((a, b) => b.count - a.count).slice(0, ON_THE_BAR);
+  const cards = [...byName.values()].sort((a, b) => b.count - a.count).slice(0, moduleName ? undefined : ON_THE_BAR);
   if (!cards.length) return null;
 
   return (
-    <div className="hidden min-w-0 shrink items-center gap-1.5 md:flex" data-testid="tag-cards">
+    <div className="flex min-w-0 w-full items-center overflow-x-auto rounded-full border border-brand-200 bg-brand-50 divide-x divide-brand-300" data-testid="tag-cards">
       {cards.map((tag) => {
         const { module } = tag;
         const narrowed = location.pathname.startsWith(`/${module}`)
@@ -107,7 +107,12 @@ export function TagCards(): JSX.Element | null {
               a rep has to go and find the toolbar to undo — the dead end the
               queue's own type filter already taught this repo about.
             */
-            onClick={() => navigate(narrowed ? `/${module}` : `/${module}?tag=${encodeURIComponent(tag.name)}`)}
+            onClick={() => {
+              const params = new URLSearchParams(location.pathname === `/${module}` ? location.search : '');
+              if (narrowed) params.delete('tag'); else params.set('tag', tag.name);
+              params.delete('page'); params.delete('open');
+              navigate(`/${module}${params.size ? `?${params}` : ''}`);
+            }}
             aria-pressed={narrowed}
             title={`${tag.name} — ${tag.count.toLocaleString('en-IN')} records${narrowed ? '. Click again to show all.' : ''}`}
             /*
@@ -117,7 +122,7 @@ export function TagCards(): JSX.Element | null {
               text lands around 2–3:1, which is the rule this repo writes down
               every time somebody paints a tint by hand.
             */
-            style={badgeVars(tag.color)}
+            style={badgeVars(narrowed ? '#2563eb' : tag.color)}
             /*
               `.badge-tinted` rather than `bg-[var(--badge-bg)]`: the dark
               theme's values are separate properties, selected in the
@@ -126,8 +131,8 @@ export function TagCards(): JSX.Element | null {
               in a browser, in dark mode, on the element that has it.
             */
             className={cn(
-              'badge-tinted flex min-w-0 shrink items-center gap-2 rounded-xl border px-2.5 py-1 text-left transition hover:shadow-xs',
-              narrowed ? 'ring-2 ring-brand-500 ring-offset-1 dark:ring-offset-slate-900' : '',
+              'flex min-w-0 flex-1 items-center justify-center gap-2 border-0 px-2.5 py-1.5 text-left transition hover:brightness-95 first:rounded-l-full last:rounded-r-full',
+              narrowed ? 'badge-solid font-bold' : 'badge-tinted',
             )}
           >
             <span className="min-w-0 truncate text-[11px] font-bold leading-tight">{tag.name}</span>

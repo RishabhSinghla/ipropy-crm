@@ -144,10 +144,10 @@ viewsRouter.get('/:module', asyncHandler(async (req, res) => {
     const scope = getScope(req);
     await Promise.all(views.slice(0, 12).map(async (view) => {
       try {
-        const result = await recordService.listRecords(scope, module.name, {
+        const count = await recordService.countRecords(scope, module.name, {
           view: String(view.id), page: 1, pageSize: 1,
         });
-        (view as { count?: number }).count = result.total;
+        (view as { count?: number }).count = count;
       } catch {
         (view as { count?: number }).count = undefined;
       }

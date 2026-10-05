@@ -1,7 +1,7 @@
 import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SummaryText } from './SummaryText';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
@@ -178,7 +178,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
 export function IpropyWorkspace({
   module, rows, selected, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
-  queueTools, queueFooter, filterBar, onShowing,
+  queueTools, queueFooter, filterBar, onShowing, emptyAction,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -212,12 +212,13 @@ export function IpropyWorkspace({
   queueTools?: ReactNode;
   /** The record range and the page arrows, at the foot of the queue. */
   queueFooter?: ReactNode;
+  emptyAction?: ReactNode;
   /**
    * Whether the list's quick filters are on, how to open or clear them, and
    * the panel itself — drawn inside the right-hand pane, in its exact shape.
    */
   /** The Quick & Live Filters panel, drawn in the right pane; `open` unfolds a folded pane while it shows. */
-  filterBar?: { open: boolean; panel?: ReactNode };
+  filterBar?: { open: boolean; panel?: ReactNode; onToggle?: () => void };
   /**
    * Which pane a small screen is on — so the page around this one can get out
    * of the way. The list's phone pager is the caller: it belongs to the list,
@@ -250,6 +251,7 @@ export function IpropyWorkspace({
   const [showing, setShowing] = useState<'list' | 'record'>('list');
   useEffect(() => { onShowing?.(showing); }, [showing, onShowing]);
   const [, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const queryClient = useQueryClient();
 
   /*
@@ -334,7 +336,7 @@ export function IpropyWorkspace({
   }, [notThere, rows]);
   // The row stands in while the record loads, so the pane never blanks between
   // two selections. Its values are right, there are simply fewer of them.
-  const active = fetched && fetched.id === activeId ? fetched : listRow;
+  const active = rows.length === 0 ? null : fetched && fetched.id === activeId ? fetched : listRow;
   // A search belongs to the record it was typed on.
   useEffect(() => { setFindText(''); setFinding(false); }, [activeId]);
 
@@ -356,8 +358,8 @@ export function IpropyWorkspace({
     setShowing('record');
     const next = new URLSearchParams(window.location.search);
     next.set('open', id);
-    setSearchParams(next, { replace: true });
-  }, [setSearchParams]);
+    setSearchParams(next, { replace: true, state: location.state });
+  }, [setSearchParams, location.state]);
 
   /*
     Up and down arrows move through the queue, the way they move through
@@ -460,7 +462,7 @@ export function IpropyWorkspace({
   const [savedMenu, setSavedMenu] = useState<MenuKey[] | null>(() => loadRecordMenu(module.name));
   useEffect(() => { setSavedMenu(loadRecordMenu(module.name)); }, [module.name]);
   const availableMenu = useMemo<MenuKey[]>(
-    () => [...tabs.map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
+    () => [...tabs.filter((item) => item.key !== 'timeline').map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
     [tabs],
   );
   const menuOrder = useMemo(() => arrangeRecordMenu(availableMenu, savedMenu), [availableMenu, savedMenu]);
@@ -716,6 +718,7 @@ export function IpropyWorkspace({
               <ModuleIcon name={module.icon} className="h-3 w-3 shrink-0 text-slate-400" />
               <span className="truncate">{module.label}</span>
               <span className="shrink-0 font-normal text-muted">({rows.length})</span>
+              {active && rows.some((row) => row.id === active.id) && <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 normal-case tracking-normal dark:bg-blue-950 dark:text-blue-200" aria-label="Selected record on this page">{rows.findIndex((row) => row.id === active.id) + 1} / {rows.length}</span>}
             </span>
           </span>
           {/*
@@ -887,7 +890,7 @@ export function IpropyWorkspace({
               recordId={active.id}
               name={active.label}
               canEdit={canEdit}
-              size={56}
+              size={40}
             />
           </span>
           <span className="flex min-w-[8rem] flex-1 flex-col justify-center gap-0.5 overflow-hidden">
@@ -923,9 +926,6 @@ export function IpropyWorkspace({
               three characters of the one thing that has to be readable is the
               fault this header has already met once.
             */}
-            {(active.tags?.length ?? 0) > 0 && (
-              <TagChips module={module.name} tags={active.tags} className="shrink-0 overflow-hidden" />
-            )}
             </span>
             {/*
               How complete the record is, under the name — *"Remove and Change
@@ -967,6 +967,9 @@ export function IpropyWorkspace({
               front of you is not somewhere you arrive by accident.
             */}
             {/* Where this record sits in the queue, and a step either way. */}
+            {(active.tags?.length ?? 0) > 0 && (
+              <TagChips module={module.name} tags={active.tags} className="flex shrink-0 items-center justify-center overflow-hidden" />
+            )}
             <span className="mr-1 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-slate-500" aria-label="Record navigation">
               <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -981,7 +984,14 @@ export function IpropyWorkspace({
                   pane"* (3 October 2026) — immediately after the `3 / 22,988`,
                   inside the same group, so the two cannot drift apart when the
                   header wraps on a phone. */}
-              {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly round active={onCall} /></span>}
+              {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly plain active={onCall} /></span>}
+              <button type="button" aria-label={active.starred ? 'Remove from starred' : 'Star this record'} title="Favourite" onClick={() => star.mutate(active)} className="p-1 text-slate-500 hover:text-amber-500"><Star className={cn('h-4 w-4', active.starred && 'fill-amber-500 text-amber-500')} /></button>
+              {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
+              {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
+              <button type="button" aria-label="Summarise with AI" title="Summarise with AI" disabled={summarising} className="p-1 text-slate-500 hover:text-brand-600 disabled:opacity-50" onClick={() => {
+                setSummarising(true);
+                void api.summarise(module.name, active.id).then((result) => setSummary(result.summary)).catch((err: Error) => toast.error('Summary failed', err.message)).finally(() => setSummarising(false));
+              }}>{summarising ? <Spinner className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}</button>
             </span>
               {/*
                 Search within this record. **The icon left this bar on
@@ -1024,14 +1034,14 @@ export function IpropyWorkspace({
           The tag dialog lives out here, not in the menu panel above: a panel
           unmounts the moment it closes, and the dialog would go with it.
         */}
-        <TagButton
+        {active && <TagButton
           module={module.name}
           recordId={active.id}
           tags={active.tags}
           canEdit={canEdit}
           open={tagging}
           onOpenChange={setTagging}
-        />
+        />}
 
         {/*
           **30 September 2026, the owner's prototype:** the tabs are icons, each
@@ -1054,9 +1064,6 @@ export function IpropyWorkspace({
         <RecordMenuBar
           actions={(close) => (
             <>
-              <DropdownItem icon={<Search className="h-3.5 w-3.5" />} onClick={() => { close(); setFinding(true); }}>
-                Search this record
-              </DropdownItem>
               {/*
                 Write to them — *"Move email icons from Middle heade pane to
                 Menu bar more tab"* (3 October 2026). It was a circle on the
@@ -1072,38 +1079,6 @@ export function IpropyWorkspace({
                 reply threads back onto the record, and a rep on a phone has no
                 desktop mail client to hand it to.
               */}
-              {emailValue && (
-                <DropdownItem icon={<Mail className="h-3.5 w-3.5" />} onClick={() => { close(); setComposing(true); }}>
-                  Email {emailValue}
-                </DropdownItem>
-              )}
-              <DropdownItem
-                icon={<Star className={cn('h-3.5 w-3.5', active.starred && 'fill-amber-500 text-amber-500')} />}
-                onClick={() => { close(); star.mutate(active); }}
-              >
-                {active.starred ? 'Remove from starred' : 'Star this record'}
-              </DropdownItem>
-              {canEdit && (
-                <DropdownItem
-                  icon={<Tag className={cn('h-3.5 w-3.5', active.tags?.length && 'text-brand-600 dark:text-brand-300')} />}
-                  onClick={() => { close(); setTagging(true); }}
-                >
-                  {active.tags?.length ? `Tags (${active.tags.length})` : 'Add a tag'}
-                </DropdownItem>
-              )}
-              <DropdownItem
-                icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                onClick={() => {
-                  close();
-                  setSummarising(true);
-                  void api.summarise(module.name, active.id)
-                    .then((result) => setSummary(result.summary))
-                    .catch((err: Error) => toast.error('Summary failed', err.message))
-                    .finally(() => setSummarising(false));
-                }}
-              >
-                {summarising ? 'Summarising…' : 'Summarise with AI'}
-              </DropdownItem>
               {canEdit && onDelete && (module.name === 'leads' || module.name === 'properties') && (
                 <DropdownItem
                   icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
@@ -1266,6 +1241,7 @@ export function IpropyWorkspace({
         </aside>
       )}
       </div>}
+      {!active && <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950" data-testid="empty-workspace"><Search className="h-8 w-8 text-slate-300" /><h2 className="font-semibold">No matching records</h2><p className="text-sm text-muted">Try another tag or adjust your search and filters.</p>{emptyAction}</div>}
     </div>
 
     {/*
@@ -1467,7 +1443,7 @@ function QueueCard({
              record in the left record pane"* (3 October 2026). The padding is
              the gap: each card draws the hairline under itself, so growing the
              rule's margin would move the line rather than the breathing room. */
-          'relative block w-full cursor-pointer py-4 pl-[3.75rem] pr-3 text-left transition-colors',
+          'relative block w-full cursor-pointer py-3 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1556,7 +1532,7 @@ function QueueCard({
         {/* 2. Which unit, cut short with "…" rather than wrapped — and not
             drawn at all when there is nothing to say, rather than a dash. */}
         {description && <span className={cn(
-          'mt-0.5 block min-w-0 truncate text-xs',
+          'mt-1 block min-w-0 truncate text-xs',
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
@@ -1570,7 +1546,7 @@ function QueueCard({
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        {(price || area || agent) && <span className="mt-0.5 flex items-center gap-2 text-xs">
+        {(price || area || agent) && <span className="mt-1 flex items-center gap-2 text-xs">
           {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.

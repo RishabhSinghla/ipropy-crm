@@ -92,11 +92,12 @@ for (const module of MODULES) {
       what decides which, so this cannot be written as one expectation. What it
       must never be is the old single green for everybody.
     */
-    if (painted.percent <= 40) {
+    if (painted.percent < 50) {
       expect(painted.background).toContain('--strength-low');
-    } else {
-      expect(painted.background).toContain('gradient');
+    } else if (painted.percent <= 70) {
       expect(painted.background).toContain('--strength-mid');
+    } else {
+      expect(painted.background).toContain('--strength-high');
     }
   });
 
@@ -125,28 +126,8 @@ for (const module of MODULES) {
 }
 
 // 2 — *"Company Avtar Circle … should be Dark and Bold as per Theme"*
-test('the company circle is a bold dark ring, and a logo is fitted rather than cropped', async ({ page }) => {
+test('company avatar is removed as requested on 4 October', async ({ page }) => {
   await openList(page, 'leads');
   const mark = page.getByTestId('brand-mark');
-  await expect(mark).toBeVisible();
-
-  const ring = await mark.evaluate((el) => {
-    const style = getComputedStyle(el);
-    const img = el.querySelector('img');
-    return {
-      width: style.outlineWidth || style.boxShadow,
-      shadow: style.boxShadow,
-      fit: img ? getComputedStyle(img).objectFit : null,
-    };
-  });
-  /*
-    The ring is a `box-shadow`, which is how Tailwind draws `ring-*`. Asserted as
-    "there is one", not as a width: it went to 3px when he asked for bold, and
-    back to 2px an hour later when the thicker ring made the circle overlap the
-    header's padding — `ownerSixOctober3.spec.ts` is what measures that it fits.
-    The hue is never asserted: the brand colour is an admin's to change.
-  */
-  expect(ring.shadow, 'the circle should carry a ring at all').not.toBe('none');
-  // A logo, when there is one, is shown whole rather than cropped to its middle.
-  if (ring.fit) expect(ring.fit).toBe('contain');
+  await expect(mark).toHaveCount(0);
 });

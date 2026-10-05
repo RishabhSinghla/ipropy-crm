@@ -72,15 +72,15 @@ test('the toolbar folds away and comes back, and remembers', async ({ page }) =>
   await expect(page.getByTestId('workspace-dock')).toBeVisible({ timeout: 30_000 });
   const open = (await frame.boundingBox())!.width;
 
-  await page.getByTestId('fold-dock').click();
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await expect.poll(async () => (await frame.boundingBox())!.width).toBeLessThan(open - 20);
   await expect(page.getByTestId('workspace-dock').getByRole('link', { name: 'Dashboard' })).not.toBeInViewport({ ratio: 1 }).catch(() => undefined);
   await expect(frame).toHaveAttribute('data-folded', 'true');
 
   await page.reload();
-  await expect(page.getByTestId('unfold-dock')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('workspace-dock-folded')).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId('unfold-dock').click();
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await expect.poll(async () => (await frame.boundingBox())!.width).toBeGreaterThan(open - 2);
   await page.getByTestId('workspace-dock').getByRole('link', { name: 'Dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard/);

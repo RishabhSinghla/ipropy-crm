@@ -8,7 +8,7 @@
  * despite building SQL text.
  */
 import {
-  type FieldMeta, type FilterCondition, type FilterGroup, isAnswerable, isFilterGroup, type ModuleMeta,
+  type FieldMeta, type FilterCondition, type FilterGroup, isAnswerable, isFilterGroup, type ModuleMeta, strengthWeight,
 } from '@ipropy/shared';
 import { BadRequestError } from '../../utils/errors.js';
 import { registry } from '../metadata/registry.js';
@@ -644,7 +644,7 @@ function strengthExpr(module: ModuleMeta): string {
   if (!answerable.length) return '0';
   const filled = answerable.map((field) => {
     const expr = fieldExpr(field);
-    return `(CASE WHEN ${expr} IS NULL OR ${expr}::text IN ('', '[]', '{}') THEN 0 ELSE 1 END)`;
+    return `(CASE WHEN ${expr} IS NULL OR ${expr}::text IN ('', '[]', '{}') THEN 0 ELSE ${strengthWeight(field)} END)`;
   });
   return `(${filled.join(' + ')})`;
 }
@@ -660,8 +660,9 @@ function strengthExpr(module: ModuleMeta): string {
  */
 export function strengthPercentExpr(module: ModuleMeta): string {
   const answerable = module.fields.filter(isAnswerable);
-  if (!answerable.length) return '100';
-  return `ROUND((${strengthExpr(module)})::numeric * 100 / ${answerable.length})`;
+  const total = answerable.reduce((sum, field) => sum + strengthWeight(field), 0);
+  if (!total) return '100';
+  return `ROUND((${strengthExpr(module)})::numeric * 100 / ${total})`;
 }
 
 export async function buildOrderBy(

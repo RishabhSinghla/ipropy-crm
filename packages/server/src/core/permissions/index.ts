@@ -331,7 +331,7 @@ export interface ScopeContext {
  * below another person in the tree never grants data visibility unless the
  * administrator enabled the matching switch on the role profile.
  */
-async function hierarchyVisibleOwnerIds(ctx: ScopeContext, moduleName: string, conn: Tx = db): Promise<string[]> {
+export async function hierarchyVisibleOwnerIds(ctx: ScopeContext, moduleName: string, conn: Tx = db): Promise<string[]> {
   const { user } = ctx;
   if (user.isAdmin || !user.roleId || !['leads', 'associates', 'properties'].includes(moduleName)) return [];
   const [lower, upper, same] = await Promise.all([

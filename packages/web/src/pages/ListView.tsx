@@ -1,9 +1,11 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { TagCards } from '../components/TagCards';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
+import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, isFilterGroup } from '@ipropy/shared';
 import {
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
+  ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -44,6 +46,7 @@ const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 export default function ListView(): JSX.Element {
   const { module: moduleName } = useParams<{ module: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { user } = useApp();
 
@@ -83,6 +86,7 @@ export default function ListView(): JSX.Element {
   const [picks, setPicks] = useState<QuickPicks>({});
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
+  const newToday = filter.conditions.some((item) => !isFilterGroup(item) && item.field === 'created_at' && item.operator === 'today');
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -91,6 +95,10 @@ export default function ListView(): JSX.Element {
   const [selectedAll, setSelectedAll] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [toolbarSlots, setToolbarSlots] = useState<{ filter: HTMLElement | null; options: HTMLElement | null }>({ filter: null, options: null });
+  useEffect(() => {
+    setToolbarSlots({ filter: document.getElementById('global-quick-filter'), options: document.getElementById('global-list-options') });
+  }, []);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
   /** Open when somebody is naming a new view built from what is on screen. */
@@ -338,6 +346,9 @@ export default function ListView(): JSX.Element {
   useEffect(() => {
     // Never write the URL from state that has not read it yet.
     if (!moduleName || hydratedFor !== moduleName) return;
+    // A tag navigation must finish hydrating before state writes the address back.
+    // Otherwise the old tag and new address repeatedly overwrite one another.
+    if (tagParam !== tagPick) return;
     const next = new URLSearchParams();
     if (activeView?.id) next.set('view', activeView.id);
     if (search) next.set('q', search);
@@ -377,9 +388,9 @@ export default function ListView(): JSX.Element {
     if (dial) next.set('dial', dial);
 
     if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
+      setSearchParams(next, { replace: true, state: location.state });
     }
-  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, taskQueue, tagPick, searchParams]);
+  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, taskQueue, tagPick, searchParams, location.state]);
 
   /**
    * Owner defaults to whoever is adding the record. Status and stage come from
@@ -510,6 +521,10 @@ export default function ListView(): JSX.Element {
       (meta?.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config as { queueFields?: string[] } | undefined)?.queueFields,
     ),
   }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta]);
+  const todayQuery: ListQuery = { view: query.view, search: query.search, page: 1, pageSize: 1,
+    filter: { logic: 'AND', conditions: [effectiveFilter, { field: 'created_at', operator: 'today' }] } };
+  const { data: todayRecords } = useQuery({ queryKey: ['created-today', moduleName, todayQuery],
+    queryFn: () => api.list(moduleName!, todayQuery), enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName), staleTime: 60_000 });
 
   // The call deck must resume this *exact* queue after Save & Next. The URL's
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a
@@ -520,7 +535,7 @@ export default function ListView(): JSX.Element {
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
     queryFn: () => api.list(moduleName!, query),
-    enabled: Boolean(moduleName && meta),
+    enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName),
     /*
       Keep the last page on screen while the next one loads — but only within
       one module. Across a switch the "last page" is the other module's rows,
@@ -876,18 +891,16 @@ export default function ListView(): JSX.Element {
               /* "On" means this button is narrowing the list. The module's
                  own All-Leads view is a system view and narrows nothing, so
                  it must not sit lit from the moment the page opens. */
-              className={toolbarButton(Boolean(tagPick || (activeView && !activeView.isSystem)), 'max-w-[14rem]')}
+              className={toolbarButton(Boolean(!tagPick && activeView && !activeView.isSystem), 'max-w-[14rem]')}
               aria-label="Choose or manage list views"
-              title={tagPick ?? activeView?.name ?? `All ${meta.label}`}
+              title={activeView?.name ?? `All ${meta.label}`}
             >
               {/*
                 One button, two of his four colours — it picks a **list or a
                 tag**, so it says which: red when a tag is narrowing the list,
                 blue when a saved list is.
               */}
-              {tagPick
-                ? <Tag className={filterIcon('tag', true)} />
-                : <Filter className={filterIcon('list', Boolean(activeView && !activeView.isSystem))} />}
+              <Filter className={filterIcon('list', Boolean(!tagPick && activeView && !activeView.isSystem))} />
               {/* No chevron — *"remove arrow key from all Buttons, so that
                   we can See neet and clean Toolbar"* (28 September 2026).
                   The icon on the left already says what this opens. */}
@@ -899,8 +912,8 @@ export default function ListView(): JSX.Element {
                 has its own ceiling, so a long list name cannot push Task off
                 the row.
               */}
-              <span className="min-w-0 truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
-              <span className={toolbarCount(Boolean(tagPick || (activeView && !activeView.isSystem)))}>
+              <span className="min-w-0 truncate">{activeView?.name ?? `All ${meta.label}`}</span>
+              <span className={toolbarCount(Boolean(!tagPick && activeView && !activeView.isSystem))}>
                 {(data?.total ?? 0).toLocaleString('en-IN')}
               </span>
             </button>
@@ -960,6 +973,13 @@ export default function ListView(): JSX.Element {
           />
         )}
 
+        <button className={cn('flex shrink-0 items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700', newToday && 'ring-2 ring-brand-400')}
+          aria-pressed={newToday} aria-busy={newToday && isFetching} title="Records created today" onClick={() => {
+            setFilter({ logic: 'AND', conditions: newToday
+              ? filter.conditions.filter((item) => isFilterGroup(item) || item.field !== 'created_at' || item.operator !== 'today')
+              : [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), { field: 'created_at', operator: 'today' }] });
+            setPage(1);
+          }}>New {newToday && isFetching ? <Spinner className="h-3 w-3" /> : <span className="rounded-full bg-brand-100 px-1.5">{todayRecords?.total ?? 0}</span>}</button>
         {/*
           **The Hot chip left this row on 3 October 2026** — the owner: *"Now i
           need to remove hot tag/Icon from Left Record Pane after the List and
@@ -971,22 +991,8 @@ export default function ListView(): JSX.Element {
 
       </div>
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            data-testid="list-search"
-            className="w-full rounded-md border-none bg-slate-100 py-1.5 pl-8 pr-7 text-xs text-slate-800 placeholder-slate-500 focus:ring-1 focus:ring-brand-500 dark:bg-slate-800 dark:text-slate-100"
-            placeholder={`Search ${meta.label.toLowerCase()}…`}
-            aria-label={`Search ${meta.label}`}
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
-          {searchInput && (
-            <button className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted hover:bg-slate-200 dark:hover:bg-slate-700" aria-label="Clear list search" onClick={() => setSearchInput('')}>
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        <TagCards moduleName={meta.name} />
+        {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}
               className={cn('btn-secondary btn-sm px-2', quickFilterCount > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
@@ -1000,9 +1006,11 @@ export default function ListView(): JSX.Element {
                 <span className="rounded-full bg-brand-600 px-1.5 text-2xs text-white">{quickFilterCount}</span>
               )}
             </button>
+        , toolbarSlots.filter)}
 
+        {toolbarSlots.options && createPortal(
             <Dropdown
-              trigger={<button className="btn-secondary btn-sm" aria-label="List options"><Settings2 className="h-3.5 w-3.5" /></button>}
+              trigger={<button className="btn-secondary btn-sm rounded-xl" aria-label="Import, export and list options" title="Import / Export"><ArrowLeftRight className="h-3.5 w-3.5" /></button>}
             >
               {(close) => (
                 <>
@@ -1050,6 +1058,7 @@ export default function ListView(): JSX.Element {
                 </>
               )}
             </Dropdown>
+        , toolbarSlots.options)}
 
       </div>
     </div>
@@ -1092,6 +1101,7 @@ export default function ListView(): JSX.Element {
       onClose={() => setShowFilters(false)}
       placement={placement}
       module={meta}
+      countContext={{ view: query.view, search: query.search, filter: query.filter }}
       sections={quickSections}
       count={data?.total}
       counting={isFetching}
@@ -1140,9 +1150,8 @@ export default function ListView(): JSX.Element {
         only way to undo it off the screen with it.
       */}
       <h1 className="sr-only">{meta.label}</h1>
-      {rows.length === 0 && !(isLoading && !data) && (
+      {rows.length === 0 && search && !(isLoading && !data) && (
         <div className="shrink-0 bg-white dark:bg-slate-900">
-          {queueTools}
           {/* The count stays on screen too — "0 records" is the answer somebody
               filtering is looking for, and the paging footer is not drawn. */}
           <p className="border-b border-[var(--border)] px-3 py-1.5 text-[11px] text-slate-600 tnum dark:text-slate-300">
@@ -1249,45 +1258,6 @@ export default function ListView(): JSX.Element {
           <div className="space-y-2 p-4 sm:p-6">
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
           </div>
-        ) : rows.length === 0 ? (
-          /*
-            A search that found nothing is answered beside the box above, so
-            this page-sized panel would be the same news twice, the second
-            time far from the words that caused it.
-          */
-          search ? null : (
-          <EmptyState
-            icon={<ModuleIcon name={meta.icon} className="h-10 w-10" />}
-            /*
-              The quick filter counts as a filter here. Without it a list
-              narrowed to a kind nobody has read *"Create your first contact
-              to get started"* over a database holding 22,988 of them — which
-              is alarming rather than helpful, and says nothing about the one
-              thing that caused it.
-            */
-            title={search || countConditions(effectiveFilter) ? 'No matching records' : `No ${meta.label.toLowerCase()} yet`}
-            body={search || countConditions(effectiveFilter)
-              ? 'Try adjusting your search or filters.'
-              : `Create your first ${meta.singularLabel.toLowerCase()} to get started.`}
-            /*
-              The quick filter lives in the queue's own header, and an empty
-              result replaces the whole workspace — header and all. So the one
-              control that could undo it goes off the screen with it, and
-              "Try adjusting your filters" points at something that is no
-              longer there. Every other picker on this page is in the toolbar
-              above, which stays; this one needs its own way back.
-            */
-            action={quickFilterCount
-              ? <button className="btn-secondary btn-sm" onClick={clearQuickFilters}>
-                  Clear filters
-                </button>
-              : canCreate && !search && !countConditions(filter)
-                ? <button className="btn-primary btn-sm" onClick={() => setShowQuickCreate(true)}>
-                    <Plus className="h-3.5 w-3.5" /> New {meta.singularLabel}
-                  </button>
-                : undefined}
-          />
-          )
         ) : (
           <IpropyWorkspace
             /*
@@ -1299,6 +1269,7 @@ export default function ListView(): JSX.Element {
             key={meta.name}
             module={meta}
             rows={rows}
+            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { clearQuickFilters(); setTagPick(null); setSearchInput(''); setSearch(''); }}>Clear search and filters</button>}
             // `?open=` — a record named in the address, from global search, a
             // chat, or Save & Next. It may not be on this page at all.
             openId={searchParams.get('open')}
@@ -1340,6 +1311,7 @@ export default function ListView(): JSX.Element {
             onShowing={setPaneShowing}
             filterBar={{
               open: showFilters,
+              onToggle: () => setShowFilters((value) => !value),
               // Drawn inside the right-hand pane, in its exact shape. It is
               // opened by the filter button over the queue; the pane's own bar
               // for it went on 3 October 2026 as a duplicate of that button.
