@@ -1,5 +1,45 @@
 # The screens a rep lives in
 
+## Duplicate mobile numbers, 6 October 2026
+
+One mobile number now means one contact across **Leads and Inventory together**.
+`mobileIdentity.ts` normalises a number to its ten national digits — `+91`,
+`0091`, a leading zero and stray formatting are the same person — and
+`recordService` refuses a create, an update or a restore that would give a
+second live record the same number. The check locks the number before it reads,
+so two people saving at the same instant cannot both pass, and it says which
+module already holds it without disclosing whose record it is. Imports go
+through the same door, which is why the rule is in the engine and not in a form.
+Migration `190` switches the rule on; existing duplicates were left alone
+deliberately, so the merge below is how they are cleaned up rather than a
+deploy failing on a customer's old data.
+
+Tools → **Merge duplicate contacts into Leads** appears above the calculators
+and only for administrators. "Preview duplicate merges" groups every live record
+in Leads, Inventory and Associates that shares a number (§ nothing is written).
+Merging keeps an existing Lead where there is one — the most complete, then the
+oldest — and otherwise creates a Lead from the group. House No. values are
+joined with commas, never replaced; tags are combined and offered in Leads;
+notes, calls, files, shares, favourites and history move to the surviving
+record. A merged-away record is soft-deleted, never erased, and its original
+values and child relationships are written to `ipy_record_merge_archive` in the
+same transaction. The Lead gets a timeline note and a merge audit entry naming
+the archive key.
+
+A group previewed and then changed by a colleague is refused rather than
+overwritten, a group with an active or ringing call is refused, and a group
+whose relationships cannot be transferred rolls back whole — no half-merge
+exists. Running it twice is safe: an already-merged group is returned untouched.
+"Show CRM merge history" lists past merges with a before/after download, for
+administrators only. **Ordinary record restore is not a merge undo** — restoring
+a merged-away record is itself refused while the survivor holds the number, so
+recovery is a supervised job from the archive.
+
+The same operation can be run without signing in to production, through
+`.github/workflows/merge-duplicate-contacts.yml`, which calls the identical two
+functions; it needs the word `merge` typed into the box and prints counts only,
+never a customer's name or number.
+
 ## Business calculators, 5 October 2026
 
 The bottom of the workspace dock has one Tools icon below a horizontal divider,

@@ -3,6 +3,7 @@ import { Calculator, Car, Download, Home, Landmark, Plus, Printer, Trash2 } from
 import { calculateFloor, calculateLoan, defaultCharges, type Charge } from '../lib/calculators';
 import { downloadCalculationPdf } from '../lib/calculatorPdf';
 import { cn } from '../lib/utils';
+import { ContactMergeTool } from '../components/ContactMergeTool';
 
 type Tool = 'emi' | 'car' | 'personal' | 'floor';
 const choices = [
@@ -42,6 +43,7 @@ export default function Tools(): JSX.Element {
   return <div className="h-full overflow-y-auto bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
     <div className="mx-auto max-w-6xl space-y-5">
       <header><h1 className="flex items-center gap-2 text-xl font-bold"><Calculator className="h-6 w-6 text-brand-600" />Business tools</h1><p className="mt-1 text-sm text-muted">Calculate, review the full sheet, then download a PDF to share with your client.</p></header>
+      <ContactMergeTool />
       <nav aria-label="Calculators" className="flex flex-wrap gap-2">{choices.map((choice) => <button key={choice.id} onClick={() => { setTool(choice.id); setExportError(''); }} aria-pressed={tool === choice.id} className={cn('flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold', tool === choice.id ? 'border-brand-500 bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-200' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900')}><choice.icon className="h-4 w-4" />{choice.name}</button>)}</nav>
       <div className="grid gap-4 sm:grid-cols-2"><TextField label="Client name (optional)" value={client} onChange={setClient} /><TextField label="Property / quotation reference (optional)" value={reference} onChange={setReference} /></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 sm:p-6">

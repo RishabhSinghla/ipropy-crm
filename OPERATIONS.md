@@ -7,6 +7,37 @@ The rules that hold everywhere live in [`CLAUDE.md`](CLAUDE.md); this file is th
 
 ---
 
+## Duplicate contact consolidation (6 October 2026)
+
+Tools → Merge duplicate contacts into Leads is signed-in-administrator-only;
+API keys cannot run it or read its archives. Preview groups primary/alternate
+mobile matches across active Leads, Inventory and Associates. Each group is
+rechecked under row locks and committed atomically. Stale previews fail rather
+than overwriting a teammate's change. Retry is idempotent by group key.
+
+An existing Lead wins (most complete, then oldest); without one, the tool creates
+a Lead. Different House No. values are appended, not replaced. Source records
+are soft-deleted, never physically removed. Tags, favourites, history and child
+references are retained; source cloud-folder identities stay on their original
+records. Incompatible unique relationships roll back the entire group.
+
+`ipy_record_merge_archive` retains original record values, child relationship
+ownership, original audit/link rows and the resulting Lead. Tools → Show CRM
+merge history exposes before/after downloads only to administrators. Each Lead
+also receives a readable merge note and audit entry with the archive key.
+Ordinary record restore is NOT a merge undo: supervised recovery must restore
+values and child ownership from the archive, checking subsequent edits first.
+No record data belongs in GitHub or public build logs.
+
+`.github/workflows/merge-duplicate-contacts.yml` runs the same two functions
+from a runner, because whoever builds this cannot sign in to production as an
+administrator. It needs the word `merge` typed into the box, always prints the
+read-only preview first, takes an optional `limit` for a cautious first group,
+and prints counts and refusal reasons only. Use it, or the Tools screen, but
+not both at once.
+
+---
+
 ## Going live — the state of it, 2026-09-01
 
 * **The deploy gate is back on.** `autoDeployTrigger: checksPass` in both

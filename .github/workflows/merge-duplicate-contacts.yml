@@ -1,0 +1,88 @@
+# Merge the duplicate mobile numbers found by the 6 October 2026 audit.
+#
+# The owner asked for this three times in one sitting — "kindly merge all
+# duplicate mobile number", "Please merge Associates and Inventory Contact in
+# to Lead Module, Keep House number, and tag safer side in Leads Module also
+# Store history of all changes", "merge all and add new house number into old
+# house number".
+#
+# The ordinary door is Tools → "Merge duplicate contacts into Leads", where an
+# administrator ticks a box and presses a button. This workflow exists for the
+# same reason `check-prod.yml` does: the person who builds this cannot sign in
+# to production as an administrator. It runs the identical two functions the
+# button runs (`previewContactMerge`, `mergeContactGroup`), so there is one
+# implementation of a merge rather than two that drift.
+#
+# THIS ONE WRITES. Looking is still the default — it needs the word `merge`
+# typed into the box, the same guard every other writing workflow here uses.
+# What it does, and does not do:
+#
+#   * Nothing is physically deleted. A merged-away record is soft-deleted, so
+#     it stays in the database and can be read back.
+#   * Every original record, its child relationships, its audit rows and its
+#     tags are copied into `ipy_record_merge_archive` in the same transaction
+#     as the merge. The Lead also gets a note and a history entry.
+#   * Existing and new House No. values are joined, never overwritten.
+#   * Tags are combined, and made available in Leads where they were not.
+#   * A group that cannot be transferred safely rolls back whole. Half a merge
+#     is not a state this can leave behind.
+#   * Running it twice is safe: a group already merged is returned untouched.
+#
+# Read the "What would be merged" step before the merge step. It is always run,
+# whatever the input says, and it prints counts only — an Actions log is not
+# the place for a customer's name or number.
+name: Merge duplicate contacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type merge to do it. Anything else only shows what would happen."
+        default: "look"
+      limit:
+        description: "How many groups to merge (blank = all). Use 1 for a cautious first step."
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Only has to satisfy the startup check that refuses to boot with a
+      # short one; the merge never signs anybody in.
+      JWT_SECRET: merge-workflow-secret-long-enough-to-pass-the-startup-checks
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The server's own compiled merge code, not a copy of it.
+      - name: Build the server
+        run: npm run build:deps && npm run build -w @ipropy/server
+
+      # Always, whatever the input says. Reading what would go, immediately
+      # above the thing that goes, is what makes the log worth keeping.
+      - name: What would be merged
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: node scripts/merge-duplicate-contacts.mjs
+
+      - name: Merge them
+        if: ${{ inputs.apply == 'merge' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          if [ -n "$LIMIT" ]; then
+            node scripts/merge-duplicate-contacts.mjs --apply --limit "$LIMIT"
+          else
+            node scripts/merge-duplicate-contacts.mjs --apply
+          fi

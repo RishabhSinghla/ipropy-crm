@@ -14,7 +14,7 @@ import { config } from '../../config.js';
 import { db, transaction } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
+import { blockApiKey, getScope, getUser, requireAdmin, requireAuth } from '../../middleware/auth.js';
 import type { AuthUser, FieldMeta } from '@ipropy/shared';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import {
@@ -41,6 +41,7 @@ import { invalidateWorkflows } from '../../core/workflow/engine.js';
 import { runSchedulerNow } from '../../core/workflow/scheduler.js';
 import { TASK_TYPES } from '../../core/workflow/tasks.js';
 import { mergeRecords } from '../../core/entity/conversion.js';
+import { mergeContactGroup, previewContactMerge } from '../../core/entity/contactMerge.js';
 import { readImportFile } from '../../core/import/readFile.js';
 import { suggestMapping, certainMapping } from '../../core/import/autoMap.js';
 import { prepareRow, applyStaticValues } from '../../core/import/prepareRow.js';
@@ -2167,6 +2168,29 @@ miscRouter.get('/import/jobs', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 // Merge duplicates
 // ---------------------------------------------------------------------------
+
+// Consolidation archives source records. Unlike a read/update API key, a
+// signed-in administrator may deliberately perform this recoverable operation.
+miscRouter.get('/contact-merges/preview', blockApiKey, requireAdmin, asyncHandler(async (req, res) => {
+  res.json(await previewContactMerge(getScope(req)));
+}));
+miscRouter.get('/contact-merges/history', blockApiKey, requireAdmin, asyncHandler(async (_req, res) => {
+  res.json((await db.query(`SELECT a.batch_key AS key,a.survivor_id,a.created_at,a.result->>'label' AS label,
+    trim(u.first_name || ' ' || u.last_name) AS agent FROM ipy_record_merge_archive a
+    JOIN ipy_user u ON u.id=a.actor_id WHERE a.result IS NOT NULL ORDER BY a.created_at DESC LIMIT 500`)).rows);
+}));
+miscRouter.get('/contact-merges/archive/:key', blockApiKey, requireAdmin, asyncHandler(async (req, res) => {
+  const row = await db.queryOne('SELECT * FROM ipy_record_merge_archive WHERE batch_key=$1', [req.params.key]);
+  if (!row) throw new NotFoundError('Merge archive not found');
+  res.json(row);
+}));
+miscRouter.post('/contact-merges/group', blockApiKey, requireAdmin, asyncHandler(async (req, res) => {
+  const group = z.object({
+    key: z.string().regex(/^[a-f0-9]{64}$/),
+    members: z.array(z.object({ id: z.string().uuid(), module: z.string(), updatedAt: z.string().datetime(), label: z.string() })).min(2).max(100),
+  }).parse(req.body);
+  res.json(await mergeContactGroup(getScope(req), group));
+}));
 
 miscRouter.post('/merge/:module', asyncHandler(async (req, res) => {
   const scope = getScope(req);

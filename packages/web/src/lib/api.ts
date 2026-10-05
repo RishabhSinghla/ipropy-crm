@@ -596,6 +596,10 @@ export interface PinDevice {
 }
 
 export const api = {
+  contactMergePreview: () => get<{ groups: Array<{ key: string; members: Array<{ id: string; module: string; updatedAt: string; label: string }> }>; records: number; review: number }>('/api/contact-merges/preview'),
+  contactMergeHistory: () => get<Array<{ key: string; survivor_id: string; created_at: string; label: string; agent: string }>>('/api/contact-merges/history'),
+  contactMergeArchive: (key: string) => get<Record<string, unknown>>(`/api/contact-merges/archive/${encodeURIComponent(key)}`),
+  contactMergeGroup: (group: { key: string; members: Array<{ id: string; module: string; updatedAt: string; label: string }> }) => post<{ id: string; label: string; archived: number; houseNumbers: unknown }>('/api/contact-merges/group', group),
   /** Escape hatch for endpoints without a dedicated helper. */
   request,
 
