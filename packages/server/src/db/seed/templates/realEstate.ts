@@ -579,154 +579,171 @@ const MODULES: ModuleDef[] = [
   },
 
   // =========================================================================
+  // =========================================================================
   // BUILDER FLOORS
   // =========================================================================
   /*
-    **5 October 2026, the owner, with his own spreadsheet** ("Builder Floors 2026
-    - Single.pdf" — 130 floors in 60 buildings): *"Can you build a new module for
-    builder floor inventory, a builder have many properties in same 4th floor
-    building or multi building, and all floor, building price are not same and
-    different building have different size, different location, facing, floor
-    availability, if the unit sold then the move on separate folder and we need
-    all filter i.e floor wise, accommodation wise size wise, price wise …"*
+    **5 October 2026, the owner, twice.** First with his spreadsheet (130 houses
+    in Greenfields Colony and other localities), then with a screenshot of the
+    lead's Matching Inventory table and a correction:
 
-    **One record is one floor.** His sheet is one row per building with four
-    price columns (1st/2nd/3rd/4th), and that shape cannot answer any of the
-    questions he asked for: "every 2nd floor under 3 crore" would need the filter
-    grammar to say "any of these four columns", which it cannot, and a floor is
-    what a buyer buys, what a brochure is about, what gets sold, and what a call
-    or a task hangs on. A building caps at four floors in that sheet, too — a
-    stilt or a terrace has nowhere to go.
+    *"We want to see a table in Middle Pane under manu bar a Name of Builder's
+    Floor … we want create multiple unit of multiple builder under in a locality
+    … the Key Fields & Value of this Table View … Mobile Number, Builder Name,
+    House No, Facing, Size, Bedrooms, Status, Amenities, and price for all floor
+    in sam table the price are like First Floor, Second floor, third floor,
+    Fourth floor, Top Floor … main Speciality of This Module is We want to Use
+    Locality as a Unique identity instead of Mobile Number."*
 
-    **Why not the Properties module, which already holds units.** A property's
-    identity there is `mobile`, and that column is `unique`. One number in his
-    sheet (9910534500) owns five buildings — twenty floors — and nineteen would
-    be refused on insert. Loosening that uniqueness is a live production rule and
-    not something to break quietly for a new feature.
+    **One record is one house, with a price column per floor** — his sheet's own
+    shape, which the first build rejected and was wrong to. The objection was
+    that "every 2nd floor under 3 crore" needs floor and price on one row: it
+    does, and `second_floor_price` **is** that row. "Any floor under 3 crore" is
+    an OR of five conditions, which the filter grammar has had all along. The
+    shape he already works in answers every question he asked.
 
-    The building's shared facts sit on each floor, grouped by `building_code`
-    (his Plot No.). That repeats about eight values across up to four rows, which
-    is the smaller of two costs: a separate Buildings module means every rep must
-    create a building before they can record a floor.
-
-    Everything a rep can already do to a record works here on day one — calls,
-    tasks, notes, WhatsApp, email, tags, files, share links, the split view —
-    because this is an ordinary entity module and none of that is per-module code.
+    **Locality is the identity, not the mobile.** That is the whole reason this
+    is not the Inventories module: there a record's identity is `mobile` and the
+    column is `unique`, so one builder's number owning five houses is four
+    refusals. Here a builder may own as many houses as he likes.
   */
   {
     name: 'builder_floors',
     label: 'Builder Floors',
-    singular: 'Floor',
+    singular: 'Builder Floor',
     table: 'ipy_e_builder_floors',
     icon: 'building',
     color: '#0ea5e9',
     sequence: 60,
     menuGroup: 'Inventory',
     /*
-      "2708 — 2nd" is how he reads his own sheet: the plot number first, then
-      which floor. Neither alone identifies anything — sixty buildings have a
-      2nd floor, and one plot has four.
+      *"We need Locality as main Value in Left Record pane in replacement of Full
+      Name in First Line."* So the queue leads with the locality and the house
+      number rides beside it — a locality on its own would print "Greenfields
+      Colony" down the whole pane with nothing to tell two houses apart.
     */
-    labelFields: ['building_code', 'floor'],
+    labelFields: ['locality', 'house_no'],
     pipelineField: 'floor_status',
     /*
-      One record per building *and* floor, which is the real identity here.
-      `all` because they combine: plot 2708 has four floors and they are not
-      duplicates of each other, while a second "2708 — 2nd" is the same floor
-      typed twice. This is what stops the import and a rep both entering it.
+      **Locality and house number together.**
+
+      *"you can set duplicate restriction for Locality only for this Module"* —
+      and in the same message, *"we want create multiple unit of multiple builder
+      under in a locality"*. Locality alone as the key would allow exactly one
+      record per locality and refuse the second builder, so the two sentences
+      only agree one way: the locality **plus** the house that identifies a
+      building inside it. `all` because they combine — B-114 and C-3614 in one
+      colony are different houses; B-114 entered twice is the same one.
+
+      Mobile is deliberately **not** in the key and **not** unique, which is the
+      difference from Inventories that this module exists for.
     */
-    duplicateCheckFields: ['building_code', 'floor'],
+    duplicateCheckFields: ['locality', 'house_no'],
     settings: { duplicateCheckMode: 'all', shortLabel: 'BF' },
     blocks: [
       {
-        name: 'floor_details',
-        label: 'Floor',
+        name: 'builder_floor',
+        label: "Builder's Floor",
+        /*
+          **These are the table's columns, in his order**, because the table in
+          the middle pane is drawn from the module's own fields rather than from
+          a list written into a screen. Reordering them here reorders the table.
+        */
         fields: [
-          F.autonum('floor_code', 'Floor Code', 'BF-'),
-          // His Plot No. It groups a building's floors and is how he finds one.
-          F.text('building_code', 'Plot No.', {
+          F.autonum('floor_code', 'Code', 'BF-'),
+          // The identity, and the first line of every queue row.
+          F.pick('locality', 'Locality', 'locality', {
             mandatory: true, quickCreate: true, searchable: true,
-            help: 'The plot number. Every floor of this building shares it — it is what groups them.',
+            help: 'The colony or sector. This plus the house number is what makes a record unique here.',
           }),
-          F.pick('floor', 'Floor', 'floor_level', { mandatory: true, quickCreate: true }),
-          F.pick('accommodation', 'Accommodation', 'accommodation', {
-            quickCreate: true, config: { listSubtitle: 1 },
+          /*
+            **No `listSubtitle` on this module, deliberately.**
+
+            *"We need Locality as main Value in Left Record pane in replacement
+            of Full Name in First Line, Assign to in Second Line."* The queue's
+            first line is `labelFields` — locality and house number — and the
+            agent's name is already the line under it on every module. Flagging
+            a field as a subtitle would push a third line in between them and
+            put the house number on the row twice.
+          */
+          F.text('house_no', 'House No.', {
+            mandatory: true, quickCreate: true, searchable: true,
           }),
-          F.pick('floor_status', 'Floor Availability', 'floor_availability', {
-            mandatory: true, quickCreate: true,
+          F.text('builder_name', "Builder's Name", { quickCreate: true, searchable: true }),
+          /*
+            Not unique, and that is the point of this module. One builder's
+            number owns many houses; Inventories refuses the second.
+          */
+          F.phone('mobile', 'Mobile Number', {
+            quickCreate: true, maxLength: 10,
+            config: { digits: 10, codePrefix: '+91' },
+            help: 'The builder. One builder can own many houses, so this is not unique.',
           }),
-          F.pick('lost_reason', 'Lost Reason', 'lost_reason'),
+          F.pick('facing', 'Facing', 'facing', { quickCreate: true }),
+          // His Size column is square yards — 272.22, 635.25 — not square feet.
+          F.area('size', 'Size', {
+            quickCreate: true,
+            config: { min: 0, unit: 'sqyd', unitField: 'size_unit', unitMaster: 'area' },
+          }),
+          F.pick('size_unit', 'Size Unit', 'area_unit', { default: 'sqyd', displayType: 'hidden' }),
+          F.num('bedrooms', 'Bedrooms', { quickCreate: true }),
+          F.pick('accommodation', 'Accommodation', 'accommodation', { quickCreate: true }),
+          F.pick('floor_status', 'Status', 'floor_availability', { mandatory: true, quickCreate: true }),
+          F.multipick('amenities', 'Amenities', 'amenities'),
           F.owner(),
+        ],
+      },
+      {
+        name: 'floor_prices',
+        label: 'Price by Floor',
+        /*
+          **Five prices on one row, which is his sheet exactly.** A ground floor
+          and a top floor in one building are not worth the same money, and the
+          whole point of the table is reading all five across.
+
+          An **empty** price is the honest way to say "this floor is not for
+          sale" — his sheet writes `-`. Nothing is stored for it, so "floors
+          under 3 crore" cannot accidentally count a floor nobody is selling.
+        */
+        fields: [
+          F.money('first_floor_price', 'First Floor', { quickCreate: true, config: { min: 0 } }),
+          F.money('second_floor_price', 'Second Floor', { config: { min: 0 } }),
+          F.money('third_floor_price', 'Third Floor', { config: { min: 0 } }),
+          F.money('fourth_floor_price', 'Fourth Floor', { config: { min: 0 } }),
+          F.money('top_floor_price', 'Top Floor', { config: { min: 0 } }),
+          F.money('expected_price', 'Bottom Price', {
+            help: 'What the builder will actually take. Never shown on a brochure or to a buyer.',
+          }),
+          F.bool('price_negotiable', 'Negotiable'),
+          F.date('price_updated_on', 'Price Updated'),
         ],
       },
       {
         name: 'building',
         label: 'Building',
+        collapsed: true,
         fields: [
-          // Not unique, deliberately — and that is the whole reason this is its
-          // own module. One builder's number owns several buildings.
-          F.text('owner_name', 'Builder / Owner', { quickCreate: true, searchable: true }),
-          F.phone('owner_mobile', 'Builder Mobile', {
-            quickCreate: true, maxLength: 10, config: { digits: 10, codePrefix: '+91' },
-            help: 'The builder who owns this plot. One builder can own many plots, so this is not unique.',
-          }),
-          // His Size column is square yards — 272.22, 635.25 — not square feet.
-          F.area('plot_size', 'Plot Size', {
-            quickCreate: true,
-            config: { min: 0, unit: 'sqyd', unitField: 'plot_size_unit', unitMaster: 'area', listSubtitle: 2 },
-          }),
-          F.pick('plot_size_unit', 'Plot Size Unit', 'area_unit', { default: 'sqyd', displayType: 'hidden' }),
-          F.pick('facing', 'Facing', 'facing', { quickCreate: true }),
+          F.pick('construction_stage', 'Construction Stage', 'construction_stage', { quickCreate: true }),
           F.pick('road_width', 'Road Width', 'road_width'),
           F.bool('corner_plot', 'Corner Plot'),
           F.bool('park_facing', 'Park Facing'),
-          F.pick('construction_stage', 'Construction Stage', 'construction_stage', { quickCreate: true }),
           F.pick('city', 'City', 'city'),
-          F.pick('locality', 'Locality', 'locality', { quickCreate: true, config: { listSubtitle: 3 } }),
           F.text('address_line', 'Street / Sector'),
-          F.date('stage_updated_on', 'Stage Updated', {
-            help: 'When the construction stage was last checked — his sheet\'s Update column.',
-          }),
-        ],
-      },
-      {
-        name: 'pricing',
-        label: 'Price',
-        fields: [
-          /*
-            **The price is per floor, which is the point of this module.** His
-            sheet carries four of them on one row — 255, 250, -, T — because a
-            ground floor and a top floor in the same building are not worth the
-            same money. Here each floor owns its own.
-
-            Stored in lakhs, which is what his sheet holds (255 = ₹2.55 Cr), with
-            the unit welded on the way Demand is on Inventories.
-          */
-          F.money('demand', 'Asking Price', {
-            quickCreate: true,
-            config: { min: 0, unitField: 'demand_unit', unitMaster: 'budget_demand' },
-          }),
-          F.pick('demand_unit', 'Price Unit', 'price_unit', { default: 'total', displayType: 'hidden' }),
-          F.money('rate_per_sqyd', 'Rate per sq.yd'),
-          F.money('expected_price', 'Expected / Bottom Price', {
-            help: 'What the builder will actually take. Hidden from the website and from a brochure.',
-          }),
-          F.date('price_updated_on', 'Price Updated'),
-          F.bool('price_negotiable', 'Negotiable'),
+          F.date('stage_updated_on', 'Stage Updated'),
+          F.pick('lost_reason', 'Lost Reason', 'lost_reason'),
         ],
       },
       {
         name: 'floor_plan',
         label: 'Floor Plan',
+        collapsed: true,
+        /*
+          **Room sizes are text, not numbers.** A plan quotes a room as `12 x 14`
+          or `12'6" x 14'`, which is two numbers and a unit. One number loses
+          half of it, and an area loses the shape — a 10 x 20 room and a 14 x 14
+          room are the same area and nothing like each other to live in.
+        */
         fields: [
-          /*
-            **Room sizes are text, not numbers**, and that is deliberate: a plan
-            quotes a room as `12 x 14` or `12'6" x 14'`, which is two numbers and
-            a unit. Storing one number would lose half of it, and storing an area
-            would lose the shape — a 10 x 20 room and a 14 x 14 room are the same
-            area and nothing like each other to live in.
-          */
-          F.num('bedrooms', 'Bedrooms', { quickCreate: true }),
           F.num('bathrooms', 'Bathrooms'),
           F.num('balconies', 'Balconies'),
           F.text('master_bedroom_size', 'Master Bedroom'),
@@ -751,18 +768,8 @@ const MODULES: ModuleDef[] = [
       {
         name: 'media',
         label: 'Photos, Video & Plans',
+        collapsed: true,
         fields: [
-          /*
-            **Four named pictures, not one gallery**, because a brochure has to
-            be able to ask for *the* floor plan and *the* elevation by name. A
-            single bag of images cannot answer that, and a rep choosing which of
-            eleven photos is the elevation every time they send one is how the
-            wrong picture reaches a buyer.
-
-            Everything else a floor collects — more photos, a PDF plan, a
-            document — is an ordinary attachment on the Files tab, which already
-            has permissions, thumbnails and an audit trail.
-          */
           F.image('floor_plan_image', 'Floor Plan'),
           F.image('elevation_image', 'Elevation'),
           F.image('gallery', 'Photos', { config: { multiple: true } }),
@@ -772,8 +779,6 @@ const MODULES: ModuleDef[] = [
           F.url('virtual_tour_url', 'Virtual Tour'),
           F.textarea('description', 'Description', { searchable: true }),
           F.bool('publish_to_web', 'Show on Website', {
-            // Off by default, the same rule as Inventories: a floor exists
-            // before it has photos, a price or a verified address.
             storage: 'json', default: false,
             help: 'Off until you turn it on.',
           }),
@@ -787,13 +792,8 @@ const MODULES: ModuleDef[] = [
           F.ref('sold_to_id', 'Sold To', ['leads']),
           F.date('sold_on', 'Sold On'),
           F.money('sold_price', 'Sold Price'),
+          F.ref('blocked_for_lead_id', 'Held For', ['leads']),
           F.date('blocked_until', 'Held Until', {
-            /*
-              Required once the floor is actually On Hold — the same trap the
-              Inventories module already met: a unit held with no expiry never
-              reaches the release job, so it leaves the market for ever and
-              nothing says so.
-            */
             config: {
               requiredWhen: {
                 logic: 'AND',
@@ -801,7 +801,6 @@ const MODULES: ModuleDef[] = [
               },
             },
           }),
-          F.ref('blocked_for_lead_id', 'Held For', ['leads']),
           F.textarea('remarks', 'Remarks', { searchable: true }),
         ],
       },
@@ -809,14 +808,11 @@ const MODULES: ModuleDef[] = [
     relations: [
     ],
     /*
-      **"If the unit sold then the move on separate folder."**
-
-      The default list is the floors actually on the market, and Sold has a list
-      of its own beside it. The row is not moved anywhere: a sold floor keeps its
-      calls, its notes, its photos and its buyer, and a record that changes table
-      when its status changes is a record nobody can find again. "All Builder
-      Floors" stays, unfiltered, so nothing is ever truly hidden — the escape
-      hatch matters, because a default view that drops records is otherwise
+      **"If the unit sold then the move on separate folder."** A saved view, not
+      a second table: a sold house keeps its calls, its notes, its photos and its
+      buyer, and a record that changes table when its status changes is one
+      nobody can find again. "All Builder Floors" stays unfiltered as the way
+      back to everything — a default view that drops records with no escape is
       reported as data loss.
     */
     views: [

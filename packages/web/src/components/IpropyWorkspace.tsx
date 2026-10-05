@@ -7,9 +7,11 @@ import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
   History, Mail, MessageCircle, MessageSquare, MessagesSquare, MoreHorizontal, Phone, Search, Send,
   Sparkles, Star, Tag, Trash2, Users, X,
+  Building2,
 } from 'lucide-react';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
+import { BuilderFloorTable, localityFilter, matchesForContact } from './BuilderFloorTable';
 import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
@@ -51,6 +53,7 @@ import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
 const MENU_ICON: Record<MenuKey, JSX.Element> = {
   timeline: <MessagesSquare className="h-4 w-4" />,
   matching: <Users className="h-4 w-4" />,
+  builders: <Building2 className="h-4 w-4" />,
   files: <FileText className="h-4 w-4" />,
   calls: <Phone className="h-4 w-4" />,
   whatsapp: <MessageCircle className="h-4 w-4" />,
@@ -531,6 +534,26 @@ export function IpropyWorkspace({
       || '')
     : '';
   const cardFields = useMemo(() => queueCardFields(module.fields), [module.fields]);
+  /*
+    Every floor price the Builder Floors module has, read from its own metadata
+    rather than listed here — so a sixth floor added in the Field Manager is
+    matched against a contact's budget with no deploy. `currency` and the block
+    together are what makes it a *price per floor* rather than the bottom price
+    or what the last buyer paid, neither of which a match may consider.
+  */
+  const { data: builderModule } = useQuery({
+    queryKey: ['module', 'builder_floors'],
+    queryFn: () => api.module('builder_floors'),
+    enabled: module.name === 'leads',
+    staleTime: 5 * 60_000,
+  });
+  const floorPriceFields = useMemo(() => {
+    const block = builderModule?.blocks?.find((item) => item.name === 'floor_prices');
+    if (!block) return [];
+    return (builderModule?.fields ?? [])
+      .filter((field) => field.blockId === block.id && field.uitype === 'currency' && field.name.endsWith('_floor_price'))
+      .map((field) => field.name);
+  }, [builderModule]);
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
   const emailValue = active && emailField ? displayOf(active, emailField) : '';
   const { data: matchingCount } = useQuery({
@@ -1150,6 +1173,26 @@ export function IpropyWorkspace({
             </>
           )}
           {shownKey === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
+          {/*
+            The builder's inventory, as the table his spreadsheet already is.
+            On a house it is the whole locality; on a contact it is what fits
+            them. `active.values` is the fetched record rather than the list
+            row, so a field the list did not ask for is still there to match on.
+          */}
+          {shownKey === 'builders' && module.name === 'builder_floors' && (
+            <BuilderFloorTable
+              title={`Builder's Floor — ${String(active.values?.locality ?? 'this locality')}`}
+              filter={localityFilter(String(active.values?.locality ?? ''))}
+              emptyLine="No other houses recorded in this locality yet."
+            />
+          )}
+          {shownKey === 'builders' && module.name === 'leads' && (
+            <BuilderFloorTable
+              title="Builder's Inventory"
+              filter={matchesForContact(active.values ?? {}, floorPriceFields)}
+              emptyLine="Nothing in the builder inventory matches what this contact is looking for."
+            />
+          )}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownKey === 'calls' && <CallsTab recordId={active.id} />}
           {shownKey === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}

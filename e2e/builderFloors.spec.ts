@@ -67,18 +67,52 @@ test('opens on the split view, with a floor in the queue and its record beside i
   await expect(workspace).toBeVisible({ timeout: 30_000 });
 
   /*
-    A floor is named "<plot> <floor>" — neither half identifies one alone, which
-    is why `labelFields` is both. The queue row is a button carrying that name
-    and the asking price, so matching the name proves the label is being built
-    from the module's own metadata rather than falling back to the singular.
+    A house is named "<locality> <house no>" — neither half identifies one
+    alone, which is why `labelFields` is both: sixty houses share a locality and
+    a house number repeats across them. Matching the name proves the label is
+    built from the module's own metadata rather than falling back to the
+    module's singular.
   */
-  const row = workspace.getByRole('button', { name: /\d+\s+(Stilt|Ground|1st|2nd|3rd|4th|Terrace)/ }).first();
+  const row = workspace.getByRole('button').filter({ hasText: /B-114|C-3614|B-1396/ }).first();
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
 
   // The record beside it, drawn from this module's own blocks.
-  await expect(workspace.getByText(/Plot No\./i).first()).toBeVisible({ timeout: 20_000 });
-  await expect(workspace.getByText(/Asking Price/i).first()).toBeVisible({ timeout: 20_000 });
+  await expect(workspace.getByText(/House No\./i).first()).toBeVisible({ timeout: 20_000 });
+  await expect(workspace.getByText(/First Floor/i).first()).toBeVisible({ timeout: 20_000 });
+});
+
+test("shows the locality's whole table — every builder's house in it", async ({ page }) => {
+  /*
+    *"We want to see a table in Middle Pane under manu bar a Name of Builder's
+    Floor … we want create multiple unit of multiple builder under in a
+    locality."* The columns are the module's own fields, so this asserts the
+    ones he listed by name — a table that silently lost the Top Floor price
+    would still be a table.
+  */
+  await page.goto('/builder_floors');
+  await expect(page.getByLabel(QUEUE_READY)).toBeVisible({ timeout: 30_000 });
+
+  const workspace = page.getByTestId('ipropy-workspace');
+  const row = workspace.getByRole('button').filter({ hasText: /B-114|C-3614|B-1396/ }).first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.click();
+
+  await page.getByRole('button', { name: /Builder's Floor/i }).first().click();
+  const table = page.getByTestId('builder-floor-table');
+  await expect(table).toBeVisible({ timeout: 20_000 });
+
+  // His columns, in his words.
+  for (const column of [
+    /House No\./i, /Builder's Name/i, /Mobile Number/i, /Facing/i, /Size/i,
+    /Bedrooms/i, /Status/i, /Amenities/i,
+    /First Floor/i, /Second Floor/i, /Third Floor/i, /Fourth Floor/i, /Top Floor/i,
+  ]) {
+    await expect(table.getByRole('columnheader', { name: column }).first()).toBeVisible();
+  }
+
+  // Multiple builders, multiple houses, one locality — the whole point.
+  await expect(table.getByRole('row')).toHaveCount(4); // header + three houses
 });
 
 test('offers this module\'s own dropdowns, which no screen names', async ({ page }) => {
@@ -90,7 +124,7 @@ test('offers this module\'s own dropdowns, which no screen names', async ({ page
   */
   await page.goto('/builder_floors/new');
   await expect(page.locator('form, main').first()).toBeVisible({ timeout: 30_000 });
-  for (const label of [/Plot No\./i, /Accommodation/i, /Floor Availability/i]) {
+  for (const label of [/House No\./i, /Locality/i, /Builder's Name/i, /Mobile Number/i]) {
     await expect(page.getByText(label).first()).toBeVisible({ timeout: 20_000 });
   }
 });

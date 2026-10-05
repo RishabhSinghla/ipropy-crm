@@ -18,7 +18,7 @@
  */
 
 /** A record tab that draws its own screen. */
-export type RecordTabKey = 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
+export type RecordTabKey = 'timeline' | 'matching' | 'builders' | 'files' | 'calls' | 'whatsapp';
 
 /** The stream, narrowed to one kind of thing that happened. */
 export type ActivityKind = 'comment' | 'message' | 'audit';
@@ -38,7 +38,18 @@ const MENU_ORDER_KEY = 'ipropy.recordMenu';
  * rep reaches for least, since every other entry is a narrower view of it.
  */
 export const DEFAULT_ORDER: MenuKey[] = [
-  'comment', 'matching', 'files', 'calls', 'whatsapp', 'message', 'audit', 'timeline',
+  /*
+    `builders` is the Builder's Inventory — the owner's 5 October ask that his
+    builder floors be matchable *"in Lead Manager as Inventory Matching … in
+    Menu bar same as Matching Inventory"*. It sits straight after Matching
+    Inventory, which is the tab he compared it to.
+
+    It is **appended for anybody who has already dragged their menu**, by
+    `arrangeRecordMenu` below — a saved order written before this tab existed
+    cannot have meant to leave it out, which is the same rule `arrangeHeaderTabs`
+    holds to and the reason the Chats page was once unreachable.
+  */
+  'comment', 'matching', 'builders', 'files', 'calls', 'whatsapp', 'message', 'audit', 'timeline',
 ];
 
 /** Which of the stream's kinds an entry shows, or `null` for a tab of its own. */

@@ -80,6 +80,19 @@ export interface SharedPropertyPayload {
 const WITHHELD_BY_DEFAULT = new Set([
   // Who and exactly where — the two things a rep sells on knowing.
   'name', 'full_name', 'project_name', 'unit_name',
+  /*
+    **The builder's name, for the same reason and a sharper one.** A broker
+    sending a brochure is selling the introduction; a buyer who reads which
+    builder put the house up can ring him directly and the broker is out of his
+    own deal. `SENSITIVE_NAME` catches owner, contact and broker and does not
+    catch this one, so it has to be named — found on 5 October 2026 by reading
+    the live payload, which is the only place it shows.
+
+    Withheld *by default* rather than never: an admin who wants the builder
+    named on a brochure can tick it in Share settings. The mobile is a harder
+    no and sits in `NEVER_SHARE` below.
+  */
+  'builder_name',
   'city', 'locality', 'preferred_locations', 'address',
   'tower', 'block_tower', 'wing', 'unit_number', 'unit_no',
   // How the sale is going. Shareable if an admin ticks it, but a buyer opening

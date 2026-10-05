@@ -3,8 +3,27 @@ import { allSplitTabs, heroFieldNames, queueLinePreview, splitTabsFor } from '..
 
 describe('splitTabsFor', () => {
   it('shows every tab in the shipped order until somebody chooses', () => {
+    /*
+      `builders` joined on 5 October 2026 — the owner's Builder's Inventory,
+      *"in Menu bar same as Matching Inventory"*, which is why it sits straight
+      after the tab he compared it to.
+    */
     expect(splitTabsFor('leads', undefined).map((tab) => tab.key))
-      .toEqual(['timeline', 'matching', 'files', 'calls', 'whatsapp']);
+      .toEqual(['timeline', 'matching', 'builders', 'files', 'calls', 'whatsapp']);
+  });
+
+  it('gives Builder Floors the same tab, showing its own locality instead', () => {
+    /*
+      One table, two questions. On a contact it is what fits them; on a house it
+      is every other house in that colony — *"we want create multiple unit of
+      multiple builder under in a locality"*. Naming it for what it shows rather
+      than for the module it reads is what lets one component serve both.
+    */
+    const tabs = splitTabsFor('builder_floors', undefined);
+    expect(tabs.map((tab) => tab.key)).toContain('builders');
+    expect(tabs.find((tab) => tab.key === 'builders')?.label).toBe("Builder's Floor");
+    // And it has no Matching tab: matching is Contacts-to-Inventories.
+    expect(tabs.map((tab) => tab.key)).not.toContain('matching');
   });
 
   it('keeps the admin’s order and names, and hides what was left out', () => {

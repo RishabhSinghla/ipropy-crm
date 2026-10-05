@@ -25,7 +25,7 @@
   a tab any more. A saved list that still names it simply drops it, the same
   way it drops anything else this build cannot draw.
 */
-export type SplitTabKey = 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
+export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'files' | 'calls' | 'whatsapp';
 
 export interface SplitTab {
   key: SplitTabKey;
@@ -46,6 +46,20 @@ export function allSplitTabs(moduleName: string): SplitTab[] {
   if (hasMatching(moduleName)) {
     tabs.push({ key: 'matching', label: moduleName === 'leads' ? 'Matching inventory' : 'Matching leads' });
   }
+  /*
+    **Builder's Inventory** — 5 October 2026, the owner: *"we can use this
+    Builder's Inventory as a matching builder's inventory in Lead Manager as
+    Inventory Matching … in Menu bar same as Matching Inventory."* So it sits
+    straight after the tab he compared it to.
+
+    On **Builder Floors itself** the same tab is every house in that record's
+    own locality — *"we want create multiple unit of multiple builder under in a
+    locality"* — which is why it is named for what it shows rather than for the
+    module it reads: on a contact it is somebody's matches, on a house it is the
+    street. One table, two questions, no second copy to drift.
+  */
+  if (moduleName === 'leads') tabs.push({ key: 'builders', label: "Builder's Inventory" });
+  if (moduleName === 'builder_floors') tabs.push({ key: 'builders', label: "Builder's Floor" });
   tabs.push(
     { key: 'files', label: 'Files' },
     { key: 'calls', label: 'Calls' },

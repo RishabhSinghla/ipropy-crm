@@ -2296,6 +2296,114 @@ Availability` ships with the four states the sheet plainly uses and he can add
 whatever those two mean as dropdown options. **Ask him before importing the
 sheet**, or every row carrying them imports wrongly.
 
+### Rebuilt the same day: one record is one HOUSE
+
+**The first cut made one record per floor and he corrected it within hours**,
+with a screenshot of a lead's Matching Inventory and his own table:
+
+> *"We want to see a table in Middle Pane under manu bar a Name of Builder's
+> Floor … we want create multiple unit of multiple builder under in a locality …
+> Mobile Number, Builder Name, House No, Facing, Size, Bedrooms, Status,
+> Amenities, and price for all floor in sam table the price are like First
+> Floor, Second floor, third floor, Fourth floor, Top Floor … main Speciality of
+> This Module is We want to Use Locality as a Unique identity instead of Mobile
+> Number."*
+
+**He was right and the objection written below was wrong.** It said a row per
+building cannot answer "every 2nd floor under 3 crore" because the filter
+grammar has no way to say "any of these four columns". Two things are wrong with
+that: "every 2nd floor under 3 crore" is a filter on `second_floor_price`, one
+ordinary column; and "any floor under 3 crore" is an **OR of five conditions**,
+which the grammar has had all along. Both are pinned in
+`tests/integration/builderFloors.test.ts`. The shape he already works in answers
+every question he asked.
+
+**Keep the rest of this section**, because the reason the module exists at all is
+unchanged and is the thing to re-read before anybody proposes folding it into
+Inventories: a property's identity there is `mobile` and that column is
+**unique**, so one builder's number owning five houses is four refusals.
+
+### Locality and house number are the key
+
+*"you can set duplicate restriction for Locality only for this Module"*, and in
+the same message *"we want create multiple unit of multiple builder under in a
+locality"*. Locality **alone** as the key allows exactly one record per locality
+and refuses the second builder, so the two sentences agree only one way:
+`duplicateCheckFields: ['locality', 'house_no']` with mode `all`. B-114 and
+C-3614 in one colony are different houses; B-114 twice is the same one; and
+B-114 in a *different* colony is allowed, because a house number is only unique
+inside its own locality. **That last one is asserted**, since it is the half a
+locality-only key would have got wrong.
+
+`labelFields` is both, for the same reason — *"We need Locality as main Value in
+Left Record pane in replacement of Full Name in First Line, Assign to in Second
+Line"*. Locality alone would print "Greenfields Colony" down the whole queue
+with nothing telling two houses apart. **No field is flagged `listSubtitle` on
+this module**: the agent's name is already the line under the name on every
+module, and a subtitle would push a third line between them.
+
+### The table, and why it is one component
+
+`components/BuilderFloorTable.tsx` draws it, and the **columns are the module's
+own fields** — the `builder_floor` and `floor_prices` blocks, in the order an
+admin put them in the Field Manager. Adding a sixth floor price, or renaming
+Size, moves the table with no deploy. **No column is named in that file.**
+
+One table in two places, because they are the same question with a different
+filter: on a **house** it is every house in that record's locality (*"multiple
+unit of multiple builder under in a locality"*), and on a **contact** it is what
+fits them — *"we can use this Builder's Inventory as a matching builder's
+inventory in Lead Manager as Inventory Matching … in Menu bar same as Matching
+Inventory"*. A second copy would drift the expensive way: one of them learns
+about a new floor price and the other keeps showing four columns, so a rep
+quoting from the lead's tab misses the top floor entirely.
+
+**The contact match skips every condition the contact has not answered.** Most
+records carry a budget and nothing else, and a matcher demanding locality,
+budget and configuration answers nothing for almost everybody. The budget is
+compared against **every floor price in turn, ORed** — "is any floor in this
+house within reach" — with the same 10% headroom the CRM's own buyer matching
+uses. Sold and withdrawn houses are never offered.
+
+`builders` is a new `RecordTabKey` and a new `SplitTabKey`, appended by
+`arrangeRecordMenu` for anybody who has already dragged their menu — a saved
+order written before the tab existed cannot have meant to leave it out, which is
+the rule that once made the Chats page unreachable.
+
+### A third thing off the brochure, found the same way as the first two
+
+**The builder's name was on it.** A broker sending a brochure is selling the
+introduction; a buyer who reads which builder put the house up rings him
+directly and the broker is out of his own deal. `SENSITIVE_NAME` catches owner,
+contact and broker and does not catch `builder_name`, so it had to be named. It
+is in `WITHHELD_BY_DEFAULT` rather than `NEVER_SHARE` — off by default, and an
+admin who wants the builder named can tick it in Share settings. The **mobile**
+is the harder no and stays absolute.
+
+**And the brochure's title is the house number alone, which is correct.**
+`locality` is in `WITHHELD_BY_DEFAULT` already — *"who and exactly where, the two
+things a rep sells on knowing"* — so the colony does not reach a buyer and
+`buildLabel` falls back to the half of `labelFields` that is shared. Asserted
+rather than "fixed": a buyer with the exact address does not need the agent.
+
+### Two things a tombstone does not do
+
+Removing the nine fields of the first cut needed **both halves**, and the first
+attempt had only one. `ipy_field_tombstone` stops `upsertModule` *re-creating* a
+field; it does nothing to a row already in `ipy_field`. Checked by looking, not
+assumed: after the tombstones went in, all nine were still on the module and
+still on the form — so the module carried a second Mobile, a second Size and an
+Asking Price beside the five floor prices. Migration `188` tombstones **and**
+deletes. `tests/integration/builderFloors.test.ts` asserts both: the thirteen
+columns present, the nine absent.
+
+The **columns** stay. Nothing in this repo drops a column that might hold
+somebody's data, and a column no field points at costs nothing.
+
+---
+
+### The first design, kept for the reasoning that still holds
+
 ### One record is one floor
 
 This is the whole design and everything else follows from it. His sheet is one
