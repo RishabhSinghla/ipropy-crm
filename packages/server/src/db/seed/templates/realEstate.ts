@@ -579,6 +579,271 @@ const MODULES: ModuleDef[] = [
   },
 
   // =========================================================================
+  // BUILDER FLOORS
+  // =========================================================================
+  /*
+    **5 October 2026, the owner, with his own spreadsheet** ("Builder Floors 2026
+    - Single.pdf" — 130 floors in 60 buildings): *"Can you build a new module for
+    builder floor inventory, a builder have many properties in same 4th floor
+    building or multi building, and all floor, building price are not same and
+    different building have different size, different location, facing, floor
+    availability, if the unit sold then the move on separate folder and we need
+    all filter i.e floor wise, accommodation wise size wise, price wise …"*
+
+    **One record is one floor.** His sheet is one row per building with four
+    price columns (1st/2nd/3rd/4th), and that shape cannot answer any of the
+    questions he asked for: "every 2nd floor under 3 crore" would need the filter
+    grammar to say "any of these four columns", which it cannot, and a floor is
+    what a buyer buys, what a brochure is about, what gets sold, and what a call
+    or a task hangs on. A building caps at four floors in that sheet, too — a
+    stilt or a terrace has nowhere to go.
+
+    **Why not the Properties module, which already holds units.** A property's
+    identity there is `mobile`, and that column is `unique`. One number in his
+    sheet (9910534500) owns five buildings — twenty floors — and nineteen would
+    be refused on insert. Loosening that uniqueness is a live production rule and
+    not something to break quietly for a new feature.
+
+    The building's shared facts sit on each floor, grouped by `building_code`
+    (his Plot No.). That repeats about eight values across up to four rows, which
+    is the smaller of two costs: a separate Buildings module means every rep must
+    create a building before they can record a floor.
+
+    Everything a rep can already do to a record works here on day one — calls,
+    tasks, notes, WhatsApp, email, tags, files, share links, the split view —
+    because this is an ordinary entity module and none of that is per-module code.
+  */
+  {
+    name: 'builder_floors',
+    label: 'Builder Floors',
+    singular: 'Floor',
+    table: 'ipy_e_builder_floors',
+    icon: 'building',
+    color: '#0ea5e9',
+    sequence: 60,
+    menuGroup: 'Inventory',
+    /*
+      "2708 — 2nd" is how he reads his own sheet: the plot number first, then
+      which floor. Neither alone identifies anything — sixty buildings have a
+      2nd floor, and one plot has four.
+    */
+    labelFields: ['building_code', 'floor'],
+    pipelineField: 'floor_status',
+    /*
+      One record per building *and* floor, which is the real identity here.
+      `all` because they combine: plot 2708 has four floors and they are not
+      duplicates of each other, while a second "2708 — 2nd" is the same floor
+      typed twice. This is what stops the import and a rep both entering it.
+    */
+    duplicateCheckFields: ['building_code', 'floor'],
+    settings: { duplicateCheckMode: 'all', shortLabel: 'BF' },
+    blocks: [
+      {
+        name: 'floor_details',
+        label: 'Floor',
+        fields: [
+          F.autonum('floor_code', 'Floor Code', 'BF-'),
+          // His Plot No. It groups a building's floors and is how he finds one.
+          F.text('building_code', 'Plot No.', {
+            mandatory: true, quickCreate: true, searchable: true,
+            help: 'The plot number. Every floor of this building shares it — it is what groups them.',
+          }),
+          F.pick('floor', 'Floor', 'floor_level', { mandatory: true, quickCreate: true }),
+          F.pick('accommodation', 'Accommodation', 'accommodation', {
+            quickCreate: true, config: { listSubtitle: 1 },
+          }),
+          F.pick('floor_status', 'Floor Availability', 'floor_availability', {
+            mandatory: true, quickCreate: true,
+          }),
+          F.pick('lost_reason', 'Lost Reason', 'lost_reason'),
+          F.owner(),
+        ],
+      },
+      {
+        name: 'building',
+        label: 'Building',
+        fields: [
+          // Not unique, deliberately — and that is the whole reason this is its
+          // own module. One builder's number owns several buildings.
+          F.text('owner_name', 'Builder / Owner', { quickCreate: true, searchable: true }),
+          F.phone('owner_mobile', 'Builder Mobile', {
+            quickCreate: true, maxLength: 10, config: { digits: 10, codePrefix: '+91' },
+            help: 'The builder who owns this plot. One builder can own many plots, so this is not unique.',
+          }),
+          // His Size column is square yards — 272.22, 635.25 — not square feet.
+          F.area('plot_size', 'Plot Size', {
+            quickCreate: true,
+            config: { min: 0, unit: 'sqyd', unitField: 'plot_size_unit', unitMaster: 'area', listSubtitle: 2 },
+          }),
+          F.pick('plot_size_unit', 'Plot Size Unit', 'area_unit', { default: 'sqyd', displayType: 'hidden' }),
+          F.pick('facing', 'Facing', 'facing', { quickCreate: true }),
+          F.pick('road_width', 'Road Width', 'road_width'),
+          F.bool('corner_plot', 'Corner Plot'),
+          F.bool('park_facing', 'Park Facing'),
+          F.pick('construction_stage', 'Construction Stage', 'construction_stage', { quickCreate: true }),
+          F.pick('city', 'City', 'city'),
+          F.pick('locality', 'Locality', 'locality', { quickCreate: true, config: { listSubtitle: 3 } }),
+          F.text('address_line', 'Street / Sector'),
+          F.date('stage_updated_on', 'Stage Updated', {
+            help: 'When the construction stage was last checked — his sheet\'s Update column.',
+          }),
+        ],
+      },
+      {
+        name: 'pricing',
+        label: 'Price',
+        fields: [
+          /*
+            **The price is per floor, which is the point of this module.** His
+            sheet carries four of them on one row — 255, 250, -, T — because a
+            ground floor and a top floor in the same building are not worth the
+            same money. Here each floor owns its own.
+
+            Stored in lakhs, which is what his sheet holds (255 = ₹2.55 Cr), with
+            the unit welded on the way Demand is on Inventories.
+          */
+          F.money('demand', 'Asking Price', {
+            quickCreate: true,
+            config: { min: 0, unitField: 'demand_unit', unitMaster: 'budget_demand' },
+          }),
+          F.pick('demand_unit', 'Price Unit', 'price_unit', { default: 'total', displayType: 'hidden' }),
+          F.money('rate_per_sqyd', 'Rate per sq.yd'),
+          F.money('expected_price', 'Expected / Bottom Price', {
+            help: 'What the builder will actually take. Hidden from the website and from a brochure.',
+          }),
+          F.date('price_updated_on', 'Price Updated'),
+          F.bool('price_negotiable', 'Negotiable'),
+        ],
+      },
+      {
+        name: 'floor_plan',
+        label: 'Floor Plan',
+        fields: [
+          /*
+            **Room sizes are text, not numbers**, and that is deliberate: a plan
+            quotes a room as `12 x 14` or `12'6" x 14'`, which is two numbers and
+            a unit. Storing one number would lose half of it, and storing an area
+            would lose the shape — a 10 x 20 room and a 14 x 14 room are the same
+            area and nothing like each other to live in.
+          */
+          F.num('bedrooms', 'Bedrooms', { quickCreate: true }),
+          F.num('bathrooms', 'Bathrooms'),
+          F.num('balconies', 'Balconies'),
+          F.text('master_bedroom_size', 'Master Bedroom'),
+          F.text('bedroom_2_size', 'Bedroom 2'),
+          F.text('bedroom_3_size', 'Bedroom 3'),
+          F.text('bedroom_4_size', 'Bedroom 4'),
+          F.text('living_room_size', 'Drawing / Living'),
+          F.text('dining_size', 'Dining'),
+          F.text('kitchen_size', 'Kitchen'),
+          F.text('bathroom_size', 'Bathroom'),
+          F.text('balcony_size', 'Balcony'),
+          F.text('terrace_size', 'Terrace'),
+          F.area('carpet_area', 'Carpet Area'),
+          F.area('built_up_area', 'Built-up Area'),
+          F.pick('furnishing', 'Furnishing', 'furnishing'),
+          F.bool('lift', 'Lift'),
+          F.bool('covered_parking', 'Covered Parking'),
+          F.bool('modular_kitchen', 'Modular Kitchen'),
+          F.bool('vastu_compliant', 'Vastu Compliant'),
+        ],
+      },
+      {
+        name: 'media',
+        label: 'Photos, Video & Plans',
+        fields: [
+          /*
+            **Four named pictures, not one gallery**, because a brochure has to
+            be able to ask for *the* floor plan and *the* elevation by name. A
+            single bag of images cannot answer that, and a rep choosing which of
+            eleven photos is the elevation every time they send one is how the
+            wrong picture reaches a buyer.
+
+            Everything else a floor collects — more photos, a PDF plan, a
+            document — is an ordinary attachment on the Files tab, which already
+            has permissions, thumbnails and an audit trail.
+          */
+          F.image('floor_plan_image', 'Floor Plan'),
+          F.image('elevation_image', 'Elevation'),
+          F.image('gallery', 'Photos', { config: { multiple: true } }),
+          F.url('youtube_url', 'YouTube'),
+          F.url('video_url', 'Video'),
+          F.url('instagram_url', 'Instagram'),
+          F.url('virtual_tour_url', 'Virtual Tour'),
+          F.textarea('description', 'Description', { searchable: true }),
+          F.bool('publish_to_web', 'Show on Website', {
+            // Off by default, the same rule as Inventories: a floor exists
+            // before it has photos, a price or a verified address.
+            storage: 'json', default: false,
+            help: 'Off until you turn it on.',
+          }),
+        ],
+      },
+      {
+        name: 'sale',
+        label: 'Sale',
+        collapsed: true,
+        fields: [
+          F.ref('sold_to_id', 'Sold To', ['leads']),
+          F.date('sold_on', 'Sold On'),
+          F.money('sold_price', 'Sold Price'),
+          F.date('blocked_until', 'Held Until', {
+            /*
+              Required once the floor is actually On Hold — the same trap the
+              Inventories module already met: a unit held with no expiry never
+              reaches the release job, so it leaves the market for ever and
+              nothing says so.
+            */
+            config: {
+              requiredWhen: {
+                logic: 'AND',
+                conditions: [{ field: 'floor_status', operator: 'in', value: ['On Hold'] }],
+              },
+            },
+          }),
+          F.ref('blocked_for_lead_id', 'Held For', ['leads']),
+          F.textarea('remarks', 'Remarks', { searchable: true }),
+        ],
+      },
+    ],
+    relations: [
+    ],
+    /*
+      **"If the unit sold then the move on separate folder."**
+
+      The default list is the floors actually on the market, and Sold has a list
+      of its own beside it. The row is not moved anywhere: a sold floor keeps its
+      calls, its notes, its photos and its buyer, and a record that changes table
+      when its status changes is a record nobody can find again. "All Builder
+      Floors" stays, unfiltered, so nothing is ever truly hidden — the escape
+      hatch matters, because a default view that drops records is otherwise
+      reported as data loss.
+    */
+    views: [
+      {
+        name: 'On the Market', isDefault: true, columns: [],
+        filter: {
+          logic: 'AND',
+          conditions: [{ field: 'floor_status', operator: 'not_in', value: ['Sold', 'Not for Sale'] }],
+        },
+      },
+      {
+        name: 'Sold', columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'floor_status', operator: 'in', value: ['Sold'] }] },
+      },
+      { name: 'All Builder Floors', columns: [] },
+      {
+        name: 'My Builder Floors', columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] },
+      },
+      {
+        name: 'Favourite Builder Floors', columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] },
+      },
+    ],
+  },
+
+  // =========================================================================
   // DEALS
   // =========================================================================
 

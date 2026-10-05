@@ -74,7 +74,15 @@ interface ProfileDef {
   fieldOverrides?: Record<string, Record<string, 'hidden' | 'readonly'>>;
 }
 
-const ALL = ['leads', 'associates', 'properties'];
+/*
+  Every entity module, which is what an Administrator gets in full and what the
+  other profiles are carved out of. **A module missing from here is a module
+  nobody can see** — `seedProfiles` inserts a grant per name in these maps and
+  skips anything it does not find, so a new module added to the template and not
+  to this line ships invisible to every profile including the admin's, which
+  reads exactly like the feature not having been built.
+*/
+const ALL = ['leads', 'associates', 'properties', 'builder_floors'];
 
 function perms(
   modules: string[],
@@ -104,6 +112,9 @@ const PROFILES: ProfileDef[] = [
     modules: {
       ...perms(ALL, [true, true, true, false, true, false]),
       properties: [true, false, true, false, true, false],
+      // A manager prices and re-prices a floor but does not add or remove one —
+      // the same shape as Inventories above, for the same reason.
+      builder_floors: [true, true, true, false, true, false],
       payments: [true, false, false, false, false, false],
     },
   },
@@ -114,10 +125,20 @@ const PROFILES: ProfileDef[] = [
     modules: {
       leads: [true, true, true, false, false, false],
       properties: [true, false, false, false, false, false],
+      // Read-only, like Inventories: a rep sells a floor, they do not own the
+      // builder's list.
+      builder_floors: [true, false, false, false, false, false],
       payments: [true, false, false, false, false, false],
     },
     fieldOverrides: {
       properties: { base_price: 'readonly', rate_per_sqft: 'readonly', total_price: 'readonly' },
+      /*
+        **The bottom price is the builder's, not the buyer's.** `expected_price`
+        is what the builder will actually take, and a rep who can read it can
+        quote it — which is the whole negotiation given away. Asking Price stays
+        visible, because that is the number a rep says out loud.
+      */
+      builder_floors: { expected_price: 'hidden' },
     },
   },
   {
@@ -127,10 +148,14 @@ const PROFILES: ProfileDef[] = [
     modules: {
       leads: [true, true, true, false, false, false],
       properties: [true, false, false, false, false, false],
+      builder_floors: [true, false, false, false, false, false],
       documents: [true, true, false, false, false, false],
     },
     fieldOverrides: {
       properties: { base_price: 'hidden', rate_per_sqft: 'hidden', total_price: 'hidden', plc_charge: 'hidden', floor_rise_charge: 'hidden' },
+      // "No pricing visibility" is this profile's whole description, so the
+      // rate and the bottom price go too — not only the asking price.
+      builder_floors: { expected_price: 'hidden', rate_per_sqyd: 'hidden', sold_price: 'hidden' },
     },
   },
 ];
@@ -200,6 +225,13 @@ const SHARING_DEFAULTS: Record<string, string> = {
   contacts: 'private',
   organizations: 'public_read',
   properties: 'public_read',
+  /*
+    Everybody reads the builder's list, like Inventories. A floor is shared
+    stock — two reps working the same building is normal, and a private default
+    would mean a rep could not see a floor a colleague entered, which is the
+    opposite of what an inventory list is for.
+  */
+  builder_floors: 'public_read',
   deals: 'private',
   site_visits: 'private',
   bookings: 'private',

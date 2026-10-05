@@ -21,7 +21,7 @@ import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
 import {
-  getShareConfig, loadSharedProperty, loadSharedRecord,
+  getShareConfig, loadSharedRecord,
 } from '../../core/sharing/propertyShare.js';
 import { photoOrderBy } from '../../core/media/ordering.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
@@ -778,7 +778,19 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
   const link = await resolveShareToken(req.params.token);
   if (!link) throw new NotFoundError('This link is no longer available');
 
-  const shared = await loadSharedProperty(link.recordId);
+  /*
+    **The link's own module, not Properties.**
+
+    This called a `loadSharedProperty` wrapper, which looked the id up in
+    `ipy_e_properties` — so a link minted on any other module found no row and
+    answered the same 404 a revoked link does. Builder Floors landed on
+    5 October 2026 and every brochure link was unopenable, saying nothing about
+    why, because every share-link failure deliberately resolves to one message.
+
+    `loadSharedRecord` was already module-generic; only its one-line Properties
+    wrapper was not.
+  */
+  const shared = await loadSharedRecord(link.moduleName, link.recordId);
   if (!shared) throw new NotFoundError('This link is no longer available');
 
   // The record's own photos, not the `gallery` field. Gallery is curated by
@@ -815,7 +827,7 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
       url: `/api/public/share/${link.token}/media/${p.id}`,
     })),
     sharedAt: link.createdAt,
-    // Resolved by `loadSharedProperty` rather than guessed at in the browser,
+    // Resolved by `loadSharedRecord` rather than guessed at in the browser,
     // which read `project_name` and `total_price` by name and found neither.
     title: shared.title,
     price: shared.price,
@@ -827,7 +839,7 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
  * A set of units somebody picked off a matching tab.
  *
  * The same token machinery as a one-property link, and the same gate on what a
- * visitor may read: every unit goes through `loadSharedProperty`, so the
+ * visitor may read: every record goes through `loadSharedRecord`, so the
  * admin's "what a buyer sees" field list decides the content here exactly as it
  * does there. A field switched off for share links is off on this page too,
  * without this route knowing which fields those are.

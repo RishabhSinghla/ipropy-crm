@@ -53,6 +53,21 @@ export interface ShareLink {
   kind: 'record' | 'matches';
   /** For a 'matches' link: `{ targetModule, ids }`. Null on a record link. */
   payload: { targetModule: string; ids: string[] } | null;
+  /**
+   * Which module the shared record belongs to.
+   *
+   * Read off `ipy_record`, which this query already joins, rather than stored on
+   * the link — the record's module is the record's fact and a second copy could
+   * disagree with it.
+   *
+   * It exists because the shared page used to assume Properties: `/share/:token`
+   * called `loadSharedProperty`, which looks the id up in `ipy_e_properties`, so
+   * a link minted on any other module answered the same 404 as a revoked one.
+   * Found the day Builder Floors landed (5 October 2026) — every floor's
+   * brochure link was unopenable, and the 404 said nothing about why, because
+   * every share-link failure deliberately resolves to one message.
+   */
+  moduleName: string;
 }
 
 interface Row {
@@ -68,6 +83,7 @@ interface Row {
   last_viewed_at: Date | null;
   kind: 'record' | 'matches';
   payload: { targetModule: string; ids: string[] } | null;
+  module_name: string;
 }
 
 const COLUMNS = `id, record_id, token, label, created_by, created_at,
@@ -87,6 +103,7 @@ function toLink(row: Row): ShareLink {
     lastViewedAt: row.last_viewed_at,
     kind: row.kind,
     payload: row.payload,
+    moduleName: row.module_name,
   };
 }
 
@@ -161,7 +178,7 @@ export async function revokeShareLink(id: string, recordId: string, conn: Tx = d
  */
 export async function resolveShareToken(token: string, conn: Tx = db): Promise<ShareLink | null> {
   const row = await conn.queryOne<Row>(
-    `SELECT s.${COLUMNS.split(',').map((c) => c.trim()).join(', s.')}
+    `SELECT s.${COLUMNS.split(',').map((c) => c.trim()).join(', s.')}, r.module_name
        FROM ipy_share_link s
        JOIN ipy_record r ON r.id = s.record_id
       WHERE s.token = $1

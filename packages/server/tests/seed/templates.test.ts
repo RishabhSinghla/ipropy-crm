@@ -37,8 +37,20 @@ describe('industry templates', () => {
   });
 
   it('still ships the real-estate model iPropy runs on', () => {
+    /*
+      Three modules since 5 October 2026, and the number is asserted rather than
+      merely allowed to grow: eleven modules were deleted from this CRM
+      (migrations 030, 031, 048) because each existed only to carry a value a
+      lead or a unit could hold itself, and this assertion is what makes adding a
+      twelfth a deliberate act rather than a drift.
+
+      `builder_floors` earned its place on the one test that matters: it holds a
+      fact neither other module can. A floor's price is per floor, and a
+      property's identity is a unique `mobile` — one builder's number owning five
+      buildings is twenty floors, nineteen of which that column refuses.
+    */
     const modules = resolveTemplate('real-estate').modules.map((m) => m.name).sort();
-    expect(modules).toEqual(['leads', 'properties']);
+    expect(modules).toEqual(['builder_floors', 'leads', 'properties']);
   });
 });
 

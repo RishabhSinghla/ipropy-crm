@@ -111,6 +111,59 @@ export const PICKLISTS: PicklistDef[] = [
     Seeding is create-only, so editing this list here does **not** reach a
     database that already has the row — change it in the UI.
   */
+  /*
+    **Builder Floors — the five dropdowns his own spreadsheet uses.**
+
+    5 October 2026, from "Builder Floors 2026 - Single.pdf": the sheet's own
+    vocabulary, not invented here. `Acco` is 3 BHK / 4 BHK, `Status` is
+    Start / Semi / Finish, the four price columns are the floors, and the
+    Remarks column carries `60" Road`, `45" Road`, `Corner,`, `Park Facing,`
+    and `Side Park,` — which are a road width and two flags rather than prose.
+
+    Ordered, every one of them: a floor, a construction stage and an
+    availability are each a sequence, and A–Z would put "4th" before "1st" and
+    "Finish" before "Start".
+  */
+  { name: 'floor_level', ordered: true, label: 'Floor', values: [
+    'Stilt', 'Ground', '1st', '2nd', '3rd', '4th', 'Terrace',
+  ] },
+  { name: 'accommodation', ordered: true, label: 'Accommodation', values: [
+    '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK', '6 BHK',
+  ] },
+  /*
+    Available is the default and it has to be one: `floor_status` is mandatory,
+    and a mandatory picklist with no default is what made every automated lead
+    fail validation in silence once already (see `contact_type` below).
+
+    **Sold is what takes a floor out of the list** — the owner's *"if the unit
+    sold then the move on separate folder"*. It is a dropdown value and a saved
+    view, not a second table: a sold floor still has to keep its calls, its
+    notes, its photos and its buyer, and moving the row somewhere else is how
+    all of that stops being findable.
+  */
+  { name: 'floor_availability', ordered: true, label: 'Floor Availability', values: [
+    { value: 'Available', label: 'Available', color: '#16a34a', isDefault: true },
+    { value: 'On Hold', label: 'On Hold', color: '#f59e0b' },
+    { value: 'Sold', label: 'Sold', color: '#64748b' },
+    { value: 'Not for Sale', label: 'Not for Sale', color: '#94a3b8' },
+  ] },
+  { name: 'construction_stage', ordered: true, label: 'Construction Stage', values: [
+    { value: 'Start', label: 'Start', color: '#f59e0b' },
+    { value: 'Semi', label: 'Semi Finished', color: '#3b82f6' },
+    { value: 'Finish', label: 'Finished', color: '#16a34a' },
+  ] },
+  /*
+    Feet, not inches. His sheet writes `60" Road`, and in Faridabad that is a
+    sixty-**foot** road — the mark is loose shorthand, so the labels say what is
+    meant rather than copying the punctuation.
+  */
+  { name: 'road_width', ordered: true, label: 'Road Width', values: [
+    { value: '30ft', label: '30 ft' },
+    { value: '45ft', label: '45 ft' },
+    { value: '60ft', label: '60 ft' },
+    { value: '80ft', label: '80 ft' },
+    { value: '100ft', label: '100 ft or more' },
+  ] },
   { name: 'note_snippet', ordered: true, label: 'Note Shortcuts', values: [
     'Price negotiable', 'Wants park facing', 'Follow-up tomorrow',
     'Site visit planned', 'Budget confirmed', 'Loan required',

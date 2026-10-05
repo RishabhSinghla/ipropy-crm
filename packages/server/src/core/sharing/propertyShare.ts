@@ -111,6 +111,28 @@ const NEVER_SHARE = new Set([
   'blocked_until', 'blocked_by', 'blocked_for_lead_id', 'owner_contact_id',
   'latitude', 'longitude', 'gallery', 'floor_plan_url', 'video_url', 'virtual_tour_url',
   'publish_to_web',
+  /*
+    **Builder Floors, 5 October 2026 — and `expected_price` is the one that
+    matters.** It is what the builder will actually take, and a buyer who reads
+    it has the whole negotiation. It was on the brochure the moment the module
+    existed: `defaultShareFields` shares everything *except* this list, so a new
+    field is public by default and the Profiles screen hiding it from a rep does
+    nothing here — a share link is read by somebody with no profile at all.
+
+    The rule to carry forward: **a new money or status field is shared until it
+    is named here.** Checked by reading the live brochure payload, which is the
+    only place it shows.
+
+    `sold_price` and `sold_on` are the same mistake one step on — what the last
+    buyer paid is not a thing to hand the next one. `floor_status` goes for the
+    reason `status` above it does: "On Hold" and "Not for Sale" are internal
+    answers, and a brochure is sent about a floor somebody is selling. `remarks`
+    is the builder's own note — his sheet has "Daughter" in that column.
+  */
+  'expected_price', 'sold_price', 'sold_on', 'floor_status', 'remarks',
+  // Bookkeeping, and it reads as staleness: "price updated 14 Feb" on a
+  // brochure sent in October answers a question nobody asked.
+  'price_updated_on', 'stage_updated_on',
 ]);
 
 const SENSITIVE_NAME = /(^ai_|commission|broker|internal|private|owner|contact|phone|email|aadhaar|passport|password|secret|token)/i;
@@ -277,11 +299,4 @@ export async function loadSharedRecord(
     price: priceValue !== null && Number.isFinite(priceValue) && priceValue > 0 ? priceValue : null,
     priceShared,
   };
-}
-
-/** Properties, by the name the rest of the codebase already calls it. */
-export async function loadSharedProperty(
-  recordId: string, conn: Tx = db,
-): Promise<SharedPropertyPayload | null> {
-  return loadSharedRecord('properties', recordId, conn);
 }

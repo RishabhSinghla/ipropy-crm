@@ -2222,3 +2222,175 @@ from him rather than from this file before changing it.
 itself** — the nudge does nothing until one is set, so every test would otherwise
 trip over the refusal and prove nothing past it. Same rule as the WhatsApp send
 that died on a line no test had ever reached.
+
+---
+
+## Builder Floors — a third module, and why it earned the exception
+
+**5 October 2026, the owner, with his own spreadsheet** (`Builder Floors 2026 -
+Single.pdf` — 130 floors across 60 buildings): *"Can you build a new module for
+builder floor inventory, a builder have many properties in same 4th floor
+building or multi building, and all floor, building price are not same and
+different building have different size, different location, facing, floor
+availability, if the unit sold then the move on separate folder and we need all
+filter i.e floor wise, accommodation wise size wise, price wise … we can do task,
+calls, sms, whatsapp, email from this view and we can save photo, video, youtube
+for a property and we can send this property details to a client directly from
+module as a brochure … we can categorised, floor plan, Elevation, ans also see
+rooms size, bath size, kichen size according to floor plan."*
+
+**What his sheet actually holds**, decoded from the PDF rather than described
+from memory: Name · Mobile · Plot No. · Acco · Size · Facing · **1st · 2nd · 3rd ·
+4th** · Status · Update · Remarks. Totals on page one: 130 flats in 60 buildings,
+56 four-BHK and 4 three-BHK, available by floor 43/38/35/14, Start 24 / Semi 16 /
+Finish 18, size bands 225–500+ Sy. The Remarks column is not prose — it carries
+`60" Road`, `45" Road`, `Corner,`, `Park Facing,` and `Side Park,`, which are a
+road width and two flags.
+
+**Two codes in his floor columns are still unexplained and were deliberately not
+guessed at: `T` and `M`.** `T` appears almost always in the 4th slot and `M` on
+one row whose remark reads "Daught". They are his business's shorthand and
+inventing a meaning would put a wrong fact in front of a buyer, so `Floor
+Availability` ships with the four states the sheet plainly uses and he can add
+whatever those two mean as dropdown options. **Ask him before importing the
+sheet**, or every row carrying them imports wrongly.
+
+### One record is one floor
+
+This is the whole design and everything else follows from it. His sheet is one
+row per *building* with four price columns, and that shape cannot answer a single
+question he asked: "every 2nd floor under 3 crore" would need the filter grammar
+to say "any of these four columns", which it cannot. A floor is also what a buyer
+buys, what a brochure is about, what gets sold, and what a call or a task hangs
+on. Four columns also cap the building at four floors — a stilt or a terrace has
+nowhere to go.
+
+**Why it is not the Properties module, which already holds units.** A property's
+identity there is `mobile`, and that column is `unique`. One number in his sheet
+(9910534500) owns five buildings, which is twenty floors, and nineteen of them
+would be refused on insert. Loosening a live uniqueness rule to fit a new feature
+is not a quiet change. `tests/integration/builderFloors.test.ts` pins four floors
+on one mobile across two plots for exactly that reason.
+
+**Why not a second Buildings module either.** The building's shared facts — plot
+number, builder, plot size, facing, road, stage — sit on each floor, grouped by
+`building_code`. That repeats about eight values across up to four rows, which is
+a real cost and the smaller one: a parent module means every rep must create a
+building before they can record a floor, on a list of sixty he already keeps in a
+spreadsheet. **This is the trade to revisit first** if editing a building's road
+width across four floors starts to hurt.
+
+**It is the third module in a CRM that deliberately deleted eleven** (migrations
+030, 031, 048), and `tests/seed/templates.test.ts` asserts the count rather than
+letting it grow — so a twelfth is a deliberate act. The test carries the reason.
+
+### The three halves a new module needs, and the one that fails silently
+
+* **A migration** (`186_builder_floors.sql`) creates `ipy_e_builder_floors`. It
+  declares only `record_id`, `custom_fields` and the **five columns an index
+  needs**; the seed's `ensureColumn` adds the other forty-odd. The first cut
+  declared none of them and guarded each `CREATE INDEX` behind an `IF EXISTS` on
+  its column — which on a fresh database is every guard failing and **no index
+  created, silently**, because *migrations run before the seed*. Found by looking
+  at `pg_indexes`, not by any test.
+* **The seed template** (`realEstate.ts`) is the module: blocks, fields, views,
+  layouts. Migration 175's lesson, met from the other side — a migration cannot
+  create a module the seed does not know about, or it is absent on every fresh
+  database, which is still true of Associates.
+* **`ALL` in `seed/rbac.ts`.** `seedProfiles` inserts one grant per name in each
+  profile's module map and skips what it cannot find, so **a module added to the
+  template and not to that line ships invisible to every profile, the
+  administrator's included** — which reads exactly like the feature not having
+  been built. The integration suite asserts `permissions.view` from the describe
+  for that reason. Sharing defaults to `public_read`, like Inventories: a floor is
+  shared stock.
+
+### The filters, and the sold "folder"
+
+Every filter he named is ordinary filter grammar on a field, so each is also a
+saved view, a quick filter and a dashboard tile: `floor`, `accommodation`,
+`plot_size`, `demand`, `construction_stage`, `corner_plot`, `park_facing`,
+`building_code`. Measured against a real database, including all four at once.
+
+**`between` reads `value` and `value2`, never an array.** An array answers zero
+rows with no error at all, which on screen reads as "no floors in that budget" —
+it cost a round here and is pinned.
+
+**"If the unit sold then the move on separate folder" is a saved view, not a
+second table.** The default list is **On the Market** (`floor_status` not in Sold,
+Not for Sale), with **Sold** beside it and **All Builder Floors** unfiltered as
+the way back. The row never moves: a sold floor keeps its calls, its notes, its
+photos and its buyer, and a record that changes table when its status changes is
+one nobody can find again. The unfiltered list matters as much as the default — a
+default view that drops records with no escape is reported as data loss.
+
+### The brochure, and the leak it shipped with
+
+A share link on a floor minted fine and the page answered **404**, because
+`/share/:token` called `loadSharedProperty`, which looks the id up in
+`ipy_e_properties`. Every share-link failure deliberately resolves to one message,
+so the 404 said nothing about why. `loadSharedRecord` was already
+module-generic; only its one-line Properties wrapper was not. `resolveShareToken`
+now carries `moduleName`, read off `ipy_record` — which that query already joins,
+so no column and no migration.
+
+**And then the brochure carried `expected_price`.** That is what the builder will
+actually take, and a buyer who reads it has the whole negotiation.
+`defaultShareFields` shares every supported field it is **not** told to withhold,
+so **a new money or status field is public from the moment it exists**, and
+hiding it from a rep in Profiles does nothing here — a share link is read by
+somebody with no profile at all. `sold_price`, `sold_on`, `floor_status`,
+`remarks`, `price_updated_on` and `stage_updated_on` went with it into
+`NEVER_SHARE`. Found by reading the live payload, which is the only place it
+shows, and pinned both ways: the six are absent, and price/floor/size/facing are
+still there.
+
+**Still not on the brochure, and worth knowing before promising it:** the Floor
+Plan and Elevation pictures. `isShareable` only passes a list of value types and
+`image` is not among them, which is also why Inventories' own `floor_plan_url`
+sits in `NEVER_SHARE`. The brochure's pictures come from the record's
+**attachments**, so a plan uploaded on the Files tab does appear; the two named
+image fields do not. That is the next piece of this feature, not a bug in it.
+
+### Two spec traps, both ones this repo had already written down
+
+* **The workspace dock renders twice** — an expanded `complementary` and a folded
+  `navigation` — so `getByRole('link').first()` can resolve to the hidden copy and
+  the click waits for visibility for ever. Even `:visible` was not enough: the
+  rows carry a CSS transition and a moving target never satisfies the stability
+  check, so the spec asserts the link and its `href` and navigates with `goto`.
+  What the promise is about is the module being *in* the navigation — the Chats
+  lesson — and whether a nav link navigates is covered elsewhere.
+* **The queue header's count is two sibling spans**, the label and
+  `({rows.length})`. `getByText(/Builder Floors \(\d+\)/)` therefore matches
+  nothing, while the accessibility tree happily reads "Builder Floors (4)" — so a
+  spec waiting on that text waits for something no element will ever contain, and
+  it looks like a page that will not load. The select-all checkbox's label is one
+  element and is built from the module's own label.
+
+### What is proved, and what is not
+
+**The one thing that proves a new module builds from nothing** is
+`tests/integration/control.test.ts` — it provisions a real customer database from
+an empty one, and its module count went from 2 to 3 on the first run. A
+developer's database already has the tables, so `upsertModule` and `ensureColumn`
+both no-op there and a wrong migration/seed order is completely invisible. The
+count is asserted exactly rather than as "more than two", so the next module is a
+deliberate act. **Associates is still not among the three**: it was created by
+migration 175 and the seed template never learned about it, so on a brand-new
+database it does not exist at all.
+
+**Proved:** 16 integration tests against a real database (the module describes,
+one mobile holds many plots, the duplicate guard, all five filters and them
+combined, the sold view both ways, a note reaching the timeline, a tag, the
+brochure rendering and the six secrets absent from it) and 5 in a real browser
+(reachable from the toolbar, the split view with a floor open beside its record,
+the form offering this module's own dropdowns, the three lists). Typecheck clean,
+1,219 unit tests.
+
+**Not proved, and each is the honest limit rather than a detail:** his 130 rows
+have **not** been imported — the sheet's localities are Faridabad sectors that
+the seeded `locality` dropdown does not carry, so an import would be refused on
+every row until he adds them in Admin → Dropdowns, and `T`/`M` need his answer
+first. **SMS and email from this view** have not been exercised here. And the
+Floor Plan / Elevation images do not reach a brochure, as above.

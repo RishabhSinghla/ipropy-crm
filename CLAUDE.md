@@ -152,9 +152,14 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
 * **`ipy_record` is the shared id space.** Every `*_id` reference (including `contact_id`) points at
   `ipy_record(id)`, never at a payload table. This is why the Contacts→Leads merge preserved every
   foreign key without repointing.
-* **There are two modules:** `leads` (labelled "Contacts" since migration `096` — the *name*
+* **There are three modules:** `leads` (labelled "Contacts" since migration `096` — the *name*
   stays `leads`, because it is the URL, the API path and the key inside every saved view,
-  workflow condition and bookmark) and `properties`.
+  workflow condition and bookmark), `properties`, and `builder_floors` (5 October 2026 — one
+  record is one **floor**; see `SCREENS.md`, *Builder Floors*). A new module needs **three**
+  halves and the third fails in silence: a migration for its payload table, the definition in
+  `db/seed/templates/realEstate.ts`, and its name in **`ALL` in `db/seed/rbac.ts`** — absent
+  from that line it is granted to no profile at all, the administrator's included, and reads as
+  a feature nobody built.
   Migrations `030`, `031` and `048` removed the other eleven. Do not reintroduce one to hold a field —
   Projects and Activities both died because they existed only to carry a value the lead or the unit
   could hold itself.
@@ -259,7 +264,7 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 1,218 unit tests, no DB: 842 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 1,219 unit tests, no DB: 843 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
   serving headers), 368 in `packages/web` (colour contrast, safe markdown, T9 dialler matching, header-tab

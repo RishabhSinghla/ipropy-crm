@@ -123,7 +123,22 @@ describe('provisioning a customer', () => {
               (SELECT count(*) FROM ipy_field) AS fields,
               (SELECT count(*) FROM ipy_migration) AS migrations`,
     );
-    expect(Number(counts.modules)).toBe(2);
+    /*
+      Three since 5 October 2026 — Contacts, Inventories and Builder Floors.
+      Associates is deliberately not among them: it was created by migration 175
+      and the seed template has never learned about it, so it does not exist on a
+      brand-new database at all.
+
+      **This assertion is the only thing in the repo that proves a new module
+      reaches a database nobody has seeded before.** A developer's database
+      already has the tables, so `ensureColumn` and `upsertModule` both no-op
+      there and a wrong migration/seed order is invisible; this provisions a real
+      customer from nothing. It read 3 the first time it ran against Builder
+      Floors, which is what established that the module builds from a clean
+      checkout — the count is asserted exactly, not as "more than two", so the
+      next module is a deliberate act rather than a drift.
+    */
+    expect(Number(counts.modules)).toBe(3);
     expect(Number(counts.fields)).toBeGreaterThan(100);
     expect(Number(counts.migrations)).toBeGreaterThan(30);
   });
