@@ -24,7 +24,7 @@
  * together in the icon-registry test.
  */
 import {
-  Activity, AlertCircle, BarChart3, Box, Briefcase, Building, Building2, CalendarCheck, CheckCircle2, Circle,
+  Activity, AlertCircle, BarChart3, Box, Briefcase, Building, Building2, Calculator, CalendarCheck, CheckCircle2, Circle,
   CircleDashed, ClipboardList, Contact, FileSignature, FileText, Flag, FolderOpen, Gift, Hammer,
   Handshake, Home, Key, Landmark, LayoutDashboard, LayoutGrid, Link2, Mail, Map, MapPinned, Megaphone, Newspaper,
   MessageCircle, MessageSquare, Package, Paperclip, Pencil, Phone, PhoneMissed, PlusCircle,
@@ -35,6 +35,7 @@ import type { ComponentType } from 'react';
 export type IconComponent = ComponentType<{ className?: string }>;
 
 const REGISTRY: Record<string, IconComponent> = {
+  calculator: Calculator,
   // Module icons — db/seed/modules.ts
   briefcase: Briefcase,
   'building-2': Building2,
