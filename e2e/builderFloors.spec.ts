@@ -39,7 +39,31 @@ const DOCK_LINK = 'a[href="/builder_floors"]:visible';
  * The select-all checkbox is one element, its label is built from the module's
  * own label, and it only exists once the queue has rows.
  */
-const QUEUE_READY = 'Select all builder floors shown';
+const QUEUE_READY = 'locality-card';
+const HOUSE_MARK = `LocalityQueue${Date.now()}`;
+const fixtureIds: string[] = [];
+let fixtureToken = '';
+test.beforeAll(async ({ request }) => {
+  const login = await request.post('http://localhost:4000/api/auth/login', {
+    data: { email: process.env.E2E_EMAIL ?? 'admin@ipropy.com', password: process.env.E2E_PASSWORD ?? 'Admin@123' },
+  });
+  expect(login.ok()).toBeTruthy();
+  fixtureToken = (await login.json()).token;
+  for (const [index, locality] of ['Adyar', 'Adyar', 'Adyar', 'Baner'].entries()) {
+    const response = await request.post('http://localhost:4000/api/records/builder_floors', {
+      headers: { Authorization: `Bearer ${fixtureToken}` },
+      data: { locality, house_no: `${HOUSE_MARK}-${index}`, builder_name: HOUSE_MARK,
+        mobile: '9910534500', floor_status: 'Available', first_floor_price: 255 },
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    fixtureIds.push((await response.json()).id);
+  }
+});
+test.afterAll(async ({ request }) => {
+  for (const id of fixtureIds) await request.delete(`http://localhost:4000/api/records/builder_floors/${id}`, {
+    headers: { Authorization: `Bearer ${fixtureToken}` },
+  });
+});
 
 test('is reachable from the navigation, not only by URL', async ({ page }) => {
   await page.goto('/dashboard');
@@ -56,12 +80,12 @@ test('is reachable from the navigation, not only by URL', async ({ page }) => {
   */
   await expect(link).toHaveAttribute('href', '/builder_floors');
   await page.goto('/builder_floors');
-  await expect(page.getByLabel(QUEUE_READY)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId(QUEUE_READY).first()).toBeVisible({ timeout: 30_000 });
 });
 
 test('opens on the split view, with a floor in the queue and its record beside it', async ({ page }) => {
   await page.goto('/builder_floors');
-  await expect(page.getByLabel(QUEUE_READY)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId(QUEUE_READY).first()).toBeVisible({ timeout: 30_000 });
 
   const workspace = page.getByTestId('ipropy-workspace');
   await expect(workspace).toBeVisible({ timeout: 30_000 });
@@ -73,7 +97,9 @@ test('opens on the split view, with a floor in the queue and its record beside i
     built from the module's own metadata rather than falling back to the
     module's singular.
   */
-  const row = workspace.getByRole('button').filter({ hasText: /B-114|C-3614|B-1396/ }).first();
+  const row = workspace.getByTestId('locality-card').filter({ hasText: 'Adyar' });
+  await expect(row).toHaveCount(1);
+  await expect(row).not.toContainText(/B-114|C-3614|B-1396/);
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
 
@@ -91,10 +117,10 @@ test("shows the locality's whole table — every builder's house in it", async (
     would still be a table.
   */
   await page.goto('/builder_floors');
-  await expect(page.getByLabel(QUEUE_READY)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId(QUEUE_READY).first()).toBeVisible({ timeout: 30_000 });
 
   const workspace = page.getByTestId('ipropy-workspace');
-  const row = workspace.getByRole('button').filter({ hasText: /B-114|C-3614|B-1396/ }).first();
+  const row = workspace.getByTestId('locality-card').filter({ hasText: 'Adyar' });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
 
@@ -112,7 +138,14 @@ test("shows the locality's whole table — every builder's house in it", async (
   }
 
   // Multiple builders, multiple houses, one locality — the whole point.
-  await expect(table.getByRole('row')).toHaveCount(4); // header + three houses
+  await expect(table.getByRole('row').filter({ hasText: HOUSE_MARK })).toHaveCount(3);
+  const ashoka = workspace.getByTestId('locality-card').filter({ hasText: 'Baner' });
+  await expect(ashoka).toHaveCount(1);
+  await ashoka.click();
+  await expect(table).toContainText("Builder's Floor — Baner");
+  await expect(table.getByRole('row').filter({ hasText: HOUSE_MARK })).toHaveCount(1);
+  await expect(row).toHaveAttribute('aria-pressed', 'false');
+  await expect(ashoka).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('offers this module\'s own dropdowns, which no screen names', async ({ page }) => {
@@ -138,7 +171,7 @@ test('Sold is a list of its own, and the default list is the floors on the marke
     records and offers no escape is reported as data loss.
   */
   await page.goto('/builder_floors');
-  await expect(page.getByLabel(QUEUE_READY)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId(QUEUE_READY).first()).toBeVisible({ timeout: 30_000 });
 
   const picker = page.getByRole('button', { name: /Choose or manage list views/i }).first();
   await expect(picker).toBeVisible({ timeout: 20_000 });

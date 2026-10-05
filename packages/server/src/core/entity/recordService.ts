@@ -492,13 +492,16 @@ async function computeGroups(
 
   // Preserve picklist order and include empty columns so the kanban is stable.
   if (options.length) {
-    return options.map((o) => ({
+    const known = new Set(options.map((option) => option.value));
+    return [...options.map((o) => ({
       key: o.value,
       label: o.label,
       color: o.color,
       count: byKey.get(o.value)?.count ?? 0,
       sum: byKey.get(o.value)?.sum ?? 0,
-    }));
+    })), ...res.rows.filter((row) => !known.has(row.key ?? '')).map((row) => ({
+      key: row.key ?? '', label: row.key || '(empty)', count: row.count, sum: row.sum ?? 0,
+    }))];
   }
   return res.rows.map((r) => ({
     key: r.key ?? '',

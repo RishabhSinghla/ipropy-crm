@@ -2344,6 +2344,20 @@ Inventories: a property's identity there is `mobile` and that column is
 
 ### Locality and house number are the key
 
+**5 October locality-queue correction:** the owner clarified that the left
+pane lists unique localities, not individual houses. Builder Floors opts in
+through `settings.queueGroupBy: 'locality'`. The shared workspace reads the
+server's scoped, filtered group counts across all pages, hides empty master
+options, and opens the Builder's Floor table on locality selection. The queue
+shows only locality and house count; no house number or duplicate locality row.
+Arrow navigation steps between localities. The table has its own house paging,
+so a locality with more than 100 houses is not truncated. Underlying house
+records, their labels and their locality-plus-house duplicate check remain
+unchanged. Leads and Inventory do not opt into grouped queues.
+
+The older queue-label rationale below describes the previous house-per-row
+queue and is superseded for the left pane only; it still applies to house links.
+
 *"you can set duplicate restriction for Locality only for this Module"*, and in
 the same message *"we want create multiple unit of multiple builder under in a
 locality"*. Locality **alone** as the key allows exactly one record per locality

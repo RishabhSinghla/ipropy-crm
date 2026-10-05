@@ -24,7 +24,7 @@
  * or renaming "Size" to "Plot Size", moves this table with no deploy. That is
  * the whole reason the columns come from `describe` and not from a list here.
  */
-import { type JSX, useMemo } from 'react';
+import { type JSX, useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Building2 } from 'lucide-react';
@@ -81,15 +81,19 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
   });
 
   const columns = useMemo(() => (module ? columnsFrom(module) : []), [module]);
+  const [page, setPage] = useState(1);
+  const filterKey = JSON.stringify(filter);
+  useEffect(() => { setPage(1); }, [filterKey]);
 
   const { data, isLoading } = useQuery({
     /*
       The filter is in the key, so the locality table and a contact's matches
       are two cached answers rather than one that keeps replacing the other.
     */
-    queryKey: [MODULE, 'table', filter],
+    queryKey: [MODULE, 'table', filter, page, columns.map((field) => field.name)],
     queryFn: () => api.list(MODULE, {
       filter,
+      page,
       pageSize: 100,
       // The columns the table draws, asked for by name: a list row carries only
       // what the list requested, so an unasked column reads back blank — which
@@ -111,7 +115,7 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
       <div className="panel-head flex items-center gap-2">
         <Building2 className="h-4 w-4 shrink-0 text-slate-400" />
         <span className="truncate">{title}</span>
-        <span className="shrink-0 font-normal text-muted">({rows.length})</span>
+        <span className="shrink-0 font-normal text-muted">({data?.total ?? 0})</span>
       </div>
 
       {rows.length === 0 ? (
@@ -174,6 +178,11 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
           </table>
         </div>
       )}
+      {(data?.totalPages ?? 1) > 1 && <div className="flex items-center justify-end gap-3 border-t px-3 py-2 text-sm">
+        <button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous houses</button>
+        <span>{page} / {data?.totalPages}</span>
+        <button type="button" disabled={page >= (data?.totalPages ?? 1)} onClick={() => setPage((value) => value + 1)}>Next houses</button>
+      </div>}
     </section>
   );
 }
@@ -187,7 +196,7 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
  * of it.
  */
 export function localityFilter(locality: string): FilterGroup {
-  return { logic: 'AND', conditions: [{ field: 'locality', operator: 'equals', value: locality }] };
+  return { logic: 'AND', conditions: [locality ? { field: 'locality', operator: 'equals', value: locality } : { field: 'locality', operator: 'is_empty' }] };
 }
 
 /**

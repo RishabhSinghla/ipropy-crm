@@ -87,7 +87,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query(`DELETE FROM ipy_record WHERE label LIKE $1`, [`${MARK}%`]);
+  await db.query(`DELETE FROM ipy_record WHERE label LIKE $1`, [`%${MARK}%`]);
 });
 
 describe('the module itself', () => {
@@ -103,6 +103,17 @@ describe('the module itself', () => {
     // feature not having been built.
     expect(mod!.permissions.view).toBe(true);
     expect(mod!.permissions.create).toBe(true);
+  });
+
+  it('groups all matching houses into one locality even with a one-row page', async () => {
+    const res = await request(app).post('/api/records/builder_floors/search')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ search: MARK, groupBy: 'locality', pageSize: 1, columns: ['locality'] });
+    expect(res.status).toBe(200);
+    expect(res.body.rows).toHaveLength(1);
+    expect(res.body.groups.filter((group: { count: number }) => group.count > 0))
+      .toEqual([expect.objectContaining({ key: LOCALITY, count: 3 })]);
+    expect(res.body.total).toBe(3);
   });
 
   it('names a house by its locality and house number, because neither alone identifies one', async () => {

@@ -1,5 +1,6 @@
 import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SummaryText } from './SummaryText';
+import { populatedQueueGroups, queueGroupField, queueGroupFilter } from '../lib/queueGroups';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
@@ -314,11 +315,49 @@ export function IpropyWorkspace({
     condition the pane snapped back to the first row the moment the list
     refreshed.
   */
-  useEffect(() => setActiveId((current) => (
+  const groupField = queueGroupField(module);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const groupScope = useMemo(() => ({
+    view: neighbourContext?.view,
+    search: neighbourContext?.search,
+    filter: neighbourContext?.filter ? JSON.parse(neighbourContext.filter) : undefined,
+  }), [neighbourContext?.view, neighbourContext?.search, neighbourContext?.filter]);
+  const { data: linkedGroupRecord } = useQuery({
+    queryKey: ['record', module.name, openId],
+    queryFn: () => api.record(module.name, openId!),
+    enabled: Boolean(groupField && openId), retry: false,
+  });
+  useEffect(() => { setSelectedGroup(null); }, [openId]);
+  const { data: groupedData, isLoading: groupsLoading, isError: groupsError } = useQuery({
+    queryKey: ['queue-groups', module.name, groupField, groupScope],
+    queryFn: () => api.list(module.name, { ...groupScope, groupBy: groupField, pageSize: 1, columns: [groupField!] }),
+    enabled: Boolean(groupField),
+  });
+  const localityGroups = useMemo(() => populatedQueueGroups(groupedData?.groups), [groupedData?.groups]);
+  const preferredGroup = selectedGroup ?? (groupField && linkedGroupRecord ? String(linkedGroupRecord.values[groupField] ?? '') : null);
+  const groupKey = preferredGroup !== null && localityGroups.some((group) => group.key === preferredGroup)
+    ? preferredGroup : localityGroups[0]?.key;
+  const { data: groupRecord } = useQuery({
+    queryKey: ['queue-group-record', module.name, groupField, groupKey, groupScope],
+    queryFn: () => api.list(module.name, { ...groupScope,
+      filter: queueGroupFilter(groupField!, groupKey!, groupScope.filter), pageSize: 1,
+      columns: [groupField!],
+    }),
+    enabled: Boolean(groupField) && groupKey !== undefined,
+  });
+  useEffect(() => {
+    if (!groupField) return;
+    if (groupRecord?.rows[0]) {
+      const linked = selectedGroup === null && linkedGroupRecord && String(linkedGroupRecord.values[groupField] ?? '') === groupKey;
+      setActiveId(linked ? linkedGroupRecord.id : groupRecord.rows[0].id); setMenuPick('builders');
+    }
+    else if (groupedData && localityGroups.length === 0) setActiveId(null);
+  }, [groupField, groupRecord, groupedData, localityGroups, selectedGroup, linkedGroupRecord, groupKey]);
+  useEffect(() => { if (groupField) return; setActiveId((current) => (
     current && (current === openId || rows.some((row) => row.id === current))
       ? current
       : (rows[0]?.id ?? null)
-  )), [rows, openId]);
+  )); }, [rows, openId, groupField]);
 
   const listRow = rows.find((row) => row.id === activeId) ?? (activeId ? null : rows[0] ?? null);
 
@@ -339,7 +378,7 @@ export function IpropyWorkspace({
   }, [notThere, rows]);
   // The row stands in while the record loads, so the pane never blanks between
   // two selections. Its values are right, there are simply fewer of them.
-  const active = rows.length === 0 ? null : fetched && fetched.id === activeId ? fetched : listRow;
+  const active = (groupField ? localityGroups.length === 0 : rows.length === 0) ? null : fetched && fetched.id === activeId ? fetched : listRow;
   // A search belongs to the record it was typed on.
   useEffect(() => { setFindText(''); setFinding(false); }, [activeId]);
 
@@ -375,6 +414,12 @@ export function IpropyWorkspace({
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       if (isTypingOrInAPopup(event.target)) return;
+      if (groupField) {
+        const at = localityGroups.findIndex((group) => group.key === groupKey);
+        const next = localityGroups[event.key === 'ArrowDown' ? at + 1 : at - 1];
+        if (next) { event.preventDefault(); setSelectedGroup(next.key); setMenuPick('builders'); }
+        return;
+      }
       const at = rows.findIndex((row) => row.id === activeId);
       const next = rows[event.key === 'ArrowDown' ? at + 1 : at - 1];
       if (!next) return;
@@ -383,7 +428,7 @@ export function IpropyWorkspace({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [rows, activeId, openRecord]);
+  }, [rows, activeId, openRecord, groupField, localityGroups, groupKey]);
   /*
     A move that lands on a different page of the queue.
 
@@ -728,7 +773,7 @@ export function IpropyWorkspace({
             {/* Beside the module's own name, because that is what it selects:
                 everything on this page, for the bulk-edit bar the list already
                 carries. */}
-            {onToggleAll && (
+            {onToggleAll && !groupField && (
               <input
                 type="checkbox"
                 aria-label={`Select all ${module.label.toLowerCase()} shown`}
@@ -740,8 +785,8 @@ export function IpropyWorkspace({
             <span className="flex min-w-0 items-center gap-1 truncate text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
               <ModuleIcon name={module.icon} className="h-3 w-3 shrink-0 text-slate-400" />
               <span className="truncate">{module.label}</span>
-              <span className="shrink-0 font-normal text-muted">({rows.length})</span>
-              {active && rows.some((row) => row.id === active.id) && <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 normal-case tracking-normal dark:bg-blue-950 dark:text-blue-200" aria-label="Selected record on this page">{rows.findIndex((row) => row.id === active.id) + 1} / {rows.length}</span>}
+              <span className="shrink-0 font-normal text-muted">({groupField ? localityGroups.length : rows.length}{groupField ? ' localities' : ''})</span>
+              {active && !groupField && rows.some((row) => row.id === active.id) && <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 normal-case tracking-normal dark:bg-blue-950 dark:text-blue-200" aria-label="Selected record on this page">{rows.findIndex((row) => row.id === active.id) + 1} / {rows.length}</span>}
             </span>
           </span>
           {/*
@@ -749,7 +794,7 @@ export function IpropyWorkspace({
             *"its no use to us at all"*, the owner. Filtering by any field,
             that one included, is the Quick & Live Filters panel's job.
           */}
-          {onSort && (
+          {onSort && !groupField && (
             <Dropdown
               align="right"
               trigger={(
@@ -812,7 +857,15 @@ export function IpropyWorkspace({
         {/* Flush, because each row draws its own hairline — one separator
             between records, which is what the owner asked for. */}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {rows.map((row) => (
+          {groupField ? localityGroups.map((group) => (
+            <button key={group.key} type="button" data-testid="locality-card"
+              aria-pressed={group.key === groupKey}
+              className={`flex w-full items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 text-left ${group.key === groupKey ? 'border-l-4 border-l-brand-600 bg-brand-50 text-brand-800' : 'hover:bg-slate-50'}`}
+              onClick={() => { setSelectedGroup(group.key); setMenuPick('builders'); setShowing('record'); }}>
+              <span className="min-w-0 truncate font-semibold">{group.label}</span>
+              <span className="shrink-0 text-xs text-muted">{group.count} houses</span>
+            </button>
+          )) : rows.map((row) => (
             <QueueCard
               key={row.id}
               row={row}
@@ -831,7 +884,7 @@ export function IpropyWorkspace({
             />
           ))}
         </div>
-        {queueFooter}
+        {groupField ? <div className="border-t px-3 py-2 text-xs text-muted">{localityGroups.length} localities · {groupedData?.total ?? 0} houses</div> : queueFooter}
       </aside>
 
       <SplitHandle label="Resize the list" width={queueWidth} onDrag={resize} />
@@ -924,7 +977,7 @@ export function IpropyWorkspace({
             */}
             <span className="flex min-w-0 items-center gap-2">
             <h2 className="min-w-0 flex-1 basis-24 truncate text-sm font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-              {canEdit && nameField && isInlineEditable(nameField) ? (
+              {groupField ? (localityGroups.find((group) => group.key === groupKey)?.label ?? 'Locality') : canEdit && nameField && isInlineEditable(nameField) ? (
                 <EditableField
                   module={module.name}
                   recordId={active.id}
@@ -993,7 +1046,11 @@ export function IpropyWorkspace({
             {(active.tags?.length ?? 0) > 0 && (
               <TagChips module={module.name} tags={active.tags} className="flex shrink-0 items-center justify-center overflow-hidden" />
             )}
-            <span className="mr-1 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-slate-500" aria-label="Record navigation">
+            {groupField ? <span className="mr-1 inline-flex shrink-0 items-center gap-1 text-xs" aria-label="Locality navigation">
+              <button type="button" aria-label="Previous locality" disabled={localityGroups.findIndex((group) => group.key === groupKey) <= 0} onClick={() => { const at = localityGroups.findIndex((group) => group.key === groupKey); setSelectedGroup(localityGroups[at - 1]!.key); setMenuPick('builders'); }}><ChevronLeft className="h-3.5 w-3.5" /></button>
+              <span>{localityGroups.findIndex((group) => group.key === groupKey) + 1} / {localityGroups.length}</span>
+              <button type="button" aria-label="Next locality" disabled={localityGroups.findIndex((group) => group.key === groupKey) >= localityGroups.length - 1} onClick={() => { const at = localityGroups.findIndex((group) => group.key === groupKey); setSelectedGroup(localityGroups[at + 1]!.key); setMenuPick('builders'); }}><ChevronRight className="h-3.5 w-3.5" /></button>
+            </span> : <span className="mr-1 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-slate-500" aria-label="Record navigation">
               <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
@@ -1015,7 +1072,7 @@ export function IpropyWorkspace({
                 setSummarising(true);
                 void api.summarise(module.name, active.id).then((result) => setSummary(result.summary)).catch((err: Error) => toast.error('Summary failed', err.message)).finally(() => setSummarising(false));
               }}>{summarising ? <Spinner className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}</button>
-            </span>
+            </span>}
               {/*
                 Search within this record. **The icon left this bar on
                 3 October 2026** — *"remove the whatsapp icon and Search icon
@@ -1181,8 +1238,8 @@ export function IpropyWorkspace({
           */}
           {shownKey === 'builders' && module.name === 'builder_floors' && (
             <BuilderFloorTable
-              title={`Builder's Floor — ${String(active.values?.locality ?? 'this locality')}`}
-              filter={localityFilter(String(active.values?.locality ?? ''))}
+              title={`Builder's Floor — ${groupField ? localityGroups.find((group) => group.key === groupKey)?.label ?? 'Locality' : String(active.values?.locality ?? 'this locality')}`}
+              filter={localityFilter(groupField ? (groupKey ?? '') : String(active.values?.locality ?? ''))}
               emptyLine="No other houses recorded in this locality yet."
             />
           )}
@@ -1284,7 +1341,7 @@ export function IpropyWorkspace({
         </aside>
       )}
       </div>}
-      {!active && <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950" data-testid="empty-workspace"><Search className="h-8 w-8 text-slate-300" /><h2 className="font-semibold">No matching records</h2><p className="text-sm text-muted">Try another tag or adjust your search and filters.</p>{emptyAction}</div>}
+      {!active && <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center dark:bg-slate-950" data-testid="empty-workspace">{groupField && groupsLoading ? <><Spinner /><p>Loading localities…</p></> : groupField && groupsError ? <><h2 className="font-semibold">Could not load localities</h2><p className="text-sm text-muted">Please try again.</p></> : <><Search className="h-8 w-8 text-slate-300" /><h2 className="font-semibold">No matching records</h2><p className="text-sm text-muted">Try another tag or adjust your search and filters.</p>{emptyAction}</>}</div>}
     </div>
 
     {/*

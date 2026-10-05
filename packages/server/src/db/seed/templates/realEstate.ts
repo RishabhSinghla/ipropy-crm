@@ -639,7 +639,7 @@ const MODULES: ModuleDef[] = [
       difference from Inventories that this module exists for.
     */
     duplicateCheckFields: ['locality', 'house_no'],
-    settings: { duplicateCheckMode: 'all', shortLabel: 'BF' },
+    settings: { duplicateCheckMode: 'all', shortLabel: 'BF', queueGroupBy: 'locality' },
     blocks: [
       {
         name: 'builder_floor',

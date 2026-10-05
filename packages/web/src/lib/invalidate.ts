@@ -16,6 +16,9 @@ import type { QueryClient } from '@tanstack/react-query';
 export function invalidateRecordQueries(qc: QueryClient, module?: string, id?: string): void {
   if (module) {
     void qc.invalidateQueries({ queryKey: ['records', module] });
+    void qc.invalidateQueries({ queryKey: ['queue-groups', module] });
+    void qc.invalidateQueries({ queryKey: ['queue-group-record', module] });
+    void qc.invalidateQueries({ queryKey: [module, 'table'] });
     void qc.invalidateQueries({ queryKey: ['views', module] });
   } else {
     void qc.invalidateQueries({ queryKey: ['records'] });
