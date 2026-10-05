@@ -21,7 +21,7 @@
  */
 import { type JSX, type ReactNode, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, MessagesSquare, PhoneIncoming, Star } from 'lucide-react';
+import { Calculator, LayoutDashboard, MessagesSquare, PhoneIncoming, Star } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { ModuleIcon } from './Layout';
@@ -125,6 +125,9 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
             </DockLink>
           ))}
         </div>
+        <div className="mx-2 mt-auto border-t border-slate-300 pt-3 dark:border-slate-700">
+          <DockLink to="/tools" label="Tools"><Calculator className="h-[18px] w-[18px]" /></DockLink>
+        </div>
       </aside>
       {folded ? (
         /*
@@ -144,6 +147,9 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
               {row.icon}
             </DockLink>
           ))}
+          <div className="mt-auto w-10 border-t border-slate-300 pt-3 dark:border-slate-700">
+            <DockLink to="/tools" label="Tools" iconOnly><Calculator className="h-[18px] w-[18px]" /></DockLink>
+          </div>
         </nav>
       ) : null}
     </div>

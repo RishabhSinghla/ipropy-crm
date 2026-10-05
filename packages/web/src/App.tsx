@@ -61,6 +61,7 @@ const SettingsPage = lazy(() => import('./pages/Settings'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
 const WhatsAppPage = lazy(() => import('./pages/WhatsApp'));
 const CallsPage = lazy(() => import('./pages/Calls'));
+const ToolsPage = lazy(() => import('./pages/Tools'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
 
 function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
@@ -143,6 +144,7 @@ export default function App(): JSX.Element {
                   the door, not the room. */}
               <Route path="whatsapp/*" element={<WhatsAppPage />} />
               <Route path="calls" element={<CallsPage />} />
+              <Route path="tools" element={<ToolsPage />} />
               {/* The official business number's shared inbox. Above the generic
                   `:module` route, which would otherwise treat "chats" as a
                   module name and 404 on the metadata lookup. It is no longer a

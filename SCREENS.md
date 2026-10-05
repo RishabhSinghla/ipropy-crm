@@ -1,5 +1,24 @@
 # The screens a rep lives in
 
+## Business calculators, 5 October 2026
+
+The bottom of the workspace dock has one Tools icon below a horizontal divider,
+in both folded and expanded modes. `/tools` offers EMI, car-loan, personal-loan,
+and builder-floor additional-charge calculators. Loans use fixed-rate monthly
+reducing balance, with a full schedule and final-payment rounding adjustment.
+Interest is entered by the agent, not presented as a lender quote.
+
+Property charges follow the owner's reference PDF: editable water/sewer/mutation,
+electricity, stamp duty and registration-fee bases, plus custom charges. These are
+reference-sheet defaults, not statutory-rate advice. The displayed area in that
+sheet is rounded; its mutation total corresponds to 1,612.5 sq.ft. Use the exact
+calculation area. Line charges round to rupees before subtotals.
+
+PDF reports are generated locally and never send themselves to a client. The
+offline PDF uses Latin text; Print / Save PDF supports other scripts via the
+browser's renderer. Calculations do not write to CRM records or persist client
+names in storage. No transactions from the owner's PDF are shipped as defaults.
+
 ## Expandable quick-filter choices, 5 October 2026
 
 Every shared choice list offers a clickable "N more — show all" and "Show fewer"
