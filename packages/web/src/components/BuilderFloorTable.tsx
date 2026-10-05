@@ -25,12 +25,17 @@
  * the whole reason the columns come from `describe` and not from a list here.
  */
 import { type JSX, useMemo, useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Building2 } from 'lucide-react';
+import { ArrowUpDown, Building2, Search } from 'lucide-react';
 import { api } from '../lib/api';
 import type { FieldMeta, FilterGroup, RecordEnvelope } from '@ipropy/shared';
 import { FieldValue } from './FieldRenderer';
+import { cn } from '../lib/utils';
+import { EditableField, isInlineEditable } from './EditableField';
+import { CallButton } from './CallDisposition';
+import { WhatsAppButton } from './WhatsAppButton';
+import { invalidateRecordQueries } from '../lib/invalidate';
 import { Spinner } from './ui';
 
 /** The module this table is of. Its name is the API path, as everywhere. */
@@ -66,12 +71,47 @@ function columnsFrom(module: { fields: FieldMeta[]; blocks?: { id: string; name:
   ));
 }
 
+/**
+ * Which columns carry a dropdown filter above the table.
+ *
+ * A picklist is the only kind of column where "every answer there is" is a
+ * short, known list — Status, Facing, Accommodation. Filtering a free-text
+ * column belongs to the search box beside them, and filtering a price belongs
+ * to the Quick & Live Filters panel, which already does ranges properly.
+ *
+ * **No column is named here either.** An admin who adds a dropdown to this
+ * module gets a filter for it, and one who deletes a dropdown loses the filter
+ * with it, neither needing a deploy.
+ */
+function filterableColumns(columns: FieldMeta[], alreadyFixed: Set<string>): FieldMeta[] {
+  return columns.filter((field) => (
+    field.uitype === 'picklist'
+    && (field.options?.length ?? 0) > 0
+    && !alreadyFixed.has(field.name)
+  ));
+}
+
+/**
+ * The fields the table is already pinned to, so no dropdown offers to pin them
+ * again. On a locality's own table that is Locality — a control offering to
+ * choose a different one, on a table that cannot show one, is a control whose
+ * only useful setting is the one it already has.
+ */
+function fixedFields(filter: FilterGroup, into = new Set<string>()): Set<string> {
+  for (const condition of filter.conditions) {
+    if ('conditions' in condition) fixedFields(condition as FilterGroup, into);
+    else into.add((condition as { field: string }).field);
+  }
+  return into;
+}
+
 export function BuilderFloorTable({ title, filter, emptyLine }: {
   /** What this table is of — the locality, or the contact it is matched to. */
   title: string;
   filter: FilterGroup;
   emptyLine: string;
 }): JSX.Element {
+  const queryClient = useQueryClient();
   const { data: module } = useQuery({
     // The same key every other screen reads a module on, so this table warms
     // the record page and the record page warms it.
@@ -81,18 +121,43 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
   });
 
   const columns = useMemo(() => (module ? columnsFrom(module) : []), [module]);
+  const dropdowns = useMemo(() => filterableColumns(columns, fixedFields(filter)), [columns, JSON.stringify(filter)]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [page, setPage] = useState(1);
+  /*
+    **5 October 2026, the owner:** *"I want to edit, and filter and search in
+    this table."* All three run on the server, against the whole locality rather
+    than against the hundred rows on screen — narrowing what is already in front
+    of somebody answers the wrong question the moment a locality outgrows a
+    page.
+  */
+  const [search, setSearch] = useState('');
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState<{ by: string; dir: 'asc' | 'desc' } | null>(null);
+
   const filterKey = JSON.stringify(filter);
-  useEffect(() => { setPage(1); }, [filterKey]);
+  // A new locality starts at page one with nothing chosen: a status filter left
+  // over from the last street reads as that street being empty.
+  useEffect(() => { setPage(1); setSearch(''); setPicks({}); }, [filterKey]);
+
+  const chosen = Object.entries(picks).filter(([, value]) => value);
+  const effectiveFilter = useMemo<FilterGroup>(() => (chosen.length
+    ? {
+      logic: 'AND',
+      conditions: [filter, ...chosen.map(([name, value]) => ({ field: name, operator: 'equals' as const, value }))],
+    }
+    : filter), [filterKey, JSON.stringify(picks)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data, isLoading } = useQuery({
     /*
       The filter is in the key, so the locality table and a contact's matches
       are two cached answers rather than one that keeps replacing the other.
     */
-    queryKey: [MODULE, 'table', filter, page, columns.map((field) => field.name)],
+    queryKey: [MODULE, 'table', effectiveFilter, search, sort, page, columns.map((field) => field.name)],
     queryFn: () => api.list(MODULE, {
-      filter,
+      filter: effectiveFilter,
+      search: search.trim() || undefined,
+      ...(sort ? { sortBy: sort.by, sortDir: sort.dir } : {}),
       page,
       pageSize: 100,
       // The columns the table draws, asked for by name: a list row carries only
@@ -105,10 +170,20 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
   });
 
   const rows: RecordEnvelope[] = data?.rows ?? [];
+  const mayEdit = module?.permissions.edit ?? false;
+  const narrowed = Boolean(search.trim() || chosen.length);
 
-  if (isLoading || !module) {
+  if (!module) {
     return <div className="flex justify-center py-10"><Spinner className="text-slate-400" /></div>;
   }
+
+  /** Sort by this column, or turn it round when it is already the one. */
+  const sortOn = (name: string): void => {
+    setPage(1);
+    setSort((current) => (current?.by === name
+      ? { by: name, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+      : { by: name, dir: 'asc' }));
+  };
 
   return (
     <section className="card overflow-hidden" data-testid="builder-floor-table">
@@ -118,8 +193,67 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
         <span className="shrink-0 font-normal text-muted">({data?.total ?? 0})</span>
       </div>
 
-      {rows.length === 0 ? (
-        <p className="px-4 py-10 text-center text-sm text-muted">{emptyLine}</p>
+      {/*
+        Search and the dropdowns, above the table they narrow.
+
+        Each dropdown is a plain `<select>` on purpose: this card is
+        `overflow-hidden` so a table of thirteen columns cannot drag the page
+        sideways, and a popover drawn inside it would be clipped. The browser
+        draws a select's list outside the card entirely, so nothing this card
+        does to its own overflow can ever cut one off.
+      */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+        <div className="relative min-w-[11rem] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={search}
+            aria-label="Search these houses"
+            placeholder="Search house, builder, number…"
+            onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+            className="input h-8 py-0 pl-8 text-sm"
+          />
+        </div>
+        {dropdowns.map((field) => (
+          <select
+            key={field.name}
+            aria-label={`Filter by ${field.label}`}
+            value={picks[field.name] ?? ''}
+            onChange={(event) => {
+              setPage(1);
+              setPicks((current) => ({ ...current, [field.name]: event.target.value }));
+            }}
+            className="input h-8 w-auto py-0 text-sm"
+          >
+            <option value="">{`Any ${field.label.toLowerCase()}`}</option>
+            {(field.options ?? []).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        ))}
+        {narrowed && (
+          <button
+            type="button"
+            className="btn-secondary btn-sm h-8"
+            onClick={() => { setSearch(''); setPicks({}); setPage(1); }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {isLoading && rows.length === 0 ? (
+        <div className="flex justify-center py-10"><Spinner className="text-slate-400" /></div>
+      ) : rows.length === 0 ? (
+        /*
+          Two different nothings. An empty locality is the module's own line;
+          a search that found nobody is the search's fault and says which
+          control to undo, because the control that caused it is three inches
+          away and easy to forget.
+        */
+        <p className="px-4 py-10 text-center text-sm text-muted">
+          {narrowed ? 'No houses match that search or filter. Press Clear to see the whole locality.' : emptyLine}
+        </p>
       ) : (
         /*
           Its own horizontal scroller. Thirteen columns do not fit a middle pane
@@ -132,36 +266,96 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
               <tr>
                 {columns.map((field) => (
                   <th key={field.name} className="whitespace-nowrap px-3 py-2 text-left font-semibold">
-                    {field.label}
+                    <button
+                      type="button"
+                      onClick={() => sortOn(field.name)}
+                      title={`Sort by ${field.label}`}
+                      className="inline-flex items-center gap-1 hover:text-brand-700 dark:hover:text-brand-300"
+                    >
+                      {field.label}
+                      {sort?.by === field.name
+                        ? <span aria-hidden className="text-brand-600">{sort.dir === 'asc' ? '▲' : '▼'}</span>
+                        : <ArrowUpDown className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />}
+                    </button>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                <tr key={row.id} className="group border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
                   {columns.map((field, index) => (
-                    <td key={field.name} className="whitespace-nowrap px-3 py-2 align-middle">
-                      {/*
-                        The first column opens the house. Everything else is the
-                        value as the CRM draws it everywhere — a price in lakhs
-                        and crores, a status as its own coloured chip, amenities
-                        as chips — because `FieldValue` is what every other
-                        screen uses and a table that formatted its own numbers
-                        would disagree with the record beside it.
+                    /*
+                      **The whole cell opens the editor, not just the value.**
 
-                        `plain` so a phone renders as text rather than as a dial
-                        link with a WhatsApp button beside it: inside a row that
-                        is already a link, a link inside a link is the trap the
-                        record form met in September.
-                      */}
+                      `EditableField` takes the click on its own box, which is
+                      only as wide as the value — so on an empty field that box
+                      is a dash in the middle of a wide cell and a click
+                      anywhere else hits nothing at all, which reads as editing
+                      being broken. The cell forwards to the field's own
+                      "Change …" control, so there is still exactly one thing
+                      that opens an editor. The same rule as the record form,
+                      which met this first.
+                    */
+                    <td
+                      key={field.name}
+                      className={cn(
+                        'whitespace-nowrap px-3 py-2 align-middle',
+                        index > 0 && field.uitype !== 'phone' && mayEdit && isInlineEditable(field)
+                          && 'cursor-pointer',
+                      )}
+                      onClick={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        event.currentTarget.querySelector<HTMLButtonElement>('button')?.click();
+                      }}
+                    >
                       {index === 0 ? (
+                        /*
+                          The first column opens the house — the one thing in a
+                          row that must not turn into an edit box under the
+                          cursor, because it is how a rep gets to the record.
+                        */
                         <Link
                           to={`/${MODULE}/${row.id}`}
                           className="font-semibold text-brand-700 hover:underline dark:text-brand-300"
                         >
                           {String(row.values?.[field.name] ?? row.label ?? '—')}
                         </Link>
+                      ) : field.uitype === 'phone' ? (
+                        /*
+                          **A number in this table is something to ring.**
+                          The call is filed against *this* row's house, not
+                          against whichever record the pane happens to have
+                          open — a call logged on the wrong house is worse than
+                          no log at all.
+                        */
+                        <span className="flex items-center gap-1">
+                          <FieldValue field={field} value={row.values?.[field.name]} display={row.display?.[field.name]} plain />
+                          {rowPhone(row, field) && <>
+                            <CallButton to={rowPhone(row, field)} plain recordId={row.id} />
+                            <WhatsAppButton to={rowPhone(row, field)} iconOnly />
+                          </>}
+                        </span>
+                      ) : mayEdit && isInlineEditable(field) ? (
+                        /*
+                          Edited where it stands, through the CRM's one editor —
+                          so the validation, the permissions, the workflows and
+                          the change history are the same here as on the record.
+                          A second editor would be a second set of rules to keep
+                          in step, and the first time they disagreed nobody
+                          would know which had been applied.
+                        */
+                        <EditableField
+                          module={MODULE}
+                          recordId={row.id}
+                          field={field}
+                          value={row.values?.[field.name]}
+                          display={row.display?.[field.name]}
+                          siblings={row.values}
+                          compact
+                          plain
+                          onSaved={() => invalidateRecordQueries(queryClient, MODULE, row.id)}
+                        />
                       ) : (
                         <FieldValue
                           field={field}
@@ -185,6 +379,12 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
       </div>}
     </section>
   );
+}
+
+/** The number on a row, as a person would dial it, or '' when there is none. */
+function rowPhone(row: RecordEnvelope, field: FieldMeta): string {
+  const value = row.display?.[field.name] ?? row.values?.[field.name];
+  return value == null ? '' : String(value).trim();
 }
 
 /**

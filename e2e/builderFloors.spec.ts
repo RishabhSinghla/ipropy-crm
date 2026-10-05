@@ -183,3 +183,65 @@ test('Sold is a list of its own, and the default list is the floors on the marke
     await expect(page.getByText(name).first()).toBeVisible({ timeout: 15_000 });
   }
 });
+
+/*
+  **5 October 2026, the owner:** *"I want to edit, and filter and search in this
+  table, please make it for use … how to make a call from table mobile number."*
+
+  All four are controls somebody clicks, so all four are driven here rather than
+  reasoned about. What this cannot prove is a call actually ringing — that needs
+  a paired Android handset, which no container has.
+*/
+test('search, filter, sort, edit and call, in the table itself', async ({ page }) => {
+  await page.goto('/builder_floors');
+  await expect(page.getByTestId(QUEUE_READY).first()).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('locality-card').filter({ hasText: 'Adyar' }).first().click();
+  const table = page.getByTestId('builder-floor-table');
+  await expect(table).toBeVisible({ timeout: 20_000 });
+
+  const mine = (): ReturnType<typeof table.getByRole> => table.getByRole('row').filter({ hasText: HOUSE_MARK });
+  await expect(mine()).toHaveCount(3);
+
+  // Search narrows on the server, so it reaches the whole locality and not the
+  // hundred rows on screen.
+  await page.getByLabel('Search these houses').fill(`${HOUSE_MARK}-1`);
+  await expect(mine()).toHaveCount(1, { timeout: 15_000 });
+  await table.getByRole('button', { name: 'Clear' }).click();
+  await expect(mine()).toHaveCount(3, { timeout: 15_000 });
+
+  /*
+    The dropdowns are the module's own picklists, and **not** one for the field
+    the table is already pinned to: a Locality filter on a locality's own table
+    offers a choice whose only useful answer is the one it already has.
+  */
+  await expect(table.getByLabel('Filter by Status')).toBeVisible();
+  await expect(table.getByLabel('Filter by Locality')).toHaveCount(0);
+  await table.getByLabel('Filter by Status').selectOption('Sold');
+  await expect(mine()).toHaveCount(0, { timeout: 15_000 });
+  await table.getByRole('button', { name: 'Clear' }).click();
+  await expect(mine()).toHaveCount(3, { timeout: 15_000 });
+
+  // A number in this table is something to ring, and the call is filed against
+  // this row's own house rather than whichever record the pane has open.
+  await expect(table.getByRole('button', { name: /^Call / }).first()).toBeVisible();
+  await expect(table.getByRole('button', { name: /^WhatsApp / }).first()).toBeVisible();
+
+  /*
+    Edited where it stands, through the CRM's one editor — so the validation,
+    the permissions and the change history are the same here as on the record.
+    The editor floats in a portal on `body`, so it is found outside the table.
+  */
+  const row = mine().first();
+  /*
+    **The cell, not the value inside it.** These fixtures carry no Facing, so
+    the value is a dash a few pixels wide — click it and nothing happens, which
+    is exactly the complaint the record form met first. Clicking the cell's own
+    edge proves the forwarding rather than the dash.
+  */
+  const cell = row.locator('td').filter({ has: page.getByText('Change Facing') }).first();
+  await cell.click({ position: { x: 4, y: 4 } });
+  await page.locator('.popover [role="listbox"]').last().getByRole('option').filter({ hasText: 'North' }).first().click();
+  await expect(row).toContainText('North', { timeout: 15_000 });
+  await page.reload();
+  await expect(table.getByRole('row').filter({ hasText: HOUSE_MARK }).first()).toContainText('North', { timeout: 30_000 });
+});

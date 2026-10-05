@@ -24,7 +24,16 @@ interface CallActions {
    * is drawn once by the app's shell — so leaving this record mid-call no
    * longer throws the call away.
    */
-  startCall: (number: string, from?: 'phone' | 'desk') => Promise<void>;
+  /**
+   * Ring a number.
+   *
+   * `onRecordId` files the call against a record other than the one this
+   * provider was given — the Builder's Floor table, where every row is a
+   * different house and the pane has one of them open. A call logged on the
+   * wrong house is worse than no log at all, so the row says which it is
+   * rather than inheriting the pane's answer.
+   */
+  startCall: (number: string, from?: 'phone' | 'desk', onRecordId?: string) => Promise<void>;
 }
 
 const CallDispositionContext = createContext<CallActions | null>(null);
@@ -120,7 +129,7 @@ export function CallDispositionProvider({
     pendingAutoDial,
   );
 
-  const startCall = async (number: string, from: 'phone' | 'desk' = 'phone'): Promise<void> => {
+  const startCall = async (number: string, from: 'phone' | 'desk' = 'phone', onRecordId?: string): Promise<void> => {
     if (placingRef.current) return;
     const existingCall = useLiveCall.getState().call;
     if (existingCall && existingCall.userId !== userId) useLiveCall.getState().finish();
@@ -134,8 +143,9 @@ export function CallDispositionProvider({
     }
     placingRef.current = true;
     const clean = number.replace(/[^\d+]/g, '');
+    const callOn = onRecordId || recordId;
     useLiveCall.getState().begin({
-      userId, number, module, recordId, followUpField,
+      userId, number, module, recordId: callOn, followUpField,
       ...(queue ? {
         // Unknown yet: leave it out so the deck asks rather than deciding "nobody".
         ...(queue.nextId !== undefined ? { queueNextId: queue.nextId } : {}),
@@ -164,7 +174,7 @@ export function CallDispositionProvider({
         dial(clean);
       } else {
         let outcome: { took: boolean; via: string | null };
-        const result = await api.dialOnPhone({ to: clean, module, recordId });
+        const result = await api.dialOnPhone({ to: clean, module, recordId: callOn });
         if (!result.sent) {
           dial(clean);
         } else if ((outcome = await phoneTookIt(result.commandId)).took) {
@@ -217,7 +227,9 @@ export function CallDispositionProvider({
   );
 }
 
-export function CallButton({ to, iconOnly = false, round = false, plain = false, active = false }: { to: string; iconOnly?: boolean; round?: boolean; plain?: boolean; active?: boolean }): JSX.Element {
+export function CallButton({ to, iconOnly = false, round = false, plain = false, active = false, recordId }: { to: string; iconOnly?: boolean; round?: boolean; plain?: boolean; active?: boolean;
+  /** The record this call is about, when it is not the one the pane has open. */
+  recordId?: string }): JSX.Element {
   const calls = useCallDisposition();
   return (
     <button
@@ -237,7 +249,7 @@ export function CallButton({ to, iconOnly = false, round = false, plain = false,
       title={`Call ${to}`}
       aria-label={`Call ${to}`}
       aria-pressed={round ? active : undefined}
-      onClick={() => void calls?.startCall(to)}
+      onClick={() => void calls?.startCall(to, 'phone', recordId)}
     >
       <Phone className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-blue-600'} />
       {!iconOnly && !round && <span className="hidden sm:inline">Call</span>}

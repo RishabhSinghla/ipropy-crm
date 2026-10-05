@@ -639,7 +639,18 @@ const MODULES: ModuleDef[] = [
       difference from Inventories that this module exists for.
     */
     duplicateCheckFields: ['locality', 'house_no'],
-    settings: { duplicateCheckMode: 'all', shortLabel: 'BF', queueGroupBy: 'locality' },
+    /*
+      **A house can be sent to a buyer** — 5 October 2026, the owner: *"i can
+      send a brochure of property details to client on whatsapp, directly from
+      CRM."* `shareable` is the per-module switch the share link already reads;
+      the public page and `loadSharedRecord` were made module-generic when this
+      module landed, so this is the switch and not a second brochure.
+
+      What a visitor may read is still decided by `propertyShare.ts`: the
+      builder's name, his mobile, the locality and every internal price are
+      withheld by name, so a brochure carries the house and not the seller.
+    */
+    settings: { duplicateCheckMode: 'all', shortLabel: 'BF', queueGroupBy: 'locality', shareable: true },
     blocks: [
       {
         name: 'builder_floor',

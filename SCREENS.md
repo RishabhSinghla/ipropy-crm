@@ -2358,6 +2358,51 @@ unchanged. Leads and Inventory do not opt into grouped queues.
 The older queue-label rationale below describes the previous house-per-row
 queue and is superseded for the left pane only; it still applies to house links.
 
+### The table is where the work happens
+
+**5 October 2026, the owner, with a screenshot of the live locality table:**
+*"I want to edit, and filter and search in this table, please make it for
+use … how to make a call from table mobile number."*
+
+It was a read-only grid with paging. Five things now sit in it, and every one
+of them is the CRM's own control rather than a second copy written for this
+screen:
+
+* **Search** runs on the server, over the whole locality rather than the
+  hundred rows on screen. Narrowing what is already in front of somebody
+  answers the wrong question the moment a locality outgrows a page.
+* **A dropdown per picklist column** — Facing, Accommodation, Status — built
+  from the module's own options, so an admin who adds a dropdown gets a filter
+  for it with no deploy. **Not** a dropdown for a field the table is already
+  pinned to: a Locality filter on a locality's own table offers a choice whose
+  only useful answer is the one it already has (`fixedFields`).
+* **Every column heading sorts**, and turns round on a second click.
+* **Every cell is edited where it stands**, through `EditableField` — the same
+  editor as the record, so the validation, the permissions, the workflows and
+  the change history are identical here. **The whole cell is the target, not
+  the value inside it**: an empty field's box is a dash a few pixels wide, and
+  a click anywhere else in the cell would hit nothing. The same forwarding the
+  record form already does, and the same bug it met first.
+* **A number is something to ring.** `CallButton` and `WhatsAppButton` sit
+  beside it, and `startCall` takes the row's own record id — a call placed from
+  a table of twenty houses must be filed against the house in that row, not
+  against whichever record the pane happens to have open. That third argument
+  is the only change outside this file.
+
+The first column stays a plain link to the house. It is how a rep gets to the
+record, and it is the one thing in a row that must not turn into an edit box
+under the cursor.
+
+**A brochure can be sent from here** (migration `191`). `settings.shareable`
+is the per-module switch `canShareRecords` already reads; the public page and
+`loadSharedRecord` were made module-generic when this module landed, so this
+turned the existing door on rather than opening a second one. What a visitor
+reads is still `propertyShare.ts`'s decision — the builder's name, his mobile,
+the locality and every internal price are withheld **by name**, so a brochure
+carries the house and not the seller. A migration and not the seed, because
+`upsertModule` writes `EXCLUDED.settings || ipy_module.settings` and a module
+that already exists never learns a newly seeded setting.
+
 *"you can set duplicate restriction for Locality only for this Module"*, and in
 the same message *"we want create multiple unit of multiple builder under in a
 locality"*. Locality **alone** as the key allows exactly one record per locality
