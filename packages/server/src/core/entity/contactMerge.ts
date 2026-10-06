@@ -189,8 +189,8 @@ export async function mergeContactGroup(ctx: ServiceContext, group: MergeGroup):
     const losers = ids.filter(id => id !== primary?.id);
     await conn.query('UPDATE ipy_record SET is_deleted=true,deleted_at=now(),deleted_by=$2 WHERE id=ANY($1::uuid[])', [losers, ctx.user.id]);
     const survivor = primary
-      ? await recordService.updateRecord({ ...ctx, source: 'duplicate-merge' }, target.name, primary.id, values, { conn, skipDuplicateCheck: true })
-      : await recordService.createRecord({ ...ctx, source: 'duplicate-merge' }, target.name, values, { conn, skipDuplicateCheck: true });
+      ? await recordService.updateRecord({ ...ctx, source: 'duplicate-merge' }, target.name, primary.id, values, { conn, skipDuplicateCheck: true, skipWorkflow: true, retainHistoricalFollowup: true })
+      : await recordService.createRecord({ ...ctx, source: 'duplicate-merge' }, target.name, values, { conn, skipDuplicateCheck: true, skipWorkflow: true, retainHistoricalFollowup: true });
     for (const ref of refs) {
       const table = quoteIdent(ref.table_name); const column = quoteIdent(ref.column_name);
       if (ref.table_name === 'ipy_property_storage' || ref.table_name === 'ipy_sla_tracker') {

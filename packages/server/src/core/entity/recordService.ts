@@ -62,6 +62,8 @@ export interface ServiceContext extends ScopeContext {
 }
 
 export interface SaveOptions {
+  /** Internal consolidation/import of an existing historical task, never an interactive edit. */
+  retainHistoricalFollowup?: boolean;
   skipWorkflow?: boolean;
   skipDuplicateCheck?: boolean;
   skipAudit?: boolean;
@@ -738,7 +740,7 @@ export async function createRecord(
     const ownerType = (input.owner_type as string) === 'group' ? 'group' : 'user';
 
     const prepared = await prepareValues(module, payload, { isCreate: true, conn });
-    if (!ctx.system) assertNextFollowUpIsNotPast(module, prepared.values);
+    if (!ctx.system && !opts.retainHistoricalFollowup) assertNextFollowUpIsNotPast(module, prepared.values);
     await assertMobileIdentityAvailable(conn, module, prepared.values);
 
     if (!opts.skipDuplicateCheck && module.duplicateCheckFields.length) {
@@ -849,7 +851,7 @@ export async function updateRecord(
     await assertMobileIdentityAvailable(conn, module, { ...before.values, ...prepared.values },
       { existing: before.values, excludeId: recordId });
 
-    if (!ctx.system) assertNextFollowUpIsNotPast(module, prepared.values);
+    if (!ctx.system && !opts.retainHistoricalFollowup) assertNextFollowUpIsNotPast(module, prepared.values);
 
     const changes: { field: string; label: string; from: unknown; to: unknown }[] = [];
     for (const [field, to] of Object.entries(prepared.values)) {

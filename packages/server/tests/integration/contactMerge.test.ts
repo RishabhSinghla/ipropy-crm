@@ -62,6 +62,16 @@ describe('audited duplicate contact consolidation', () => {
     expect(lead.values.unit_no).toContain('C-3'); expect(lead.values.unit_no).toContain('D-4');
     expect(result.archived).toBe(2);
   });
+  it('retains historical overdue follow-ups without relaxing interactive date validation', async () => {
+    const { ctx, lead, group } = await legacyPair();
+    const module = await registry.requireModule('leads');
+    const due = module.fields.find(f => f.columnName === 'next_followup_at')!;
+    await db.query('UPDATE ipy_e_leads SET next_followup_at=$2 WHERE record_id=$1', [lead.id, '2020-01-01']);
+    await mergeContactGroup(ctx, group);
+    const after = await recordService.getRecord(ctx, 'leads', lead.id, { withDisplay: false });
+    expect(String(after.values[due.name])).toContain('2020-01-01');
+    await expect(recordService.updateRecord(ctx, 'leads', lead.id, { [due.name]: '2020-01-02' })).rejects.toThrow(/future date/);
+  });
   it('rejects non-admins and unrelated phone groups', async () => {
     const { ctx, group } = await legacyPair();
     await expect(mergeContactGroup(await contextFor(SEEDED.executiveA), group)).rejects.toThrow(/administrator/);
