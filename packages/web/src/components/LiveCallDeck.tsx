@@ -12,7 +12,7 @@ import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { saveNextUrl } from '../lib/saveNextUrl';
 import {
-  callBar, deckStatus, followUpFor, minutesFrom, nobodyAnswered, type CallBar, type PhoneCallReport,
+  callBar, deckStatus, followUpFor, minutesFrom, nobodyAnswered, reportMatchesCall, type CallBar, type PhoneCallReport,
 } from '../lib/callConsole';
 import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
@@ -33,13 +33,14 @@ export function LiveCallDeck(): JSX.Element | null {
   const call = useLiveCall((state) => state.call);
   const inPane = useLiveCall((state) => state.inPane);
   const userId = useApp((state) => state.user?.id ?? null);
+  const report = usePhoneReport();
   useEffect(() => {
     if (call && userId && call.userId !== userId) useLiveCall.getState().finish();
   }, [call, userId]);
   if (!call || !userId || call.userId !== userId || inPane) return null;
   return (
     <div className="flex items-center justify-between gap-3 border-b border-brand-200 bg-brand-50 px-4 py-2 text-sm text-brand-900 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-100" role="status">
-      <span className="truncate">Call in progress · {call.number}{call.notes?.trim() ? ' · Notes saved as draft' : ''}</span>
+      <span className="truncate">{reportMatchesCall(report, call) && report?.state === 'ended' ? 'Call ended — save the outcome' : 'Call awaiting outcome'} · {call.number}{call.notes?.trim() ? ' · Notes saved as draft' : ''}</span>
       <Link className="shrink-0 rounded-full bg-brand-600 px-3 py-1.5 font-semibold text-white hover:bg-brand-700" to={returnToCallUrl(call)}>
         Return to call
       </Link>
@@ -71,6 +72,7 @@ export interface CallDeckState {
   onOutcome: (value: string) => void;
   /** Current CRM date, so the call-deck button reflects the record before edits. */
   existingFollowUp: string | null;
+  canFollowUp: boolean;
   /**
    * The chase date this call leaves behind, as a local day.
    *
@@ -116,7 +118,8 @@ export function useCallDeckState(): CallDeckState {
   const [saving, setSaving] = useState(false);
   const notes = call.notes ?? '';
   const chaseOverride = call.chaseOverride;
-  const report = usePhoneReport();
+  const phoneReport = usePhoneReport();
+  const report = reportMatchesCall(phoneReport, call) ? phoneReport : null;
   const now = useTick(1000);
   const status = deckStatus(report, call, now);
   const bar = callBar(report, call, now);
@@ -126,6 +129,13 @@ export function useCallDeckState(): CallDeckState {
     queryKey: ['record', call.module, call.recordId],
     queryFn: () => api.record(call.module, call.recordId),
   });
+  const { data: callModule } = useQuery({
+    queryKey: ['module', call.module],
+    queryFn: () => api.module(call.module),
+    staleTime: 5 * 60_000,
+  });
+  const followUpField = callModule?.fields.find((field) => field.name === call.followUpField)
+    ?? callModule?.fields.find((field) => field.columnName === 'next_followup_at' || field.columnName === 'next_follow_up');
   /*
     Asked from the list the call was started in, never from the module as a
     whole: a call begun before the queue knew who was next (the record after a
@@ -202,13 +212,13 @@ export function useCallDeckState(): CallDeckState {
   */
   const chaseOn = async (day: string | null | undefined): Promise<void> => {
     update({ chaseOverride: day });
-    if (typeof day !== 'string') return;
-    const { module, recordId, followUpField } = call;
+    if (typeof day !== 'string' || !followUpField) return;
+    const { module, recordId } = call;
     queryClient.setQueryData<RecordEnvelope>(['record', module, recordId], (was) => (
-      was ? { ...was, values: { ...was.values, [followUpField]: day } } : was
+      was ? { ...was, values: { ...was.values, [followUpField.name]: day } } : was
     ));
     try {
-      await api.update(module, recordId, { [followUpField]: day });
+      await api.update(module, recordId, { [followUpField.name]: day });
     } catch (err) {
       toast.error('Could not set the follow-up', (err as Error).message);
     } finally {
@@ -240,10 +250,10 @@ export function useCallDeckState(): CallDeckState {
         nothing picked the outcome chases them for you, and still never argues
         with a date somebody has already put in the future.
       */
-      const chaseOn = chaseOverride !== undefined
+      const chaseOn = !followUpField ? null : chaseOverride !== undefined
         ? chaseOverride
-        : followUpFor(outcome, (record?.values?.[call.followUpField] as string | null | undefined) ?? null, new Date());
-      if (chaseOn) await api.update(call.module, call.recordId, { [call.followUpField]: chaseOn });
+        : followUpFor(outcome, (record?.values?.[followUpField.name] as string | null | undefined) ?? null, new Date());
+      if (chaseOn && followUpField) await api.update(call.module, call.recordId, { [followUpField.name]: chaseOn });
 
       // Logging updates the current record's timestamp, which can move it in
       // the default Recently Updated sort. Refresh the saved neighbor's ordinal
@@ -316,7 +326,7 @@ export function useCallDeckState(): CallDeckState {
     canControl: Boolean(report?.canControlCall) && live,
     noControlReason: report?.canControlCall ? 'Only while the call is up.' : NOT_THE_CALLING_APP,
     onControl: (action, on) => void control(action, on),
-    canEndCall: Boolean(report?.canEndCall) && report?.state !== 'ended',
+    canEndCall: Boolean(phoneReport?.canEndCall) && (!report || report.state !== 'ended'),
     onHangUp: () => void hangUp(),
     // `queuePosition` is the *next* record's place; this one sits just above it.
     position: call.queuePosition ? call.queuePosition - 1 : fallbackNeighbours?.position ?? null,
@@ -325,7 +335,8 @@ export function useCallDeckState(): CallDeckState {
     outcomes,
     outcome,
     onOutcome: (value) => update({ outcome: value }),
-    existingFollowUp: (record?.values?.[call.followUpField] as string | null | undefined) ?? null,
+    existingFollowUp: (record?.values?.[followUpField?.name ?? ''] as string | null | undefined) ?? null,
+    canFollowUp: Boolean(followUpField),
     // Not `?? null`: absent means "let the outcome decide" and null means
     // "chase nobody", and collapsing them makes the second unsayable.
     followUp: chaseOverride,

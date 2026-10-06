@@ -33,12 +33,13 @@ import { relativeDueDay } from '@ipropy/shared';
  * One permanent home for calling, directly above Notes & Comments.
  */
 export function CallDeckPanel({ module, recordId }: { module: string; recordId: string }): JSX.Element {
-  const onThisRecord = useCallIsOn(module, recordId);
   const call = useLiveCall((state) => state.call);
   const userId = useApp((state) => state.user?.id ?? null);
   const report = usePhoneReport();
-  if (onThisRecord) return <ActivePanel />;
   const ownedCall = call && userId && call.userId === userId ? call : null;
+  // The table can dial a different module's row without opening that record.
+  // Keep its finish controls here; a return link alone can strand the agent.
+  if (ownedCall) return <ActivePanel key={`${ownedCall.module}:${ownedCall.recordId}`} />;
   return <StandbyPanel call={ownedCall} report={report} />;
 }
 
@@ -70,7 +71,7 @@ function ActivePanel(): JSX.Element {
         <WhoAndClock deck={deck} />
         <div className="grid grid-cols-2 gap-2">
           <Outcomes deck={deck} />
-          <Chase deck={deck} />
+          {deck.canFollowUp ? <Chase deck={deck} /> : <span className="self-center text-xs text-slate-500">No follow-up field in this module</span>}
         </div>
       </div>
       <WaysOut deck={deck} />

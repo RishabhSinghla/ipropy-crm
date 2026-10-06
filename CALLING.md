@@ -6,6 +6,22 @@ telephony or the call console.
 
 The rules that hold everywhere live in [`CLAUDE.md`](CLAUDE.md); this file is the detail.
 
+## Embedded builder calls — 6 October 2026
+
+A Builder's Inventory row can be called while a Lead stays selected. The call
+must carry both that row's ID and `builder_floors`, not the surrounding Lead's
+module or queue. The old button mixed them, so Return to call could never open
+the working deck. A matching row/phone repairs those old browser drafts without
+discarding them. Every record pane now keeps the signed-in agent's active deck
+accessible, including End and Save, even away from its originating record.
+
+Follow-up fields are checked against the called module's metadata; a module
+without one can still save its call. Phone reports for another number or an
+earlier call cannot change this call's duration or status. A completed phone
+call retains its disposition draft until saved, rather than being labelled
+as still in progress. Browser regression uses a stand-in phone; actual
+Android end-call permission and handset behaviour still require a phone check.
+
 ---
 
 ## The phone app

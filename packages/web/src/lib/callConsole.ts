@@ -205,12 +205,20 @@ export function splitOutcomes(all: string[], chosen: string): { first: string[];
 
 /** What the phone last said about its call, as far as the deck needs to know. */
 export interface PhoneCallReport {
+  number?: string | null;
   state: 'dialling' | 'ringing' | 'active' | 'held' | 'ended' | null;
   /** When they picked up, on this computer's clock; null before that. */
   connectedAt: number | null;
   talkedSeconds: number | null;
   /** When the phone last reported, on this computer's clock. */
   reportedAt: number | null;
+}
+
+/** An old or different phone call must not control this call's clock/status. */
+export function reportMatchesCall(report: PhoneCallReport | null, call: { pressedAt: number; number?: string }): boolean {
+  if (!report?.state || report.reportedAt === null || report.reportedAt < call.pressedAt - 5_000) return false;
+  const digits = (number: string): string => number.replace(/\D/g, '').slice(-10);
+  return !report.number || !call.number || digits(report.number) === digits(call.number);
 }
 
 /**
@@ -226,12 +234,12 @@ export interface PhoneCallReport {
  */
 export function deckStatus(
   report: PhoneCallReport | null,
-  call: { pressedAt: number; placing: boolean },
+  call: { pressedAt: number; placing: boolean; number?: string },
   now: number,
 ): { label: string; ticking: boolean } {
   if (call.placing) return { label: 'Calling…', ticking: false };
   // A report from before this call was pressed is about the last one.
-  const aboutThisCall = report?.state && report.reportedAt !== null && report.reportedAt >= call.pressedAt - 5_000;
+  const aboutThisCall = reportMatchesCall(report, call);
   if (!report || !aboutThisCall) return { label: 'Calling on your phone', ticking: false };
   switch (report.state) {
     case 'dialling':
@@ -290,11 +298,11 @@ export interface CallBar {
  */
 export function callBar(
   report: PhoneCallReport | null,
-  call: { pressedAt: number; placing: boolean },
+  call: { pressedAt: number; placing: boolean; number?: string },
   now: number,
 ): CallBar {
   const elapsed = elapsedLabel(Math.max(0, now - call.pressedAt));
-  const aboutThisCall = report?.state && report.reportedAt !== null && report.reportedAt >= call.pressedAt - 5_000;
+  const aboutThisCall = reportMatchesCall(report, call);
   const talked = (): string | null =>
     report?.connectedAt ? elapsedLabel(now - report.connectedAt) : null;
 

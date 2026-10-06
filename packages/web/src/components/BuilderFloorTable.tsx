@@ -34,6 +34,8 @@ import { FieldValue } from './FieldRenderer';
 import { cn } from '../lib/utils';
 import { EditableField, isInlineEditable } from './EditableField';
 import { CallButton } from './CallDisposition';
+import { useLiveCall } from '../lib/liveCall';
+import { useApp } from '../lib/store';
 import { WhatsAppButton } from './WhatsAppButton';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { Spinner } from './ui';
@@ -170,6 +172,20 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
   });
 
   const rows: RecordEnvelope[] = data?.rows ?? [];
+  const call = useLiveCall((state) => state.call);
+  const userId = useApp((state) => state.user?.id);
+  useEffect(() => {
+    // Repair a draft made by the old embedded-table button. Its row ID was
+    // correct but its module and queue belonged to the surrounding Lead.
+    if (!call || call.userId !== userId || call.module === MODULE) return;
+    const row = data?.rows.find((candidate) => candidate.id === call.recordId);
+    if (!row || !columns.some((field) => field.uitype === 'phone'
+      && rowPhone(row, field).replace(/\D/g, '') === call.number.replace(/\D/g, ''))) return;
+    useLiveCall.getState().update({
+      module: MODULE, followUpField: '', queueUrl: null,
+      queueNextId: null, queuePosition: null, queueTotal: null,
+    });
+  }, [call, userId, data, columns]);
   const mayEdit = module?.permissions.edit ?? false;
   const narrowed = Boolean(search.trim() || chosen.length);
 
@@ -332,7 +348,7 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
                         <span className="flex items-center gap-1">
                           <FieldValue field={field} value={row.values?.[field.name]} display={row.display?.[field.name]} plain />
                           {rowPhone(row, field) && <>
-                            <CallButton to={rowPhone(row, field)} plain recordId={row.id} />
+                            <CallButton to={rowPhone(row, field)} plain recordId={row.id} module={MODULE} />
                             <WhatsAppButton to={rowPhone(row, field)} iconOnly />
                           </>}
                         </span>
