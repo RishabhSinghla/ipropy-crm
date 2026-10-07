@@ -309,9 +309,16 @@ async function buildCondition(
 
   const path = cond.path ?? cond.field;
   const resolved = await resolveFieldPath(module, path, joins);
-  const { expr, uitype } = resolved;
+  const { uitype } = resolved;
+  let expr = resolved.expr;
   const op = cond.operator;
   const v = cond.value;
+
+  // Timestamp calendar filters must compare both sides in the agent's timezone.
+  // Date-only fields already represent a calendar day and must not be shifted.
+  if (uitype === 'datetime' && ['today', 'tomorrow', 'yesterday', 'this_week', 'this_month', 'this_quarter', 'this_year'].includes(op)) {
+    expr = `(${expr} AT TIME ZONE ${params.add(tz(ctx))})`;
+  }
 
   const isJsonArray = ['multipicklist', 'multireference', 'tags'].includes(uitype);
   const isText = ['string', 'textarea', 'richtext', 'email', 'phone', 'url', 'picklist', 'autonumber', 'formula', 'time'].includes(uitype);
@@ -556,7 +563,7 @@ export function quoteIdent(name: string): string {
 // Full-text / quick search
 // ---------------------------------------------------------------------------
 
-export function buildSearchClause(term: string, params: SqlParams): string {
+export function buildSearchClause(term: string, params: SqlParams, includeNotes = false): string {
   /*
     **Commas narrow.** 3 October 2026, the owner: *"we can filter any values
     from this filter as many as by given comma, i.e 2 BHK, 50L, For Sale,
@@ -574,15 +581,18 @@ export function buildSearchClause(term: string, params: SqlParams): string {
   */
   const pieces = term.split(',').map((piece) => piece.trim()).filter(Boolean);
   if (!pieces.length) return '';
-  return `(${pieces.map((piece) => onePiece(piece, params)).join(' AND ')})`;
+  return `(${pieces.map((piece) => onePiece(piece, params, includeNotes)).join(' AND ')})`;
 }
 
 /** One thing a record has to match, anywhere the search looks. */
-function onePiece(piece: string, params: SqlParams): string {
+function onePiece(piece: string, params: SqlParams, includeNotes: boolean): string {
   const like = params.add(`%${escapeLike(piece)}%`);
-  const ts = params.add(piece.split(/\s+/).filter(Boolean).map((w) => `${w}:*`).join(' & '));
+  // Notes contain punctuation; never interpolate it as tsquery operators.
+  const ts = params.add((piece.match(/[\p{L}\p{N}_]+/gu) ?? []).map((w) => `${w}:*`).join(' & '));
   return `(${RECORD_ALIAS}.label ILIKE ${like}
     OR ${RECORD_ALIAS}.record_number ILIKE ${like}
+    ${includeNotes ? `OR EXISTS (SELECT 1 FROM ipy_comment search_note
+      WHERE search_note.record_id = ${RECORD_ALIAS}.id AND search_note.body ILIKE ${like})` : ''}
     OR ${RECORD_ALIAS}.search_vector @@ to_tsquery('simple', ${ts}))`;
 }
 

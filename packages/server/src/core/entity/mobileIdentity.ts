@@ -20,7 +20,7 @@ export function mobileIdentities(module: ModuleMeta, values: Record<string, unkn
 }
 
 // Keep SQL and JS normalisation in step, including legacy formatted rows.
-function identitySql(expression: string): string {
+export function identitySql(expression: string): string {
   const digits = `regexp_replace(coalesce((${expression})::text, ''), '[^0-9]', '', 'g')`;
   return `(CASE WHEN length(ltrim(${digits}, '0')) = 10 THEN ltrim(${digits}, '0')
     WHEN ${digits} ~ '^(91|091|0091)[0-9]{10}$' THEN right(${digits}, 10)

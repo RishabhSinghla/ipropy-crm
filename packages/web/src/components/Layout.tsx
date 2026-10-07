@@ -189,6 +189,7 @@ export default function Layout(): JSX.Element {
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
             <NewRecordButton modules={menuModules} />
             <GlobalSearch />
+            <div id="global-quick-dashboard" className="shrink-0" />
             <div id="global-quick-filter" className="shrink-0" />
             <div id="global-list-options" className="shrink-0" />
 

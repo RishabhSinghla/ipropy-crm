@@ -82,7 +82,7 @@ async function baseQuery(
     if (w.sql) clauses.push(w.sql);
     for (const j of w.joins) extraJoins.set(j, j);
   }
-  if (search?.trim()) clauses.push(buildSearchClause(search, params));
+  if (search?.trim()) clauses.push(buildSearchClause(search, params, true));
 
   const scope = await recordScopeSql(ctx, moduleName, params);
   if (scope) clauses.push(scope);

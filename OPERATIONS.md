@@ -7,6 +7,14 @@ The rules that hold everywhere live in [`CLAUDE.md`](CLAUDE.md); this file is th
 
 ---
 
+## Release dependency patches (8 October 2026)
+
+The quick-dashboard release refreshes compatible security patches and pins
+`shell-quote` 1.12.0 and `postcss-selector-parser` 7.1.6 through npm overrides.
+These fix the new command-quoting and selector-parser advisories without a
+Tailwind 4 migration. The existing named braces/uuid exceptions are unchanged;
+no new security exception was added. The normal audit gate still applies.
+
 ## Duplicate contact consolidation (6 October 2026)
 
 Tools → Merge duplicate contacts into Leads is signed-in-administrator-only;

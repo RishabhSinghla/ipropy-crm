@@ -8,7 +8,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { registry } from '../../core/metadata/registry.js';
-import { recordService } from '../../core/entity/recordService.js';
+import { recordService, prepareList } from '../../core/entity/recordService.js';
 import {
   assertCapability, assertModuleAccess, canAccessRecord, getFieldPermissions,
   getModulePermission,
@@ -135,6 +135,51 @@ recordsRouter.get('/:module/facet-range', asyncHandler(async (req, res) => {
   await assertModuleAccess(scope.user, req.params.module, 'view');
   const { field } = z.object({ field: z.string().min(1) }).parse(req.query);
   res.json(await fieldRange(scope, req.params.module, field));
+}));
+
+// A small, permission-scoped snapshot, not a download of the record list.
+recordsRouter.post('/:module/quick-dashboard', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const query = listSchema.parse(req.body);
+  await transaction(async tx => {
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    const prepared = await prepareList(scope, req.params.module, query, tx);
+    const { from, params, module } = prepared;
+    const counts = await tx.queryOne<{ total: number; createdToday: number; changedToday: number; tagged: number }>(
+      `SELECT count(*)::int AS total,
+       count(*) FILTER (WHERE (r.created_at AT TIME ZONE $${params.length + 1})::date = (now() AT TIME ZONE $${params.length + 1})::date)::int AS "createdToday",
+       count(*) FILTER (WHERE (r.updated_at AT TIME ZONE $${params.length + 1})::date = (now() AT TIME ZONE $${params.length + 1})::date)::int AS "changedToday",
+       count(*) FILTER (WHERE EXISTS (SELECT 1 FROM ipy_tag_link l WHERE l.record_id=r.id))::int AS tagged ${from}`,
+      [...params.all(), scope.user.timezone || 'Asia/Kolkata']);
+    const permissions = await getFieldPermissions(scope.user, module.name);
+    const status = module.fields.find(f => f.name === module.pipelineField || f.columnName === module.pipelineField);
+    const lost = module.fields.find(f => f.isActive && (f.columnName === 'lost_reason' || f.name === 'lost_reason'));
+    const owner = module.fields.find(f => f.uitype === 'owner');
+    const fields = [
+      { title: 'Status', field: status?.name },
+      { title: 'Call Log', field: 'last_call_disposition' },
+      { title: 'Lost Reason', field: lost?.name },
+      { title: 'Agent', field: owner?.name || 'owner_id' },
+    ];
+    const charts = [];
+    for (const spec of fields) {
+      if (!spec.field || permissions.get(spec.field) === 'hidden') {
+        charts.push({ ...spec, unavailable: true, slices: [] }); continue;
+      }
+      // Facets use the same scoped reporting engine and displayed master labels.
+      const facet = await fieldFacets(scope, module.name, spec.field, { limit: 50, context: query }, tx);
+      const top = facet.values.slice(0, 5).map(v => ({ key: v.value, label: v.label, count: v.count }));
+      if (facet.blank) top.push({ key: '__blank', label: 'Unfilled', count: facet.blank });
+      const remaining = Math.max(0, (counts?.total ?? 0) - top.reduce((sum, s) => sum + s.count, 0));
+      if (remaining) top.push({ key: '__other', label: 'Other', count: remaining });
+      charts.push({ ...spec, unavailable: false, slices: top });
+    }
+    const tags = await tx.query<{ key: string; label: string; count: number }>(
+      `SELECT t.name AS key, t.name AS label, count(*)::int AS count FROM ipy_tag t JOIN ipy_tag_link l ON l.tag_id=t.id
+       JOIN (SELECT r.id ${from}) visible ON visible.id=l.record_id GROUP BY t.name ORDER BY count(*) DESC, t.name`, params.all());
+    charts.splice(3, 0, { title: 'Tags', field: 'record_tags', unavailable: false, slices: tags.rows });
+    res.json({ ...counts, charts });
+  });
 }));
 
 // ---------------------------------------------------------------------------
@@ -371,7 +416,14 @@ recordsRouter.post('/:module/check-duplicates', asyncHandler(async (req, res) =>
     values: z.record(z.unknown()),
     excludeId: z.string().uuid().optional(),
   }).parse(req.body);
-  res.json(await recordService.findPossibleDuplicates(req.params.module, values, excludeId));
+  const mobile = await recordService.findMobileDuplicates(getScope(req), req.params.module, values, excludeId);
+  const other = await recordService.findPossibleDuplicates(req.params.module, values, excludeId);
+  for (const hit of other) {
+    if (!mobile.some(m => m.id === hit.id) && await canAccessRecord(getScope(req), req.params.module, hit.id, 'view')) {
+      mobile.push({ ...hit, module: req.params.module, ownerName: null, restricted: false });
+    }
+  }
+  res.json(mobile);
 }));
 
 // ---------------------------------------------------------------------------
@@ -775,13 +827,13 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
 // Tags, stars, sharing
 // ---------------------------------------------------------------------------
 
-recordsRouter.post('/:module/:id/tags', asyncHandler(async (req, res) => {
-  const scope = getScope(req);
-  const { tags } = z.object({ tags: z.array(z.string().min(1).max(40)) }).parse(req.body);
-  if (!(await canAccessRecord(scope, req.params.module, req.params.id, 'edit'))) throw new ForbiddenError();
-
+async function saveRecordTags(scope: ReturnType<typeof getScope>, module: string, id: string, tags: string[], add = false): Promise<void> {
+  if (!(await canAccessRecord(scope, module, id, 'edit'))) throw new ForbiddenError();
+  await recordService.getRecord(scope, module, id);
   await transaction(async (tx) => {
-    await tx.query(`DELETE FROM ipy_tag_link WHERE record_id = $1`, [req.params.id]);
+    await tx.query('SELECT id FROM ipy_record WHERE id = $1 FOR UPDATE', [id]);
+    const before = await tx.query<{ name: string }>('SELECT t.name FROM ipy_tag t JOIN ipy_tag_link l ON l.tag_id = t.id WHERE l.record_id = $1', [id]);
+    if (!add) await tx.query(`DELETE FROM ipy_tag_link WHERE record_id = $1`, [id]);
     for (const name of tags) {
       /*
         A tag narrowed to another module cannot be put on this record. The
@@ -794,23 +846,44 @@ recordsRouter.post('/:module/:id/tags', asyncHandler(async (req, res) => {
       const existing = await tx.queryOne<{ id: string; modules: string[] }>(
         `SELECT id, modules FROM ipy_tag WHERE name = $1`, [name.trim().toLowerCase()],
       );
-      if (existing && existing.modules.length > 0 && !existing.modules.includes(req.params.module)) {
+      if (existing && existing.modules.length > 0 && !existing.modules.includes(module)) {
         throw new BadRequestError(`The tag “${name}” is not offered on this module`);
       }
       const tag = existing ?? await tx.queryOne<{ id: string }>(
         `INSERT INTO ipy_tag (name, created_by) VALUES ($1,$2)
          ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
-        [name.trim().toLowerCase(), getUser(req).id],
+        [name.trim().toLowerCase(), scope.user.id],
       );
       if (tag) {
         await tx.query(`INSERT INTO ipy_tag_link (tag_id, record_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [
-          tag.id, req.params.id,
+          tag.id, id,
         ]);
       }
     }
     // Tagging is activity on the record, so it counts as an update.
-    await recordService.touchActivity(req.params.id, tx);
+    const after = await tx.query<{ name: string }>('SELECT t.name FROM ipy_tag t JOIN ipy_tag_link l ON l.tag_id = t.id WHERE l.record_id = $1', [id]);
+    await recordService.writeAudit(tx, { recordId: id, module, userId: scope.user.id, action: 'update', changes: [{ field: 'record_tags', label: 'Tags', from: before.rows.map(t => t.name), to: after.rows.map(t => t.name) }], source: 'web' });
+    await recordService.touchActivity(id, tx);
   });
+}
+
+recordsRouter.post('/:module/mass-tags', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'records.mass_edit');
+  const { ids, query, tags } = z.object({ ids: z.array(z.string().uuid()).max(500).optional(), query: listSchema.optional(), tags: z.array(z.string().trim().min(1).max(40)).min(1).max(50) }).parse(req.body);
+  if ((!ids?.length && !query) || (ids && query)) throw new BadRequestError('Choose selected records or a filtered list');
+  const targets = query ? await recordService.idsForQuery(getScope(req), req.params.module, query) : ids!;
+  let updated = 0;
+  const failed: { id: string; error: string }[] = [];
+  for (const id of targets) {
+    try { await saveRecordTags(getScope(req), req.params.module, id, tags, true); updated++; }
+    catch (error) { failed.push({ id, error: error instanceof Error ? error.message : 'Tag update failed' }); }
+  }
+  res.json({ updated, failed, reasons: [...new Set(failed.map(f => f.error))].slice(0, 3), capped: Boolean(query && targets.length === 5000) });
+}));
+
+recordsRouter.post('/:module/:id/tags', asyncHandler(async (req, res) => {
+  const { tags } = z.object({ tags: z.array(z.string().trim().min(1).max(40)) }).parse(req.body);
+  await saveRecordTags(getScope(req), req.params.module, req.params.id, tags);
   res.json({ ok: true, tags });
 }));
 

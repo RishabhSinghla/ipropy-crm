@@ -26,6 +26,7 @@ interface LayoutBlock {
   collapsed?: boolean;
   fields: string[];
 }
+type DuplicateMatch = Awaited<ReturnType<typeof api.checkDuplicates>>[number];
 
 /**
  * The existing record, shown right under the field that matched it.
@@ -37,7 +38,7 @@ interface LayoutBlock {
 function DuplicateHint({
   matches, module, label,
 }: {
-  matches: { id: string; label: string; matchedOn: string[] }[] | undefined;
+  matches: DuplicateMatch[] | undefined;
   module: string;
   label: string;
 }): JSX.Element | null {
@@ -50,12 +51,13 @@ function DuplicateHint({
       <ul className="mt-0.5 space-y-0.5">
         {matches.slice(0, 3).map((m) => (
           <li key={m.id}>
-            <Link
-              to={`/${module}/${m.id}`}
+            {m.restricted ? <span className="text-xs font-medium">{m.label}</span> : <Link
+              to={`/${m.module ?? module}/${m.id}`}
               className="text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700 dark:text-amber-200"
             >
               {m.label}
-            </Link>
+            </Link>}
+            <span className="ml-1 text-xs">— {m.ownerName || 'Unassigned'}</span>
           </li>
         ))}
       </ul>
@@ -132,7 +134,7 @@ export default function RecordForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [duplicates, setDuplicates] = useState<{ id: string; label: string; matchedOn: string[] }[]>([]);
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
 
   /*
     The signed-in user arrives asynchronously after a page refresh.
@@ -171,11 +173,13 @@ export default function RecordForm({
     }));
   }, [layout, module.blocks]);
 
-  // Live duplicate probe on the module's declared duplicate-check fields.
+  const duplicateFields = useMemo(() => [...new Set([...module.duplicateCheckFields, ...module.fields.filter(f => f.isActive && f.uitype === 'phone').map(f => f.name)])], [module]);
+  // Phone identity checks also apply when a module has no duplicate metadata.
   useEffect(() => {
-    if (!module.duplicateCheckFields?.length) return;
+    let active = true;
+    setDuplicates([]);
     const relevant = Object.fromEntries(
-      module.duplicateCheckFields
+      duplicateFields
         .filter((name) => values[name])
         .map((name) => [name, values[name]]),
     );
@@ -183,11 +187,11 @@ export default function RecordForm({
 
     const timer = setTimeout(() => {
       void api.checkDuplicates(module.name, relevant, record?.id)
-        .then(setDuplicates)
-        .catch(() => setDuplicates([]));
+        .then(hits => { if (active) setDuplicates(hits); })
+        .catch(() => { if (active) setDuplicates([]); });
     }, 400);
-    return () => clearTimeout(timer);
-  }, [module.duplicateCheckFields?.join(','), ...(module.duplicateCheckFields ?? []).map((f) => values[f])]);
+    return () => { active = false; clearTimeout(timer); };
+  }, [module.name, record?.id, duplicateFields.join(','), ...duplicateFields.map((f) => values[f])]);
 
   /**
    * Duplicates grouped by the field that matched.
@@ -392,7 +396,8 @@ export default function RecordForm({
               <ul className="mt-1 space-y-0.5">
                 {duplicates.map((d) => (
                   <li key={d.id} className="text-xs text-amber-800 dark:text-amber-300">
-                    <Link to={`/${module.name}/${d.id}`} className="font-medium underline">{d.label}</Link>
+                    {d.restricted ? <span className="font-medium">{d.label}</span> : <Link to={`/${d.module ?? module.name}/${d.id}`} className="font-medium underline">{d.label}</Link>}
+                    <span> — {d.ownerName || 'Unassigned'}</span>
                     <span className="ml-1 opacity-70">— same {d.matchedOn.join(', ')}</span>
                   </li>
                 ))}

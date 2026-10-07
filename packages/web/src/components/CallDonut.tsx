@@ -41,12 +41,14 @@ const THICKNESS = 16;
 /** The surface-coloured gap between slices, in degrees. */
 const GAP_DEGREES = 2;
 
-export function CallDonut({ title, slices, selected, onSelect }: {
+export function CallDonut({ title, slices, selected, onSelect, compact = false, unit = 'calls' }: {
   title: string;
   slices: DonutSlice[];
   /** The slice whose filter is on, if any. */
   selected: string;
   onSelect: (key: string) => void;
+  compact?: boolean;
+  unit?: string;
 }): JSX.Element {
   const [hovered, setHovered] = useState<string | null>(null);
   const total = slices.reduce((sum, slice) => sum + slice.count, 0);
@@ -69,12 +71,12 @@ export function CallDonut({ title, slices, selected, onSelect }: {
   };
 
   return (
-    <section className="card flex min-w-0 flex-col gap-3 p-3">
+    <section className={cn('card flex min-w-0 flex-col', compact ? 'gap-1 p-2' : 'gap-3 p-3')}>
       <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
-      <div className="flex items-center gap-4">
+      <div className={cn('flex items-center', compact ? 'gap-1' : 'gap-4')}>
         <svg
-          width={SIZE}
-          height={SIZE}
+          width={compact ? 72 : SIZE}
+          height={compact ? 72 : SIZE}
           viewBox={`0 0 ${SIZE} ${SIZE}`}
           role="img"
           aria-label={`${title}: ${slices.map((s) => `${s.label} ${s.count}`).join(', ')}`}
@@ -110,11 +112,11 @@ export function CallDonut({ title, slices, selected, onSelect }: {
             {(focused ? focused.count : total).toLocaleString('en-IN')}
           </text>
           <text x="50%" y="61%" textAnchor="middle" className="fill-slate-500 text-[9px] dark:fill-slate-400">
-            {focused ? percent(focused.count, total) : 'calls'}
+            {focused ? percent(focused.count, total) : unit}
           </text>
         </svg>
 
-        <ul className="min-w-0 flex-1 space-y-1">
+        <ul className={cn('min-w-0 flex-1 space-y-1', compact && 'max-h-20 overflow-y-auto')}>
           {slices.map((slice, index) => {
             const slot = SLOT[index % SLOT.length];
             const on = selected === slice.key;
@@ -138,7 +140,7 @@ export function CallDonut({ title, slices, selected, onSelect }: {
                   <span className={cn('h-2.5 w-2.5 shrink-0 rounded-sm', slot.swatch)} />
                   <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{slice.label}</span>
                   <span className="tabular-nums text-slate-900 dark:text-slate-100">{slice.count.toLocaleString('en-IN')}</span>
-                  <span className="w-9 text-right tabular-nums text-muted">{percent(slice.count, total)}</span>
+                  {!compact && <span className="w-9 text-right tabular-nums text-muted">{percent(slice.count, total)}</span>}
                 </button>
               </li>
             );

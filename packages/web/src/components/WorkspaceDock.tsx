@@ -21,7 +21,8 @@
  */
 import { type JSX, type ReactNode, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Calculator, LayoutDashboard, MessagesSquare, PhoneIncoming, Star } from 'lucide-react';
+import { Calculator, LayoutDashboard, MessagesSquare, PhoneIncoming, Star, UserRound } from 'lucide-react';
+import { ThreeContacts } from './ThreeContacts';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { ModuleIcon } from './Layout';
@@ -83,7 +84,7 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
     ...entityModules.map((module) => ({
       to: `/${module.name}`,
       label: module.label,
-      icon: <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />,
+      icon: module.name === 'leads' ? <UserRound className="h-[18px] w-[18px]" /> : module.name === 'associates' ? <ThreeContacts className="h-[18px] w-[18px]" /> : <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />,
       count: counts?.[module.name],
     })),
     { to: '/calls', label: 'Calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" />, count: counts?.calls },

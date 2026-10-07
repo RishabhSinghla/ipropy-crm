@@ -35,6 +35,7 @@ import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
 import { QuickFilterOverlay } from '../components/QuickFilterOverlay';
+import { QuickGraphicDashboard } from '../components/QuickGraphicDashboard';
 import {
   arrangeQuickSections, countActiveQuickFilters, defaultQuickSections, quickPickConditions,
   type QuickPick, type QuickPicks,
@@ -1129,6 +1130,7 @@ export default function ListView(): JSX.Element {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
+      {meta && <QuickGraphicDashboard module={moduleName} label={meta.label} context={query} />}
       {/* Header */}
       {/*
         The toolbar reads as a bar now, not as the top of the page.
@@ -1670,6 +1672,8 @@ function BulkEditButton({
   const [runWorkflows, setRunWorkflows] = useState(false);
   const [busy, setBusy] = useState(false);
   const countLabel = allQuery ? allCount.toLocaleString('en-IN') : String(ids.length);
+  const tagging = fieldName === '__add_tags';
+  const { data: availableTags } = useQuery({ queryKey: ['tags', module], queryFn: () => api.tags(module), enabled: open });
 
   const editable = useMemo(
     () => Array.from(fieldMap.values()).filter((f) =>
@@ -1713,16 +1717,16 @@ function BulkEditButton({
             <button className="btn-secondary" onClick={() => setOpen(false)}>Cancel</button>
             <button
               className="btn-primary"
-              disabled={!field || busy}
+              disabled={(!field && !tagging) || busy || (tagging && (!Array.isArray(value) || !value.length))}
               onClick={async () => {
-                if (!field) return;
+                if (!field && !tagging) return;
                 setBusy(true);
                 try {
                   // A field with its own unit (Budget, Area / Size) writes two
                   // values, not one. `other` collects the second — without it
                   // the unit dropdown quietly overwrote the number itself.
-                  const payload = { ...other, [field.name]: value };
-                  const result = allQuery
+                  const payload = { ...other, ...(field ? { [field.name]: value } : {}) };
+                  const result = tagging ? await api.massTags(module, value as string[], allQuery ? { query: allQuery } : { ids }) : allQuery
                     ? await api.massUpdateAll(module, allQuery as unknown as Record<string, unknown>, payload, runWorkflows)
                     : await api.massUpdate(module, ids, payload, runWorkflows);
                   const ok = result.updated ?? 0;
@@ -1763,16 +1767,17 @@ function BulkEditButton({
             <label className="label">Field to change</label>
             <Select
               value={fieldName}
-              onChange={(v) => { setFieldName(v); setValue(emptyValue(fieldMap.get(v))); setOther({}); }}
+              onChange={(v) => { setFieldName(v); setValue(v === '__add_tags' ? [] : emptyValue(fieldMap.get(v))); setOther({}); }}
               placeholder="— Choose a field —"
               // A–Z: this is a list of every editable field on the module, and
               // metadata order means nothing to somebody looking for "Lead
               // Status" in it.
-              options={[...editable]
+              options={[{ value: '__add_tags', label: 'Tags (add without removing existing tags)' }, ...[...editable]
                 .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
-                .map((f) => ({ value: f.name, label: f.label }))}
+                .map((f) => ({ value: f.name, label: f.label }))]}
             />
           </div>
+          {tagging && <div className="space-y-2"><p className="text-xs text-muted">Selected tags are added to every selected record. Existing tags stay unchanged.</p>{availableTags?.map(tag => <label key={tag.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Array.isArray(value) && value.includes(tag.name)} onChange={event => setValue((previous: unknown) => event.target.checked ? [...(Array.isArray(previous) ? previous : []), tag.name] : (Array.isArray(previous) ? previous : []).filter(name => name !== tag.name))} />{tag.name}</label>)}</div>}
           {field && (
             <div>
               <label className="label">{field.label}</label>

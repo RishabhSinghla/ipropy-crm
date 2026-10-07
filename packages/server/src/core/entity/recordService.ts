@@ -43,11 +43,13 @@ import {
 import { evaluateFormula } from './formula.js';
 import { nextNumber } from './numbering.js';
 import { computeRollups } from './rollups.js';
-import { assertMobileIdentityAvailable } from './mobileIdentity.js';
+import { assertMobileIdentityAvailable, identitySql, mobileIdentity } from './mobileIdentity.js';
 import {
   assertModuleAccess,
   assertCapability,
   assertRecordAccess,
+  canAccessModule,
+  canAccessRecord,
   filterWritableFields,
   getFieldPermissions,
   recordScopeSql,
@@ -269,7 +271,7 @@ export async function prepareList(ctx: ServiceContext, moduleName: string, q: Li
   }
 
   if (q.search?.trim()) {
-    clauses.push(buildSearchClause(q.search, params));
+    clauses.push(buildSearchClause(q.search, params, true));
   }
 
   if (!ctx.system) {
@@ -1530,6 +1532,36 @@ export async function findPossibleDuplicates(
   }));
 }
 
+/** Exact mobile identity probe; only the contact and owner, never form values. */
+export async function findMobileDuplicates(ctx: ServiceContext, moduleName: string, values: Record<string, unknown>, excludeId?: string): Promise<{ id: string; label: string; module: string; ownerName: string | null; restricted: boolean; matchedOn: string[] }[]> {
+  await assertModuleAccess(ctx.user, moduleName, 'view');
+  const source = await registry.requireModule(moduleName);
+  const entered = source.fields.filter(f => f.isActive && f.uitype === 'phone')
+    .map(f => ({ field: f.name, number: mobileIdentity(values[f.name]) }))
+    .filter((entry): entry is { field: string; number: string } => Boolean(entry.number && entry.number.length === 10));
+  if (!entered.length) return [];
+  const hits: { id: string; label: string; module: string; ownerName: string | null; restricted: boolean; matchedOn: string[] }[] = [];
+  for (const candidate of await registry.getModules({ entityOnly: true })) {
+    if (!await canAccessModule(ctx.user, candidate.name, 'view')) continue;
+    const phones = candidate.fields.filter(f => f.isActive && f.uitype === 'phone');
+    if (!phones.length) continue;
+    const rows = await db.query<{ id: string; label: string; owner_name: string | null; number: string }>(
+      `SELECT DISTINCT r.id, r.label, nullif(trim(u.first_name || ' ' || u.last_name), '') AS owner_name, number
+       FROM ipy_record r JOIN ${quoteIdent(candidate.tableName)} e ON e.record_id = r.id
+       LEFT JOIN ipy_user u ON u.id = r.owner_id
+       CROSS JOIN LATERAL unnest(ARRAY[${phones.map(f => identitySql(fieldExpr(f))).join(',')}]) number
+       WHERE r.module_id = $1 AND NOT r.is_deleted AND number = ANY($2::text[])
+       AND ($3::uuid IS NULL OR r.id <> $3::uuid) LIMIT 5`,
+      [candidate.id, entered.map(e => e.number), excludeId ?? null]);
+    for (const row of rows.rows) {
+      if (hits.some(h => h.id === row.id)) continue;
+      const restricted = !await canAccessRecord(ctx, candidate.name, row.id, 'view');
+      hits.push({ id: row.id, label: row.label, module: candidate.name, ownerName: row.owner_name, restricted, matchedOn: entered.filter(e => e.number === row.number).map(e => e.field) });
+    }
+  }
+  return hits;
+}
+
 function valuesEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || a === undefined) return b === null || b === undefined || b === '';
@@ -2034,7 +2066,9 @@ export async function globalSearch(
   if (!allowed.length) return [];
 
   const params = new SqlParams();
-  const search = buildSearchClause(term, params);
+  // Notes belong to the scoped pass only; the name-only courtesy outside the
+  // user's record scope must never reveal matches from somebody else's notes.
+  const search = buildSearchClause(term, params, true);
 
   // Sharing is configured per module — leads/deals are private while
   // projects/properties are public_read — so one module's scope fragment must
@@ -2197,6 +2231,7 @@ export const recordService = {
   lookupRecords,
   globalSearch,
   findPossibleDuplicates,
+  findMobileDuplicates,
   touchActivity,
   writeAudit,
   buildLabel,

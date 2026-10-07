@@ -845,6 +845,7 @@ export const api = {
   // --- records ------------------------------------------------------------
   list: (module: string, query: ListQuery = {}) =>
     post<ListResult>(`/api/records/${module}/search`, query),
+  quickDashboard: (module: string, query: ListQuery) => post<{ total: number; createdToday: number; changedToday: number; tagged: number; charts: { title: string; field?: string; unavailable: boolean; slices: { key: string; label: string; count: number }[] }[] }>(`/api/records/${module}/quick-dashboard`, query),
   record: (module: string, id: string) => get<RecordEnvelope>(`/api/records/${module}/${id}`),
   create: (module: string, values: Record<string, unknown>) => post<RecordEnvelope>(`/api/records/${module}`, values),
   update: (module: string, id: string, values: Record<string, unknown>) =>
@@ -887,7 +888,7 @@ export const api = {
     del(`/api/records/${module}/${id}/related/${relation}/${targetId}`),
   audit: (module: string, id: string) => get<Record<string, unknown>[]>(`/api/records/${module}/${id}/audit`),
   checkDuplicates: (module: string, values: Record<string, unknown>, excludeId?: string) =>
-    post<{ id: string; label: string; matchedOn: string[] }[]>(`/api/records/${module}/check-duplicates`, { values, excludeId }),
+    post<{ id: string; label: string; module?: string; ownerName?: string | null; restricted?: boolean; matchedOn: string[] }[]>(`/api/records/${module}/check-duplicates`, { values, excludeId }),
   /**
    * `runWorkflows` is off unless the caller says otherwise — a bulk edit that
    * fires every automation is the failure this flag exists to prevent, and it
@@ -908,6 +909,7 @@ export const api = {
     post(`/api/merge/${module}`, { primaryId, duplicateIds, fieldChoices }),
   star: (module: string, id: string, starred: boolean) => post(`/api/records/${module}/${id}/star`, { starred }),
   setTags: (module: string, id: string, tags: string[]) => post(`/api/records/${module}/${id}/tags`, { tags }),
+  massTags: (module: string, tags: string[], selection: { ids: string[] } | { query: ListQuery }) => post<{ updated: number; failed: { id: string; error: string }[]; reasons: string[]; capped?: boolean }>(`/api/records/${module}/mass-tags`, { tags, ...selection }),
   exportUrl: (module: string, query: ListQuery) =>
     `/api/records/${module}/export${qs({ ...query, filter: query.filter, access_token: tokenStore.get() })}`,
   exportRecords: (module: string, data: Record<string, unknown>) =>

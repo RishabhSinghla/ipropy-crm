@@ -210,9 +210,10 @@ describe('buildWhere — operator coverage', () => {
   it('relative date ranges bind the timezone', async () => {
     const p = new SqlParams();
     const { sql } = await buildWhere(leads(), { logic: 'AND', conditions: [{ field: 'scheduled_at', operator: 'today' }] }, p, ctx({ timezone: 'Asia/Kolkata' }));
-    expect(sql).toContain('date_trunc(\'day\', now() AT TIME ZONE $1)');
+    expect(sql).toContain('e."scheduled_at" AT TIME ZONE $1');
+    expect(sql).toContain('date_trunc(\'day\', now() AT TIME ZONE $2)');
     expect(sql).toContain("interval '1 day'");
-    expect(p.all()).toEqual(['Asia/Kolkata']);
+    expect(p.all()).toEqual(['Asia/Kolkata', 'Asia/Kolkata']);
   });
 
   it('n-day windows compile to now() offsets', async () => {
@@ -305,6 +306,14 @@ describe('resolveFieldPath — cross-module references', () => {
 });
 
 describe('buildSearchClause', () => {
+  it('matches comments only when the caller opts in inside its record scope', () => {
+    const params = new SqlParams();
+    const sql = buildSearchClause('site visit, keys', params, true);
+    expect(sql).toContain('search_note.record_id = r.id');
+    expect(sql).toContain('search_note.body ILIKE $1');
+    expect(sql).toContain('search_note.body ILIKE $3');
+    expect(buildSearchClause('keys', new SqlParams())).not.toContain('ipy_comment');
+  });
   it('searches label, record_number and tsvector', () => {
     const p = new SqlParams();
     const sql = buildSearchClause('John', p);
@@ -318,7 +327,14 @@ describe('buildSearchClause', () => {
     const p = new SqlParams();
     buildSearchClause('50% block 2', p);
     expect(p.all()[0]).toBe('%50\\% block 2%');
-    expect(p.all()[1]).toBe('50%:* & block:* & 2:*');
+    expect(p.all()[1]).toBe('50:* & block:* & 2:*');
+  });
+
+  it('treats note punctuation as text rather than tsquery syntax', () => {
+    const p = new SqlParams();
+    buildSearchClause('Timeline: Immediate!', p, true);
+    expect(p.all()[0]).toBe('%Timeline: Immediate!%');
+    expect(p.all()[1]).toBe('Timeline:* & Immediate:*');
   });
 
   it('returns empty for a blank term', () => {

@@ -1,5 +1,38 @@
 # The screens a rep lives in
 
+## Quick graphic dashboard, 7 October 2026
+
+The main-toolbar down arrow opens a full-width overlay occupying 20% of the
+viewport height. Its content scrolls within that area on smaller screens rather
+than moving the record panes. The up arrow or Escape closes it. It follows the
+current module, saved list, search and filters, with temporary Created Date,
+Changed Date and Agent criteria (Assigned Agent or Changed By Agent).
+
+Cards show visible records, created today, changed today and tagged records.
+Five compact donuts show Status, Call Log, Lost Reason, Tags and Agent; fields
+missing from the module or hidden from the user are explicitly unavailable.
+Tags count tag memberships and can overlap, unlike the distinct record card.
+Long categorical tails are grouped as Other. Counts refresh every 20 seconds
+while open and after record edits, with a manual refresh as well. These are
+record counts, not a count of audit events or agent productivity scores.
+
+## Search and completion workflow, 7 October 2026
+
+Main-toolbar searches also match comments and notes, within the user's record
+visibility. Private notes do not participate in the name-only out-of-scope
+contact courtesy lookup. Search Options offers two handles and typed minimum
+and maximum values for both price and size. Quick Filter dropdowns put
+**Unfilled** first, with a count; selecting it filters the list to blank values.
+This is a completion queue, not a new task assignment: use Bulk Edit → Assigned
+To to hand the selected records to an agent, or create a follow-up normally.
+
+Bulk Edit → **Tags** adds the chosen module tags without removing existing tags,
+checks each record's edit permission, and writes change history. The live mobile
+duplicate check runs for active phone fields even when a module's older duplicate
+settings omit them. It matches normalized complete numbers across accessible
+contact modules and shows the existing contact and owner; restricted records
+remain unlinked. Leads uses a single-contact dock icon; Associates uses three.
+
 ## Duplicate mobile numbers, 6 October 2026
 
 One mobile number now means one contact across **Leads and Inventory together**.

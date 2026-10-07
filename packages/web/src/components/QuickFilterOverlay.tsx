@@ -355,6 +355,7 @@ function ChoiceList({ options, ticked, top, onTick, loading, always }: {
         </label>
       )}
       {loading && <p className="px-4 py-1 text-[11px] text-muted">Loading…</p>}
+      {always && <Choice option={always} checked={ticked.includes(always.value)} onClick={() => onTick(always.value)} />}
       {shown.map((option) => (
         <Choice key={option.value} option={option} checked={ticked.includes(option.value)} onClick={() => onTick(option.value)} />
       ))}
@@ -366,11 +367,6 @@ function ChoiceList({ options, ticked, top, onTick, loading, always }: {
       )}
       {!needle && expanded && searchable && (
         <button type="button" aria-expanded={expanded} onClick={() => setExpanded(false)} className="px-4 py-1 text-[11px] font-medium text-brand-700 hover:underline dark:text-brand-300">Show fewer</button>
-      )}
-      {always && (
-        <div className="mt-1 border-t border-[var(--border)] pt-1">
-          <Choice option={always} checked={ticked.includes(always.value)} onClick={() => onTick(always.value)} />
-        </div>
       )}
     </div>
   );
@@ -407,9 +403,7 @@ function StageChoices({ module, field, ticked, top, onTick }: {
   }));
   // A record with no stage at all is a real thing to go looking for, so the
   // stage list offers the same "Not filled in" row every other dropdown does.
-  const notFilled = blank || ticked.includes(EMPTY_PICK)
-    ? { value: EMPTY_PICK, label: 'Not filled in', count: loading ? undefined : blank ?? 0 }
-    : undefined;
+  const notFilled = { value: EMPTY_PICK, label: 'Unfilled', count: loading ? undefined : blank ?? 0 };
   return <ChoiceList options={options} ticked={ticked} top={top} onTick={onTick} always={notFilled} />;
 }
 
@@ -507,9 +501,7 @@ function ValuesSection({ section, title, module, field, top, props }: {
     It stays offered while it is ticked, or un-ticking it would mean reopening
     the whole panel.
   */
-  const notFilled = blank || ticked.includes(EMPTY_PICK)
-    ? { value: EMPTY_PICK, label: 'Not filled in', count: blank ?? 0 }
-    : undefined;
+  const notFilled = { value: EMPTY_PICK, label: 'Unfilled', count: isLoading ? undefined : blank ?? 0 };
   const tick = (value: string): void => {
     const next = ticked.includes(value) ? ticked.filter((item) => item !== value) : [...ticked, value];
     props.onPick(field.name, next.length ? { kind: 'values', values: next } : null);
@@ -619,7 +611,7 @@ const THUMB = 'pointer-events-none absolute inset-x-0 top-1/2 h-1 w-full -transl
  * prices already in the list. Slider and boxes are one pick; moving either
  * moves the other.
  */
-function RangeSlider({ low, high, money, min, max, onChange }: {
+export function RangeSlider({ low, high, money, min, max, onChange }: {
   low: number; high: number; money: boolean; min?: number; max?: number;
   onChange: (min: number | undefined, max: number | undefined) => void;
 }): JSX.Element {
