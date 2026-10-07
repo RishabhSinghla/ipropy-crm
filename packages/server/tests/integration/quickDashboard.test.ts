@@ -30,6 +30,14 @@ it('returns five charts matching the current search and handles overlapping tags
     expect(chart.slices.reduce((sum: number, slice: { count: number }) => sum + slice.count, 0)).toBe(1);
   }
   expect(result.body.charts.find((c: { title: string }) => c.title === 'Tags').slices).toHaveLength(2);
+  const tagOptions = result.body.charts.find((c: { title: string }) => c.title === 'Tags').options;
+  expect(tagOptions).toContainEqual({ key: '__blank', label: 'Untagged', count: 0 });
+  const filtered = await request(app).post('/api/records/leads/quick-dashboard').set('Authorization', `Bearer ${token}`)
+    .send({ search: marker, filter: { logic: 'AND', conditions: [{ field: 'record_tags', operator: 'has_any', value: [tagOptions[0].key] }] } }).expect(200);
+  expect(filtered.body.total).toBe(1);
+  const blank = await request(app).post('/api/records/leads/quick-dashboard').set('Authorization', `Bearer ${token}`)
+    .send({ search: marker, filter: { logic: 'AND', conditions: [{ field: 'record_tags', operator: 'is_empty' }] } }).expect(200);
+  expect(blank.body.total).toBe(0);
 });
 
 it('excludes another agent’s private record and returns a stable zero state', async () => {

@@ -9,7 +9,10 @@ rather than moving the record panes. The up arrow or Escape closes it. It follow
 current module, saved list, search and filters, with temporary Created Date,
 Changed Date and Agent criteria (Assigned Agent or Changed By Agent).
 
-Cards show visible records, created today, changed today and tagged records.
+Status, Call Log, Lost Reason and Tags dropdowns replace the four static cards
+(8 October 2026). They show displayed labels with counts and filter the dashboard
+together with dates and agent. Options remain available when a combination is empty;
+Clear selections resets these four criteria. Saved lists and record data are unchanged.
 Five compact donuts show Status, Call Log, Lost Reason, Tags and Agent; fields
 missing from the module or hidden from the user are explicitly unavailable.
 Tags count tag memberships and can overlap, unlike the distinct record card.

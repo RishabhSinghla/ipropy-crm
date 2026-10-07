@@ -845,7 +845,7 @@ export const api = {
   // --- records ------------------------------------------------------------
   list: (module: string, query: ListQuery = {}) =>
     post<ListResult>(`/api/records/${module}/search`, query),
-  quickDashboard: (module: string, query: ListQuery) => post<{ total: number; createdToday: number; changedToday: number; tagged: number; charts: { title: string; field?: string; unavailable: boolean; slices: { key: string; label: string; count: number }[] }[] }>(`/api/records/${module}/quick-dashboard`, query),
+  quickDashboard: (module: string, query: ListQuery) => post<{ total: number; createdToday: number; changedToday: number; tagged: number; charts: { title: string; field?: string; unavailable: boolean; options?: { key: string; label: string; count: number }[]; slices: { key: string; label: string; count: number }[] }[] }>(`/api/records/${module}/quick-dashboard`, query),
   record: (module: string, id: string) => get<RecordEnvelope>(`/api/records/${module}/${id}`),
   create: (module: string, values: Record<string, unknown>) => post<RecordEnvelope>(`/api/records/${module}`, values),
   update: (module: string, id: string, values: Record<string, unknown>) =>
