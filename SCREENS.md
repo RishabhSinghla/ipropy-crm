@@ -2,9 +2,10 @@
 
 ## Quick graphic dashboard, 7 October 2026
 
-The main-toolbar down arrow opens a full-width overlay occupying 20% of the
-viewport height. Its content scrolls within that area on smaller screens rather
-than moving the record panes. The up arrow or Escape closes it. It follows the
+The main-toolbar down arrow opens a full-width overlay with content-based height
+(updated 8 October 2026). Controls and charts wrap on narrower screens; the overlay
+scrolls only when its content exceeds the available viewport below the toolbar,
+rather than moving the record panes. The up arrow or Escape closes it. It follows the
 current module, saved list, search and filters, with temporary Created Date,
 Changed Date and Agent criteria (Assigned Agent or Changed By Agent).
 

@@ -38,13 +38,13 @@ export function QuickGraphicDashboard({ module, label, context }: { module: stri
   const filterClass = 'h-7 min-w-0 rounded-md border border-slate-200 bg-white px-1 text-[11px] dark:border-slate-700 dark:bg-slate-900';
   return <>
     {slot && createPortal(<button type="button" aria-label={open ? 'Close quick dashboard' : 'Open quick dashboard'} aria-expanded={open} aria-controls="quick-graphic-dashboard" className="btn-icon" onClick={() => setOpen(value => !value)}>{open ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}</button>, slot)}
-    {open && createPortal(<section id="quick-graphic-dashboard" role="dialog" aria-label={`${label} quick dashboard`} className="fixed inset-x-0 top-14 z-50 h-[20dvh] overflow-auto border-b-2 border-brand-200 bg-slate-50 p-2 shadow-xl dark:border-brand-800 dark:bg-slate-950">
-      <div className="mb-1 flex min-w-[900px] items-center gap-2">
+    {open && createPortal(<section id="quick-graphic-dashboard" role="dialog" aria-label={`${label} quick dashboard`} className="fixed inset-x-0 top-14 z-50 h-auto max-h-[calc(100dvh-4rem)] overflow-auto border-b-2 border-brand-200 bg-slate-50 p-2 shadow-xl dark:border-brand-800 dark:bg-slate-950">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold">{label} · Quick dashboard</h2>
-        <div className="flex gap-2 text-[11px]" aria-label="Record summary">
+        <div className="flex flex-wrap gap-2 text-[11px]" aria-label="Record summary">
           {[['Records', data.data?.total], ['Created today', data.data?.createdToday], ['Changed today', data.data?.changedToday], ['Tagged', data.data?.tagged]].map(([title, count]) => <div key={String(title)} className="rounded-md border border-brand-200 bg-white px-2 py-1 dark:border-brand-800 dark:bg-slate-900">{title} <strong className="text-brand-700 dark:text-brand-300">{typeof count === 'number' ? count.toLocaleString('en-IN') : '—'}</strong></div>)}
         </div>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex flex-wrap items-center gap-1">
           <select aria-label="Dashboard created date" className={filterClass} value={created} onChange={e => setCreated(e.target.value as Period)}>{PERIODS.map(p => <option key={p.value} value={p.value}>{p.value ? p.label : 'Created: any date'}</option>)}</select>
           <select aria-label="Dashboard changed date" className={filterClass} value={changed} onChange={e => setChanged(e.target.value as Period)}>{PERIODS.map(p => <option key={p.value} value={p.value}>{p.value ? p.label : 'Changed: any date'}</option>)}</select>
           <select aria-label="Dashboard agent basis" className={filterClass} value={agentBasis} onChange={e => setAgentBasis(e.target.value)}><option value="owner_id">Assigned agent</option><option value="modified_by">Changed by agent</option></select>
@@ -53,7 +53,7 @@ export function QuickGraphicDashboard({ module, label, context }: { module: stri
           <button type="button" className="btn-icon h-7 w-7" aria-label="Close dashboard overlay" onClick={() => setOpen(false)}><ChevronUp className="h-4 w-4" /></button>
         </div>
       </div>
-      {data.isError ? <p role="alert" className="text-sm text-red-600">Dashboard could not load. Your list is unchanged. Use Refresh to retry.</p> : data.data ? <div className="grid min-w-[900px] grid-cols-5 gap-2">{data.data.charts.map(chart => <div key={chart.title} className="min-w-0">{chart.unavailable ? <div className="card p-2 text-xs">{chart.title}<p className="text-muted">Not available on this module/profile.</p></div> : <CallDonut compact unit={chart.title === 'Tags' ? 'tag links' : 'records'} title={chart.title === 'Tags' ? 'Tags · can overlap' : chart.title} slices={chart.slices.map(s => ({ ...s, selectable: false }))} selected="" onSelect={() => undefined} />}</div>)}</div> : <p role="status" className="text-sm">Loading live record counts…</p>}
+      {data.isError ? <p role="alert" className="text-sm text-red-600">Dashboard could not load. Your list is unchanged. Use Refresh to retry.</p> : data.data ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{data.data.charts.map(chart => <div key={chart.title} className="min-w-0">{chart.unavailable ? <div className="card p-2 text-xs">{chart.title}<p className="text-muted">Not available on this module/profile.</p></div> : <CallDonut compact unit={chart.title === 'Tags' ? 'tag links' : 'records'} title={chart.title === 'Tags' ? 'Tags · can overlap' : chart.title} slices={chart.slices.map(s => ({ ...s, selectable: false }))} selected="" onSelect={() => undefined} />}</div>)}</div> : <p role="status" className="text-sm">Loading live record counts…</p>}
       <p className="mt-1 text-[10px] text-muted">Current list and filters · Updates every 20 seconds while open · Dates use your CRM timezone · Charts show counts, not change-event totals</p>
     </section>, document.body)}
   </>;
