@@ -49,7 +49,24 @@ function useWebsiteSwitch(module: ModuleMeta, record: RecordEnvelope) {
     try {
       await api.update(module.name, record.id, { [WEBSITE_FIELD]: goingLive });
       invalidateRecordQueries(qc, module.name, record.id);
-      await qc.invalidateQueries({ queryKey: ['website', module.name, record.id] });
+      /*
+        **Ask the server what it kept, never assume.** A save can answer 200
+        and store nothing — a switched-off field, a profile that may not edit
+        it — and until 8 October 2026 this toasted "Shown on the website" for
+        every one of those, while the switch quietly snapped back.
+      */
+      const kept = await api.websiteState(module.name, record.id);
+      qc.setQueryData(['website', module.name, record.id], kept);
+      if (kept.shown !== goingLive) {
+        toast.error('The CRM did not keep that change', goingLive
+          ? 'It is still hidden from the website. Ask an admin to check the "Show on Website" field is switched on in Settings → Modules & Fields.'
+          : 'It is still on the website. Ask an admin to check the "Show on Website" field in Settings → Modules & Fields.');
+        return;
+      }
+      if (goingLive && !kept.listed) {
+        toast.info('Ticked, but not on the website yet', 'Its status says it has gone (sold, booked or similar), so buyers cannot find it. It appears once the status is back to available.');
+        return;
+      }
       toast.success(goingLive ? 'Shown on the website' : 'Taken off the website', goingLive
         ? 'Buyers see the facts and photos — never the seller. It appears within a minute.'
         : 'Buyers can no longer find it.');
@@ -60,7 +77,13 @@ function useWebsiteSwitch(module: ModuleMeta, record: RecordEnvelope) {
     }
   };
 
-  return { offered: canEdit && Boolean(state?.offered), shown: Boolean(state?.shown), saving, flip };
+  return {
+    offered: canEdit && Boolean(state?.offered),
+    shown: Boolean(state?.shown),
+    listed: Boolean(state?.listed),
+    saving,
+    flip,
+  };
 }
 
 /** The item in the record's More menu. */
@@ -94,9 +117,9 @@ export function ShowOnWebsiteRow({ module, record }: { module: ModuleMeta; recor
         ariaLabel={website.shown ? 'Shown on the website — switch off to hide it' : 'Not on the website — switch on to show it'}
       />
       <span className="text-xs text-slate-600 dark:text-slate-300">
-        {website.saving ? 'Saving…' : website.shown ? 'Live' : 'Hidden'}
+        {rowWords(website)}
       </span>
-      {website.shown && !website.saving && (
+      {website.listed && !website.saving && (
         <a
           href={`${PORTAL_ADDRESS}/properties/${record.id}`}
           target="_blank"
@@ -108,6 +131,18 @@ export function ShowOnWebsiteRow({ module, record }: { module: ModuleMeta; recor
       )}
     </div>
   );
+}
+
+/**
+ * What the row says beside the switch. "Live" only when a buyer can actually
+ * find it — a ticked home marked Sold is ticked and still invisible, and
+ * saying "Live" over it is how a switch looks broken when it is not.
+ */
+function rowWords(website: { saving: boolean; shown: boolean; listed: boolean }): string {
+  if (website.saving) return 'Saving…';
+  if (!website.shown) return 'Hidden';
+  if (!website.listed) return 'Ticked — not listed while sold or booked';
+  return 'Live';
 }
 
 /** True for the field the switch owns, so the pane does not draw it twice. */

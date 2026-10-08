@@ -24,8 +24,7 @@
  * Locality `preferred_locations` (stored in `locality`). Unknown names are
  * simply absent, so a database without a field shows one fact fewer.
  */
-import type { FieldMeta, PicklistOption } from '@ipropy/shared';
-import { statusFieldOf } from '@ipropy/shared';
+import { statusFieldOf, type FieldMeta, type PicklistOption } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
 import { registry } from '../metadata/registry.js';
 import { quoteIdent } from '../query/builder.js';
@@ -132,7 +131,14 @@ async function listingFields(): Promise<ListingFields | null> {
     facts,
     roles,
     status: statusFieldOf(module.fields.filter((f) => f.isActive && usable(f))),
-    published: module.fields.find((f) => f.name === 'publish_to_web' && usable(f)),
+    /*
+      **Active, or not at all.** A switched-off field is skipped by every save
+      (`prepareValues`), so a switch offered for one answers 200, says "Shown on
+      the website" and stores nothing — which is exactly what production did
+      until 8 October 2026 (migration `193`). Off means the switch is not
+      offered and the portal lists nothing, which is at least the truth.
+    */
+    published: module.fields.find((f) => f.name === 'publish_to_web' && f.isActive && usable(f)),
   };
 }
 
@@ -468,12 +474,23 @@ export async function publicListingFacets(): Promise<ListingFacets> {
  * fields out, so a switch that looked for the field on screen never appeared
  * (8 October 2026). The caller has already checked the person may open it.
  */
-export async function websiteState(moduleName: string, recordId: string): Promise<{ offered: boolean; shown: boolean }> {
+export async function websiteState(
+  moduleName: string,
+  recordId: string,
+): Promise<{ offered: boolean; shown: boolean; listed: boolean }> {
   const f = moduleName === PORTAL_MODULE ? await listingFields() : null;
-  if (!f?.published) return { offered: false, shown: false };
-  const row = await db.queryOne<{ shown: string | null }>(
-    `SELECT ${textExpr(f.published)} AS shown FROM ${quoteIdent(f.table)} u WHERE u.record_id = $1`,
+  if (!f?.published) return { offered: false, shown: false, listed: false };
+  /*
+    `shown` is the tick; `listed` is whether a buyer can actually find it.
+    They differ for a ticked home marked Sold or Booked, which the portal
+    drops on purpose — and a switch reading "Live" over a home nobody can see
+    is the same lie as one that never saved. `visibleClause` is the one rule
+    the feed itself uses, so the two cannot disagree.
+  */
+  const row = await db.queryOne<{ shown: string | null; listed: boolean }>(
+    `SELECT ${textExpr(f.published)} AS shown, ${visibleClause(f)} AS listed
+       FROM ${quoteIdent(f.table)} u WHERE u.record_id = $1`,
     [recordId],
   );
-  return { offered: true, shown: row?.shown === 'true' };
+  return { offered: true, shown: row?.shown === 'true', listed: Boolean(row?.listed) };
 }

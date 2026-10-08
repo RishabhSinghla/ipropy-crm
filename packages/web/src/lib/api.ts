@@ -849,7 +849,7 @@ export const api = {
   record: (module: string, id: string) => get<RecordEnvelope>(`/api/records/${module}/${id}`),
   create: (module: string, values: Record<string, unknown>) => post<RecordEnvelope>(`/api/records/${module}`, values),
   websiteState: (module: string, id: string) =>
-    get<{ offered: boolean; shown: boolean }>(`/api/records/${module}/${id}/website`),
+    get<{ offered: boolean; shown: boolean; listed: boolean }>(`/api/records/${module}/${id}/website`),
   update: (module: string, id: string, values: Record<string, unknown>) =>
     patch<RecordEnvelope>(`/api/records/${module}/${id}`, values),
   remove: (module: string, id: string) => del(`/api/records/${module}/${id}`),

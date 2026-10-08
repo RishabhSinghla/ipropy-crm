@@ -809,6 +809,16 @@ from this CRM's own database, plus a CarWale-style deep comparison tool.
   without changing its status. Own rate limiter (`app.ts`), separate from the general `/api` one.
   `GET /api/public/cities` adds one aggregate query (project count, available units, price range per
   city) backing the site's `/cities` pages, instead of it looping a `city=` filter per picklist value.
+  **Superseded since:** publishing is opt-in (migration `087`, default `false`), and
+  `property.ipropy.com` reads `/api/public/listings`, built by `core/sharing/publicListings.ts`.
+  **The "Show on website" switch never saved on production until 8 October 2026.** The field was
+  `is_active = false` there, and `prepareValues` skips a switched-off field, so every press answered
+  200, said "Shown on the website" and stored nothing — 0 of 25,132 inventories were ever ticked.
+  Migration `193` switches it back on (still `hidden` from forms); the switch is now offered only
+  when the field is active, re-reads what the CRM kept after every press, and says **Live** only
+  when a buyer can actually find the home — a ticked home marked Sold or Booked reads *"Ticked —
+  not listed while sold or booked"*, from the same `visibleClause` the feed uses. Pinned by
+  `tests/integration/theWebsiteSwitchSaves.test.ts`, which fails on the old code.
 * **System user seeded** (`db/seed/rbac.ts::seedSystemUser`, id
   `00000000-0000-0000-0000-000000000000`) — fixes a **real, pre-existing bug** found while wiring
   the website's enquiry form through the existing `POST /api/webhooks/forms/:publicKey` → `captureLead`

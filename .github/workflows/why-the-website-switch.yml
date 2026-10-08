@@ -77,3 +77,19 @@ jobs:
 
           echo "=== the CRM build serving production ==="
           q "SELECT name FROM ipy_migration ORDER BY name DESC LIMIT 3;"
+
+      # What a buyer actually gets, from the outside — the CRM's public feed and
+      # the portal's own search page. GETs to public addresses only.
+      - name: Ask the live feed and the live portal
+        run: |
+          set -u
+          echo "=== crm.ipropy.com/api/public/listings ==="
+          curl -sS -m 30 'https://crm.ipropy.com/api/public/listings?limit=48&sort=newest' \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('total listed:', d.get('total')); [print(' -', i.get('title'), '|', i.get('locality')) for i in d.get('items', [])[:10]]" \
+            || echo "feed did not answer"
+          echo "=== property.ipropy.com ==="
+          for path in / /properties; do
+            printf '%s -> ' "$path"
+            curl -sS -m 30 -o /tmp/page.html -w '%{http_code}\n' "https://property.ipropy.com$path" || echo "no answer"
+            grep -oE '[0-9,]+ (homes|properties|listings)[^<]{0,30}' /tmp/page.html | head -3 || true
+          done

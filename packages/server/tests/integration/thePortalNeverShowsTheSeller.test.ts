@@ -131,8 +131,8 @@ describe('the record menu asks the server whether it may offer the switch', () =
       const on = await property({ publish_to_web: true });
       const token = await signIn(app, 'admin@ipropy.com');
       const ask = (id: string) => request(app).get(`/api/records/properties/${id}/website`).set('Authorization', `Bearer ${token}`);
-      expect((await ask(off.id)).body).toEqual({ offered: true, shown: false });
-      expect((await ask(on.id)).body).toEqual({ offered: true, shown: true });
+      expect((await ask(off.id)).body).toEqual({ offered: true, shown: false, listed: false });
+      expect((await ask(on.id)).body).toEqual({ offered: true, shown: true, listed: true });
     } finally {
       await db.query(
         `UPDATE ipy_field SET display_type = 'default'
