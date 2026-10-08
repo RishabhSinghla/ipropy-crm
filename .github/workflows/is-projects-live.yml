@@ -1,0 +1,67 @@
+# Did the Projects module arrive on production, whole?
+#
+# A module is three halves and the third fails in silence: the table
+# (migration 194), the definition (the seed, which runs on every cold start)
+# and the grant to each profile (rbac.ts). Absent the grant it exists and
+# nobody — the admin included — can open it, which reads exactly like a
+# feature never built. This prints all three, plus the views and the developer
+# dropdown. Read-only: metadata and counts, no record data. workflow_dispatch only.
+name: Is Projects live
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Read the module, its grants and its views
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "$DATABASE_URL" ] || { echo "::error::no PROD_DATABASE_URL"; exit 1; }
+          q() { psql "$DATABASE_URL" -X -P pager=off -c "$1"; }
+
+          echo "=== migration 194 applied? ==="
+          q "SELECT name, applied_at FROM ipy_migration WHERE name LIKE '194_%';"
+
+          echo "=== the module ==="
+          q "SELECT name, label, is_active, sequence, settings FROM ipy_module WHERE name = 'projects';"
+
+          echo "=== its fields, by section ==="
+          q "SELECT b.name AS section, count(*) AS fields
+               FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+               LEFT JOIN ipy_block b ON b.id = f.block_id
+              WHERE m.name = 'projects' AND f.is_active
+              GROUP BY b.name, b.sequence ORDER BY b.sequence;"
+
+          echo "=== which profiles may open it (view, create, edit, delete) ==="
+          q "SELECT p.name AS profile, pm.can_view, pm.can_create, pm.can_edit, pm.can_delete
+               FROM ipy_profile_module_perm pm
+               JOIN ipy_profile p ON p.id = pm.profile_id
+               JOIN ipy_module m  ON m.id = pm.module_id
+              WHERE m.name = 'projects' ORDER BY p.name;" \
+            || echo "(profile table shape differs — see the profiles query in rbac.ts)"
+
+          echo "=== its views ==="
+          q "SELECT v.name, v.is_default FROM ipy_view v JOIN ipy_module m ON m.id = v.module_id
+              WHERE m.name = 'projects' ORDER BY v.name;"
+
+          echo "=== developer dropdown ==="
+          q "SELECT count(*) AS options FROM ipy_picklist_value pv
+               JOIN ipy_picklist p ON p.id = pv.picklist_id WHERE p.name = 'developer';"
+
+          echo "=== projects recorded so far ==="
+          q "SELECT count(*) FILTER (WHERE NOT is_deleted) AS projects FROM ipy_record WHERE module_name = 'projects';"
