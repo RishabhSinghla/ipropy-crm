@@ -50,9 +50,13 @@ jobs:
           check() { if [ "$2" = "$3" ]; then echo "  ok    $1"; else echo "  FAIL  $1 — expected $2, got $3"; fail=1; fi; }
 
           echo "--- the website's own pages ---"
-          for path in /api/public/properties /api/public/projects /api/public/cities /api/public/filters; do
+          for path in /api/public/properties /api/public/projects /api/public/cities /api/public/filters \
+                      /api/public/listings /api/public/listings/filters /api/webhooks/forms/website-enquiry; do
             check "${path} answers" 200 "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}${path}")"
           done
+          # The portal (property.ipropy.com) reads /listings; its enquiry form posts to website-enquiry.
+          LISTED="$(curl -s "${BASE_URL}/api/public/listings/filters" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total", 0))')"
+          echo "  note  the property portal is showing ${LISTED} listing(s)"
           STOCK="$(curl -s "${BASE_URL}/api/public/properties?limit=1" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total", 0))')"
           echo "  note  the website is showing ${STOCK} unit(s)"
           if [ "$STOCK" = "0" ]; then
