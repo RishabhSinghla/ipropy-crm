@@ -45,7 +45,7 @@ jobs:
       JWT_SECRET: ci-secret-long-enough-to-pass-the-production-startup-checks
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -134,7 +134,7 @@ jobs:
       E2E_PASSWORD: Admin@123
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -162,7 +162,7 @@ jobs:
         run: npx playwright test
       - name: Upload report
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: playwright-report/
