@@ -1,0 +1,59 @@
+# Is the Facebook Lead Ads card filled in on production, and has a lead ever arrived?
+#
+# 8 October 2026, the owner: "connect my CRM with my facebook to get leads from
+# facebook ad campaign form directly into my CRM". The code has existed since
+# August; this reads whether production is wired up. Read-only. It prints only
+# WHETHER each secret is set (true/false) and its length — never a value — and
+# counts and statuses from the lead inbox, never a name or a number.
+name: Is Facebook connected
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Read the card and the inbox
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "$DATABASE_URL" ] || { echo "::error::no PROD_DATABASE_URL"; exit 1; }
+          q() { psql "$DATABASE_URL" -X -P pager=off -c "$1"; }
+
+          echo "=== the Facebook card: which keys are filled (never their values) ==="
+          q "SELECT label, is_active, status, last_sync_at, left(coalesce(last_error,''), 120) AS last_error,
+                    (config ? 'appId' AND config->>'appId' <> '')                         AS app_id_set,
+                    (config ? 'verifyToken' AND config->>'verifyToken' <> '')             AS verify_token_set,
+                    (credentials ? 'appSecret' AND credentials->>'appSecret' <> '')       AS app_secret_set,
+                    (credentials ? 'pageAccessToken' AND credentials->>'pageAccessToken' <> '') AS page_token_set,
+                    updated_at
+               FROM ipy_integration WHERE provider = 'facebook_leads';"
+
+          echo "=== Facebook deliveries in the lead inbox, by status ==="
+          q "SELECT status, COUNT(*), MIN(received_at)::date AS first, MAX(received_at) AS last
+               FROM ipy_lead_inbox WHERE source = 'facebook' GROUP BY status ORDER BY status;"
+
+          echo "=== the last 10 failures' reasons (no payloads) ==="
+          q "SELECT received_at, left(coalesce(error,''), 160) AS error
+               FROM ipy_lead_inbox WHERE source = 'facebook' AND status = 'failed'
+              ORDER BY received_at DESC LIMIT 10;"
+
+          echo "=== contacts whose source says Facebook ==="
+          q "SELECT COUNT(*) AS facebook_contacts, MAX(r.created_at) AS newest
+               FROM ipy_record r JOIN ipy_module m ON m.id = r.module_id
+              WHERE m.name = 'leads' AND NOT r.is_deleted
+                AND r.id IN (SELECT record_id FROM ipy_e_leads l
+                              WHERE coalesce(to_jsonb(l)->>'source', to_jsonb(l)->>'lead_source', '') ILIKE '%facebook%');" || true
