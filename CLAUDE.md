@@ -158,12 +158,17 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
 * **`ipy_record` is the shared id space.** Every `*_id` reference (including `contact_id`) points at
   `ipy_record(id)`, never at a payload table. This is why the Contacts→Leads merge preserved every
   foreign key without repointing.
-* **There are three modules:** `leads` (labelled "Contacts" since migration `096` — the *name*
+* **There are four modules:** `leads` (labelled "Contacts" since migration `096` — the *name*
   stays `leads`, because it is the URL, the API path and the key inside every saved view,
-  workflow condition and bookmark), `properties`, and `builder_floors` (5 October 2026 — one
+  workflow condition and bookmark), `properties`, `builder_floors` (5 October 2026 — one
   record is one **house**, with a price column per floor, and **locality + house
   number** is its duplicate key rather than a mobile; see `SCREENS.md`, *Builder
-  Floors*). A new module needs **three**
+  Floors*), and `projects` (8 October 2026 — one record is one developer's project, DLF
+  The Arbour or BPTP Terra; see `SCREENS.md`, *Projects*). **Projects is the second
+  module of that name and nothing points at it**: the first (removed by `031`) made every
+  unit carry a `project_id`, so a unit could not be entered without creating a project
+  first. Units keep their plain `project_name`, and a project's **Units** tab finds them
+  by it (`unitsOfProject`, a `contains`). Do not add a `project_id` back. A new module needs **three**
   halves and the third fails in silence: a migration for its payload table, the definition in
   `db/seed/templates/realEstate.ts`, and its name in **`ALL` in `db/seed/rbac.ts`** — absent
   from that line it is granted to no profile at all, the administrator's included, and reads as
@@ -281,10 +286,10 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 1,237 unit tests, no DB: 852 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 1,246 unit tests, no DB: 857 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers), 377 in `packages/web` (colour contrast, safe markdown, T9 dialler matching, header-tab
+  serving headers), 381 in `packages/web` (colour contrast, safe markdown, T9 dialler matching, header-tab
   arrangement, the search panel's grouping and remembered searches, and the rich-text
   sanitiser that renders the imported Vtiger notes), and 8 in `packages/mcp` (tool-output
   formatting). The web suite runs on `node` except where a file asks for `jsdom` with a

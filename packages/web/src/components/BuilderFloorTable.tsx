@@ -38,10 +38,16 @@ import { useLiveCall } from '../lib/liveCall';
 import { useApp } from '../lib/store';
 import { WhatsAppButton } from './WhatsAppButton';
 import { invalidateRecordQueries } from '../lib/invalidate';
+import { queueCardFields } from '../lib/queueCard';
 import { Spinner } from './ui';
 
-/** The module this table is of. Its name is the API path, as everywhere. */
-const MODULE = 'builder_floors';
+/**
+ * The module this table is of when nobody says otherwise. Its name is the API
+ * path, as everywhere. A project's Units tab draws the same table over
+ * Inventories (`module="properties"`), because one table with search, filters,
+ * sorting, editing and Call is better than two that drift apart.
+ */
+const DEFAULT_MODULE = 'builder_floors';
 
 /**
  * Which blocks the table draws.
@@ -60,10 +66,15 @@ const TABLE_BLOCKS = ['builder_floor', 'floor_prices'];
  * resolved to their ids first. Filtering on a name that fields do not have
  * answers an empty table, which reads as "there is no inventory".
  */
-function columnsFrom(module: { fields: FieldMeta[]; blocks?: { id: string; name: string }[] }): FieldMeta[] {
+function columnsFrom(module: {
+  fields: FieldMeta[];
+  blocks?: { id: string; name: string }[];
+  pipelineField?: string | null;
+}): FieldMeta[] {
   const blockNames = new Set(
     (module.blocks ?? []).filter((block) => TABLE_BLOCKS.includes(block.name)).map((block) => block.id),
   );
+  if (!blockNames.size) return glanceColumns(module);
   return module.fields.filter((field) => (
     field.isActive
     && field.displayType !== 'hidden'
@@ -71,6 +82,36 @@ function columnsFrom(module: { fields: FieldMeta[]; blocks?: { id: string; name:
     && field.uitype !== 'owner'
     && blockNames.has(field.blockId ?? '')
   ));
+}
+
+/**
+ * The columns for a module that has no table sections of its own — a project's
+ * units, which are Inventories.
+ *
+ * **What a rep already reads about a unit at a glance**, in that order: the
+ * fields the module flags for its queue's second line (`listSubtitle` — the unit
+ * number), its stage (`pipelineField`), then the facts the queue card picks out
+ * (`queueCardFields` — bedrooms, size, price). All of it is the module's own
+ * metadata, so no column is named here and an admin who flags a field moves the
+ * table with no deploy. The record's label is left out on purpose: on
+ * Inventories that is the seller's name, and the unit is what this table is of.
+ */
+function glanceColumns(module: { fields: FieldMeta[]; pipelineField?: string | null }): FieldMeta[] {
+  const readable = (field: FieldMeta | undefined): field is FieldMeta => Boolean(
+    field && field.isActive && field.displayType !== 'hidden'
+      && field.uitype !== 'autonumber' && field.uitype !== 'owner',
+  );
+  const subtitles = module.fields
+    .filter((field) => typeof field.config.listSubtitle === 'number')
+    .sort((a, b) => Number(a.config.listSubtitle) - Number(b.config.listSubtitle));
+  const stage = module.fields.find((field) => field.name === module.pipelineField);
+  const card = Object.values(queueCardFields(module.fields));
+  const seen = new Set<string>();
+  return [...subtitles, stage, ...card].filter(readable).filter((field) => {
+    if (seen.has(field.name)) return false;
+    seen.add(field.name);
+    return true;
+  });
 }
 
 /**
@@ -107,9 +148,11 @@ function fixedFields(filter: FilterGroup, into = new Set<string>()): Set<string>
   return into;
 }
 
-export function BuilderFloorTable({ title, filter, emptyLine }: {
+export function BuilderFloorTable({ title, filter, emptyLine, module: moduleName = DEFAULT_MODULE }: {
   /** What this table is of — the locality, or the contact it is matched to. */
   title: string;
+  /** Which module's records — Builder Floors unless a project asks for its units. */
+  module?: string;
   filter: FilterGroup;
   emptyLine: string;
 }): JSX.Element {
@@ -117,8 +160,8 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
   const { data: module } = useQuery({
     // The same key every other screen reads a module on, so this table warms
     // the record page and the record page warms it.
-    queryKey: ['module', MODULE],
-    queryFn: () => api.module(MODULE),
+    queryKey: ['module', moduleName],
+    queryFn: () => api.module(moduleName),
     staleTime: 5 * 60_000,
   });
 
@@ -155,8 +198,8 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
       The filter is in the key, so the locality table and a contact's matches
       are two cached answers rather than one that keeps replacing the other.
     */
-    queryKey: [MODULE, 'table', effectiveFilter, search, sort, page, columns.map((field) => field.name)],
-    queryFn: () => api.list(MODULE, {
+    queryKey: [moduleName, 'table', effectiveFilter, search, sort, page, columns.map((field) => field.name)],
+    queryFn: () => api.list(moduleName, {
       filter: effectiveFilter,
       search: search.trim() || undefined,
       ...(sort ? { sortBy: sort.by, sortDir: sort.dir } : {}),
@@ -177,15 +220,15 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
   useEffect(() => {
     // Repair a draft made by the old embedded-table button. Its row ID was
     // correct but its module and queue belonged to the surrounding Lead.
-    if (!call || call.userId !== userId || call.module === MODULE) return;
+    if (!call || call.userId !== userId || call.module === moduleName) return;
     const row = data?.rows.find((candidate) => candidate.id === call.recordId);
     if (!row || !columns.some((field) => field.uitype === 'phone'
       && rowPhone(row, field).replace(/\D/g, '') === call.number.replace(/\D/g, ''))) return;
     useLiveCall.getState().update({
-      module: MODULE, followUpField: '', queueUrl: null,
+      module: moduleName, followUpField: '', queueUrl: null,
       queueNextId: null, queuePosition: null, queueTotal: null,
     });
-  }, [call, userId, data, columns]);
+  }, [call, userId, data, columns, moduleName]);
   const mayEdit = module?.permissions.edit ?? false;
   const narrowed = Boolean(search.trim() || chosen.length);
 
@@ -225,7 +268,7 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
             type="search"
             value={search}
             aria-label="Search these houses"
-            placeholder="Search house, builder, number…"
+            placeholder={moduleName === DEFAULT_MODULE ? 'Search house, builder, number…' : 'Search unit, tower, number…'}
             onChange={(event) => { setSearch(event.target.value); setPage(1); }}
             className="input h-8 py-0 pl-8 text-sm"
           />
@@ -332,7 +375,7 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
                           cursor, because it is how a rep gets to the record.
                         */
                         <Link
-                          to={`/${MODULE}/${row.id}`}
+                          to={`/${moduleName}/${row.id}`}
                           className="font-semibold text-brand-700 hover:underline dark:text-brand-300"
                         >
                           {String(row.values?.[field.name] ?? row.label ?? '—')}
@@ -348,7 +391,7 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
                         <span className="flex items-center gap-1">
                           <FieldValue field={field} value={row.values?.[field.name]} display={row.display?.[field.name]} plain />
                           {rowPhone(row, field) && <>
-                            <CallButton to={rowPhone(row, field)} plain recordId={row.id} module={MODULE} />
+                            <CallButton to={rowPhone(row, field)} plain recordId={row.id} module={moduleName} />
                             <WhatsAppButton to={rowPhone(row, field)} iconOnly />
                           </>}
                         </span>
@@ -362,7 +405,7 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
                           would know which had been applied.
                         */
                         <EditableField
-                          module={MODULE}
+                          module={moduleName}
                           recordId={row.id}
                           field={field}
                           value={row.values?.[field.name]}
@@ -370,7 +413,7 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
                           siblings={row.values}
                           compact
                           plain
-                          onSaved={() => invalidateRecordQueries(queryClient, MODULE, row.id)}
+                          onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
                         />
                       ) : (
                         <FieldValue
@@ -401,6 +444,31 @@ export function BuilderFloorTable({ title, filter, emptyLine }: {
 function rowPhone(row: RecordEnvelope, field: FieldMeta): string {
   const value = row.display?.[field.name] ?? row.values?.[field.name];
   return value == null ? '' : String(value).trim();
+}
+
+/**
+ * A project's units: the Inventories whose Project name holds this project's.
+ *
+ * `contains`, not `equals`, because the name on a unit was typed by a rep and
+ * `equals` is exact — "dlf the arbour " would miss "DLF The Arbour" entirely,
+ * and an empty tab reads as "this project has nothing". The cost is that
+ * "DLF The Arbour" also finds "DLF The Arbour Phase 2", which is a unit a rep
+ * would want to see beside it anyway. A project with no name finds nothing,
+ * rather than every unit in the business.
+ */
+export function unitsOfProject(projectName: string): FilterGroup {
+  const name = projectName.trim();
+  if (!name) {
+    // Empty and not empty at once: a question no unit can answer yes to.
+    return {
+      logic: 'AND',
+      conditions: [
+        { field: 'project_name', operator: 'is_empty' },
+        { field: 'project_name', operator: 'is_not_empty' },
+      ],
+    };
+  }
+  return { logic: 'AND', conditions: [{ field: 'project_name', operator: 'contains', value: name }] };
 }
 
 /**

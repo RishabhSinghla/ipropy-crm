@@ -25,7 +25,7 @@
   a tab any more. A saved list that still names it simply drops it, the same
   way it drops anything else this build cannot draw.
 */
-export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'files' | 'calls' | 'whatsapp';
+export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls' | 'whatsapp';
 
 export interface SplitTab {
   key: SplitTabKey;
@@ -60,6 +60,12 @@ export function allSplitTabs(moduleName: string): SplitTab[] {
   */
   if (moduleName === 'leads') tabs.push({ key: 'builders', label: "Builder's Inventory" });
   if (moduleName === 'builder_floors') tabs.push({ key: 'builders', label: "Builder's Floor" });
+  /*
+    **A project's units**, first — a project is a list of units, and that list is
+    what the page is opened for. They are Inventories whose Project name
+    matches this one; nothing points at a project (see migration 194).
+  */
+  if (moduleName === 'projects') tabs.unshift({ key: 'units', label: 'Units' });
   tabs.push(
     { key: 'files', label: 'Files' },
     { key: 'calls', label: 'Calls' },

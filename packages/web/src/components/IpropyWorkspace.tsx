@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
-import { BuilderFloorTable, localityFilter, matchesForContact } from './BuilderFloorTable';
+import { BuilderFloorTable, localityFilter, matchesForContact, unitsOfProject } from './BuilderFloorTable';
 import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
@@ -58,6 +58,7 @@ const MENU_ICON: Record<MenuKey, JSX.Element> = {
   timeline: <MessagesSquare className="h-4 w-4" />,
   matching: <Users className="h-4 w-4" />,
   builders: <Building2 className="h-4 w-4" />,
+  units: <Building2 className="h-4 w-4" />,
   files: <FileText className="h-4 w-4" />,
   calls: <Phone className="h-4 w-4" />,
   whatsapp: <MessageCircle className="h-4 w-4" />,
@@ -1278,6 +1279,14 @@ export function IpropyWorkspace({
               title="Builder's Inventory"
               filter={matchesForContact(active.values ?? {}, floorPriceFields)}
               emptyLine="Nothing in the builder inventory matches what this contact is looking for."
+            />
+          )}
+          {shownKey === 'units' && module.name === 'projects' && (
+            <BuilderFloorTable
+              module="properties"
+              title={`Units — ${String(active.values?.project_name ?? active.label ?? 'this project')}`}
+              filter={unitsOfProject(String(active.values?.project_name ?? ''))}
+              emptyLine="No inventory carries this project's name yet. Set Project on a unit in Inventories and it appears here."
             />
           )}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}

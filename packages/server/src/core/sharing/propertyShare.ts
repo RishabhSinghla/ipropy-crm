@@ -146,6 +146,13 @@ const NEVER_SHARE = new Set([
   // Bookkeeping, and it reads as staleness: "price updated 14 Feb" on a
   // brochure sent in October answers a question nobody asked.
   'price_updated_on', 'stage_updated_on',
+  /*
+    **Projects, 8 October 2026.** The Dealing section is how this business sells
+    a project and is nobody else's: brokerage, the sales contact and the internal
+    notes are already caught by `SENSITIVE_NAME` (broker, contact, internal);
+    these three are not, so they are named.
+  */
+  'project_code', 'sales_office', 'inventory_sheet_url',
 ]);
 
 const SENSITIVE_NAME = /(^ai_|commission|broker|internal|private|owner|contact|phone|email|aadhaar|passport|password|secret|token)/i;

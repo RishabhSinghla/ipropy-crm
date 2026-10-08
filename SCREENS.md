@@ -2362,6 +2362,65 @@ that died on a line no test had ever reached.
 
 ---
 
+## Projects — a fourth module, and why it is not the one 031 removed
+
+**8 October 2026, the owner:** *"make me a project module in the CRM wherein we can
+input all details of all projects we got … DLF, BPTP, Omaxe etc. projects like some in
+Faridabad and other places … complete end to end … without messing anything else."*
+
+One record is one developer's project. Seven sections, in the order a rep is asked
+about a project: **Project** (name, developer, type, status, city, sector, RERA, who
+owns it), **Location** (address, landmark, map link, connectivity), **Size &
+Timeline** (acres, towers, units, floors, launch, possession, construction %, OC),
+**Configurations & Pricing** (BHK mix, size and price band, rate, payment plans,
+booking amount, other charges), **Amenities & Highlights**, **Brochure, Photos &
+Video**, and **Dealing (internal)** — brokerage, the sales contact, the sales
+office, the inventory sheet, internal notes.
+
+**The first Projects module was removed by migration `031` and this one is shaped by
+why.** That one made every unit *point at* a project (`project_id`), so entering a unit
+meant creating a project first, and the project existed mostly to carry its own name.
+Here **nothing points at a project.** Units keep the plain `project_name` text they
+already carry, and a project opens on a **Units** tab that finds them by that name —
+the same Builder's Floor table (`BuilderFloorTable` with `module="properties"`), so
+search, filters, sorting, editing in place and Call all come with it. Inventories and
+Contacts were not touched.
+
+* **`contains`, not `equals`** (`unitsOfProject`). The name on a unit was typed by a rep,
+  and `equals` is exact — `" dlf the arbour "` would miss *DLF The Arbour* and the tab
+  would read empty. The cost is that a project also finds its "Phase 2", which a rep
+  would want beside it anyway.
+* **The table's columns for units are the queue card's facts** (`glanceColumns`): the
+  fields flagged `listSubtitle` (unit number), the stage, then bedrooms, locality,
+  price and size. The record's label is left out on purpose — on Inventories that is
+  the seller's name, and this table is of units.
+* **The queue row's second line is `queueFields`**, a new optional key on a module
+  definition that seeds the same `queueFields` the Layout Designer edits: *"Omaxe,
+  Faridabad"*. Without it a project's row would have tried to say a unit's facts
+  (bedrooms, price) and said nothing.
+* **Unique by name inside its city** — the same name twice in Faridabad is a duplicate;
+  the same name in Gurugram is another project.
+* **Who may do what**, `db/seed/rbac.ts`: everybody reads (`public_read`, like the
+  inventory); a Sales Manager adds and edits; a Sales Executive and a Telecaller read
+  only; nobody but an admin deletes; a Telecaller never sees **Brokerage %**.
+* **A brochure link never carries the Dealing section.** Brokerage, the sales contact
+  and the internal notes are caught by `SENSITIVE_NAME`; `project_code`,
+  `sales_office` and `inventory_sheet_url` are named in `NEVER_SHARE`.
+* **Developer is a dropdown** (`developer`, Settings → Dropdowns), seeded with the
+  developers this business deals in around Delhi NCR, so "DLF" and "dlf" are one
+  developer in a filter.
+
+Migration `194` creates `ipy_e_projects` with only the columns its indexes need, and
+clears any field or section tombstones the first module left under the name
+`projects` — otherwise the seed would have skipped a new field that happened to share
+an old one's name, silently. The old public `/api/public/projects` routes are
+unaffected: they never read a projects table, they group Inventories by
+`project_name`.
+
+Pinned by `tests/integration/projects.test.ts` (8 — the module, duplicates, the
+views, the units match, who may do what, the brochure) and `e2e/projects.spec.ts`
+(in the navigation; opens on Units and finds a unit typed in lower case).
+
 ## Builder Floors — a third module, and why it earned the exception
 
 **5 October 2026, the owner, with his own spreadsheet** (`Builder Floors 2026 -

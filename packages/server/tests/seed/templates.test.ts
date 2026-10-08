@@ -48,9 +48,17 @@ describe('industry templates', () => {
       fact neither other module can. A floor's price is per floor, and a
       property's identity is a unique `mobile` — one builder's number owning five
       buildings is twenty floors, nineteen of which that column refuses.
+
+      `projects` (8 October 2026, the owner's request) earned it the same way:
+      a developer's project has facts of its own — RERA, towers, launch and
+      possession, its price band, its payment plans — that belong to no single
+      unit. It is the *second* Projects module, and unlike the first nothing
+      points at it: units keep their plain `project_name`, and the project's
+      page finds them by it. So it cannot repeat the reason 031 removed the
+      first one.
     */
     const modules = resolveTemplate('real-estate').modules.map((m) => m.name).sort();
-    expect(modules).toEqual(['builder_floors', 'leads', 'properties']);
+    expect(modules).toEqual(['builder_floors', 'leads', 'projects', 'properties']);
   });
 });
 

@@ -851,6 +851,185 @@ const MODULES: ModuleDef[] = [
   },
 
   // =========================================================================
+  // PROJECTS
+  // =========================================================================
+  /*
+    **8 October 2026, the owner:** *"make me a project module in the CRM wherein
+    we can input all details of all projects we got … DLF, BPTP, Omaxe etc.
+    projects like some in Faridabad and other places."* One record is one
+    developer's project — DLF The Arbour, BPTP Terra, Omaxe World Street.
+
+    **The second Projects module, shaped by why the first one went** (migration
+    031). The first made every unit *point at* a project, so recording a unit
+    meant creating a project first. Here nothing points at a project: units keep
+    the plain `project_name` they already carry, and a project's page finds its
+    units by that name. Inventories and Contacts are not touched.
+  */
+  {
+    name: 'projects',
+    label: 'Projects',
+    singular: 'Project',
+    table: 'ipy_e_projects',
+    icon: 'building-2',
+    color: '#7c3aed',
+    sequence: 55,
+    menuGroup: 'Inventory',
+    labelFields: ['project_name'],
+    pipelineField: 'project_status',
+    // The queue row's second line: "Omaxe · Sector 79 · Faridabad".
+    queueFields: ['developer', 'locality', 'city'],
+    /*
+      A project's name is only unique inside its city — "Central Park" is a
+      developer *and* a project name in more than one place — so the name and the
+      city together are what make a duplicate.
+    */
+    duplicateCheckFields: ['project_name', 'city'],
+    /*
+      Sent to a buyer as a brochure link, like a unit. What a visitor may read is
+      `propertyShare.ts`'s decision: brokerage, the sales contact and the
+      internal notes are withheld by name, never by the screen.
+    */
+    settings: { duplicateCheckMode: 'all', shortLabel: 'PR', shareable: true },
+    blocks: [
+      {
+        name: 'project_overview',
+        label: 'Project',
+        fields: [
+          F.autonum('project_code', 'Code', 'PRJ-'),
+          F.text('project_name', 'Project Name', {
+            mandatory: true, quickCreate: true, searchable: true,
+            help: 'As the developer writes it — DLF The Arbour. Units in Inventories with this same Project name show on the Units tab.',
+          }),
+          F.pick('developer', 'Developer', 'developer', { quickCreate: true, config: { listSubtitle: 1 } }),
+          F.pick('project_type', 'Project Type', 'project_type', { quickCreate: true }),
+          F.pick('project_status', 'Project Status', 'project_status', { mandatory: true, quickCreate: true }),
+          F.pick('city', 'City', 'city', { quickCreate: true, config: { listSubtitle: 2 } }),
+          F.text('locality', 'Sector / Locality', { quickCreate: true, searchable: true }),
+          F.text('rera_number', 'RERA Number', { searchable: true }),
+          F.owner(),
+        ],
+      },
+      {
+        name: 'project_location',
+        label: 'Location',
+        collapsed: true,
+        fields: [
+          F.textarea('address', 'Address', { searchable: true }),
+          F.text('landmark', 'Landmark'),
+          F.url('map_url', 'Google Maps Link'),
+          F.textarea('connectivity', 'Connectivity', {
+            help: 'Metro, highway, schools, hospitals — the distances a buyer asks about.',
+          }),
+        ],
+      },
+      {
+        name: 'project_size',
+        label: 'Size & Timeline',
+        fields: [
+          F.dec('land_area_acres', 'Land Area (acres)', { config: { min: 0 } }),
+          F.num('total_towers', 'Towers', { config: { min: 0 } }),
+          F.num('total_units', 'Total Units', { config: { min: 0 } }),
+          F.text('floors', 'Floors', { help: 'As the developer quotes it — G+14, or 4 + Stilt.' }),
+          F.date('launch_date', 'Launch Date'),
+          F.date('possession_date', 'Possession Date'),
+          F.pct('construction_progress', 'Construction Progress', { config: { min: 0, max: 100 } }),
+          F.bool('oc_received', 'Occupancy Certificate'),
+        ],
+      },
+      {
+        name: 'project_pricing',
+        label: 'Configurations & Pricing',
+        fields: [
+          F.multipick('configurations', 'Configurations', 'configuration', { quickCreate: true }),
+          F.area('size_from', 'Size From', { config: { min: 0, unit: 'sqft' } }),
+          F.area('size_to', 'Size To', { config: { min: 0, unit: 'sqft' } }),
+          F.money('price_from', 'Price From', { quickCreate: true, config: { min: 0 } }),
+          F.money('price_to', 'Price To', { config: { min: 0 } }),
+          F.money('rate_per_sqft', 'Rate per Sq.ft.', { config: { min: 0 } }),
+          F.multipick('payment_plans', 'Payment Plans', 'payment_plan'),
+          F.money('booking_amount', 'Booking Amount', { config: { min: 0 } }),
+          F.textarea('other_charges', 'Other Charges', {
+            help: 'EDC/IDC, PLC, parking, club membership — whatever this developer adds to the base price.',
+          }),
+        ],
+      },
+      {
+        name: 'project_features',
+        label: 'Amenities & Highlights',
+        collapsed: true,
+        fields: [
+          F.multipick('amenities', 'Amenities', 'amenities'),
+          F.textarea('highlights', 'Highlights', { searchable: true }),
+          F.text('bank_approvals', 'Bank Approvals', { help: 'Banks that will lend on this project — SBI, HDFC, ICICI.' }),
+          F.textarea('description', 'Description', { searchable: true }),
+        ],
+      },
+      {
+        name: 'project_media',
+        label: 'Brochure, Photos & Video',
+        collapsed: true,
+        fields: [
+          F.image('master_plan_image', 'Master Plan'),
+          F.image('gallery', 'Photos', { config: { multiple: true } }),
+          F.url('brochure_url', 'Brochure Link'),
+          F.url('website_url', 'Project Website'),
+          F.url('youtube_url', 'YouTube'),
+          F.url('virtual_tour_url', 'Virtual Tour'),
+        ],
+      },
+      {
+        name: 'project_dealing',
+        label: 'Dealing (internal)',
+        collapsed: true,
+        /*
+          How this business sells the project, which is nobody else's business.
+          Every name here is withheld from a brochure (`propertyShare.ts`).
+        */
+        fields: [
+          F.pct('brokerage_pct', 'Brokerage %', { config: { min: 0, max: 100 } }),
+          F.text('sales_contact_name', 'Sales Contact'),
+          F.phone('sales_contact_mobile', 'Sales Contact Mobile', {
+            maxLength: 10, config: { digits: 10, codePrefix: '+91' },
+          }),
+          F.text('sales_office', 'Sales Office'),
+          F.url('inventory_sheet_url', 'Inventory Sheet Link'),
+          F.textarea('internal_notes', 'Internal Notes', { searchable: true }),
+        ],
+      },
+    ],
+    relations: [
+    ],
+    /*
+      The questions a team asks of a project list, as views rather than
+      screens: what is launching, what is being built, what is ready, and
+      everything — the last one always there as the way back.
+    */
+    views: [
+      { name: 'All Projects', isDefault: true, columns: [] },
+      {
+        name: 'New Launches', columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'project_status', operator: 'in', value: ['Pre Launch', 'New Launch'] }] },
+      },
+      {
+        name: 'Under Construction', columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'project_status', operator: 'in', value: ['Under Construction', 'Nearing Possession'] }] },
+      },
+      {
+        name: 'Ready To Move', columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'project_status', operator: 'in', value: ['Ready To Move', 'Completed'] }] },
+      },
+      {
+        name: 'My Projects', columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] },
+      },
+      {
+        name: 'Favourite Projects', columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] },
+      },
+    ],
+  },
+
+  // =========================================================================
   // DEALS
   // =========================================================================
 

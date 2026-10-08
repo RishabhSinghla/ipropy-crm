@@ -124,7 +124,8 @@ describe('provisioning a customer', () => {
               (SELECT count(*) FROM ipy_migration) AS migrations`,
     );
     /*
-      Three since 5 October 2026 — Contacts, Inventories and Builder Floors.
+      Four since 8 October 2026 — Contacts, Inventories, Builder Floors and
+      Projects.
       Associates is deliberately not among them: it was created by migration 175
       and the seed template has never learned about it, so it does not exist on a
       brand-new database at all.
@@ -138,7 +139,7 @@ describe('provisioning a customer', () => {
       checkout — the count is asserted exactly, not as "more than two", so the
       next module is a deliberate act rather than a drift.
     */
-    expect(Number(counts.modules)).toBe(3);
+    expect(Number(counts.modules)).toBe(4);
     expect(Number(counts.fields)).toBeGreaterThan(100);
     expect(Number(counts.migrations)).toBeGreaterThan(30);
   });

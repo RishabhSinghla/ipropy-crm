@@ -82,7 +82,7 @@ interface ProfileDef {
   to this line ships invisible to every profile including the admin's, which
   reads exactly like the feature not having been built.
 */
-const ALL = ['leads', 'associates', 'properties', 'builder_floors'];
+const ALL = ['leads', 'associates', 'properties', 'builder_floors', 'projects'];
 
 function perms(
   modules: string[],
@@ -115,6 +115,8 @@ const PROFILES: ProfileDef[] = [
       // A manager prices and re-prices a floor but does not add or remove one —
       // the same shape as Inventories above, for the same reason.
       builder_floors: [true, true, true, false, true, false],
+      // A manager keeps the project list up to date; removing one is an admin's call.
+      projects: [true, true, true, false, true, false],
       payments: [true, false, false, false, false, false],
     },
   },
@@ -128,6 +130,8 @@ const PROFILES: ProfileDef[] = [
       // Read-only, like Inventories: a rep sells a floor, they do not own the
       // builder's list.
       builder_floors: [true, false, false, false, false, false],
+      // Read-only, like the inventory: a rep sells a project, the list is the office's.
+      projects: [true, false, false, false, false, false],
       payments: [true, false, false, false, false, false],
     },
     fieldOverrides: {
@@ -149,6 +153,7 @@ const PROFILES: ProfileDef[] = [
       leads: [true, true, true, false, false, false],
       properties: [true, false, false, false, false, false],
       builder_floors: [true, false, false, false, false, false],
+      projects: [true, false, false, false, false, false],
       documents: [true, true, false, false, false, false],
     },
     fieldOverrides: {
@@ -156,6 +161,8 @@ const PROFILES: ProfileDef[] = [
       // "No pricing visibility" is this profile's whole description, so the
       // rate and the bottom price go too — not only the asking price.
       builder_floors: { expected_price: 'hidden', rate_per_sqyd: 'hidden', sold_price: 'hidden' },
+      // What the business earns on a project is not a telecaller's to read.
+      projects: { brokerage_pct: 'hidden' },
     },
   },
 ];
@@ -232,6 +239,8 @@ const SHARING_DEFAULTS: Record<string, string> = {
     opposite of what an inventory list is for.
   */
   builder_floors: 'public_read',
+  // Shared knowledge, like the inventory: every rep needs every project's facts.
+  projects: 'public_read',
   deals: 'private',
   site_visits: 'private',
   bookings: 'private',

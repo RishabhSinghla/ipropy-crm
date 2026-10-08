@@ -53,6 +53,14 @@ export interface ModuleDef {
   relations?: RelationDef[];
   views?: ViewDef[];
   /**
+   * The facts on the second line of each queue row, in order — the same list
+   * the Layout Designer edits (`queueFields`). Left out, the row falls back to
+   * the queue card's own facts, which are a unit's and a contact's: bedrooms,
+   * locality, price. A module whose rows are not those (a project) says here
+   * what its row is instead, so no screen has to name a field.
+   */
+  queueFields?: string[];
+  /**
    * Module-level rules that are not structure. Filled in only when absent, so
    * an admin's change survives a cold start.
    */
@@ -515,6 +523,7 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
       .slice(0, 4)
       .map((f) => f.name),
     relatedLists: (def.relations ?? []).map((r) => r.name),
+    ...(def.queueFields ? { queueFields: def.queueFields.filter((name) => !deleted.has(name)) } : {}),
     /** Which tab a record opens on. Admin-settable in the Layout Designer. */
     defaultTab: 'overview',
     tabs: [

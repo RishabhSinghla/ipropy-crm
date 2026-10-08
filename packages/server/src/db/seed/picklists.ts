@@ -147,6 +147,20 @@ export const PICKLISTS: PicklistDef[] = [
     { value: 'Sold', label: 'Sold', color: '#64748b' },
     { value: 'Not for Sale', label: 'Not for Sale', color: '#94a3b8' },
   ] },
+  /*
+    The developer behind a project — the Projects module's second fact after its
+    name. A dropdown rather than free text so "DLF", "D.L.F." and "dlf" are one
+    developer in a filter and a report. Seeded with the names the business deals
+    in around Delhi NCR; create-only, so the list is the admin's from here on
+    (Settings → Dropdowns), and a developer missing from it is one click to add.
+  */
+  { name: 'developer', label: 'Developer', values: [
+    'DLF', 'BPTP', 'Omaxe', 'M3M', 'Godrej Properties', 'Tata Housing', 'Sobha',
+    'Puri Constructions', 'SRS Group', 'RPS Group', 'Adore Group', 'Signature Global',
+    'Experion', 'Ireo', 'Emaar', 'Vatika', 'Ansal API', 'Parsvnath', 'Elan', 'Krisumi',
+    'Smartworld', 'Whiteland', 'Central Park', 'Conscient', 'Bestech', 'ATS', 'Mahagun',
+    'Prestige', 'Lodha', 'Other',
+  ] },
   { name: 'construction_stage', ordered: true, label: 'Construction Stage', values: [
     { value: 'Start', label: 'Start', color: '#f59e0b' },
     { value: 'Semi', label: 'Semi Finished', color: '#3b82f6' },

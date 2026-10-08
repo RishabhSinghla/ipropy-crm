@@ -18,7 +18,7 @@
  */
 
 /** A record tab that draws its own screen. */
-export type RecordTabKey = 'timeline' | 'matching' | 'builders' | 'files' | 'calls' | 'whatsapp';
+export type RecordTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls' | 'whatsapp';
 
 /** The stream, narrowed to one kind of thing that happened. */
 export type ActivityKind = 'comment' | 'message' | 'audit';
@@ -49,7 +49,7 @@ export const DEFAULT_ORDER: MenuKey[] = [
     cannot have meant to leave it out, which is the same rule `arrangeHeaderTabs`
     holds to and the reason the Chats page was once unreachable.
   */
-  'comment', 'matching', 'builders', 'files', 'calls', 'whatsapp', 'message', 'audit', 'timeline',
+  'units', 'comment', 'matching', 'builders', 'files', 'calls', 'whatsapp', 'message', 'audit', 'timeline',
 ];
 
 /** Which of the stream's kinds an entry shows, or `null` for a tab of its own. */
