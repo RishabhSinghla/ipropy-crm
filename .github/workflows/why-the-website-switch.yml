@@ -1,0 +1,79 @@
+# Why the "Show on website" switch does or does not stick, read off production.
+#
+# 8 October 2026, the owner: the switch in the CRM must "actually be working the
+# way it's supposed to for toggling". Three things on production can make a save
+# to `publish_to_web` answer 200, say "Shown on the website", and write nothing:
+#
+#   1. the field is switched off (`is_active = false`) — `prepareValues` skips it;
+#   2. the field is marked read-only — `filterWritableFields` skips it for everybody;
+#   3. a profile holds it as anything but `editable` — skipped for that profile.
+#
+# This prints which, if any, is true, and whether a flip has ever actually been
+# stored. Read-only: field metadata, counts and timestamps. No customer data —
+# not a name, not a number, not an address. workflow_dispatch only.
+name: Why the website switch
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Read the switch's field, its permissions and its history
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "$DATABASE_URL" ] || { echo "::error::no PROD_DATABASE_URL"; exit 1; }
+          q() { psql "$DATABASE_URL" -X -P pager=off -c "$1"; }
+
+          echo "=== the field, on every module that has one ==="
+          q "SELECT m.name AS module, f.is_active, f.is_readonly, f.display_type,
+                    f.storage, f.column_name, f.uitype, f.default_value,
+                    f.updated_at::date AS field_changed
+               FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+              WHERE f.name = 'publish_to_web' ORDER BY m.name;"
+
+          echo "=== does the column exist where storage says column? ==="
+          q "SELECT table_name, column_name, data_type
+               FROM information_schema.columns
+              WHERE column_name = 'publish_to_web' ORDER BY table_name;"
+
+          echo "=== profiles that hold the field as anything but editable ==="
+          q "SELECT p.name AS profile, m.name AS module, pf.permission
+               FROM ipy_profile_field_perm pf
+               JOIN ipy_field f   ON f.id = pf.field_id
+               JOIN ipy_module m  ON m.id = f.module_id
+               JOIN ipy_profile p ON p.id = pf.profile_id
+              WHERE f.name = 'publish_to_web' ORDER BY p.name;"
+
+          echo "=== how many inventories are ticked, right now ==="
+          q "SELECT COUNT(*) FILTER (WHERE NOT r.is_deleted) AS inventories,
+                    COUNT(*) FILTER (WHERE NOT r.is_deleted AND (
+                      to_jsonb(u)->>'publish_to_web' = 'true'
+                      OR u.custom_fields->>'publish_to_web' = 'true')) AS ticked
+               FROM ipy_e_properties u JOIN ipy_record r ON r.id = u.record_id;"
+
+          echo "=== every time the tick was saved, last 20 (who, when, from, to) ==="
+          q "SELECT a.created_at, coalesce(us.is_admin::text, '?') AS by_admin, a.source,
+                    c->>'from' AS was, c->>'to' AS became
+               FROM ipy_audit a
+               CROSS JOIN LATERAL jsonb_array_elements(a.changes) c
+               LEFT JOIN ipy_user us ON us.id = a.user_id
+              WHERE a.module_name = 'properties' AND c->>'field' = 'publish_to_web'
+              ORDER BY a.created_at DESC LIMIT 20;"
+
+          echo "=== the CRM build serving production ==="
+          q "SELECT name FROM ipy_migration ORDER BY name DESC LIMIT 3;"
