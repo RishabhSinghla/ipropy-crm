@@ -24,6 +24,9 @@ import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
 import { notifyMany } from '../../core/notifications/index.js';
 
+// Keep this aligned with the app's subscribed webhook version in Meta.
+const FACEBOOK_GRAPH_API_VERSION = 'v26.0';
+
 export const webhooksRouter = Router();
 
 // ---------------------------------------------------------------------------
@@ -159,7 +162,7 @@ webhooksRouter.post('/leads/facebook', asyncHandler(async (req, res) => {
           continue;
         }
         const res2 = await fetch(
-          `https://graph.facebook.com/v21.0/${leadgenId}?access_token=${token}`,
+          `https://graph.facebook.com/${FACEBOOK_GRAPH_API_VERSION}/${leadgenId}?access_token=${token}`,
           { signal: AbortSignal.timeout(15_000) },
         );
         const detail = await res2.json() as Parameters<typeof normalizeFacebook>[0];
