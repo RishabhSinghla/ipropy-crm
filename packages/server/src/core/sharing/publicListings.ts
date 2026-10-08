@@ -208,11 +208,20 @@ function asNumber(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/**
+ * "3 BHK", or null. Zero bedrooms is how an office or a plot is recorded, and
+ * "0 BHK Office Space" is not something a buyer should ever read.
+ */
+export function roomsText(bedrooms: unknown): string | null {
+  if (bedrooms === null || bedrooms === undefined) return null;
+  const text = String(bedrooms).trim();
+  if (text === '' || text === '0') return null;
+  return /bhk|rk|studio/i.test(text) ? text : `${text} BHK`;
+}
+
 /** "3 BHK Builder Floor in Greenfields Colony" — from facts, never a name. */
 export function listingTitle(parts: { bedrooms?: unknown; category?: unknown; portion?: unknown; locality?: unknown }): string {
-  const rooms = parts.bedrooms === null || parts.bedrooms === undefined || parts.bedrooms === ''
-    ? ''
-    : /bhk|rk|studio/i.test(String(parts.bedrooms)) ? String(parts.bedrooms) : `${parts.bedrooms} BHK`;
+  const rooms = roomsText(parts.bedrooms) ?? '';
   const kind = [parts.portion, parts.category].filter((p) => p && String(p).trim()).join(' ');
   const what = [rooms, kind].filter(Boolean).join(' ') || 'Property';
   return parts.locality ? `${what} in ${parts.locality}` : what;
@@ -266,7 +275,7 @@ async function shape(f: ListingFields, row: Record<string, unknown>, size: 'medi
     rent: asNumber(first('rent', row)),
     area: asNumber(first('area', row)),
     areaUnit: text('areaUnit'),
-    bedrooms: text('bedrooms'),
+    bedrooms: roomsText(role('bedrooms')),
     category: text('category'),
     locality: text('locality'),
     city: text('city'),
@@ -425,7 +434,13 @@ export async function publicListingFacets(): Promise<ListingFacets> {
         GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 100`,
     );
     const options = await optionsFor(field);
-    return rows.map((r) => ({ value: r.value, label: String(labelOf(field, r.value, options) ?? r.value), count: r.count }));
+    const label = (value: string) => String(labelOf(field, value, options) ?? value);
+    if (role !== 'bedrooms') return rows.map((r) => ({ value: r.value, label: label(r.value), count: r.count }));
+    // Sizes read "3 BHK", and the zero an office or a plot records is not a size.
+    return rows.flatMap((r) => {
+      const rooms = roomsText(label(r.value));
+      return rooms ? [{ value: r.value, label: rooms, count: r.count }] : [];
+    });
   };
 
   const price = roleNumber(f.roles.price);

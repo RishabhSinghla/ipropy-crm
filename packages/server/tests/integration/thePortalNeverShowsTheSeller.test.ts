@@ -149,6 +149,8 @@ describe('the two pure rules', () => {
       .toBe('3 BHK Builder Floor in Greenfields');
     expect(listingTitle({ bedrooms: 2, category: 'Apartment' })).toBe('2 BHK Apartment');
     expect(listingTitle({})).toBe('Property');
+    // An office or a plot records zero bedrooms; nobody wants to read "0 BHK".
+    expect(listingTitle({ bedrooms: 0, category: 'Office Space', locality: 'Kharadi' })).toBe('Office Space in Kharadi');
   });
 
   it('hides a phone number typed into a description', () => {
