@@ -22,6 +22,7 @@ before you work in that area** — each carries traps that have already cost a d
 | The AI stack, before adding any framework | [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md) |
 | Full architecture, state and roadmap | [`PROJECT_HANDOVER.md`](PROJECT_HANDOVER.md) |
 | Production is on fire | [`RUNBOOK.md`](RUNBOOK.md) |
+| The public property portal, `property.ipropy.com` | the **`ipropy-website`** repo and its own `CLAUDE.md` |
 
 ---
 
@@ -94,6 +95,11 @@ session, without being asked for again.
   say nothing. Repeating the same status block at a machine is noise he has to scroll past, and
   it has annoyed him once already.
 * **If he steps away and asks for the work to continue, continue it** until the goal is met.
+* **Two repos, one way of working.** `RishabhSinghla/ipropy-website` is the property portal
+  at `property.ipropy.com` (Vercel), worked exactly like this one — `main`, no PRs, checks
+  before every push, a smoke test after every deploy — with its own `CLAUDE.md` holding the
+  same rules. Keep them in line: a change the site depends on ships here first and is checked
+  live before the site uses it. `ipropy.com` itself is a Wix site and is not touched.
 
 ---
 
