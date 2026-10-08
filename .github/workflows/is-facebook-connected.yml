@@ -57,3 +57,34 @@ jobs:
               WHERE m.name = 'leads' AND NOT r.is_deleted
                 AND r.id IN (SELECT record_id FROM ipy_e_leads l
                               WHERE coalesce(to_jsonb(l)->>'source', to_jsonb(l)->>'lead_source', '') ILIKE '%facebook%');" || true
+
+          echo "=== every source in the lead inbox, last 30 days ==="
+          q "SELECT source, status, COUNT(*), MAX(received_at) AS last
+               FROM ipy_lead_inbox WHERE received_at > now() - interval '30 days'
+              GROUP BY source, status ORDER BY source, status;"
+
+          echo "=== how the Facebook contacts of the last 14 days got in: who created them, through what door ==="
+          q "WITH fb AS (
+               SELECT r.id, r.created_at, r.created_by,
+                      coalesce(to_jsonb(l)->>'source', to_jsonb(l)->>'lead_source') AS src,
+                      to_jsonb(l)->>'sub_source' AS sub
+                 FROM ipy_record r JOIN ipy_e_leads l ON l.record_id = r.id
+                WHERE NOT r.is_deleted AND r.created_at > now() - interval '14 days'
+                  AND coalesce(to_jsonb(l)->>'source', to_jsonb(l)->>'lead_source', '') ILIKE '%facebook%')
+             SELECT fb.src, coalesce(fb.sub,'') AS sub_source,
+                    coalesce(u.email, fb.created_by::text, 'none') AS created_by,
+                    (SELECT a.source FROM ipy_audit a WHERE a.record_id = fb.id ORDER BY a.created_at LIMIT 1) AS audit_source,
+                    COUNT(*), MAX(fb.created_at) AS newest
+               FROM fb LEFT JOIN ipy_user u ON u.id = fb.created_by
+              GROUP BY 1,2,3,4 ORDER BY COUNT(*) DESC LIMIT 20;" || true
+
+          echo "=== Facebook contacts created per day, last 14 days ==="
+          q "SELECT r.created_at::date AS day, COUNT(*)
+               FROM ipy_record r JOIN ipy_e_leads l ON l.record_id = r.id
+              WHERE NOT r.is_deleted AND r.created_at > now() - interval '14 days'
+                AND coalesce(to_jsonb(l)->>'source', to_jsonb(l)->>'lead_source', '') ILIKE '%facebook%'
+              GROUP BY 1 ORDER BY 1;" || true
+
+          echo "=== API keys that have been used (name and last use only) ==="
+          q "SELECT * FROM (SELECT name, last_used_at FROM ipy_api_key ORDER BY last_used_at DESC NULLS LAST LIMIT 10) k;" || true
+
