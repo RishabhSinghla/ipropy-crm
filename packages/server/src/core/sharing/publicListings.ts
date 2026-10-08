@@ -228,7 +228,8 @@ export interface PublicListing {
   locality: string | null;
   city: string | null;
   photos: string[];
-  facts: { name: string; label: string; value: unknown }[];
+  /** `type` is the field's kind (currency, area…) so the site can print ₹1.45 Cr rather than 14500000. */
+  facts: { name: string; label: string; type: string; value: unknown }[];
   listedAt: string;
   updatedAt: string;
 }
@@ -242,7 +243,7 @@ async function shape(f: ListingFields, row: Record<string, unknown>, size: 'medi
     // A unit is drawn beside its number, and "Corner unit: No" is not a selling point.
     if (field.name.endsWith('_unit') || value === false) continue;
     if (value === null || (Array.isArray(value) && value.length === 0)) continue;
-    facts.push({ name: field.name, label: field.label, value });
+    facts.push({ name: field.name, label: field.label, type: field.uitype, value });
   }
   const first = (r: Role, from: Record<string, unknown>) => {
     for (const field of f.roles[r] ?? []) {

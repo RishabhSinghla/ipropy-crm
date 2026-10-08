@@ -239,7 +239,7 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   routes are `/share-links`.
 * **The property portal reads `/api/public/listings`, and two rules hold it** (8 October 2026,
   owner's decisions): only an inventory somebody ticked is listed (`publish_to_web`, set from the
-  record's ⋯ menu → *Show on website*), and **the seller never appears** — on Inventories
+  record's **More** menu → *Show on website*), and **the seller never appears** — on Inventories
   `full_name` and `mobile` *are* the seller. So the facts a buyer reads are an **allow-list of
   field names** in `core/sharing/publicListings.ts`, not the share-link screen's deny-list, and a
   ticked property still drops off once its status says sold, won, lost, booked or registered.
