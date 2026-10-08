@@ -1,5 +1,5 @@
 import { type JSX, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Globe } from 'lucide-react';
 import type { ModuleMeta, RecordEnvelope } from '@ipropy/shared';
 import { api } from '../lib/api';
@@ -13,7 +13,10 @@ import { DropdownItem } from './ui';
   **1 October 2026, the owner:** only the properties staff tick go public. The
   tick is the `publish_to_web` field, which production keeps hidden from the
   forms — so without this item there was no way to set it at all. Offered only
-  on a module that has the field, and only to somebody who may edit the record.
+  where the server says the record can go on the portal, and only to somebody
+  who may edit it. The server is asked rather than the screen's field list,
+  because that list leaves hidden fields out — which is why this item was
+  invisible on production the day it shipped.
   What a buyer then sees is decided on the server (core/sharing/publicListings.ts),
   and the seller's name and number are never part of it.
 */
@@ -24,10 +27,15 @@ export function ShowOnWebsiteItem({ module, record, close }: {
 }): JSX.Element | null {
   const qc = useQueryClient();
   const [saving, setSaving] = useState(false);
-  const field = module.fields.find((f) => f.name === 'publish_to_web' && f.isActive);
-  if (!field || !record.can?.edit) return null;
+  const canEdit = Boolean(record.can?.edit);
+  const { data: state } = useQuery({
+    queryKey: ['website', module.name, record.id],
+    queryFn: () => api.websiteState(module.name, record.id),
+    enabled: canEdit,
+  });
+  if (!canEdit || !state?.offered) return null;
 
-  const isShown = record.values.publish_to_web === true || record.values.publish_to_web === 'true';
+  const isShown = state.shown;
 
   const toggle = async () => {
     close();
@@ -35,6 +43,7 @@ export function ShowOnWebsiteItem({ module, record, close }: {
     try {
       await api.update(module.name, record.id, { publish_to_web: !isShown });
       invalidateRecordQueries(qc, module.name, record.id);
+      void qc.invalidateQueries({ queryKey: ['website', module.name, record.id] });
       toast.success(isShown ? 'Taken off the website' : 'Shown on the website', isShown
         ? 'Buyers can no longer find it.'
         : 'Buyers see the facts and photos — never the seller.');

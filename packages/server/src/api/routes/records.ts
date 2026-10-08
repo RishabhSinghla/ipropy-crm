@@ -14,6 +14,7 @@ import {
   getModulePermission,
 } from '../../core/permissions/index.js';
 import { buildTimeline } from '../../core/entity/timeline.js';
+import { websiteState } from '../../core/sharing/publicListings.js';
 import { fieldFacets, fieldRange } from '../../core/entity/facets.js';
 import { toCsv } from '../../utils/csv.js';
 import { notifyMany } from '../../core/notifications/index.js';
@@ -827,6 +828,15 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
     ...(dirParam ? { sortDir: dirParam } : {}),
   }, id);
   res.json(placed);
+}));
+
+// Can this record go on the property portal, and is it there now?
+// See core/sharing/publicListings.ts.
+recordsRouter.get('/:module/:id/website', asyncHandler(async (req, res) => {
+  const { module: moduleName, id } = req.params;
+  // Throws if this person cannot open the record.
+  await recordService.getRecord(getScope(req), moduleName, id);
+  res.json(await websiteState(moduleName, id));
 }));
 
 // Tags, stars, sharing

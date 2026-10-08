@@ -83,8 +83,11 @@ interface ListingFields {
   published: FieldMeta | undefined;
 }
 
+/** The module whose records the portal lists. */
+const PORTAL_MODULE = 'properties';
+
 async function listingFields(): Promise<ListingFields | null> {
-  const module = await registry.getModule('properties');
+  const module = await registry.getModule(PORTAL_MODULE);
   if (!module) return null;
   const present = await columnsOf(module.tableName);
   const usable = (f: FieldMeta) => f.storage === 'json' || present.has(f.columnName);
@@ -439,4 +442,23 @@ export async function publicListingFacets(): Promise<ListingFacets> {
     price: { min: priceRow?.min ?? null, max: priceRow?.max ?? null },
     total: total?.n ?? 0,
   };
+}
+
+/**
+ * Whether a record can go on the portal, and whether it is on it now — what
+ * the record's "Show on website" menu item asks before it draws itself.
+ *
+ * Asked of the server because the screen cannot work it out: production keeps
+ * the tick field hidden from forms, and the screen's field list leaves hidden
+ * fields out, so a switch that looked for the field on screen never appeared
+ * (8 October 2026). The caller has already checked the person may open it.
+ */
+export async function websiteState(moduleName: string, recordId: string): Promise<{ offered: boolean; shown: boolean }> {
+  const f = moduleName === PORTAL_MODULE ? await listingFields() : null;
+  if (!f?.published) return { offered: false, shown: false };
+  const row = await db.queryOne<{ shown: string | null }>(
+    `SELECT ${textExpr(f.published)} AS shown FROM ${quoteIdent(f.table)} u WHERE u.record_id = $1`,
+    [recordId],
+  );
+  return { offered: true, shown: row?.shown === 'true' };
 }

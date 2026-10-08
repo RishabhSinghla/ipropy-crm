@@ -14,7 +14,7 @@ import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { listingTitle, withoutPhoneNumbers } from '../../src/core/sharing/publicListings.js';
-import { adminContext, propertyInput } from './fixtures.js';
+import { adminContext, propertyInput, signIn } from './fixtures.js';
 
 let app: Express;
 let ctx: ServiceContext;
@@ -114,6 +114,32 @@ describe('the property portal feed', () => {
     expect(res.status).toBe(200);
     expect(res.body.total).toBeGreaterThan(0);
     expect(JSON.stringify(res.body)).not.toContain(marker);
+  });
+});
+
+describe('the record menu asks the server whether it may offer the switch', () => {
+  it('offers it on a property even when the field is hidden from forms, and says if it is on', async () => {
+    // Production keeps the field hidden, and the screen's own field list
+    // leaves hidden fields out — so the switch has to come from here.
+    await db.query(
+      `UPDATE ipy_field SET display_type = 'hidden'
+        WHERE name = 'publish_to_web' AND module_id = (SELECT id FROM ipy_module WHERE name = 'properties')`,
+    );
+    registry.invalidate();
+    try {
+      const off = await property({});
+      const on = await property({ publish_to_web: true });
+      const token = await signIn(app, 'admin@ipropy.com');
+      const ask = (id: string) => request(app).get(`/api/records/properties/${id}/website`).set('Authorization', `Bearer ${token}`);
+      expect((await ask(off.id)).body).toEqual({ offered: true, shown: false });
+      expect((await ask(on.id)).body).toEqual({ offered: true, shown: true });
+    } finally {
+      await db.query(
+        `UPDATE ipy_field SET display_type = 'default'
+          WHERE name = 'publish_to_web' AND module_id = (SELECT id FROM ipy_module WHERE name = 'properties')`,
+      );
+      registry.invalidate();
+    }
   });
 });
 

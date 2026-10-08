@@ -848,6 +848,8 @@ export const api = {
   quickDashboard: (module: string, query: ListQuery) => post<{ total: number; createdToday: number; changedToday: number; tagged: number; charts: { title: string; field?: string; unavailable: boolean; options?: { key: string; label: string; count: number }[]; slices: { key: string; label: string; count: number }[] }[] }>(`/api/records/${module}/quick-dashboard`, query),
   record: (module: string, id: string) => get<RecordEnvelope>(`/api/records/${module}/${id}`),
   create: (module: string, values: Record<string, unknown>) => post<RecordEnvelope>(`/api/records/${module}`, values),
+  websiteState: (module: string, id: string) =>
+    get<{ offered: boolean; shown: boolean }>(`/api/records/${module}/${id}/website`),
   update: (module: string, id: string, values: Record<string, unknown>) =>
     patch<RecordEnvelope>(`/api/records/${module}/${id}`, values),
   remove: (module: string, id: string) => del(`/api/records/${module}/${id}`),
