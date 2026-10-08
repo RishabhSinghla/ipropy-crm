@@ -27,6 +27,7 @@ import { badgeVars } from '../lib/color';
 import { cn, restrictionForField } from '../lib/utils';
 import type { DescribedModule, FieldBlockSpec } from '../lib/recordPanes';
 import { CALL_LOG_ROW, OWNER_ROW } from '../lib/splitViewLayout';
+import { isWebsiteField, ShowOnWebsiteRow } from './ShowOnWebsite';
 
 export function RecordInspector({ module, row, canEdit, blocks, rows, assignedField, assignedName, statusField, followUpField, find = '' }: {
   module: DescribedModule;
@@ -60,7 +61,8 @@ export function RecordInspector({ module, row, canEdit, blocks, rows, assignedFi
   });
   const shownAbove = new Set(top.flatMap((item) => (item === CALL_LOG_ROW ? [] : [item.name])));
   const sections = blocks
-    .map((block) => ({ ...block, fields: block.fields.filter((field) => !shownAbove.has(field.name) && mentions(field)) }))
+    // The website tick has its own switch at the top, so it is not drawn twice.
+    .map((block) => ({ ...block, fields: block.fields.filter((field) => !shownAbove.has(field.name) && !isWebsiteField(field.name) && mentions(field)) }))
     .filter((block, index) => index === 0 || block.fields.length > 0);
 
   return (
@@ -72,6 +74,7 @@ export function RecordInspector({ module, row, canEdit, blocks, rows, assignedFi
             {block.label}
           </h3>
           <div className="space-y-1.5">
+            {index === 0 && !needle && <ShowOnWebsiteRow module={module} record={row} />}
             {index === 0 && top.map((item) => (item === CALL_LOG_ROW ? (
               // Not a field: an outcome lives on the call, so its label is the
               // owner's own word for the toolbar button that filters on it.
