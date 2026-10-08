@@ -150,7 +150,7 @@ const NEVER_SHARE = new Set([
 
 const SENSITIVE_NAME = /(^ai_|commission|broker|internal|private|owner|contact|phone|email|aadhaar|passport|password|secret|token)/i;
 
-function isShareable(field: FieldMeta): boolean {
+export function isShareable(field: FieldMeta): boolean {
   return field.isActive
     && field.displayType !== 'hidden'
     && field.config.__record !== true

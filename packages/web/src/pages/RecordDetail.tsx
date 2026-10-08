@@ -3,6 +3,7 @@ import { SummaryText } from '../components/SummaryText';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
+import { ShowOnWebsiteItem } from '../components/ShowOnWebsite';
 import {
   Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
 } from 'lucide-react';
@@ -521,6 +522,7 @@ function FullRecordPage(): JSX.Element {
                         Move to {moduleName === 'leads' ? 'Inventories' : 'Leads'}
                       </DropdownItem>
                     )}
+                    {meta && <ShowOnWebsiteItem module={meta} record={record} close={close} />}
                     {record.can?.delete && (
                       <DropdownItem
                         icon={<Trash2 className="h-3.5 w-3.5" />}

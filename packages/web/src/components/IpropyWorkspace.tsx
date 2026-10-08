@@ -28,6 +28,7 @@ import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, oneOfEach, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
 import { invalidateRecordQueries } from '../lib/invalidate';
+import { ShowOnWebsiteItem } from './ShowOnWebsite';
 import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ShareLinksPanel } from './ShareLinks';
@@ -1195,6 +1196,7 @@ export function IpropyWorkspace({
                   Move to {module.name === 'leads' ? 'Inventories' : 'Leads'}
                 </DropdownItem>
               )}
+              <ShowOnWebsiteItem module={module} record={active} close={close} />
               {onDelete && (
                 <DropdownItem icon={<Trash2 className="h-3.5 w-3.5" />} danger onClick={() => { close(); onDelete(active); }}>
                   Delete record

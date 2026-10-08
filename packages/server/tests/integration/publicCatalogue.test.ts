@@ -59,16 +59,18 @@ afterAll(async () => {
 describe('the public property list', () => {
   it('returns a property whose status is published', async () => {
     const name = `Catalogue ${Date.now()}`;
-    await publish(name);
+    const id = await publish(name);
 
     const res = await request(app).get('/api/public/properties?limit=50');
     expect(res.status).toBe(200);
 
     // The assertion that would have caught the `=` vs `= ANY` bug: the list is
     // not merely well-formed, it actually contains the thing we just published.
-    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
-    expect(names).toContain(name);
+    const names = (res.body.items as { id: string }[]).map((i) => i.id);
+    expect(names).toContain(id);
     expect(res.body.total).toBeGreaterThan(0);
+    // On Inventories `full_name` is the seller. It never reaches the website.
+    expect(JSON.stringify(res.body)).not.toContain(name);
   });
 
   it('hides a property whose status is not published', async () => {
@@ -77,8 +79,8 @@ describe('the public property list', () => {
     await db.query(`UPDATE ipy_e_properties SET status = 'Booked' WHERE record_id = $1`, [id]);
 
     const res = await request(app).get('/api/public/properties?limit=50');
-    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
-    expect(names).not.toContain(name);
+    const names = (res.body.items as { id: string }[]).map((i) => i.id);
+    expect(names).not.toContain(id);
   });
 
   it('hides a property the admin has switched off for the website', async () => {
@@ -92,8 +94,8 @@ describe('the public property list', () => {
     );
 
     const res = await request(app).get('/api/public/properties?limit=50');
-    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
-    expect(names).not.toContain(name);
+    const names = (res.body.items as { id: string }[]).map((i) => i.id);
+    expect(names).not.toContain(id);
   });
 
   it('shows the photographs that are on the record', async () => {
@@ -109,7 +111,7 @@ describe('the public property list', () => {
     const id = await publish(name);
 
     const before = await request(app).get('/api/public/properties?limit=50');
-    const beforeItem = (before.body.items as { full_name: string; gallery: string[] }[]).find((i) => i.full_name === name);
+    const beforeItem = (before.body.items as { id: string; gallery: string[] }[]).find((i) => i.id === id);
     expect(beforeItem?.gallery).toEqual([]);
 
     // Attach two images the way an upload does, in a deliberate order.
@@ -123,7 +125,7 @@ describe('the public property list', () => {
     }
 
     const after = await request(app).get('/api/public/properties?limit=50');
-    const item = (after.body.items as { full_name: string; gallery: string[] }[]).find((i) => i.full_name === name);
+    const item = (after.body.items as { id: string; gallery: string[] }[]).find((i) => i.id === id);
     expect(item?.gallery).toHaveLength(2);
 
     // And in the order the team set, because the cover photo leads the listing.
@@ -139,12 +141,12 @@ describe('the public property list', () => {
     // A filter that silently matched nothing would look the same as "no stock
     // in that city", which is the whole failure mode this file is about.
     const name = `City Filter ${Date.now()}`;
-    await publish(name);
+    const id = await publish(name);
 
     const res = await request(app).get('/api/public/properties?city=Faridabad&limit=50');
     expect(res.status).toBe(200);
-    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
-    expect(names).toContain(name);
+    const names = (res.body.items as { id: string }[]).map((i) => i.id);
+    expect(names).toContain(id);
   });
 });
 
@@ -185,7 +187,7 @@ describe('every public endpoint that reads the published statuses', () => {
 
   it('opens a project page with its units on it', async () => {
     const name = `Project Detail ${Date.now()}`;
-    await publish(name);
+    const id = await publish(name);
 
     const list = await request(app).get('/api/public/projects');
     // A project has no record of its own. Its `id` is its name slugified, which
@@ -198,8 +200,8 @@ describe('every public endpoint that reads the published statuses', () => {
     // the kind of thing that breaks quietly when a condition is made optional.
     const res = await request(app).get(`/api/public/projects/${project!.id}`);
     expect(res.status).toBe(200);
-    const units = (res.body.units as { full_name: string }[]).map((u) => u.full_name);
-    expect(units).toContain(name);
+    const units = (res.body.units as { id: string }[]).map((u) => u.id);
+    expect(units).toContain(id);
     expect(Array.isArray(res.body.similar)).toBe(true);
   });
 

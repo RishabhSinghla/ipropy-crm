@@ -27,6 +27,9 @@ import { photoOrderBy } from '../../core/media/ordering.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 import { mediaLinkValid } from '../../integrations/whatsapp/business/media.js';
 import { publicPropertyStatuses } from '../../core/settings/scoring.js';
+import {
+  getPublicListing, isPublicListing, listPublicListings, publicListingFacets,
+} from '../../core/sharing/publicListings.js';
 
 export const publicRouter = Router();
 
@@ -228,10 +231,10 @@ const PROJECT_GROUP = `GROUP BY lower(regexp_replace(btrim(u.project_name), '[^a
  */
 const PROPERTY_FIELD_LIST: { sql: string; needs: string[] }[] = [
   { sql: 'u.record_id AS id', needs: ['record_id'] },
-  // Property identity lives in Full Name.  `name` was the retired Unit Name
-  // column; keeping it in this public query would make the website return
-  // blank titles after the database cleanup.
-  { sql: 'u.full_name', needs: ['full_name'] },
+  // No `full_name`. On Inventories that field is the *seller's* name, and the
+  // owner decided on 1 October 2026 that a seller never appears on the
+  // website. It was here as the unit's title; the portal feed below builds a
+  // title from the facts instead.
   {
     sql: `lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS project_id`,
     needs: ['project_name'],
@@ -514,6 +517,51 @@ publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
+// The property portal (property.ipropy.com). Which properties and which facts
+// is decided in core/sharing/publicListings.ts — read that before adding
+// anything here.
+// ---------------------------------------------------------------------------
+
+const listOf = (v: unknown): string[] | undefined => {
+  const values = (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : [])
+    .map((x) => String(x).trim()).filter(Boolean);
+  return values.length ? values.slice(0, 20) : undefined;
+};
+const numberOf = (v: unknown): number | undefined => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+};
+
+publicRouter.get('/listings', asyncHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.json(await listPublicListings({
+    q: typeof req.query.q === 'string' ? req.query.q.slice(0, 80) : undefined,
+    city: listOf(req.query.city),
+    locality: listOf(req.query.locality),
+    bedrooms: listOf(req.query.bedrooms),
+    category: listOf(req.query.category),
+    minPrice: numberOf(req.query.minPrice),
+    maxPrice: numberOf(req.query.maxPrice),
+    sort: typeof req.query.sort === 'string' ? req.query.sort : undefined,
+    page: numberOf(req.query.page),
+    limit: numberOf(req.query.limit),
+  }));
+}));
+
+publicRouter.get('/listings/filters', asyncHandler(async (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.json(await publicListingFacets());
+}));
+
+publicRouter.get('/listings/:id', asyncHandler(async (req, res) => {
+  const listing = await getPublicListing(req.params.id);
+  // One 404 for "never existed", "unticked" and "sold" — none is a stranger's business.
+  if (!listing) throw new NotFoundError('Listing not found');
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.json(listing);
+}));
+
+// ---------------------------------------------------------------------------
 // Filters — live picklist values, so the site's filter UI never drifts from
 // what admins have actually configured.
 // ---------------------------------------------------------------------------
@@ -642,7 +690,8 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
     `SELECT 1 FROM ipy_e_properties WHERE record_id = $1 AND status = ANY($2) AND ${publishClause('ipy_e_properties')}`,
     [file.record_id, await publicPropertyStatuses()],
   );
-  if (!visible) throw new NotFoundError('File not found');
+  // A photo of a portal listing is public too — see core/sharing/publicListings.ts.
+  if (!visible && !(await isPublicListing(file.record_id))) throw new NotFoundError('File not found');
 
   const requestedSize = typeof req.query.size === 'string' ? req.query.size : null;
   const variantKey = requestedSize && VARIANT_SIZES.has(requestedSize) ? file.variants?.[requestedSize] : undefined;
