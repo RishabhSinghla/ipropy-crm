@@ -54,6 +54,15 @@ afterAll(async () => {
 });
 
 describe('durable Facebook delivery and assignment', () => {
+  it('respects a live worker lease and recovers an expired lease through pooled connections', async () => {
+    await db.query(`UPDATE ipy_facebook_health SET worker_id = gen_random_uuid(),
+      worker_lease_until = now() + interval '10 minutes' WHERE id = true`);
+    await runFacebookRecovery();
+    expect((await db.queryOne<{ worker_id: string }>('SELECT worker_id FROM ipy_facebook_health'))?.worker_id).toBeTruthy();
+    await db.query("UPDATE ipy_facebook_health SET worker_lease_until = now() - interval '1 minute' WHERE id = true");
+    await runFacebookRecovery();
+    expect((await db.queryOne<{ worker_id: string | null }>('SELECT worker_id FROM ipy_facebook_health'))?.worker_id).toBeNull();
+  });
   it('stores a signed delivery before acknowledgement and deduplicates a replay', async () => {
     const app = createApp();
     const body = { entry: [{ changes: [{ field: 'leadgen', value: { leadgen_id: ids[0] } }] }] };

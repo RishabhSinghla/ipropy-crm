@@ -1,5 +1,5 @@
-import { db, pool, transaction } from '../../db/pool.js';
-import type { PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
+import { db, transaction } from '../../db/pool.js';
 import { getSettings, getIntegrationConfig, warmup } from '../../core/settings/integrations.js';
 import { notifyMany } from '../../core/notifications/index.js';
 import { getModule } from '../../core/metadata/registry.js';
@@ -208,13 +208,23 @@ export function nudgeFacebookRecovery() {
 export async function runFacebookRecovery() {
   if (running) return;
   running = true;
-  let client: PoolClient | null = null;
+  const workerId = randomUUID();
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
   let locked = false;
   let enabled = false;
   try {
-    client = await pool.connect();
-    locked = (await client.query('SELECT pg_try_advisory_lock(195, 1) AS locked')).rows[0].locked;
+    locked = Boolean(await db.queryOne(`UPDATE ipy_facebook_health
+      SET worker_id = $1, worker_lease_until = now() + interval '10 minutes'
+      WHERE id = true AND (worker_lease_until IS NULL OR worker_lease_until < now())
+      RETURNING id`, [workerId]));
     if (!locked) return;
+    heartbeat = setInterval(() => {
+      void db.query(`UPDATE ipy_facebook_health SET worker_lease_until = now() + interval '10 minutes'
+        WHERE id = true AND worker_id = $1`, [workerId]).catch(() => {
+          logger.error('Facebook recovery lease renewal failed.');
+        });
+    }, 30_000);
+    heartbeat.unref?.();
     await warmup(); // A second worker must see credential changes without restarting.
     enabled = Boolean(getIntegrationConfig('facebook_leads'));
     if (!enabled) return;
@@ -223,9 +233,11 @@ export async function runFacebookRecovery() {
     await sendAlerts();
   } catch { logger.error('Facebook recovery could not complete; durable deliveries will retry on the next tick.'); }
   finally {
-    let discard = false;
-    if (locked && client) await client.query('SELECT pg_advisory_unlock(195, 1)').catch(() => { discard = true; });
-    client?.release(discard);
+    if (heartbeat) clearInterval(heartbeat);
+    if (locked) await db.query(`UPDATE ipy_facebook_health SET worker_id = NULL, worker_lease_until = NULL
+      WHERE id = true AND worker_id = $1`, [workerId]).catch(() => {
+        logger.error('Facebook recovery lease release failed; it will expire automatically.');
+      });
     running = false;
     // Continue large batches and honour due retries without polling an idle DB.
     // The scheduler remains the restart/second-instance safety net.

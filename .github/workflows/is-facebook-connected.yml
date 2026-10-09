@@ -92,7 +92,8 @@ jobs:
           q "SELECT status, COUNT(*) AS deliveries, MAX(attempts) AS max_attempts
                FROM ipy_facebook_delivery GROUP BY status ORDER BY status;" || true
           q "SELECT last_checked_at, last_reconciled_at, token_expires_at, data_access_expires_at,
-                    graph_version, jsonb_array_length(forms) AS monitored_forms, issues
+                    graph_version, jsonb_array_length(forms) AS monitored_forms, issues,
+                    worker_lease_until
                FROM ipy_facebook_health;" || true
           q "SELECT key, message, last_notified_at FROM ipy_facebook_alert WHERE resolved_at IS NULL;" || true
           q "SELECT ar.name, ar.strategy, ar.is_active, u.first_name, u.last_name, u.is_active AS agent_active,
