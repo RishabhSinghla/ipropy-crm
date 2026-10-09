@@ -7,6 +7,9 @@ names and owners. It retries failed inbox entries, leaves successful delivery
 IDs alone, and matches existing Lead mobile/email before creating a contact.
 Raw form answers and campaign/form IDs remain in the lead inbox; the custom
 budget choice maps to Budget and other answers are preserved in notes.
+Facebook capture saves before running AI/workflow enrichment in the background,
+so slow AI cannot hold up the next enquiry. A shared mobile already on Inventory
+is linked there with a Facebook enquiry note; its module and owner stay unchanged.
 
 What is live, what is broken, and who deployed it. Read it before a deploy, and
 when something on `crm.ipropy.com` is not behaving.

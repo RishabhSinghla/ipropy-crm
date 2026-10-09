@@ -14,6 +14,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { captureLead, normalizeFacebook } from '../../src/integrations/leadsources/capture.js';
 import { registry } from '../../src/core/metadata/registry.js';
+import { recordService } from '../../src/core/entity/recordService.js';
+import { adminContext, propertyInput } from './fixtures.js';
+import { bus } from '../../src/core/events/bus.js';
 
 const made: string[] = [];
 
@@ -57,6 +60,45 @@ async function findByMobile(mobile: string) {
 }
 
 describe('a lead from a Facebook lead ad', () => {
+  it('saves the enquiry without waiting for background automation', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const unsubscribe = bus.on('record.created', async (event) => {
+      if (event.source === 'lead_capture') await gate;
+    });
+    const payload = metaLead({ id: 'fbtest-background', name: 'Background Buyer', phone: '+919811577109' });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        captureLead('facebook', payload, normalizeFacebook(payload)),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Capture waited for automation')), 10_000);
+        }),
+      ]);
+      expect(result.status).toBe('created');
+      if (result.recordId) made.push(result.recordId);
+      const row = await db.queryOne<{ status: string }>('SELECT status FROM ipy_lead_inbox WHERE external_id = $1', [payload.id]);
+      expect(row?.status).toBe('processed');
+    } finally {
+      clearTimeout(timer);
+      release();
+      unsubscribe();
+    }
+  });
+  it('links an Inventory contact without duplicating or replacing its owner', async () => {
+    const inventory = await recordService.createRecord(await adminContext(), 'properties',
+      propertyInput({ mobile: '9811577108' }), { skipDuplicateCheck: true });
+    made.push(inventory.id);
+    const payload = metaLead({ id: 'fbtest-inventory', name: 'Existing Inventory Buyer', phone: '+919811577108' });
+    const result = await captureLead('facebook', payload, normalizeFacebook(payload));
+    expect(result.status).toBe('duplicate');
+    expect(result.recordId).toBe(inventory.id);
+    const owner = await db.queryOne<{ owner_id: string | null }>('SELECT owner_id FROM ipy_record WHERE id = $1', [inventory.id]);
+    expect(owner?.owner_id).toBe(inventory.ownerId);
+    const comments = await db.query('SELECT id FROM ipy_comment WHERE record_id = $1 AND body LIKE $2',
+      [inventory.id, '%Facebook enquiry%']);
+    expect(comments.rowCount).toBe(1);
+  });
   it('recovers a failed delivery exactly once after its credential is fixed', async () => {
     const payload = metaLead({ id: 'fbtest-recovery', name: 'Recovered Buyer', phone: '+919811577107' });
     await db.query(`INSERT INTO ipy_lead_inbox (source, external_id, raw_payload, status, error)

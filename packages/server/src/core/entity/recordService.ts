@@ -23,7 +23,7 @@ import { db, onCommit, transaction, type Tx } from '../../db/pool.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
 import { isSystemAccount } from '../auth/systemAccounts.js';
-import { emit } from '../events/bus.js';
+import { emit, emitAsync } from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
 import {
   coerceValue, formatValue, fromDbValue, isEmpty, toDbValue, validateRequired, validateValues,
@@ -67,6 +67,8 @@ export interface SaveOptions {
   /** Internal consolidation/import of an existing historical task, never an interactive edit. */
   retainHistoricalFollowup?: boolean;
   skipWorkflow?: boolean;
+  /** Inbound batches must not wait for remote AI or messaging after the save. */
+  workflowInBackground?: boolean;
   skipDuplicateCheck?: boolean;
   skipAudit?: boolean;
   conn?: Tx;
@@ -808,13 +810,16 @@ export async function createRecord(
     // transaction commits. onCommit fires it immediately when there is no
     // transaction, and after COMMIT when there is.
     if (!opts.skipWorkflow) {
-      onCommit(conn, () => emit('record.created', {
-        module: moduleName,
-        recordId,
-        record: envelope.values,
-        user: ctx.user,
-        source: ctx.source ?? 'app',
-      }));
+      onCommit(conn, async () => {
+        const dispatch = opts.workflowInBackground ? emitAsync : emit;
+        await dispatch('record.created', {
+          module: moduleName,
+          recordId,
+          record: envelope.values,
+          user: ctx.user,
+          source: ctx.source ?? 'app',
+        });
+      });
     }
     return envelope;
   };
@@ -935,7 +940,8 @@ export async function updateRecord(
     // Deferred for the same reason as create — see onCommit in db/pool.ts.
     if (!opts.skipWorkflow) {
       onCommit(conn, async () => {
-        await emit('record.updated', {
+        const dispatch = opts.workflowInBackground ? emitAsync : emit;
+        await dispatch('record.updated', {
           module: moduleName,
           recordId,
           record: envelope.values,
@@ -945,7 +951,7 @@ export async function updateRecord(
           source: ctx.source ?? 'app',
         });
         if (ownerChanged) {
-          await emit('record.owner_changed', {
+          await dispatch('record.owner_changed', {
             module: moduleName,
             recordId,
             record: envelope.values,

@@ -10,7 +10,7 @@ import { type AuthUser, evaluateFilter, splitPhone, toE164 } from '@ipropy/share
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { bus } from '../../core/events/bus.js';
-import { createRecord, updateRecord, type ServiceContext } from '../../core/entity/recordService.js';
+import { createRecord, updateRecord, findMobileDuplicates, type ServiceContext } from '../../core/entity/recordService.js';
 import { assignOwner } from '../../core/workflow/assignment.js';
 import { notify } from '../../core/notifications/index.js';
 import { columnsOf, fieldText } from '../../core/entity/payloadColumns.js';
@@ -115,7 +115,7 @@ export async function captureLead(
     const existing = await findRecentLead(mobile, normalized.email, source === 'facebook' ? null : windowDays);
 
     if (existing) {
-      await enrichExistingLead(existing.record_id, normalized);
+      await enrichExistingLead(existing.record_id, normalized, source === 'facebook');
       await db.query(
         `UPDATE ipy_lead_inbox SET status = 'duplicate', record_id = $2, processed_at = now() WHERE id = $1`,
         [inbox.id, existing.record_id],
@@ -188,7 +188,9 @@ export async function captureLead(
     const ctx = opts.createdBy
       ? { user: opts.createdBy, subordinateIds: [], groupIds: [], system: true, source: 'lead_capture' }
       : systemContext();
-    const record = await createRecord(ctx, 'leads', values, { skipDuplicateCheck: true });
+    const record = await createRecord(ctx, 'leads', values, {
+      skipDuplicateCheck: true, workflowInBackground: source === 'facebook',
+    });
 
     if (source === 'facebook' && normalized.message) {
       await db.query('INSERT INTO ipy_comment (record_id, user_id, body) VALUES ($1, $2, $3)',
@@ -208,6 +210,20 @@ export async function captureLead(
     return { status: 'created', recordId: record.id };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // A number on an Inventory contact (or an alternate phone) is protected by
+    // the shared identity rule. Keep the enquiry on that contact; never bypass
+    // the rule, move its module, or replace its owner to make an import pass.
+    if (source === 'facebook' && message.includes('This mobile number already exists')) {
+      const hits = await findMobileDuplicates(systemContext(), 'leads', { mobile: normalized.mobile });
+      const existing = hits.find((hit) => ['leads', 'properties', 'associates'].includes(hit.module));
+      if (existing) {
+        await db.query('INSERT INTO ipy_comment (record_id, user_id, body) VALUES ($1, $2, $3)',
+          [existing.id, AUTOMATION_USER_ID, `[Facebook enquiry from ${normalized.firstName} ${normalized.lastName ?? ''}] ${normalized.message ?? ''}`]);
+        await db.query(`UPDATE ipy_lead_inbox SET status = 'duplicate', record_id = $2,
+          error = NULL, processed_at = now() WHERE id = $1`, [inbox.id, existing.id]);
+        return { status: 'duplicate', recordId: existing.id, message: 'Enquiry linked to existing contact' };
+      }
+    }
     logger.error({ err, source }, 'lead capture failed');
     await db.query(
       `UPDATE ipy_lead_inbox SET status = 'failed', error = $2, processed_at = now() WHERE id = $1`,
@@ -264,7 +280,7 @@ async function findRecentLead(
 }
 
 /** A repeat enquiry is a buying signal — record it rather than discarding it. */
-async function enrichExistingLead(recordId: string, normalized: NormalizedLead): Promise<void> {
+async function enrichExistingLead(recordId: string, normalized: NormalizedLead, workflowInBackground = false): Promise<void> {
   const updates: Record<string, unknown> = {};
   // Same rule: `description` and `contact_attempts` are both fields an admin
   // may remove, and naming them here would fail the enrichment of a repeat
@@ -285,7 +301,7 @@ async function enrichExistingLead(recordId: string, normalized: NormalizedLead):
     normalized.message ? ` ${normalized.message}` : ''}`;
   updates.description = current?.description ? `${current.description}\n${note}` : note;
 
-  await updateRecord(systemContext(), 'leads', recordId, updates, { skipDuplicateCheck: true });
+  await updateRecord(systemContext(), 'leads', recordId, updates, { skipDuplicateCheck: true, workflowInBackground });
 
   /*
     Put the enquiry on the timeline, not only in the notes box.
