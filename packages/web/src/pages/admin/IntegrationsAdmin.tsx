@@ -1224,6 +1224,17 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
     setSyncing(true);
     setTestResult(null);
     try {
+      if (summary.provider === 'facebook_leads') {
+        const result = await api.syncFacebookLeads();
+        setTestResult({
+          ok: result.forms.every((form) => form.failed === 0 && form.errors.length === 0),
+          message: result.forms.map((form) => `${form.formName}: ${form.fetched} fetched, ${form.created} created, ${form.duplicate} already in CRM, ${form.failed} failed. ${form.campaigns.join(', ')} ${form.errors.join('; ')}`).join('\n')
+            + '\nOwners: ' + result.owners.map((owner) => `${owner.owner}: ${owner.count}`).join(', '),
+        });
+        await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+        await queryClient.invalidateQueries({ queryKey: ['lead-inbox'] });
+        return;
+      }
       const result = await api.syncImapInbound(50);
       setTestResult({
         ok: result.errors.length === 0,
@@ -1339,7 +1350,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
             {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
           </button>
         )}
-        {summary.provider === 'imap' && (
+        {(summary.provider === 'imap' || summary.provider === 'facebook_leads') && (
           <button className="btn-secondary btn-sm" disabled={syncing} onClick={() => void syncNow()}>
             {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} Sync now
           </button>

@@ -57,6 +57,21 @@ async function findByMobile(mobile: string) {
 }
 
 describe('a lead from a Facebook lead ad', () => {
+  it('recovers a failed delivery exactly once after its credential is fixed', async () => {
+    const payload = metaLead({ id: 'fbtest-recovery', name: 'Recovered Buyer', phone: '+919811577107' });
+    await db.query(`INSERT INTO ipy_lead_inbox (source, external_id, raw_payload, status, error)
+      VALUES ('facebook', $1, '{}', 'failed', 'Expired token')`, [payload.id]);
+    const first = await captureLead('facebook', payload, normalizeFacebook(payload), { externalId: payload.id });
+    expect(first.status).toBe('created');
+    const second = await captureLead('facebook', payload, normalizeFacebook(payload), { externalId: payload.id });
+    expect(second.status).toBe('duplicate');
+    expect(second.recordId).toBe(first.recordId);
+    if (first.recordId) made.push(first.recordId);
+    const inbox = await db.queryOne<{ status: string; error: string | null }>(
+      'SELECT status, error FROM ipy_lead_inbox WHERE external_id = $1', [payload.id]);
+    expect(inbox?.status).toBe('processed');
+    expect(inbox?.error).toBeNull();
+  });
   it('becomes a lead with the name and number intact', async () => {
     const payload = metaLead({
       id: 'fbtest-1', name: 'Aftab Siddiqui', phone: '+919811577101', email: 'aftab@example.com',

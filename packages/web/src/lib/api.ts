@@ -1054,6 +1054,7 @@ export const api = {
   saveIntegration: (provider: string, data: { config?: Record<string, string>; credentials?: Record<string, string>; isActive?: boolean }) =>
     put<IntegrationSummary>(`/api/admin/integrations/${provider}`, data),
   testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),
+  syncFacebookLeads: () => post<{ pageName: string; forms: { formName: string; fetched: number; created: number; duplicate: number; failed: number; errors: string[]; campaigns: string[] }[]; owners: { owner: string; count: number }[] }>('/api/admin/integrations/facebook_leads/sync', {}),
   syncImapInbound: (max?: number) => post<{ checked: number; imported: number; matched: number; skipped: number; errors: string[] }>(
     `/api/admin/integrations/imap/sync${max ? `?max=${max}` : ''}`, {}),
 

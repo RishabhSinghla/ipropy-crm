@@ -1,5 +1,13 @@
 # Running it in production
 
+Facebook Lead Ads: Admin → Integrations → Facebook Lead Ads → Test connection
+checks the Page token against Meta and lists its forms. Sync now backfills all
+accessible forms and reports fetched/created/existing/failed counts, campaign
+names and owners. It retries failed inbox entries, leaves successful delivery
+IDs alone, and matches existing Lead mobile/email before creating a contact.
+Raw form answers and campaign/form IDs remain in the lead inbox; the custom
+budget choice maps to Budget and other answers are preserved in notes.
+
 What is live, what is broken, and who deployed it. Read it before a deploy, and
 when something on `crm.ipropy.com` is not behaving.
 

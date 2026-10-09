@@ -14,6 +14,7 @@ import { createRecord, updateRecord, type ServiceContext } from '../../core/enti
 import { assignOwner } from '../../core/workflow/assignment.js';
 import { notify } from '../../core/notifications/index.js';
 import { columnsOf, fieldText } from '../../core/entity/payloadColumns.js';
+import { AUTOMATION_USER_ID } from '../../core/auth/systemAccounts.js';
 
 const SYSTEM_USER: AuthUser = {
   id: '00000000-0000-0000-0000-000000000000',
@@ -69,7 +70,10 @@ export async function captureLead(
   const inbox = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_lead_inbox (source, external_id, raw_payload, normalized)
      VALUES ($1,$2,$3,$4)
-     ON CONFLICT (source, external_id) WHERE external_id IS NOT NULL DO NOTHING
+     ON CONFLICT (source, external_id) WHERE external_id IS NOT NULL DO UPDATE
+       SET raw_payload = EXCLUDED.raw_payload, normalized = EXCLUDED.normalized,
+           status = 'pending', error = NULL, processed_at = NULL
+       WHERE ipy_lead_inbox.status = 'failed'
      RETURNING id`,
     [
       source,
@@ -78,10 +82,14 @@ export async function captureLead(
     ],
   );
 
-  // A conflict means we've already processed this exact submission.
+  // Only successful or in-flight submissions conflict; failed entries can retry.
   if (!inbox) {
     logger.debug({ source, externalId: opts.externalId }, 'lead already captured — ignoring replay');
-    return { status: 'duplicate', recordId: null, message: 'Already captured' };
+    const captured = await db.queryOne<{ record_id: string | null }>(
+      'SELECT record_id FROM ipy_lead_inbox WHERE source = $1 AND external_id = $2',
+      [source, opts.externalId ?? normalized.externalId ?? submissionFingerprint(source, normalized)],
+    );
+    return { status: 'duplicate', recordId: captured?.record_id ?? null, message: 'Already captured' };
   }
 
   try {
@@ -96,7 +104,7 @@ export async function captureLead(
 
     // Dedupe against recent leads on the same number/email.
     const windowDays = await getSetting<number>('leads.duplicate_window_days', 90);
-    const existing = await findRecentLead(mobile, normalized.email, windowDays);
+    const existing = await findRecentLead(mobile, normalized.email, source === 'facebook' ? null : windowDays);
 
     if (existing) {
       await enrichExistingLead(existing.record_id, normalized);
@@ -174,6 +182,11 @@ export async function captureLead(
       : systemContext();
     const record = await createRecord(ctx, 'leads', values, { skipDuplicateCheck: true });
 
+    if (source === 'facebook' && normalized.message) {
+      await db.query('INSERT INTO ipy_comment (record_id, user_id, body) VALUES ($1, $2, $3)',
+        [record.id, AUTOMATION_USER_ID, normalized.message]);
+    }
+
     await db.query(
       `UPDATE ipy_lead_inbox SET status = 'processed', record_id = $2, processed_at = now() WHERE id = $1`,
       [inbox.id, record.id],
@@ -199,7 +212,7 @@ export async function captureLead(
 async function findRecentLead(
   mobile: string | null,
   email: string | undefined,
-  windowDays: number,
+  windowDays: number | null,
   conn: Tx = db,
 ): Promise<{ record_id: string } | null> {
   if (!mobile && !email) return null;
@@ -232,7 +245,7 @@ async function findRecentLead(
      JOIN ipy_record r ON r.id = l.record_id
      WHERE r.is_deleted = false
        AND COALESCE((${col('is_converted')})::boolean, false) = false
-       AND r.created_at > now() - ($3 || ' days')::interval
+       AND ($3::int IS NULL OR r.created_at > now() - ($3 || ' days')::interval)
        AND (
          ($1::text IS NOT NULL AND right(regexp_replace(COALESCE(${col('mobile')}, ''), '\\D','','g'), 10) = $1)
          OR ($2::text IS NOT NULL AND lower(${col('email')}) = lower($2))
@@ -349,12 +362,14 @@ async function getSetting<T>(key: string, fallback: T): Promise<T> {
 
 /** Facebook Lead Ads — field_data is an array of {name, values[]}. */
 export function normalizeFacebook(payload: {
+  id?: string;
   field_data?: { name: string; values: string[] }[];
   form_id?: string;
   campaign_id?: string;
   campaign_name?: string;
   leadgen_id?: string;
   ad_id?: string;
+  form_name?: string;
 }): NormalizedLead {
   const fields = new Map(
     (payload.field_data ?? []).map((f) => [f.name.toLowerCase(), f.values?.[0] ?? '']),
@@ -367,13 +382,18 @@ export function normalizeFacebook(payload: {
     lastName: fields.get('last_name') ?? rest.join(' '),
     email: fields.get('email'),
     mobile: fields.get('phone_number') ?? fields.get('phone'),
-    source: 'Facebook Lead Ad',
+    source: 'Facebook',
     subSource: 'Paid',
     projectName: fields.get('project') ?? fields.get('property_interested'),
-    message: fields.get('message') ?? fields.get('comments'),
-    budgetMax: parseBudget(fields.get('budget')),
+    message: [fields.get('message') ?? fields.get('comments'),
+      ...[...fields].filter(([key, value]) => value && !['full_name', 'name', 'first_name', 'last_name', 'email', 'phone_number', 'phone'].includes(key))
+        .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${value.replace(/_/g, ' ')}`),
+      payload.form_name ? `Facebook form: ${payload.form_name} (${payload.form_id})` : undefined,
+      payload.campaign_name || payload.campaign_id ? `Facebook campaign: ${payload.campaign_name ?? payload.campaign_id}` : undefined,
+    ].filter(Boolean).join('\n'),
+    budgetMax: parseBudget(fields.get('budget') ?? fields.get('what_is_your_preferred_budget?')),
     timeline: fields.get('when_are_you_planning_to_buy') ?? fields.get('timeline'),
-    externalId: payload.leadgen_id,
+    externalId: payload.leadgen_id ?? payload.id,
     // The ad platform's own campaign name (or its id) is the attribution — it
     // lands in `utm_campaign` on the lead, which is where reporting reads it.
     utm: {
@@ -449,7 +469,7 @@ export function normalizePortal(source: string, payload: Record<string, unknown>
 
 function parseBudget(raw: string | undefined): number | undefined {
   if (!raw) return undefined;
-  const cleaned = raw.replace(/[₹,\s]/gi, '').toLowerCase();
+  const cleaned = raw.replace(/_/g, ' ').replace(/[₹,\s]/gi, '').toLowerCase().replace(/(cr|crore|l|lac|lakh)\./g, '$1');
   // Ranges like "50L-75L" — take the upper bound as the ceiling.
   const range = cleaned.match(/([\d.]+)\s*(cr|crore|l|lac|lakh)?\s*[-–to]+\s*([\d.]+)\s*(cr|crore|l|lac|lakh)?/);
   if (range) return toRupees(range[3], range[4] ?? range[2]);
