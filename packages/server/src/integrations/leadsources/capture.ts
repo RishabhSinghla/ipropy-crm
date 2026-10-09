@@ -104,10 +104,10 @@ export async function captureLead(
     const parts = splitPhone(normalized.mobile);
     // Administrators can rename both the stored value and its display label.
     // Match the active Facebook option instead of assuming the seeded template.
-    const sourceOptions = source === 'facebook'
-      ? (await getModule('leads'))?.fields.find((f) => f.name === 'lead_source')?.options
+    const sourceField = source === 'facebook'
+      ? (await getModule('leads'))?.fields.find((f) => ['source', 'lead_source'].includes(f.name) && f.isActive)
       : undefined;
-    const facebookSource = sourceOptions?.find((o) =>
+    const facebookSource = sourceField?.options?.find((o) =>
       [o.value, o.label].some((v) => /^facebook(?: lead ads?)?$/i.test(v.trim())));
 
     // Dedupe against recent leads on the same number/email.
@@ -177,6 +177,9 @@ export async function captureLead(
       description: normalized.message ?? null,
       ...(normalized.extra ?? {}),
     };
+    // Live CRM uses `source`; the original template uses `lead_source`.
+    // Routing happens before recordService translates legacy field names.
+    if (sourceField) values[sourceField.name] = facebookSource?.value ?? normalized.source;
 
     // Owner: explicit → assignment rules → unassigned (a manager picks it up).
     let ownerId = opts.ownerId ?? null;
