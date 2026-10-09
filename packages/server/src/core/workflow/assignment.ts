@@ -10,6 +10,7 @@ import { logger } from '../../utils/logger.js';
 import { evaluateFilter } from '@ipropy/shared';
 
 export interface AssignOptions {
+  ruleId?: string;
   strategy?: string;
   userIds?: string[];
   groupId?: string;
@@ -44,8 +45,8 @@ export async function assignOwner(
     `SELECT ar.id, ar.name, ar.conditions, ar.strategy, ar.target_users, ar.target_group_id,
             ar.cursor_index, ar.respect_capacity, ar.working_hours_only
      FROM ipy_assignment_rule ar JOIN ipy_module m ON m.id = ar.module_id
-     WHERE m.name = $1 AND ar.is_active ORDER BY ar.sequence`,
-    [moduleName],
+     WHERE m.name = $1 AND ar.is_active AND ($2::uuid IS NULL OR ar.id = $2) ORDER BY ar.sequence`,
+    [moduleName, opts.ruleId ?? null],
   );
 
   for (const rule of rules.rows) {
@@ -119,10 +120,11 @@ async function filterEligible(pool: string[], opts: EligibilityOptions): Promise
     [pool, opts.moduleName],
   );
 
-  return rows.rows
+  const eligible = new Set(rows.rows
     .filter((u) => u.accepts_leads)
     .filter((u) => !opts.respectCapacity || !u.daily_lead_cap || u.today_count < u.daily_lead_cap)
-    .map((u) => u.id);
+    .map((u) => u.id));
+  return pool.filter((id) => eligible.has(id));
 }
 
 async function pickFromPool(

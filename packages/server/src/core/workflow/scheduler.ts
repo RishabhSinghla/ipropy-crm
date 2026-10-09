@@ -18,6 +18,7 @@ import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
 import { notify } from '../notifications/index.js';
+import { runFacebookRecovery } from '../../integrations/leadsources/facebookRecovery.js';
 import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import {
   buildWhere, quoteIdent, ENTITY_ALIAS, RECORD_ALIAS, SqlParams, type BuildContext,
@@ -88,6 +89,7 @@ async function tick(): Promise<void> {
       runScheduledWorkflows(),
       runSequences(),
       housekeeping(),
+      runFacebookRecovery(),
     ]);
   } catch (err) {
     logger.error({ err }, 'scheduler tick failed');

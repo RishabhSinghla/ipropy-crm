@@ -9,6 +9,7 @@ import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Badge, EmptyState, Modal, Skeleton, Spinner, Tabs, Toggle } from '../../components/ui';
 import { copyText } from '../../lib/nativeActions';
+import FacebookLeadMaster from './FacebookLeadMaster';
 
 const API_BASE = window.location.origin;
 
@@ -1324,6 +1325,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
           {summary.lastError}
         </div>
       )}
+      {summary.provider === 'facebook_leads' && <FacebookLeadMaster />}
       {testResult && (
         <div className={cn(
           'mx-4 mb-3 flex items-start gap-1.5 rounded-lg border p-2.5 text-xs',

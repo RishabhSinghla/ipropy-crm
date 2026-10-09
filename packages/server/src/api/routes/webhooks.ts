@@ -19,7 +19,7 @@ import {
   captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
 import { verifyMetaSignature } from '../../integrations/leadsources/metaSignature.js';
-import { facebookGraph } from '../../integrations/leadsources/facebook.js';
+import { queueFacebookDeliveries, nudgeFacebookRecovery } from '../../integrations/leadsources/facebookRecovery.js';
 import { recordOpen } from '../../integrations/email/service.js';
 import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
@@ -142,42 +142,12 @@ webhooksRouter.post('/leads/facebook', asyncHandler(async (req, res) => {
     return;
   }
 
-  res.sendStatus(200);
-
   const body = req.body as {
-    entry?: { changes?: { value?: { leadgen_id?: string; form_id?: string; page_id?: string; campaign_id?: string } }[] }[];
+    entry?: { changes?: { field?: string; value?: { leadgen_id?: string; form_id?: string; page_id?: string; campaign_id?: string } }[] }[];
   };
-
-  for (const entry of body.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const leadgenId = change.value?.leadgen_id;
-      if (!leadgenId) continue;
-      try {
-        // Meta only sends the id; the field data has to be fetched.
-        const token = getSettings().leadSources.facebook.pageAccessToken;
-        if (!token) {
-          logger.warn('facebook lead received but no page access token is configured');
-          continue;
-        }
-        const detail = await facebookGraph<Parameters<typeof normalizeFacebook>[0]>(leadgenId, {
-          fields: 'id,created_time,field_data,form_id,ad_id,campaign_id,campaign_name',
-        });
-        const payload = { ...change.value, ...detail };
-        await captureLead('facebook', payload, normalizeFacebook(payload), {
-          externalId: leadgenId,
-        });
-      } catch (err) {
-        logger.error({ err, leadgenId }, 'facebook lead capture failed');
-        // Keep the real lead id for recovery; an OAuth error is not a lead.
-        await db.query(`INSERT INTO ipy_lead_inbox (source, external_id, raw_payload, status, error)
-          VALUES ('facebook', $1, $2, 'failed', $3)
-          ON CONFLICT (source, external_id) WHERE external_id IS NOT NULL DO UPDATE
-            SET error = EXCLUDED.error
-            WHERE ipy_lead_inbox.status = 'failed'`,
-        [leadgenId, JSON.stringify(change.value), (err as Error).message]);
-      }
-    }
-  }
+  await queueFacebookDeliveries(body);
+  res.sendStatus(200);
+  nudgeFacebookRecovery();
 }));
 
 /*

@@ -1,7 +1,9 @@
 import { getSettings } from '../../core/settings/integrations.js';
 import { captureLead, normalizeFacebook } from './capture.js';
+import { db } from '../../db/pool.js';
 
 export const FACEBOOK_GRAPH_VERSION = 'v26.0';
+export let observedFacebookVersion: string | null = null;
 type FacebookLead = Parameters<typeof normalizeFacebook>[0];
 interface PageResult<T> { data: T[]; paging?: { cursors?: { after?: string }; next?: string } }
 
@@ -16,17 +18,18 @@ export async function facebookGraph<T>(path: string, params: Record<string, stri
     headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000),
   });
   const result = await response.json() as T & { error?: { message?: string; code?: number } };
+  observedFacebookVersion = response.headers?.get('facebook-api-version') ?? FACEBOOK_GRAPH_VERSION;
   if (!response.ok || result.error) {
     throw new Error(`Facebook ${result.error?.code ?? response.status}: ${result.error?.message ?? 'Request failed'}`);
   }
   return result;
 }
 
-async function facebookPages<T>(path: string, fields: string): Promise<T[]> {
+export async function facebookPages<T>(path: string, fields: string, params: Record<string, string> = {}): Promise<T[]> {
   const items: T[] = [];
   let after: string | undefined;
   for (let page = 0; page < 100; page++) {
-    const result = await facebookGraph<PageResult<T>>(path, { fields, limit: '100', ...(after ? { after } : {}) });
+    const result = await facebookGraph<PageResult<T>>(path, { ...params, fields, limit: '100', ...(after ? { after } : {}) });
     items.push(...result.data);
     if (!result.paging?.next) return items;
     const cursor = result.paging.cursors?.after;
@@ -43,7 +46,7 @@ export async function testFacebookConnection(): Promise<{ ok: boolean; message: 
 }
 
 let syncing = false;
-export async function syncFacebookLeads() {
+export async function syncFacebookLeads(options: { since?: number; automatic?: boolean } = {}) {
   if (syncing) throw new Error('Facebook sync is already running.');
   syncing = true;
   try {
@@ -58,10 +61,15 @@ export async function syncFacebookLeads() {
         campaigns: [] as string[], recordIds: [] as string[] };
       try {
         const leads = await facebookPages<FacebookLead>(`${form.id}/leads`,
-          'id,created_time,field_data,form_id,ad_id,campaign_id,campaign_name');
+          'id,created_time,field_data,form_id,ad_id,campaign_id,campaign_name',
+          options.since ? { filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: options.since }]) } : {});
         report.fetched = leads.length;
         for (const lead of leads) {
           const payload = { ...lead, form_id: form.id, form_name: form.name };
+          if (options.automatic) {
+            const quarantined = await db.queryOne("SELECT lead_id FROM ipy_facebook_delivery WHERE lead_id = $1 AND status = 'dead'", [lead.id]);
+            if (quarantined) { report.failed++; continue; }
+          }
           const result = await captureLead('facebook', payload, normalizeFacebook(payload), { externalId: lead.id });
           report[result.status]++;
           if (result.recordId) report.recordIds.push(result.recordId);

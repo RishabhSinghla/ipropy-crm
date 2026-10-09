@@ -11,6 +11,34 @@ Facebook capture saves before running AI/workflow enrichment in the background,
 so slow AI cannot hold up the next enquiry. A shared mobile already on Inventory
 is linked there with a Facebook enquiry note; its module and owner stay unchanged.
 
+Facebook reliability (9 October 2026): signed webhook batches are persisted in
+`ipy_facebook_delivery` before HTTP 200. The scheduler drains deliveries at boot,
+after an incoming delivery, and on its regular tick (normally 15 minutes).
+Expired worker leases are reclaimable; transient failures back off, access errors
+stay recoverable, and invalid data/exhausted transient retries go to review.
+Admin → Integrations → All settings → Facebook Lead Ads shows queue health and
+Retry failed deliveries. New credentials make pending retries due immediately.
+
+Every 15 minutes while enabled, the worker checks token validity/expiry, scopes,
+Page subscription, form questions and the served API version, then reconciles
+accessible forms since the last completed pass with a 24-hour overlap. The first
+pass looks back 90 days; Meta's retention/access still limits recovery. A failed
+form does not advance the checkpoint. Quarantined deliveries require correction
+and Retry; automatic reconciliation does not endlessly retry poison leads.
+Raw answers stay in the inbox. New custom answers remain notes rather than being
+guessed into unrelated CRM fields. API versions are checked, never auto-upgraded.
+
+Unresolved issues notify active administrators through the CRM bell and registered
+push devices, at most daily unless the issue changes/reappears. No SMS/email
+delivery is implied. The Facebook assignment master chooses a single agent or
+round robin across explicitly selected, active, lead-accepting agents. It reuses
+the existing assignment engine and its atomic database cursor, takes precedence
+for NEW Facebook contacts, and keeps existing contact owners. An unavailable pool
+holds the lead for recovery rather than silently assigning a different agent.
+Assignment saves are audited. Migration 195 adopts the existing Shikha rule when
+present, without changing contact owners. Facebook enquiry notes are unique by
+external delivery ID, including recovery after an interrupted capture.
+
 What is live, what is broken, and who deployed it. Read it before a deploy, and
 when something on `crm.ipropy.com` is not behaving.
 

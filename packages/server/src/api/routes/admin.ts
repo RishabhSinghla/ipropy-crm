@@ -19,6 +19,8 @@ import {
 } from '../../core/sharing/propertyShare.js';
 import { listIntegrationModels } from '../../ai/models.js';
 import { syncFacebookLeads, testFacebookConnection } from '../../integrations/leadsources/facebook.js';
+import { facebookAssignmentInput, getFacebookAssignment, saveFacebookAssignment } from '../../integrations/leadsources/facebookAssignment.js';
+import { getFacebookHealth, retryFacebookFailures, nudgeFacebookRecovery } from '../../integrations/leadsources/facebookRecovery.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -1066,6 +1068,11 @@ adminRouter.put('/integrations/:provider', asyncHandler(async (req, res) => {
   if (!existing) throw new NotFoundError(`Unknown integration provider '${req.params.provider}'`);
 
   await saveIntegration(req.params.provider, input);
+  if (req.params.provider === 'facebook_leads') {
+    await db.query('UPDATE ipy_facebook_health SET last_checked_at = NULL WHERE id = true');
+    await db.query(`UPDATE ipy_facebook_delivery SET next_attempt_at = now() WHERE status = 'pending'`);
+    nudgeFacebookRecovery();
+  }
 
   res.json(await getIntegrationSummary(req.params.provider));
 }));
@@ -1079,6 +1086,24 @@ adminRouter.post('/integrations/facebook_leads/sync', asyncHandler(async (req, r
       FROM ipy_record r LEFT JOIN ipy_user u ON u.id = r.owner_id
       WHERE r.id = ANY($1::uuid[]) GROUP BY 1 ORDER BY 2 DESC`, [ids]);
   res.json({ ...result, owners: owners.rows });
+}));
+
+adminRouter.get('/integrations/facebook_leads/health', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  res.json({ ...await getFacebookHealth(), assignment: await getFacebookAssignment() });
+}));
+
+adminRouter.put('/integrations/facebook_leads/assignment', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  await assertCapability(getUser(req), 'admin.workflows');
+  res.json(await saveFacebookAssignment(facebookAssignmentInput.parse(req.body), getUser(req).id));
+  nudgeFacebookRecovery();
+}));
+
+adminRouter.post('/integrations/facebook_leads/retry', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  await retryFacebookFailures();
+  res.json({ ok: true });
 }));
 
 /** Lightweight, read-only connectivity check per provider. Never throws. */

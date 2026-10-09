@@ -7,7 +7,7 @@
  * so a mapping bug never loses a lead.
  */
 import { type AuthUser, evaluateFilter, splitPhone, toE164 } from '@ipropy/shared';
-import { db, type Tx } from '../../db/pool.js';
+import { db, transaction, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { bus } from '../../core/events/bus.js';
 import { createRecord, updateRecord, findMobileDuplicates, type ServiceContext } from '../../core/entity/recordService.js';
@@ -63,6 +63,24 @@ export interface CaptureResult {
  * Store the raw payload, normalise, dedupe, create, assign, start the SLA.
  */
 export async function captureLead(
+  source: string,
+  raw: unknown,
+  normalized: NormalizedLead,
+  opts: { externalId?: string; ownerId?: string; assignRuleId?: string; createdBy?: AuthUser } = {},
+): Promise<CaptureResult> {
+  if (source !== 'facebook') return captureOnce(source, raw, normalized, opts);
+  const id = opts.externalId ?? normalized.externalId ?? submissionFingerprint(source, normalized);
+  // All Facebook entry points share this lock. A restart releases it, allowing
+  // a durable delivery to recover an inbox row left pending by that process.
+  return transaction(async (tx) => {
+    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`facebook:${id}`]);
+    await db.query(`UPDATE ipy_lead_inbox SET status = 'failed' WHERE source = 'facebook'
+      AND external_id = $1 AND status = 'pending'`, [id]);
+    return captureOnce(source, raw, normalized, opts);
+  });
+}
+
+async function captureOnce(
   source: string,
   raw: unknown,
   normalized: NormalizedLead,
@@ -183,8 +201,12 @@ export async function captureLead(
 
     // Owner: explicit → assignment rules → unassigned (a manager picks it up).
     let ownerId = opts.ownerId ?? null;
-    if (!ownerId && await getSetting('leads.auto_assign', true)) {
-      ownerId = await assignOwner('leads', values);
+    const facebookRule = source === 'facebook'
+      ? await db.queryOne<{ assignment_rule_id: string | null }>('SELECT assignment_rule_id FROM ipy_facebook_health WHERE id = true')
+      : null;
+    if (!ownerId && (facebookRule?.assignment_rule_id || await getSetting('leads.auto_assign', true))) {
+      ownerId = await assignOwner('leads', values, { ruleId: facebookRule?.assignment_rule_id ?? undefined });
+      if (facebookRule?.assignment_rule_id && !ownerId) throw new Error('No selected Facebook agent is active and accepting leads.');
     }
     values.owner_id = ownerId;
 
@@ -196,8 +218,9 @@ export async function captureLead(
     });
 
     if (source === 'facebook' && normalized.message) {
-      await db.query('INSERT INTO ipy_comment (record_id, user_id, body) VALUES ($1, $2, $3)',
-        [record.id, AUTOMATION_USER_ID, normalized.message]);
+      await db.query(`INSERT INTO ipy_comment (record_id, user_id, body, facebook_lead_id) VALUES ($1, $2, $3, $4)
+        ON CONFLICT (facebook_lead_id) WHERE facebook_lead_id IS NOT NULL DO NOTHING`,
+        [record.id, AUTOMATION_USER_ID, normalized.message, opts.externalId ?? normalized.externalId ?? null]);
     }
 
     await db.query(
@@ -220,8 +243,9 @@ export async function captureLead(
       const hits = await findMobileDuplicates(systemContext(), 'leads', { mobile: normalized.mobile });
       const existing = hits.find((hit) => ['leads', 'properties', 'associates'].includes(hit.module));
       if (existing) {
-        await db.query('INSERT INTO ipy_comment (record_id, user_id, body) VALUES ($1, $2, $3)',
-          [existing.id, AUTOMATION_USER_ID, `[Facebook enquiry from ${normalized.firstName} ${normalized.lastName ?? ''}] ${normalized.message ?? ''}`]);
+        await db.query(`INSERT INTO ipy_comment (record_id, user_id, body, facebook_lead_id) VALUES ($1, $2, $3, $4)
+          ON CONFLICT (facebook_lead_id) WHERE facebook_lead_id IS NOT NULL DO NOTHING`,
+          [existing.id, AUTOMATION_USER_ID, `[Facebook enquiry from ${normalized.firstName} ${normalized.lastName ?? ''}] ${normalized.message ?? ''}`, opts.externalId ?? normalized.externalId ?? null]);
         await db.query(`UPDATE ipy_lead_inbox SET status = 'duplicate', record_id = $2,
           error = NULL, processed_at = now() WHERE id = $1`, [inbox.id, existing.id]);
         return { status: 'duplicate', recordId: existing.id, message: 'Enquiry linked to existing contact' };
@@ -284,6 +308,8 @@ async function findRecentLead(
 
 /** A repeat enquiry is a buying signal — record it rather than discarding it. */
 async function enrichExistingLead(recordId: string, normalized: NormalizedLead, workflowInBackground = false): Promise<void> {
+  if (workflowInBackground && normalized.externalId && await db.queryOne(
+    'SELECT id FROM ipy_comment WHERE facebook_lead_id = $1', [normalized.externalId])) return;
   const updates: Record<string, unknown> = {};
   // Same rule: `description` and `contact_attempts` are both fields an admin
   // may remove, and naming them here would fail the enrichment of a repeat
@@ -328,13 +354,15 @@ async function enrichExistingLead(recordId: string, normalized: NormalizedLead, 
     const owner = await db.queryOne<{ owner_id: string | null }>(
       `SELECT owner_id FROM ipy_record WHERE id = $1`, [recordId],
     );
-    if (owner?.owner_id) {
+    if (owner?.owner_id || workflowInBackground) {
       await db.query(
-        `INSERT INTO ipy_comment (record_id, user_id, body) VALUES ($1,$2,$3)`,
-        [recordId, owner.owner_id, note],
+        `INSERT INTO ipy_comment (record_id, user_id, body, facebook_lead_id) VALUES ($1,$2,$3,$4)
+         ON CONFLICT (facebook_lead_id) WHERE facebook_lead_id IS NOT NULL DO NOTHING`,
+        [recordId, owner?.owner_id ?? AUTOMATION_USER_ID, note, workflowInBackground ? normalized.externalId ?? null : null],
       );
     }
   } catch (err) {
+    if (workflowInBackground) throw err;
     logger.warn({ err, recordId }, 'could not file the repeat enquiry on the timeline');
   }
 

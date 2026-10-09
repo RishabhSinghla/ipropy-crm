@@ -1055,6 +1055,16 @@ export const api = {
     put<IntegrationSummary>(`/api/admin/integrations/${provider}`, data),
   testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),
   syncFacebookLeads: () => post<{ pageName: string; forms: { formName: string; fetched: number; created: number; duplicate: number; failed: number; errors: string[]; campaigns: string[] }[]; owners: { owner: string; count: number }[] }>('/api/admin/integrations/facebook_leads/sync', {}),
+  facebookHealth: () => get<{
+    last_checked_at: string | null; last_reconciled_at: string | null;
+    token_expires_at: string | null; data_access_expires_at: string | null; graph_version: string | null;
+    queue: { status: string; count: number }[]; alerts: { key: string; message: string }[];
+    forms: { id: string; name: string }[];
+    assignment: { strategy: string; userIds: string[] } | null;
+  }>('/api/admin/integrations/facebook_leads/health'),
+  saveFacebookAssignment: (data: { strategy: 'specific_user' | 'round_robin'; userIds: string[] }) =>
+    put('/api/admin/integrations/facebook_leads/assignment', data),
+  retryFacebookDeliveries: () => post('/api/admin/integrations/facebook_leads/retry', {}),
   syncImapInbound: (max?: number) => post<{ checked: number; imported: number; matched: number; skipped: number; errors: string[] }>(
     `/api/admin/integrations/imap/sync${max ? `?max=${max}` : ''}`, {}),
 

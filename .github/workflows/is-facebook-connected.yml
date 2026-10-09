@@ -88,3 +88,15 @@ jobs:
           echo "=== API keys that have been used (name and last use only) ==="
           q "SELECT * FROM (SELECT name, last_used_at FROM ipy_api_key ORDER BY last_used_at DESC NULLS LAST LIMIT 10) k;" || true
 
+          echo "=== durable delivery health (no tokens, payloads or lead details) ==="
+          q "SELECT status, COUNT(*) AS deliveries, MAX(attempts) AS max_attempts
+               FROM ipy_facebook_delivery GROUP BY status ORDER BY status;" || true
+          q "SELECT last_checked_at, last_reconciled_at, token_expires_at, data_access_expires_at,
+                    graph_version, jsonb_array_length(forms) AS monitored_forms, issues
+               FROM ipy_facebook_health;" || true
+          q "SELECT key, message, last_notified_at FROM ipy_facebook_alert WHERE resolved_at IS NULL;" || true
+          q "SELECT ar.name, ar.strategy, ar.is_active, u.first_name, u.last_name, u.is_active AS agent_active,
+                    u.accepts_leads FROM ipy_facebook_health h
+               JOIN ipy_assignment_rule ar ON ar.id = h.assignment_rule_id
+               CROSS JOIN LATERAL jsonb_array_elements_text(ar.target_users) selected(id)
+               JOIN ipy_user u ON u.id = selected.id::uuid;" || true
