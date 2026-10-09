@@ -210,12 +210,14 @@ export async function runFacebookRecovery() {
   running = true;
   let client: PoolClient | null = null;
   let locked = false;
+  let enabled = false;
   try {
     client = await pool.connect();
     locked = (await client.query('SELECT pg_try_advisory_lock(195, 1) AS locked')).rows[0].locked;
     if (!locked) return;
     await warmup(); // A second worker must see credential changes without restarting.
-    if (!getIntegrationConfig('facebook_leads')) return;
+    enabled = Boolean(getIntegrationConfig('facebook_leads'));
+    if (!enabled) return;
     await drainDeliveries();
     await checkAndReconcile();
     await sendAlerts();
@@ -227,7 +229,7 @@ export async function runFacebookRecovery() {
     running = false;
     // Continue large batches and honour due retries without polling an idle DB.
     // The scheduler remains the restart/second-instance safety net.
-    if (locked && config.scheduler.enabled) {
+    if (locked && enabled && config.scheduler.enabled) {
       const next = await db.queryOne<{ seconds: number }>(`SELECT GREATEST(0, EXTRACT(EPOCH FROM MIN(
         CASE WHEN status = 'processing' THEN lease_until ELSE next_attempt_at END) - now())) AS seconds
         FROM ipy_facebook_delivery WHERE status IN ('pending', 'processing')`).catch(() => null);
