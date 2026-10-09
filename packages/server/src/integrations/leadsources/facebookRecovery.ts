@@ -21,7 +21,7 @@ interface Health {
 }
 
 export function facebookRetry(attempt: number, message: string) {
-  const accessProblem = /Facebook (190|10|200)\b|access token|permission/i.test(message);
+  const accessProblem = /Facebook (190|10|200)\b|access token|permission|No selected Facebook agent/i.test(message);
   const invalidData = /is required|must be exactly|invalid (phone|mobile)|Lead data is invalid/i.test(message);
   return { dead: invalidData || (!accessProblem && attempt >= 8),
     seconds: accessProblem ? 3600 : Math.min(3600, 60 * 2 ** Math.min(attempt - 1, 6)) };

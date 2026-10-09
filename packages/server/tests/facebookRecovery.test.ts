@@ -7,6 +7,7 @@ describe('Facebook recovery safeguards', () => {
     expect(facebookRetry(1, 'Network timeout')).toEqual({ dead: false, seconds: 60 });
     expect(facebookRetry(8, 'Network timeout').dead).toBe(true);
     expect(facebookRetry(100, 'Facebook 190: Token expired')).toEqual({ dead: false, seconds: 3600 });
+    expect(facebookRetry(100, 'No selected Facebook agent is active and accepting leads.')).toEqual({ dead: false, seconds: 3600 });
     expect(facebookRetry(1, 'Mobile is required').dead).toBe(true);
     expect(facebookRetry(1, safeFacebookError(new Error('Mobile is required'))).dead).toBe(true);
   });
