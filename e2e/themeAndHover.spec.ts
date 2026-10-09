@@ -6,6 +6,7 @@ let token = '';
 let recordId = '';
 let tagId = '';
 let visitFieldId = '';
+let tagName = '';
 test.beforeAll(async ({ request }) => {
   const login = await request.post('http://localhost:4000/api/auth/login', { data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
   expect(login.ok()).toBeTruthy();
@@ -19,7 +20,7 @@ test.beforeAll(async ({ request }) => {
   const record = await request.post('http://localhost:4000/api/records/leads', { headers, data: { full_name: unique('Hover proof'), mobile: `9${String(Date.now()).slice(-9)}`, [visitName]: date } });
   expect(record.ok()).toBeTruthy();
   recordId = (await record.json()).id;
-  const tagName = unique('HoverTag');
+  tagName = unique('HoverTag');
   const tag = await request.post('http://localhost:4000/api/tags', { headers, data: { name: tagName, color: '#dc2626', modules: ['leads'] } });
   expect(tag.ok()).toBeTruthy();
   tagId = (await tag.json()).id;
@@ -45,7 +46,8 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
   expect(after!.x).toBe(before!.x);
   await page.getByPlaceholder('Search everything…').hover();
   await expect(frame).toHaveAttribute('data-folded', 'true');
-  const tag = page.getByTestId('tag-cards').getByRole('button').first();
+  // This spec's own tag, not whichever happens to be first on the machine running it.
+  const tag = page.getByTestId('tag-cards').getByRole('button', { name: new RegExp(tagName.slice(0, 15), 'i') });
   await expect(tag).toBeVisible();
   await tag.click();
   await expect(tag).toHaveAttribute('aria-pressed', 'true');
