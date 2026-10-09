@@ -37,7 +37,7 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
   await page.goto('/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
   await expect(page.getByTestId('planned-visit-date')).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Visits today/ })).toBeVisible();
+  await expect(page.getByTestId('visits-chip')).toBeVisible();
   const frame = page.getByTestId('workspace-dock-frame');
   const before = await page.getByTestId('ipropy-workspace').boundingBox();
   await frame.hover();
@@ -51,16 +51,18 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
   await expect(tag).toBeVisible();
   await tag.click();
   await expect(tag).toHaveAttribute('aria-pressed', 'true');
-  const fresh = page.getByRole('button', { name: /^New \d/ });
+  const fresh = page.getByTestId('new-records-chip');
   await fresh.click();
+  await page.getByRole('menuitemradio', { name: 'Today' }).click();
   await expect(fresh).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(async () => {
     const tagColour = await tag.evaluate(element => getComputedStyle(element).backgroundColor);
     return await fresh.evaluate(element => getComputedStyle(element).backgroundColor) === tagColour;
   }).toBe(true);
   await expect(page.getByRole('navigation', { name: 'Record workspace sections' })).not.toContainText("Builder's Inventory");
-  await page.getByRole('button', { name: /^Visits today/ }).click();
-  await expect(page.getByRole('button', { name: /^Visits today/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('visits-chip').click();
+  await page.getByRole('menuitemradio', { name: 'Today' }).click();
+  await expect(page.getByTestId('visits-chip')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('planned-visit-date')).toBeVisible();
 });
 

@@ -2420,6 +2420,39 @@ it plays, and when it cannot the popup still opens silently. And nothing on a
 web page can stop somebody closing the tab — what the buzzer can do is come back
 every round until the date is moved.
 
+## Four on the list toolbar, and the buzzer that stayed silent — 10 October 2026
+
+**The owner:** *"remove icon in the List and Task from Left record pane only text should
+be there, Rename Today Visits into Visits, also Build Dropdown filter for today, Overdue,
+Upcoming, tomorrow in same Button/Chip … Move 'New' … to main Toolbar between Add +New …
+and Search toolbar and built dropdown filter of Yesterday, This Week, This Month … Also
+Change icon of Quick Dashboard."*
+
+* **List and Task are words only** in the left pane. The Filter and Clock icons are gone
+  from those two buttons; `filterIcon` still colours the others that use it.
+* **Visits** (was *Visits today*) and **New** are one component, `ChoiceChip`: click to
+  open a short list, pick one to narrow the list, pick it again or *Show all* to undo. The
+  rules are `lib/dateChoices.ts`, pure and tested (`tests/dateChoices.test.ts`): every
+  choice is ordinary filter conditions, and a chip only ever takes back the conditions it
+  wrote. **Overdue is two conditions on purpose** — `is_not_empty` beside `less_than`,
+  the same as the Task chip's — because a planned-visit field is admin-made and so stored
+  in `custom_fields`, where an empty string sorts before every date. One side effect: the
+  quick-filter badge counts an Overdue choice as 2.
+* **New lives in the main toolbar now**, in a slot `Layout` leaves between *+ New* and
+  Search (`#global-new-records`), filled by the list page through a portal like the
+  quick-filter button beside it. It still narrows that list. Its number is today's until a
+  choice is made, then the list's own total.
+* **Quick dashboard is a pie chart**, so it no longer wears the main Dashboard's icon.
+
+**The buzzer never ran for anyone who signed in and did not reload.** The login answer
+carries the bare user; the screen settings — the buzzer's four numbers among them — ride
+only on `/api/auth/me`, which the app asked for on a page load and not after signing in.
+So `user.ui` was empty, the buzzer read as switched off, and it stayed off all day. This
+is what the owner met: *"i have created a task for me but no popup/buzzer has been
+reflected"*. `adoptSession` in `lib/store.ts` asks `/me` now, falling back to the bare
+user so a slow answer never stops a sign-in. The same gap had been hiding the inline-edit
+and quick-filter settings after sign-in too.
+
 ## Projects — a fourth module, and why it is not the one 031 removed
 
 **8 October 2026, the owner:** *"make me a project module in the CRM wherein we can

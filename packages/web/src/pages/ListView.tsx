@@ -2,9 +2,14 @@ import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TagCards } from '../components/TagCards';
 import { canonicalFilter, withCreatedToday } from '../lib/newRecordsQuery';
+import {
+  choiceConditions, chosenWhen, CREATED_CHOICES, CREATED_FIELD, VISIT_CHOICES, withChoice, withoutChoice,
+} from '../lib/dateChoices';
+import { localDay } from '../lib/followUpDates';
+import { ChoiceChip } from '../components/ChoiceChip';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, isFilterGroup } from '@ipropy/shared';
+import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
 import {
   ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, X,
@@ -29,7 +34,7 @@ import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/Fo
 import {
   LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
 } from '../components/CallDispositionFilter';
-import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import SiteCapture from './SiteCapture';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
@@ -88,7 +93,8 @@ export default function ListView(): JSX.Element {
   const [picks, setPicks] = useState<QuickPicks>({});
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
-  const newToday = filter.conditions.some((item) => !isFilterGroup(item) && item.field === 'created_at' && item.operator === 'today');
+  const createdWhen = chosenWhen(filter, CREATED_FIELD, CREATED_CHOICES.map((choice) => choice.key));
+  const newToday = createdWhen === 'today';
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -97,9 +103,13 @@ export default function ListView(): JSX.Element {
   const [selectedAll, setSelectedAll] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
-  const [toolbarSlots, setToolbarSlots] = useState<{ filter: HTMLElement | null; options: HTMLElement | null }>({ filter: null, options: null });
+  const [toolbarSlots, setToolbarSlots] = useState<{ filter: HTMLElement | null; options: HTMLElement | null; created: HTMLElement | null }>({ filter: null, options: null, created: null });
   useEffect(() => {
-    setToolbarSlots({ filter: document.getElementById('global-quick-filter'), options: document.getElementById('global-list-options') });
+    setToolbarSlots({
+      filter: document.getElementById('global-quick-filter'),
+      options: document.getElementById('global-list-options'),
+      created: document.getElementById('global-new-records'),
+    });
   }, []);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -424,7 +434,7 @@ export default function ListView(): JSX.Element {
   // `next_follow_up` in JSON — `followUpFieldOf` knows both.
   const taskField = meta ? followUpFieldOf(meta.fields) : undefined;
   const visitField = meta ? plannedVisitField(meta.fields) : undefined;
-  const visitsToday = Boolean(visitField && filter.conditions.some(item => !isFilterGroup(item) && item.field === visitField.name && item.operator === 'today'));
+  const visitWhen = visitField ? chosenWhen(filter, visitField.name, VISIT_CHOICES.map((choice) => choice.key)) : null;
   /*
     The field decides, never a list of module names.
 
@@ -911,7 +921,6 @@ export default function ListView(): JSX.Element {
                 tag**, so it says which: red when a tag is narrowing the list,
                 blue when a saved list is.
               */}
-              <Filter className={filterIcon('list', Boolean(!tagPick && activeView && !activeView.isSystem))} />
               {/* No chevron — *"remove arrow key from all Buttons, so that
                   we can See neet and clean Toolbar"* (28 September 2026).
                   The icon on the left already says what this opens. */}
@@ -984,17 +993,30 @@ export default function ListView(): JSX.Element {
           />
         )}
 
-        <button className={cn('flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold', newToday ? 'border-brand-700 bg-brand-700 text-white' : 'border-brand-200 bg-brand-50 text-brand-700')}
-          aria-pressed={newToday} aria-busy={newToday && isFetching} title="Records created today" onClick={() => {
-            setFilter(newToday ? { logic: 'AND', conditions: filter.conditions.filter((item) => isFilterGroup(item) || item.field !== 'created_at' || item.operator !== 'today') } : withCreatedToday(filter));
-            setPage(1);
-          }}>New {newToday && isFetching ? <Spinner className="h-3 w-3" /> : <span className={cn('rounded-full px-1.5', newToday ? 'bg-white/20 text-white' : 'bg-brand-100')}>{(todayRecords?.total ?? 0).toLocaleString('en-IN')}</span>}</button>
-        {visitField && <button className={toolbarButton(visitsToday)} aria-pressed={visitsToday} title="Records with a planned visit today" onClick={() => {
-          setFilter(visitsToday
-            ? { ...filter, conditions: filter.conditions.filter(item => isFilterGroup(item) || item.field !== visitField.name || item.operator !== 'today') }
-            : { logic: 'AND', conditions: [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), { field: visitField.name, operator: 'today' }] });
-          setPage(1);
-        }}>Visits today <span className={toolbarCount(visitsToday)}>{(visitRecords?.total ?? 0).toLocaleString('en-IN')}</span></button>}
+        {/*
+          **Visits opens a list now** — the owner, 10 October 2026: *"Rename
+          Today Visits into Visits, also Build Dropdown filter for today,
+          Overdue, Upcoming, tomorrow in same Button/Chip"*. The number is
+          today's until a choice is made, then the list's own total.
+        */}
+        {visitField && (
+          <ChoiceChip
+            label="Visits"
+            title="Records by planned visit date"
+            choices={VISIT_CHOICES}
+            active={visitWhen}
+            count={visitWhen ? (data?.total ?? 0) : (visitRecords?.total ?? 0)}
+            onPick={(when) => {
+              setFilter(when
+                ? withChoice(filter, visitField.name, choiceConditions(visitField.name, when, localDay(new Date())))
+                : withoutChoice(filter, visitField.name));
+              setPage(1);
+            }}
+            buttonClass={(on) => toolbarButton(on)}
+            countClass={(on) => toolbarCount(on)}
+            testId="visits-chip"
+          />
+        )}
         {/*
           **The Hot chip left this row on 3 October 2026** — the owner: *"Now i
           need to remove hot tag/Icon from Left Record Pane after the List and
@@ -1007,6 +1029,34 @@ export default function ListView(): JSX.Element {
       </div>
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
         <TagCards moduleName={meta.name} owner={agentPick || undefined} />
+        {/*
+          **New moved to the main toolbar** — the owner, 10 October 2026:
+          *"Move 'New' … from Left record pane to main Toolbar between Add +New
+          … and Search toolbar and built dropdown filter of Yesterday, This
+          Week, This Month in same Button/Chip"*. It still narrows this list,
+          so it is drawn here and placed there, like the filter button below.
+        */}
+        {toolbarSlots.created && createPortal(
+          <ChoiceChip
+            label="New"
+            title="Records added recently"
+            choices={CREATED_CHOICES}
+            active={createdWhen}
+            count={createdWhen ? (data?.total ?? 0) : (todayRecords?.total ?? 0)}
+            busy={Boolean(createdWhen) && isFetching}
+            onPick={(when) => {
+              setFilter(when
+                ? withChoice(filter, CREATED_FIELD, choiceConditions(CREATED_FIELD, when, localDay(new Date())))
+                : withoutChoice(filter, CREATED_FIELD));
+              setPage(1);
+            }}
+            buttonClass={(on) => cn('flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold',
+              on ? 'border-brand-700 bg-brand-700 text-white' : 'border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-slate-900 dark:text-brand-300')}
+            countClass={(on) => cn('rounded-full px-1.5', on ? 'bg-white/20 text-white' : 'bg-brand-100 dark:bg-brand-900')}
+            testId="new-records-chip"
+          />
+        , toolbarSlots.created)}
+
         {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}

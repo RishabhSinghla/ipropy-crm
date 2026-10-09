@@ -1,0 +1,70 @@
+# Why the today-task buzzer did or did not pop up, read off production.
+#
+# 10 October 2026, the owner: "i have created a task for me but no
+# popup/buzzer has been reflected". Read-only: the buzzer's settings, and how
+# many records are due today per assigned person. Staff emails and counts only —
+# no customer name, number or address. workflow_dispatch only.
+name: Why no buzzer
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Read the settings and today's tasks
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "$DATABASE_URL" ] || { echo "::error::no PROD_DATABASE_URL"; exit 1; }
+          q() { psql "$DATABASE_URL" -X -P pager=off -c "$1"; }
+
+          echo "=== the buzzer's settings ==="
+          q "SELECT key, value, category, updated_at FROM ipy_setting WHERE key LIKE 'ui.task_buzzer_%' ORDER BY key;"
+          q "SELECT name FROM ipy_migration WHERE name LIKE '200_%';"
+
+          echo "=== today in India, and when it changes ==="
+          q "SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date AS india_today, now() AS utc_now;"
+
+          echo "=== the task dates each module has (follow-up, visit, or marked due) ==="
+          q "SELECT m.name AS module, f.name, f.label, f.storage, f.uitype, f.is_active, f.config->>'dueDate' AS due_date
+               FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+              WHERE f.uitype IN ('date','datetime')
+                AND (f.config->>'dueDate' = 'true' OR f.name ~* 'follow' OR (f.name || ' ' || f.label) ~* 'visit.*plan|plan.*visit')
+              ORDER BY m.name, f.name;"
+
+          echo "=== contacts with a follow-up due today, per assigned person ==="
+          q "SELECT coalesce(u.email, '(nobody)') AS assigned_to, COUNT(*) AS due_today,
+                    MAX(r.updated_at) AS last_touched
+               FROM ipy_record r
+               JOIN ipy_module m ON m.id = r.module_id AND m.name = 'leads'
+               JOIN ipy_e_leads l ON l.record_id = r.id
+               LEFT JOIN ipy_user u ON u.id = r.owner_id
+              WHERE NOT r.is_deleted
+                AND (to_jsonb(l)->>'next_followup_at')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date
+              GROUP BY 1 ORDER BY 2 DESC;"
+
+          echo "=== follow-ups changed in the last 12 hours, by who changed them and who owns the record ==="
+          q "SELECT coalesce(ch.email,'?') AS changed_by, coalesce(ow.email,'(nobody)') AS assigned_to,
+                    c->>'to' AS new_date, a.created_at
+               FROM ipy_audit a
+               CROSS JOIN LATERAL jsonb_array_elements(a.changes) c
+               JOIN ipy_record r ON r.id = a.record_id
+               LEFT JOIN ipy_user ch ON ch.id = a.user_id
+               LEFT JOIN ipy_user ow ON ow.id = r.owner_id
+              WHERE a.created_at > now() - interval '12 hours'
+                AND c->>'field' ~* 'follow|visit'
+              ORDER BY a.created_at DESC LIMIT 20;"

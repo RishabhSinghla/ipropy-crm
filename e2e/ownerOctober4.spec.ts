@@ -3,9 +3,11 @@ import { expect, test } from '@playwright/test';
 for (const module of ['leads', 'properties', 'associates']) {
   test(`${module}: created-today and favourites filters are available`, async ({ page }) => {
     await page.goto(`/${module}`);
-    const chip = page.getByRole('button', { name: /^New \d/ });
+    // New sits in the main toolbar and opens a short list (10 October 2026).
+    const chip = page.getByTestId('new-records-chip');
     await expect(chip).toBeVisible();
     await chip.click();
+    await page.getByRole('menuitemradio', { name: 'Today' }).click();
     await expect(chip).toHaveAttribute('aria-pressed', 'true');
     await expect(page).toHaveURL(/created_at/);
     const count = Number((await chip.innerText()).replace(/\D/g, ''));
@@ -14,6 +16,7 @@ for (const module of ['leads', 'properties', 'associates']) {
       await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
     }
     await chip.click();
+    await page.getByRole('button', { name: 'Show all' }).click();
     await expect(chip).toHaveAttribute('aria-pressed', 'false');
     await page.getByTestId('workspace-dock-frame').hover();
     await page.getByTestId('workspace-dock').getByRole('link', { name: 'Favourites', exact: true }).click();

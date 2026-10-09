@@ -1,10 +1,10 @@
 import { type JSX } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Clock, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import type { FieldMeta, FilterGroup, ListQuery } from '@ipropy/shared';
 import { api } from '../lib/api';
-import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
 import { Dropdown } from './ui';
 import { AgentPicker } from './AgentPicker';
@@ -134,7 +134,6 @@ export function FollowUpQueue({
                toolbar reading as two toolbars. */
             className={toolbarButton(Boolean(active))}
           >
-            <Clock className={filterIcon('task', Boolean(active))} />
             {/* *"'Follow-ups' to Task"* — the owner's word for it, 28
                 September 2026. The field is still whatever the module calls
                 it; this is the button.

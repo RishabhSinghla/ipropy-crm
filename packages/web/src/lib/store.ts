@@ -233,10 +233,20 @@ async function adoptSession(
     script on a page, which is the protection the cookie was bought for.
   */
   if (isNative) rememberRefresh(result.refreshToken);
-  const modules = await api.modules();
-  cacheUser(result.user);
+  /*
+    The login answer is the bare user. The screen settings, capabilities and
+    the today-task buzzer's numbers ride on `/api/auth/me` only, so without
+    this a person who signed in and never reloaded had none of them — the
+    buzzer stayed silent all day (found 10 October 2026). The bare user is the
+    fallback, so a slow `/me` never stops anybody signing in.
+  */
+  const [modules, user] = await Promise.all([
+    api.modules(),
+    api.me().catch(() => result.user),
+  ]);
+  cacheUser(user);
   cacheModules(modules);
-  set({ user: result.user, modules, offline: false });
+  set({ user, modules, offline: false });
   void api.aiStatus().then((s) => set({ aiAvailable: s.available, sttAvailable: s.speechToText === true })).catch(() => undefined);
 }
 
