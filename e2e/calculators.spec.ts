@@ -5,6 +5,7 @@ test.use({ viewport: { width: 1500, height: 900 } });
 
 test('Tools opens from the bottom dock and calculates all loan types', async ({ page }) => {
   await page.goto('/dashboard');
+  // The hover transition must not replace the link or swallow its click.
   await page.getByTestId('workspace-dock-folded').getByRole('link', { name: 'Tools', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Business tools' })).toBeVisible();
   for (const name of ['EMI calculator', 'Car loan', 'Personal loan']) {

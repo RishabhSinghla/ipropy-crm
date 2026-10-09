@@ -113,11 +113,10 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
       onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setHovered(false); }}
     >
       <aside
-        inert={!expanded}
         className={cn(
-          'flex h-full w-52 flex-col overflow-y-auto bg-[#f0f2f5] py-3 no-scrollbar transition-opacity duration-200 dark:bg-slate-900',
-          !expanded ? 'pointer-events-none opacity-0' : 'opacity-100',
-          folded && expanded && 'absolute inset-y-0 left-0 shadow-xl',
+          'absolute inset-y-0 left-0 flex h-full flex-col overflow-y-auto bg-[#f0f2f5] py-2 no-scrollbar dark:bg-slate-900',
+          expanded ? 'w-52' : 'w-14',
+          folded && expanded && 'shadow-xl',
         )}
         aria-label="Workspace toolbar"
         data-testid="workspace-dock"
@@ -127,40 +126,17 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
           Below Call and Dashboard icon on top"*. Dashboard, then the modules a
           rep works, then the call log, then WhatsApp at the foot.
         */}
-        <div className="flex flex-col gap-1 px-2">
+        <nav className="flex h-full flex-col gap-1 px-2" data-testid={!expanded ? 'workspace-dock-folded' : undefined} aria-label="Workspace destinations">
           {rows.map((row) => (
-            <DockLink key={row.to} to={row.to} label={row.label} count={row.count} tone={row.tone}>
+            <DockLink key={row.to} to={row.to} label={row.label} count={row.count} tone={row.tone} iconOnly={!expanded}>
               {row.icon}
             </DockLink>
           ))}
-        </div>
-        <div className="mx-2 mt-auto border-t border-slate-300 pt-3 dark:border-slate-700">
-          <DockLink to="/tools" label="Tools"><Calculator className="h-[18px] w-[18px]" /></DockLink>
-        </div>
-      </aside>
-      {!expanded ? (
-        /*
-          **Folded is icons, not a blank strip** (3 October 2026). Every row is
-          the same destination, drawn as its icon alone with the name on hover
-          and for a screen reader, and the round chevron at the top opens the
-          toolbar rather than the whole strip being one button — a column you
-          cannot click through is a column that costs a click to use.
-        */
-        <nav
-          className="absolute inset-0 z-20 flex flex-col items-center gap-1 overflow-y-auto bg-[#f0f2f5] py-2 no-scrollbar dark:bg-slate-900"
-          aria-label="Workspace toolbar"
-          data-testid="workspace-dock-folded"
-        >
-          {rows.map((row) => (
-            <DockLink key={row.to} to={row.to} label={row.label} count={row.count} tone={row.tone} iconOnly>
-              {row.icon}
-            </DockLink>
-          ))}
-          <div className="mt-auto w-10 border-t border-slate-300 pt-3 dark:border-slate-700">
-            <DockLink to="/tools" label="Tools" iconOnly><Calculator className="h-[18px] w-[18px]" /></DockLink>
+          <div className="mt-auto border-t border-slate-300 pt-3 dark:border-slate-700">
+            <DockLink to="/tools" label="Tools" iconOnly={!expanded}><Calculator className="h-[18px] w-[18px]" /></DockLink>
           </div>
         </nav>
-      ) : null}
+      </aside>
     </div>
   );
 }

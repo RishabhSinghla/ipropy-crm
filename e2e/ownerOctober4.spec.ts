@@ -15,9 +15,10 @@ for (const module of ['leads', 'properties', 'associates']) {
     }
     await chip.click();
     await expect(chip).toHaveAttribute('aria-pressed', 'false');
-    await page.getByTestId('workspace-dock-folded').getByRole('link', { name: 'Favourites', exact: true }).click();
+    await page.getByTestId('workspace-dock-frame').hover();
+    await page.getByTestId('workspace-dock').getByRole('link', { name: 'Favourites', exact: true }).click();
     await expect(page).toHaveURL(/favourite/);
-    await expect(page.getByTestId('workspace-dock-folded').getByRole('link', { name: 'Favourites', exact: true })).toHaveClass(/bg-brand-100/);
+    await expect(page.getByTestId('workspace-dock').getByRole('link', { name: 'Favourites', exact: true })).toHaveClass(/bg-brand-700/);
   });
 }
 
@@ -36,11 +37,15 @@ test('search options offers compact two-column defaults', async ({ page }) => {
   await expect(panel.getByText('Agent', { exact: true })).toBeVisible();
   await expect(panel.getByText('Location', { exact: true })).toBeVisible();
   await expect(panel.getByLabel('Created date', { exact: true })).toBeVisible();
-  await expect(panel.getByLabel('Budget or demand maximum slider')).toBeVisible();
-  await expect(panel.getByLabel('Size maximum slider')).toBeVisible();
+  const ranges = panel.getByTestId('range-slider');
+  await expect(ranges).toHaveCount(2);
+  for (const range of await ranges.all()) {
+    await expect(range.getByLabel('Lowest', { exact: true })).toBeVisible();
+    await expect(range.getByLabel('Highest', { exact: true })).toBeVisible();
+  }
   await expect(panel.getByLabel('Full name', { exact: true })).toHaveCount(0);
   await expect(panel.getByLabel('Mobile', { exact: true })).toHaveCount(0);
-  await expect(panel.getByText('Call disposition / log', { exact: true })).toBeVisible();
+  await expect(panel.getByText(/^Call disposition \/ log/).first()).toBeVisible();
   await expect(panel.getByText('Lost reason', { exact: true })).toBeVisible();
   await expect(panel.getByText(/No filters —/)).toHaveCount(0);
 });
