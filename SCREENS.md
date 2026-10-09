@@ -2378,8 +2378,9 @@ bursts made by the browser, so there is no audio file to load or lose.
 
 * **A task** is a record assigned to you whose task date is today, on every
   module that has one. Which dates count is metadata: the module's Next
-  Follow-up (`followUpFieldOf`) plus any date field an admin has marked
-  `config.dueDate` — a planned site visit, for instance. No field is named.
+  Follow-up (`followUpFieldOf`), its planned-visit date (`plannedVisitField`,
+  found by a name or label saying "visit planned"), and any date field an admin
+  has marked `config.dueDate`. No field is named.
   "Today" is asked of the server, in the organisation's timezone.
 * **A round** walks them first to last, each popup buzzing as it opens. The
   next round starts *Minutes between rounds* after the last popup of this one.
@@ -2399,7 +2400,7 @@ bursts made by the browser, so there is no audio file to load or lose.
 * **Laptops and desktops only** — not in the phone app, where a popup over a
   call is worse than none.
 
-**Settings → Today's tasks** holds the four numbers (migration `195`, keys
+**Settings → Today's tasks** holds the four numbers (migration `200`, keys
 `ui.task_buzzer_*`, seeded on with the owner's 15 / 50 / 60). They ride on
 `/api/auth/me` with the other `ui.` settings, so a change reaches somebody the
 next time they open the CRM. `readTaskBuzzer` holds each inside a sane range: a

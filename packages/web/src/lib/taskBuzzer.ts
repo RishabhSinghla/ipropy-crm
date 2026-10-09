@@ -11,9 +11,9 @@
  * The rules, in plain words:
  *
  * * A **task** is a record you are assigned whose follow-up date is today.
- *   Which date counts is metadata — the module's Next Follow-up, plus any date
- *   an admin has marked as a due date (a planned site visit, say). No field is
- *   named here.
+ *   Which date counts is metadata — the module's Next Follow-up, its planned
+ *   visit date (`plannedVisitField`), plus any date an admin has marked as due.
+ *   No field is named here.
  * * A **round** walks every task, first to last. The next round starts
  *   `everyMinutes` after the last one ended.
  * * **More than `onceOver` tasks:** each record pops up once that day, and
@@ -23,7 +23,7 @@
  *   moved off today — which is the whole point.
  */
 import type { FieldMeta, FilterGroup, TaskBuzzerSettings } from '@ipropy/shared';
-import { followUpFieldOf } from './fields';
+import { followUpFieldOf, plannedVisitField } from './fields';
 import { localDay } from './followUpDates';
 
 /** One record due today, as the popup needs it. */
@@ -34,13 +34,14 @@ export interface TodayTask {
   label: string;
 }
 
-/** The dates that make a record "due today" in this module. */
+/** The dates that make a record "due today" in this module: the follow-up, a planned visit, any date marked as due. */
 export function taskDateFields(fields: FieldMeta[]): FieldMeta[] {
   const followUp = followUpFieldOf(fields);
+  const visit = plannedVisitField(fields);
   const marked = fields.filter((field) => field.isActive !== false
     && (field.uitype === 'date' || field.uitype === 'datetime')
     && Boolean(field.config?.dueDate));
-  const all = followUp ? [followUp, ...marked] : marked;
+  const all = [followUp, visit, ...marked].filter((field): field is FieldMeta => Boolean(field));
   return all.filter((field, index) => all.findIndex((other) => other.name === field.name) === index);
 }
 

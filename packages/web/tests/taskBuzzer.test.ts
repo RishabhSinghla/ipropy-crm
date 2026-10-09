@@ -55,6 +55,14 @@ describe('what counts as a task', () => {
     expect(taskDateFields(fields).map((f) => f.name)).toEqual(['next_followup_at', 'site_visit_on']);
   });
 
+  it('counts a planned visit date as a task, as the owner asked', () => {
+    const fields = [
+      field({ name: 'next_followup_at', columnName: 'next_followup_at', uitype: 'date' }),
+      field({ name: 'visit_planned_on', label: 'Visit Planned date', uitype: 'date' }),
+    ];
+    expect(taskDateFields(fields).map((f) => f.name)).toEqual(['next_followup_at', 'visit_planned_on']);
+  });
+
   it('counts the follow-up once even when it is also marked as due', () => {
     const fields = [field({ name: 'next_followup_at', columnName: 'next_followup_at', uitype: 'date', config: { dueDate: true } })];
     expect(taskDateFields(fields)).toHaveLength(1);
