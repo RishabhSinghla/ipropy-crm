@@ -99,6 +99,12 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
       + 'It never blocks a save — a lead taken down mid-call has to get in with a name and a number — '
       + 'so this is a reminder, not a gate. Leave it at 0 and nobody is reminded of anything.',
   },
+  {
+    id: 'task_buzzer',
+    title: "Today's tasks",
+    blurb: 'Every record due today pops up on its owner\u2019s screen with a buzzer, first to last, round after round '
+      + 'until the dates are moved. Laptops and desktops only. People see a change the next time they open the CRM.',
+  },
   { id: 'sharing', title: 'Share links', blurb: 'What a buyer sees when you send them a property.' },
   { id: 'telephony', title: 'Calls', blurb: 'Call recording.' },
   { id: 'ai', title: 'AI', blurb: 'Which parts of the CRM the AI is allowed to do on its own.' },

@@ -278,6 +278,25 @@ export interface UiSettings {
    * arranged it. Null (or a module missing) means the shipped arrangement.
    */
   quickFilters: Record<string, QuickFilterSection[]> | null;
+  /** The today-task buzzer, as Admin → Settings → Today's tasks sets it. */
+  taskBuzzer: TaskBuzzerSettings;
+}
+
+/**
+ * The popup that walks a rep through every record due today, with a buzzer.
+ *
+ * **9 October 2026, the owner:** every fifteen minutes, first task to last,
+ * each lead's form pops up with a buzzer — once a day per lead when there are
+ * more than fifty, every round when there are fewer.
+ */
+export interface TaskBuzzerSettings {
+  on: boolean;
+  /** Minutes between the end of one round and the start of the next. */
+  everyMinutes: number;
+  /** Over this many tasks, each lead pops up once a day rather than every round. */
+  onceOver: number;
+  /** On a day over `onceOver`, each popup closes itself after this many seconds. */
+  closeAfterSeconds: number;
 }
 
 /**

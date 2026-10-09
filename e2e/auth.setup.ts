@@ -15,5 +15,20 @@ import { login, STORAGE_STATE } from './helpers';
 setup('authenticate', async ({ page }) => {
   await login(page);
 
+  /*
+    The today-task buzzer pops up over whatever is on screen a minute after
+    sign-in, which is the point for a rep and would land on top of every spec
+    here. So the saved session starts with today's round already put off —
+    the same note the buzzer itself writes, keyed by this browser's own day.
+    `e2e/taskBuzzer.spec.ts` clears it to prove the popup.
+  */
+  await page.evaluate(() => {
+    const userId = (JSON.parse(localStorage.getItem('ipropy.user') ?? 'null') as { id?: string } | null)?.id;
+    if (!userId) return;
+    const now = new Date();
+    const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    localStorage.setItem(`ipropy.taskBuzzer.${userId}.${day}`, JSON.stringify({ shown: [], nextAt: Date.now() + 24 * 60 * 60_000 }));
+  });
+
   await page.context().storageState({ path: STORAGE_STATE });
 });

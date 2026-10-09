@@ -2362,6 +2362,63 @@ that died on a line no test had ever reached.
 
 ---
 
+## Today's tasks pop up, with a buzzer — 9 October 2026
+
+**The owner:** *"i need to pressurised to team for the complete today task asap
+… in every 15 minute … first task to last task … every lead form auto open like
+popup … only once time per day / per lead if task more then 50 records, the
+form will be closed after 60 seconds … if task below then 50 then remind
+regular after 15 minute … with a buzzer sound also … if they want to ignore the
+tasks but they cant ignore anyway."*
+
+`components/TaskBuzzer.tsx` is mounted once in `Layout`, so it runs whichever
+page somebody is on. The rules are in `lib/taskBuzzer.ts`, pure and tested
+(`tests/taskBuzzer.test.ts`); the sound is `lib/buzzer.ts`, three square-wave
+bursts made by the browser, so there is no audio file to load or lose.
+
+* **A task** is a record assigned to you whose task date is today, on every
+  module that has one. Which dates count is metadata: the module's Next
+  Follow-up (`followUpFieldOf`) plus any date field an admin has marked
+  `config.dueDate` — a planned site visit, for instance. No field is named.
+  "Today" is asked of the server, in the organisation's timezone.
+* **A round** walks them first to last, each popup buzzing as it opens. The
+  next round starts *Minutes between rounds* after the last popup of this one.
+* **Over *Once a day each, above this many tasks*** (50): each lead pops up once
+  that day and every popup closes itself after *Seconds before a popup closes*
+  (60), date moved or not.
+* **At or under it:** every task pops up every round and waits for the rep.
+  Next and Escape move on; nothing ends the round early.
+* **Moving the date is what finishes a task.** The popup is the record's whole
+  form (`ChatRecordPane`), editable where it stands, with the follow-up chip in
+  the red header. When a task date changes the popup says *Done — date moved*
+  and moves on. "Done" means *changed since the popup opened*, never "not today
+  by this laptop's clock" — a laptop in another timezone would disagree with the
+  server.
+* **A tab nobody is looking at** buzzes once and shows a desktop notification
+  (when the browser allows them); the round waits until the tab is in front.
+* **Laptops and desktops only** — not in the phone app, where a popup over a
+  call is worse than none.
+
+**Settings → Today's tasks** holds the four numbers (migration `195`, keys
+`ui.task_buzzer_*`, seeded on with the owner's 15 / 50 / 60). They ride on
+`/api/auth/me` with the other `ui.` settings, so a change reaches somebody the
+next time they open the CRM. `readTaskBuzzer` holds each inside a sane range: a
+typo must not become a popup every second.
+
+**What a browser remembers** (`ipropy.taskBuzzer.<user>.<day>`): which leads
+already popped up today and when the next round is due, so a reload neither
+restarts the clock nor repeats a busy day. Keyed by the day, so tomorrow starts
+clean. **`e2e/auth.setup.ts` saves the test session with today's round put off**
+— otherwise the popup lands on top of every spec a minute in.
+`e2e/taskBuzzer.spec.ts` brings it forward to prove the popup, the buzzer, Next
+and a moved date.
+
+**Two things a browser decides, not us.** Chrome will not make a sound until the
+person has clicked something on the page; anybody signed in has, so in practice
+it plays, and when it cannot the popup still opens silently. And nothing on a
+web page can stop somebody closing the tab — what the buzzer can do is come back
+every round until the date is moved.
+
 ## Projects — a fourth module, and why it is not the one 031 removed
 
 **8 October 2026, the owner:** *"make me a project module in the CRM wherein we can
