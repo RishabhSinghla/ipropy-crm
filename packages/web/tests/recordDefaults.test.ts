@@ -22,6 +22,11 @@ function field(over: Partial<FieldMeta>): FieldMeta {
 const module = (fields: FieldMeta[]): ModuleMeta => ({ fields } as ModuleMeta);
 
 describe('startingValues', () => {
+  it('uses the master creation default without rewriting the historical default', () => {
+    const unit = field({ name: 'area_unit', defaultValue: 'sqft', config: { newRecordDefault: 'sqyd' } });
+    expect(startingValues(module([unit])).area_unit).toBe('sqyd');
+    expect(unit.defaultValue).toBe('sqft');
+  });
   it('takes the option starred as the default in the dropdown editor', () => {
     const values = startingValues(module([
       field({

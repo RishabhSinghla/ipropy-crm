@@ -325,7 +325,7 @@ export function Dropdown({
   }, [open, align]);
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="group/dropdown relative" ref={ref} data-open={open}>
       <div ref={triggerRef} onClick={() => setOpen((v) => !v)}>{trigger}</div>
       {open && (
         <div

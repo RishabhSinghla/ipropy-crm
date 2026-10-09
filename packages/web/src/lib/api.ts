@@ -1448,7 +1448,7 @@ export const api = {
   waBizContactConsent: (module: string, id: string, subscribed: boolean) =>
     post<{ optedOut: boolean; notedInWhatsMarketing: boolean }>(`/api/whatsapp-business/contacts/${module}/${id}/consent`, { subscribed }),
 
-  tags: (module?: string) => get<{ id: string; name: string; color: string; created_by: string | null; modules: string[]; usage_count: number }[]>(`/api/tags${qs({ module })}`),
+  tags: (module?: string, owner?: string) => get<{ id: string; name: string; color: string; created_by: string | null; modules: string[]; usage_count: number }[]>(`/api/tags${qs({ module, owner })}`),
   createTag: (body: { name: string; color?: string; modules?: string[] }) => post<{ id: string; name: string; color: string }>('/api/tags', body),
   updateTag: (id: string, body: { name?: string; color?: string; modules?: string[] }) => patch<{ id: string; name: string; color: string }>(`/api/tags/${id}`, body),
   deleteTag: (id: string) => del<{ ok: true }>(`/api/tags/${id}`),

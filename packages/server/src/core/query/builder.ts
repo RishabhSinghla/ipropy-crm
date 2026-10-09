@@ -591,6 +591,7 @@ function onePiece(piece: string, params: SqlParams, includeNotes: boolean): stri
   const ts = params.add((piece.match(/[\p{L}\p{N}_]+/gu) ?? []).map((w) => `${w}:*`).join(' & '));
   return `(${RECORD_ALIAS}.label ILIKE ${like}
     OR ${RECORD_ALIAS}.record_number ILIKE ${like}
+    OR ${RECORD_ALIAS}.search_text ILIKE ${like}
     ${includeNotes ? `OR EXISTS (SELECT 1 FROM ipy_comment search_note
       WHERE search_note.record_id = ${RECORD_ALIAS}.id AND search_note.body ILIKE ${like})` : ''}
     OR ${RECORD_ALIAS}.search_vector @@ to_tsquery('simple', ${ts}))`;

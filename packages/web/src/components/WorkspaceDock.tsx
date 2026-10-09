@@ -69,6 +69,8 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
   folded: boolean;
   onFoldChange: (folded: boolean) => void;
 }): JSX.Element {
+  const [hovered, setHovered] = useState(false);
+  const expanded = !folded || hovered;
   const { modules } = useApp();
   const here = useLocation().pathname.split('/')[1];
   const favouriteModule = modules.find((module) => module.isEntity && module.name === here)?.name
@@ -79,22 +81,23 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
     and never which rows exist. Two lists would be two things to keep in step,
     and the way that drifts is a module appearing in one and not the other.
   */
-  const rows: Array<{ to: string; label: string; icon: JSX.Element; count?: number; tone?: 'whatsapp' }> = [
-    { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-[18px] w-[18px]" /> },
-    ...entityModules.map((module) => ({
+  const rows: Array<{ to: string; label: string; icon: JSX.Element; count?: number; tone?: string }> = [
+    { to: '/dashboard', label: 'Dashboard', tone: 'dashboard', icon: <LayoutDashboard className="h-[18px] w-[18px]" /> },
+    ...entityModules.map((module, index) => ({
       to: `/${module.name}`,
       label: module.label,
       icon: module.name === 'leads' ? <UserRound className="h-[18px] w-[18px]" /> : module.name === 'associates' ? <ThreeContacts className="h-[18px] w-[18px]" /> : <ModuleIcon name={module.icon} className="h-[18px] w-[18px]" />,
       count: counts?.[module.name],
+      tone: ['leads', 'inventory', 'associates', 'other'][index % 4],
     })),
-    { to: '/calls', label: 'Calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" />, count: counts?.calls },
-    { to: `/${favouriteModule}?filter=${encodeURIComponent(JSON.stringify({ logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }))}`, label: 'Favourites', icon: <Star className="h-[18px] w-[18px]" />, count: counts?.[`favourites:${favouriteModule}`] },
+    { to: '/calls', label: 'Calls', tone: 'calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" />, count: counts?.calls },
+    { to: `/${favouriteModule}?filter=${encodeURIComponent(JSON.stringify({ logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }))}`, label: 'Favourites', tone: 'favourites', icon: <Star className="h-[18px] w-[18px]" />, count: counts?.[`favourites:${favouriteModule}`] },
     { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, count: counts?.whatsapp, tone: 'whatsapp' as const },
   ];
   return (
     <div
       className={cn(
-        'relative hidden shrink-0 overflow-hidden border-r border-slate-200 transition-[width] duration-300 ease-in-out dark:border-slate-800 lg:block',
+        'relative z-40 hidden shrink-0 overflow-visible border-r border-slate-200 transition-[width] duration-300 ease-in-out dark:border-slate-800 lg:block',
         // Wide enough for a name beside every icon — *"all icon have their
         // names"* (2 October 2026). Folded it is a column of those same icons,
         // on his instruction of 3 October: *"when we close the window the the
@@ -104,12 +107,17 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
       )}
       data-testid="workspace-dock-frame"
       data-folded={folded ? 'true' : undefined}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setHovered(true)}
+      onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setHovered(false); }}
     >
       <aside
-        inert={folded}
+        inert={!expanded}
         className={cn(
           'flex h-full w-52 flex-col overflow-y-auto bg-[#f0f2f5] py-3 no-scrollbar transition-opacity duration-200 dark:bg-slate-900',
-          folded ? 'pointer-events-none opacity-0' : 'opacity-100',
+          !expanded ? 'pointer-events-none opacity-0' : 'opacity-100',
+          folded && expanded && 'absolute inset-y-0 left-0 shadow-xl',
         )}
         aria-label="Workspace toolbar"
         data-testid="workspace-dock"
@@ -130,7 +138,7 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
           <DockLink to="/tools" label="Tools"><Calculator className="h-[18px] w-[18px]" /></DockLink>
         </div>
       </aside>
-      {folded ? (
+      {!expanded ? (
         /*
           **Folded is icons, not a blank strip** (3 October 2026). Every row is
           the same destination, drawn as its icon alone with the name on hover
@@ -163,7 +171,7 @@ function DockLink({ to, label, count, tone, iconOnly = false, children }: {
   /** How many records this module holds. Absent for a destination that is not one. */
   count?: number;
   /** `whatsapp` keeps its own green, which is how a rep finds it without reading. */
-  tone?: 'whatsapp';
+  tone?: string;
   /** The folded strip: the icon alone, with the name on hover and for a reader. */
   iconOnly?: boolean;
   children: ReactNode;
@@ -184,19 +192,19 @@ function DockLink({ to, label, count, tone, iconOnly = false, children }: {
       aria-current={label === 'Favourites' && favouritesOn ? 'page' : undefined}
       className={({ isActive }) => dockLook(label === 'Favourites' ? favouritesOn : isActive && !(favouritesOn && to === location.pathname), tone, iconOnly)}
     >
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center">{children}</span>
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center text-[var(--dock-icon,currentColor)]">{children}</span>
       {!iconOnly && <span className="min-w-0 flex-1 truncate text-left">{label}</span>}
       {/*
         The module's own size, and **not** an unread count — that feature is
         off the toolbar on the owner's instruction (2 October 2026). A count
         of nothing is not drawn: a grey zero beside every module is noise.
       */}
-      {count !== undefined ? (
+      {!iconOnly && count !== undefined ? (
         <span
           className={cn('shrink-0 rounded-full bg-slate-200 px-1.5 text-[10px] font-bold leading-[1.1rem] text-slate-700 tnum dark:bg-slate-700 dark:text-slate-100', iconOnly && 'absolute -right-1 -top-1 text-[8px] px-1')}
           title={`${count.toLocaleString('en-IN')} ${label.toLowerCase()}`}
         >
-          {count > 999 ? `${Math.floor(count / 1000)}k` : count}
+          {count.toLocaleString('en-IN')}
         </span>
       ) : null}
     </NavLink>
@@ -204,7 +212,7 @@ function DockLink({ to, label, count, tone, iconOnly = false, children }: {
 }
 
 /** The one look for a dock row: a white tile when it is where you are, a quiet one when it is not. */
-function dockLook(on: boolean, tone?: 'whatsapp', iconOnly = false): string {
+function dockLook(on: boolean, tone?: string, iconOnly = false): string {
   return cn(
     'relative flex h-10 shrink-0 items-center rounded-xl text-sm font-semibold transition',
     iconOnly ? 'w-10 justify-center' : 'w-full gap-2.5 px-2',
@@ -217,7 +225,15 @@ function dockLook(on: boolean, tone?: 'whatsapp', iconOnly = false): string {
     */
     tone === 'whatsapp' && !on && 'text-[#0a7038] hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950',
     on
-      ? 'border border-brand-300 bg-brand-100 text-brand-700 shadow-xs dark:border-brand-600 dark:bg-brand-950 dark:text-brand-300'
-      : !tone && 'text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800',
+      ? 'border border-brand-700 bg-brand-700 text-white shadow-xs [--dock-icon:white]'
+      : 'text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800',
+    !on && tone === 'leads' && '[--dock-icon:#2563eb] dark:[--dock-icon:#93c5fd]',
+    !on && tone === 'inventory' && '[--dock-icon:#047857] dark:[--dock-icon:#6ee7b7]',
+    !on && tone === 'associates' && '[--dock-icon:#7c3aed] dark:[--dock-icon:#c4b5fd]',
+    !on && tone === 'other' && '[--dock-icon:#be185d] dark:[--dock-icon:#f9a8d4]',
+    !on && tone === 'whatsapp' && '[--dock-icon:#047857] dark:[--dock-icon:#6ee7b7]',
+    !on && tone === 'dashboard' && '[--dock-icon:#4338ca] dark:[--dock-icon:#a5b4fc]',
+    !on && tone === 'calls' && '[--dock-icon:#c2410c] dark:[--dock-icon:#fdba74]',
+    !on && tone === 'favourites' && '[--dock-icon:#a16207] dark:[--dock-icon:#fde047]',
   );
 }

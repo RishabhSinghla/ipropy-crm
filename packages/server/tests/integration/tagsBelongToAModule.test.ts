@@ -18,7 +18,7 @@ import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
-import { signIn } from './fixtures.js';
+import { signIn, authUser, SEEDED } from './fixtures.js';
 
 let app: Express;
 let token = '';
@@ -181,5 +181,27 @@ describe('which module a tag belongs to', () => {
     expect((record.body as { tags: string[] }).tags).not.toContain('itest_props_only');
 
     await db.query(`DELETE FROM ipy_tag_link WHERE tag_id = $1`, [tag]);
+  });
+
+  it('counts only visible owners, including when a different owner is requested', async () => {
+    const a = await authUser(SEEDED.executiveA);
+    const b = await authUser(SEEDED.executiveB);
+    const agentToken = await signIn(app, SEEDED.executiveA);
+    const tag = (await db.queryOne<{ id: string }>(`SELECT id FROM ipy_tag WHERE name = 'itest_counted'`))!.id;
+    for (const owner of [a.id, b.id]) {
+      const row = (await db.queryOne<{ id: string }>(
+        `INSERT INTO ipy_record(module_id,module_name,label,owner_id,created_by)
+         VALUES ((SELECT id FROM ipy_module WHERE name='leads'),'leads','itest_count_owned',$1,$1) RETURNING id`, [owner]))!;
+      await db.query(`INSERT INTO ipy_tag_link(tag_id,record_id) VALUES ($1,$2)`, [tag,row.id]);
+    }
+    const count = async (access: string, owner?: string) => {
+      const response = await request(app).get(`/api/tags?module=leads${owner ? `&owner=${owner}` : ''}`)
+        .set('Authorization', `Bearer ${access}`).expect(200);
+      return response.body.find((item: { name: string }) => item.name === 'itest_counted').usage_count;
+    };
+    expect(await count(token, a.id)).toBe(1);
+    expect(await count(token, b.id)).toBe(1);
+    expect(await count(agentToken)).toBe(1);
+    expect(await count(agentToken, b.id)).toBe(0);
   });
 });

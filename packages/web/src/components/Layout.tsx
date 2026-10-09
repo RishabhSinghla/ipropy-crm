@@ -8,6 +8,7 @@ import {
 import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type AccessRequest, type ModuleSummary, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
+import { notificationTone } from '../lib/notificationTone';
 import { LiveCallDeck } from './LiveCallDeck';
 import { useDockFolded, WorkspaceDock } from './WorkspaceDock';
 import { AiBubble } from './AiBubble';
@@ -695,11 +696,11 @@ function NotificationBell(): JSX.Element {
     <Dropdown
       trigger={
         <button
-          className="btn-ghost relative rounded-full p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+          className="btn-ghost relative rounded-full p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 group-data-[open=true]/dropdown:!bg-brand-700 group-data-[open=true]/dropdown:!text-white"
           title="Notifications"
           aria-label={unread > 0 ? `${unread} unread notification${unread === 1 ? '' : 's'}` : 'Notifications'}
         >
-          <Bell className={cn('h-4 w-4 transition-transform', unread > 0 && 'text-brand-600 dark:text-brand-400')} />
+          <Bell className={cn('h-4 w-4 transition-transform group-data-[open=true]/dropdown:!text-white', unread > 0 && 'text-brand-600 dark:text-brand-400')} />
           {unread > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] animate-pulse-success items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white ring-2 ring-white dark:ring-slate-900">
               {unread > 9 ? '9+' : unread}
@@ -750,8 +751,8 @@ function NotificationBell(): JSX.Element {
                     close();
                   }}
                   className={cn(
-                    'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70',
-                    !n.is_read && 'bg-brand-50/60 dark:bg-brand-950/30',
+                    'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors',
+                    notificationTone(n.kind, n.link),
                   )}
                 >
                   <NotificationIcon kind={n.kind} link={n.link} />

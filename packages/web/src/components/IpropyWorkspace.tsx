@@ -8,8 +8,9 @@ import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
   History, Mail, MessageCircle, MessageSquare, MessagesSquare, MoreHorizontal, Phone, Search, Send,
   Sparkles, Star, Tag, Trash2, Users, X,
-  Building2,
+  Building2, CalendarDays, PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
+import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { BuilderFloorTable, localityFilter, matchesForContact, unitsOfProject } from './BuilderFloorTable';
@@ -480,6 +481,7 @@ export function IpropyWorkspace({
     bringing this back is code rather than data recovery.
   */
   const [paneFolded, setPaneFoldedState] = useState(true);
+  const [detailsHoverBlocked, setDetailsHoverBlocked] = useState(false);
   const setPaneFolded = useCallback((folded: boolean) => setPaneFoldedState(folded), []);
 
   const resize = useCallback((delta: number) => {
@@ -790,7 +792,7 @@ export function IpropyWorkspace({
             <span className="flex min-w-0 items-center gap-1 truncate text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
               <ModuleIcon name={module.icon} className="h-3 w-3 shrink-0 text-slate-400" />
               <span className="truncate">{module.label}</span>
-              <span className="shrink-0 font-normal text-muted">({groupField ? localityGroups.length : rows.length}{groupField ? ' localities' : ''})</span>
+              {groupField && <span className="shrink-0 font-normal text-muted">({localityGroups.length} localities)</span>}
               {active && !groupField && rows.some((row) => row.id === active.id) && <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 normal-case tracking-normal dark:bg-blue-950 dark:text-blue-200" aria-label="Selected record on this page">{rows.findIndex((row) => row.id === active.id) + 1} / {rows.length}</span>}
             </span>
           </span>
@@ -1040,6 +1042,14 @@ export function IpropyWorkspace({
             squeezing it, which is what `flex-wrap` was already here for.
           */}
           <span className="ml-auto flex shrink-0 basis-full flex-wrap items-center justify-end gap-1.5 xl:basis-auto" data-testid="split-hero-actions-status">
+            {module.fields.filter(field => field.isActive && field.displayType !== 'hidden'
+              && ['date', 'datetime'].includes(field.uitype)
+              && /visit.*plan|plan.*visit/i.test(`${field.name} ${field.label}`)
+              && active.values[field.name]).slice(0, 1).map(field => (
+                <span key={field.id} className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200" title={field.label} data-testid="planned-visit-date">
+                  <CalendarDays className="h-3.5 w-3.5" /> Visit: <FieldValue field={field} value={active.values[field.name]} display={active.display?.[field.name]} />
+                </span>
+              ))}
             {/*
               **The module's name left this header on 3 October 2026** —
               *"Remove inventory/Lead labels/text from this middle header."*
@@ -1307,6 +1317,10 @@ export function IpropyWorkspace({
             paneOpen ? 'xl:w-[22.5rem]' : 'max-h-11 xl:max-h-none xl:w-11',
           )}
         >
+          {paneOpen && !filterBar?.open && <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-1 dark:border-slate-800">
+            <span className="text-xs font-semibold text-muted">Details</span>
+            <button type="button" disabled={onCall} onClick={() => { if (filterBar?.open) filterBar.onToggle?.(); setDetailsHoverBlocked(true); setPaneFolded(true); }} aria-label="Fold the details pane" aria-expanded title={onCall ? 'The live call deck stays visible during a call' : 'Fold the details away'} className="btn-icon h-7 w-7" data-testid="fold-details"><PanelRightClose className="h-4 w-4" /></button>
+          </div>}
           {filterBar?.panel}
           {/*
             Fold the whole pane away and back — the owner, 3 October 2026:
@@ -1317,36 +1331,26 @@ export function IpropyWorkspace({
             opens here, so a folded pane opens itself while it shows — and while a
             call on this record is up, since the call deck lives here too.
           */}
-          {paneOpen ? (
+          {!paneOpen && (
             <button
               type="button"
-              onClick={() => setPaneFolded(true)}
-              title="Fold the details away"
-              aria-label="Fold the details pane"
-              aria-expanded
-              className="absolute left-0 top-1/2 z-20 hidden h-12 w-5 -translate-y-1/2 items-center justify-center rounded-r-lg bg-brand-600 text-white shadow-md transition hover:w-6 hover:bg-brand-700 xl:flex"
-              data-testid="fold-details"
-            >
-              <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2.5} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setPaneFolded(false)}
+              onClick={() => { setDetailsHoverBlocked(false); setPaneFolded(false); }}
+              onMouseEnter={() => { if (!detailsHoverBlocked) setPaneFolded(false); }}
+              onMouseLeave={() => setDetailsHoverBlocked(false)}
               title="Show the details"
               aria-label="Show the details pane"
               aria-expanded={false}
               className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-brand-50 text-brand-700 transition hover:bg-brand-100 xl:flex-col xl:justify-start xl:pt-3 dark:bg-slate-800 dark:text-brand-300 dark:hover:bg-slate-700"
               data-testid="unfold-details"
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm"><ChevronLeft className="h-4 w-4 max-xl:-rotate-90" strokeWidth={2.5} /></span>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center"><PanelRightOpen className="h-5 w-5" /></span>
               <span className="text-[11px] font-bold uppercase tracking-widest xl:[writing-mode:vertical-rl] xl:rotate-180">Details</span>
             </button>
           )}
           <div
             inert={!paneOpen}
             className={cn(
-              'flex min-h-0 w-full flex-1 flex-col transition-opacity duration-200 xl:w-[22.5rem] xl:flex-none xl:h-full',
+              'flex min-h-0 w-full flex-1 flex-col transition-opacity duration-200 xl:w-[22.5rem]',
               paneOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
           >

@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TagCards } from '../components/TagCards';
+import { canonicalFilter, withCreatedToday } from '../lib/newRecordsQuery';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, isFilterGroup } from '@ipropy/shared';
@@ -14,7 +15,7 @@ import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
 import { cn } from '../lib/utils';
 import { FieldInput } from '../components/FieldRenderer';
-import { assignmentField, byLabel, followUpFieldOf, pipelineFieldOf, withQueueSubtitle } from '../lib/fields';
+import { assignmentField, byLabel, followUpFieldOf, pipelineFieldOf, withQueueSubtitle, plannedVisitField } from '../lib/fields';
 import { withQueueCardColumns } from '../lib/queueCard';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { countConditions } from '../components/FilterBuilder';
@@ -422,6 +423,8 @@ export default function ListView(): JSX.Element {
   // Older Inventory workspaces store the same business field as
   // `next_follow_up` in JSON — `followUpFieldOf` knows both.
   const taskField = meta ? followUpFieldOf(meta.fields) : undefined;
+  const visitField = meta ? plannedVisitField(meta.fields) : undefined;
+  const visitsToday = Boolean(visitField && filter.conditions.some(item => !isFilterGroup(item) && item.field === visitField.name && item.operator === 'today'));
   /*
     The field decides, never a list of module names.
 
@@ -481,7 +484,7 @@ export default function ListView(): JSX.Element {
           : []),
     ];
     if (!extra.length) return filter;
-    return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
+    return { logic: 'AND', conditions: [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), ...extra] };
   }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, picks, fieldsByName, dispositionPick]);
 
 
@@ -507,7 +510,7 @@ export default function ListView(): JSX.Element {
     page,
     pageSize,
     search: search || undefined,
-    filter: countConditions(effectiveFilter) ? effectiveFilter : undefined,
+    filter: countConditions(effectiveFilter) ? canonicalFilter(effectiveFilter) : undefined,
     sortBy: effectiveSort.sortBy,
     sortDir: effectiveSort.sortDir,
     /*
@@ -522,10 +525,17 @@ export default function ListView(): JSX.Element {
       (meta?.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config as { queueFields?: string[] } | undefined)?.queueFields,
     ),
   }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta]);
-  const todayQuery: ListQuery = { view: query.view, search: query.search, page: 1, pageSize: 1,
-    filter: { logic: 'AND', conditions: [effectiveFilter, { field: 'created_at', operator: 'today' }] } };
-  const { data: todayRecords } = useQuery({ queryKey: ['created-today', moduleName, todayQuery],
+  // Prefetch the real first page, not just its count. Clicking New consumes
+  // the same cache key immediately; a selected New view shares this request.
+  const todayQuery: ListQuery = { ...query, page: 1,
+    filter: newToday ? query.filter : canonicalFilter(withCreatedToday(effectiveFilter)) };
+  const { data: todayRecords } = useQuery({ queryKey: ['records', moduleName, todayQuery],
     queryFn: () => api.list(moduleName!, todayQuery), enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName), staleTime: 60_000 });
+
+  const visitsQuery: ListQuery = { ...query, page: 1, pageSize: 1,
+    filter: { logic: 'AND', conditions: [effectiveFilter, { field: visitField?.name ?? 'created_at', operator: 'today' }] } };
+  const { data: visitRecords } = useQuery({ queryKey: ['visits-today', moduleName, visitsQuery],
+    queryFn: () => api.list(moduleName!, visitsQuery), enabled: Boolean(visitField && hydratedFor === moduleName), staleTime: 60_000 });
 
   // The call deck must resume this *exact* queue after Save & Next. The URL's
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a
@@ -974,13 +984,17 @@ export default function ListView(): JSX.Element {
           />
         )}
 
-        <button className={cn('flex shrink-0 items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700', newToday && 'ring-2 ring-brand-400')}
+        <button className={cn('flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold', newToday ? 'border-brand-700 bg-brand-700 text-white' : 'border-brand-200 bg-brand-50 text-brand-700')}
           aria-pressed={newToday} aria-busy={newToday && isFetching} title="Records created today" onClick={() => {
-            setFilter({ logic: 'AND', conditions: newToday
-              ? filter.conditions.filter((item) => isFilterGroup(item) || item.field !== 'created_at' || item.operator !== 'today')
-              : [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), { field: 'created_at', operator: 'today' }] });
+            setFilter(newToday ? { logic: 'AND', conditions: filter.conditions.filter((item) => isFilterGroup(item) || item.field !== 'created_at' || item.operator !== 'today') } : withCreatedToday(filter));
             setPage(1);
-          }}>New {newToday && isFetching ? <Spinner className="h-3 w-3" /> : <span className="rounded-full bg-brand-100 px-1.5">{todayRecords?.total ?? 0}</span>}</button>
+          }}>New {newToday && isFetching ? <Spinner className="h-3 w-3" /> : <span className={cn('rounded-full px-1.5', newToday ? 'bg-white/20 text-white' : 'bg-brand-100')}>{(todayRecords?.total ?? 0).toLocaleString('en-IN')}</span>}</button>
+        {visitField && <button className={toolbarButton(visitsToday)} aria-pressed={visitsToday} title="Records with a planned visit today" onClick={() => {
+          setFilter(visitsToday
+            ? { ...filter, conditions: filter.conditions.filter(item => isFilterGroup(item) || item.field !== visitField.name || item.operator !== 'today') }
+            : { logic: 'AND', conditions: [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), { field: visitField.name, operator: 'today' }] });
+          setPage(1);
+        }}>Visits today <span className={toolbarCount(visitsToday)}>{(visitRecords?.total ?? 0).toLocaleString('en-IN')}</span></button>}
         {/*
           **The Hot chip left this row on 3 October 2026** — the owner: *"Now i
           need to remove hot tag/Icon from Left Record Pane after the List and
@@ -992,11 +1006,11 @@ export default function ListView(): JSX.Element {
 
       </div>
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
-        <TagCards moduleName={meta.name} />
+        <TagCards moduleName={meta.name} owner={agentPick || undefined} />
         {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}
-              className={cn('btn-secondary btn-sm px-2', quickFilterCount > 0 && 'border-brand-400 text-brand-700 dark:text-brand-300')}
+              className={cn('btn-secondary btn-sm px-2', (showFilters || quickFilterCount > 0) && '!border-brand-700 !bg-brand-700 !text-white')}
               aria-label="Quick and live filters"
               aria-expanded={showFilters}
               title="Quick and live filters"

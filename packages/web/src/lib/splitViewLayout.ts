@@ -58,7 +58,6 @@ export function allSplitTabs(moduleName: string): SplitTab[] {
     module it reads: on a contact it is somebody's matches, on a house it is the
     street. One table, two questions, no second copy to drift.
   */
-  if (moduleName === 'leads') tabs.push({ key: 'builders', label: "Builder's Inventory" });
   if (moduleName === 'builder_floors') tabs.push({ key: 'builders', label: "Builder's Floor" });
   /*
     **A project's units**, first — a project is a list of units, and that list is

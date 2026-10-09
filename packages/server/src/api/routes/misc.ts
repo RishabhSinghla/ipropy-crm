@@ -18,8 +18,9 @@ import { blockApiKey, getScope, getUser, requireAdmin, requireAuth } from '../..
 import type { AuthUser, FieldMeta } from '@ipropy/shared';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import {
-  assertCapability, assertModuleAccess, canAccessRecord, getFieldPermissions,
+  assertCapability, assertModuleAccess, canAccessRecord, getFieldPermissions, canAccessModule, recordScopeSql,
 } from '../../core/permissions/index.js';
+import { SqlParams } from '../../core/query/builder.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { buildStorageKey } from '../../core/storage/keys.js';
 import {
@@ -322,6 +323,19 @@ miscRouter.get('/tags', asyncHandler(async (req, res) => {
   // the column carries — so asking without a module, as the admin screen does,
   // still returns the whole vocabulary.
   const module = typeof req.query.module === 'string' ? req.query.module : null;
+  const owner = req.query.owner === undefined ? null : z.string().uuid().parse(req.query.owner);
+  const params = new SqlParams();
+  const moduleParam = params.add(module);
+  const context = await getScope(req);
+  const visible: string[] = [];
+  for (const metadata of await registry.getModules({ entityOnly: true })) {
+    if (module && metadata.name !== module) continue;
+    if (!await canAccessModule(context.user, metadata.name, 'view')) continue;
+    const moduleId = params.add(metadata.id);
+    const scope = await recordScopeSql(context, metadata.name, params);
+    visible.push(`(r.module_id = ${moduleId}::uuid${scope ? ` AND ${scope}` : ''})`);
+  }
+  const ownerClause = owner ? `AND r.owner_id = ${params.add(owner)}::uuid` : '';
   /*
     The number beside a tag has to be the number of records the list will show.
 
@@ -336,10 +350,10 @@ miscRouter.get('/tags', asyncHandler(async (req, res) => {
      FROM ipy_tag t
      LEFT JOIN ipy_tag_link l ON l.tag_id = t.id
      LEFT JOIN ipy_record r ON r.id = l.record_id AND r.is_deleted = false
-       AND ($1::text IS NULL OR r.module_name = $1::text)
-     WHERE $1::text IS NULL OR cardinality(t.modules) = 0 OR t.modules @> ARRAY[$1::text]
+       AND (${visible.length ? visible.join(' OR ') : 'false'}) ${ownerClause}
+     WHERE ${moduleParam}::text IS NULL OR cardinality(t.modules) = 0 OR t.modules @> ARRAY[${moduleParam}::text]
      GROUP BY t.id ORDER BY usage_count DESC, t.name LIMIT 200`,
-    [module],
+    params.all(),
   );
   res.json(rows.rows);
 }));

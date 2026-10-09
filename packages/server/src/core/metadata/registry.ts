@@ -26,7 +26,7 @@ interface RegistryCache {
   modulesById: Map<string, ModuleMeta>;
   picklists: Map<string, PicklistOption[]>; // by picklist name
   dependencies: Map<string, PicklistDependency[]>; // by module name
-  units: Map<string, { value: string; label: string }[]>;
+  units: Map<string, { value: string; label: string; isDefault?: boolean; factorSqft?: number | null }[]>;
   loadedAt: number;
 }
 
@@ -174,8 +174,8 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
       JOIN ipy_module m ON m.id = d.module_id
       WHERE d.is_active
     `),
-    conn.query<{ kind: string; value: string; label: string }>(`
-      SELECT kind, value, label FROM ipy_unit_master WHERE is_active ORDER BY kind, sequence, label
+    conn.query<{ kind: string; value: string; label: string; isDefault: boolean; factorSqft: string | null }>(`
+      SELECT kind, value, label, is_default AS "isDefault", factor_sqft AS "factorSqft" FROM ipy_unit_master WHERE is_active ORDER BY kind, sequence, label
     `).catch(() => ({ rows: [] })),
   ]);
 
@@ -203,10 +203,11 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
     dependencies.set(row.module_name, list);
   }
 
-  const units = new Map<string, { value: string; label: string }[]>();
+  const units = new Map<string, { value: string; label: string; isDefault?: boolean; factorSqft?: number | null }[]>();
   for (const row of unitRes.rows) {
     const list = units.get(row.kind) ?? [];
-    list.push({ value: row.value, label: row.label });
+    list.push({ value: row.value, label: row.label, isDefault: row.isDefault,
+      factorSqft: row.factorSqft == null ? null : Number(row.factorSqft) });
     units.set(row.kind, list);
   }
 
@@ -371,7 +372,7 @@ function syncCountryCodes(fields: FieldMeta[]): void {
 }
 
 /** Resolve every Area/Budget unit selector from the one reusable master. */
-function syncUnitMasters(fields: FieldMeta[], units: Map<string, { value: string; label: string }[]>): void {
+function syncUnitMasters(fields: FieldMeta[], units: Map<string, { value: string; label: string; isDefault?: boolean; factorSqft?: number | null }[]>): void {
   const byName = new Map(fields.map((f) => [f.name, f]));
   for (const field of fields) {
     const kind = field.config.unitMaster;
@@ -390,7 +391,9 @@ function syncUnitMasters(fields: FieldMeta[], units: Map<string, { value: string
       saw the two-value picklist the template shipped with instead.
     */
     const companion = typeof field.config.unitField === 'string' ? byName.get(field.config.unitField) : null;
-    if (companion) companion.config = { ...companion.config, unitMaster: kind, unitOptions: options };
+    if (companion) companion.config = { ...companion.config, unitMaster: kind, unitOptions: options,
+      // Creation only: the historical missing-unit fallback must not change.
+      newRecordDefault: options.find(option => option.isDefault)?.value };
   }
 }
 

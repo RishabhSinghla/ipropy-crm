@@ -128,3 +128,10 @@ export function withQueueSubtitle(
   const extra = wanted.filter((name) => !columns.includes(name));
   return extra.length ? [...columns, ...extra] : columns;
 }
+
+/** Resolve the visit date without depending on a custom field's stored name. */
+export function plannedVisitField(fields: FieldMeta[]): FieldMeta | undefined {
+  return fields.find(field => field.isActive && field.displayType !== 'hidden'
+    && ['date', 'datetime'].includes(field.uitype)
+    && /visit.*plan|plan.*visit/i.test(`${field.name} ${field.label}`));
+}

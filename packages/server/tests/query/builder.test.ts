@@ -319,6 +319,7 @@ describe('buildSearchClause', () => {
     const sql = buildSearchClause('John', p);
     expect(sql).toContain('r.label ILIKE $1');
     expect(sql).toContain('r.record_number ILIKE $1');
+    expect(sql).toContain('r.search_text ILIKE $1');
     expect(sql).toContain("to_tsquery('simple', $2)");
     expect(p.all()).toEqual(['%John%', 'John:*']);
   });

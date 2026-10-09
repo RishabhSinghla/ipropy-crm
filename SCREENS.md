@@ -2805,3 +2805,23 @@ has left More. Dock arrows are removed; the main hamburger still folds it.
 Favourites highlights from the parsed filter, including URLs with view/page
 parameters. Lists wait for view hydration and retain search handoff state.
 Display names are batched once per page, and view counts no longer load rows.
+
+## 10 October 2026 — exact counts and hover controls
+
+Tag counts honour record visibility and the selected agent; counts on tags and
+the expanded dock use exact numbers. Selected tags, New and toolbar filters use
+the active brand shade. The folded dock has no count badges and hover opens it
+as an overlay, without moving the record panes.
+
+New prefetches the actual first page under the same stable query key used by
+the list. Planned-visit date fields are detected from metadata, displayed in the
+record header, and offered as a Visits today shortcut. They never reuse the
+follow-up date. Details opens on hover and closes from its top edge; closing
+blocks immediate pointer-triggered reopening. Live calls keep their deck open.
+
+Area-master defaults apply only to new records. The original missing-unit
+fallback remains unchanged for old data. Search size ranges are in Sq. Yd.,
+converted against configured unit factors; unknown conversions are not guessed.
+House-number metadata is searchable and existing house text is indexed by
+migration 199. Builder's Inventory leaves the Leads tabs, not the Builder Floors
+module. Notifications use quiet type-specific backgrounds.

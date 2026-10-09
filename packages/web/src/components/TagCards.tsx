@@ -35,7 +35,7 @@ import { cn } from '../lib/utils';
  */
 const ON_THE_BAR = 3;
 
-export function TagCards({ moduleName }: { moduleName?: string }): JSX.Element | null {
+export function TagCards({ moduleName, owner }: { moduleName?: string; owner?: string }): JSX.Element | null {
   const navigate = useNavigate();
   const location = useLocation();
   const { modules } = useApp();
@@ -67,8 +67,8 @@ export function TagCards({ moduleName }: { moduleName?: string }): JSX.Element |
   */
   const perModule = useQueries({
     queries: entityModules.map((module) => ({
-      queryKey: ['tags', module.name],
-      queryFn: () => api.tags(module.name),
+      queryKey: ['tags', module.name, owner ?? null],
+      queryFn: () => api.tags(module.name, owner),
       staleTime: 5 * 60_000,
     })),
   });
@@ -122,7 +122,7 @@ export function TagCards({ moduleName }: { moduleName?: string }): JSX.Element |
               text lands around 2–3:1, which is the rule this repo writes down
               every time somebody paints a tint by hand.
             */
-            style={badgeVars(narrowed ? '#2563eb' : tag.color)}
+            style={narrowed ? undefined : badgeVars(tag.color)}
             /*
               `.badge-tinted` rather than `bg-[var(--badge-bg)]`: the dark
               theme's values are separate properties, selected in the
@@ -132,12 +132,12 @@ export function TagCards({ moduleName }: { moduleName?: string }): JSX.Element |
             */
             className={cn(
               'flex min-w-0 flex-1 items-center justify-center gap-2 border-0 px-2.5 py-1.5 text-left transition hover:brightness-95 first:rounded-l-full last:rounded-r-full',
-              narrowed ? 'badge-solid font-bold' : 'badge-tinted',
+              narrowed ? 'bg-brand-700 text-white font-bold' : 'badge-tinted',
             )}
           >
             <span className="min-w-0 truncate text-[11px] font-bold leading-tight">{tag.name}</span>
-            <span className="badge-solid shrink-0 rounded-full px-1.5 text-[10px] font-bold leading-[1.1rem] tnum">
-              {tag.count > 999 ? `${Math.floor(tag.count / 1000)}k` : tag.count}
+            <span className={cn('shrink-0 rounded-full px-1.5 text-[10px] font-bold leading-[1.1rem] tnum', narrowed ? 'bg-white/20 text-white' : 'badge-solid')}>
+              {tag.count.toLocaleString('en-IN')}
             </span>
           </button>
         );

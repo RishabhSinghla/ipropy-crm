@@ -13,6 +13,7 @@ import { followUpFilters, type TaskQueue } from './FollowUpQueue';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { LAST_CALL_DISPOSITION } from './CallDispositionFilter';
 import { RangeSlider } from './QuickFilterOverlay';
+import { areaSearchRange } from '../lib/areaSearch';
 
 /** Temporary search criteria, not an edit to anybody's saved list. */
 export function SearchOptions({ words, onWordsChange, onOpen }: { words: string; onWordsChange: (value: string) => void; onOpen: () => void }): JSX.Element {
@@ -52,8 +53,10 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
     if (choices.max !== undefined && choices.max !== '') quickConditions.push({ field: money.name, operator: 'less_or_equal', value: Number(choices.max) });
   }
   if (size) {
-    if (choices.sizeMin !== undefined && choices.sizeMin !== '') quickConditions.push({ field: size.name, operator: 'greater_or_equal', value: Number(choices.sizeMin) });
-    if (choices.sizeMax !== undefined && choices.sizeMax !== '') quickConditions.push({ field: size.name, operator: 'less_or_equal', value: Number(choices.sizeMax) });
+    const range = areaSearchRange(size, meta?.fields.find(field => field.name === size.config.unitField),
+      choices.sizeMin == null || choices.sizeMin === '' ? undefined : Number(choices.sizeMin),
+      choices.sizeMax == null || choices.sizeMax === '' ? undefined : Number(choices.sizeMax));
+    if (range) quickConditions.push(range);
   }
   const quickField = (field: FieldMeta | undefined, label: string): JSX.Element | null => field ? <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{label}</span><FieldInput field={{ ...field, config: { ...field.config, placeholder: `Any ${label.toLowerCase()}` }, isReadonly: false, displayType: 'default', isMandatory: false }} value={choices[field.name] ?? null} onChange={(value) => choose(field.name, value)} /></div> : null;
   const apply = (close: () => void, clear = false): void => {
@@ -70,7 +73,7 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
     close();
   };
   return <Dropdown align="right" className="w-[min(44rem,calc(100vw-2rem))] max-h-[80vh] overflow-y-auto p-4"
-    trigger={<button onClick={onOpen} className="rounded-full bg-slate-200/70 p-2 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200" aria-label="Search options" title="Search options"><SlidersHorizontal className="h-4 w-4" /></button>}>
+    trigger={<button onClick={onOpen} className="rounded-full bg-slate-200/70 p-2 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 group-data-[open=true]/dropdown:!bg-brand-700 group-data-[open=true]/dropdown:!text-white" aria-label="Search options" title="Search options"><SlidersHorizontal className="h-4 w-4" /></button>}>
     {(close) => <div className="space-y-3" role="dialog" aria-label="CRM search options">
       <h2 className="text-base font-semibold">Search options</h2>
       <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Search in</span><select className="input" value={selected} onChange={(event) => { setModuleName(event.target.value); setChoices({}); setFilter({ logic: 'AND', conditions: [] }); }}>{entities.map((module) => <option key={module.name} value={module.name}>{module.label}</option>)}</select></label>
@@ -83,7 +86,7 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
         <label className="space-y-1 text-xs font-medium text-muted">Call disposition / log<select className="input" value={String(choices.disposition ?? '')} onChange={(event) => choose('disposition', event.target.value)}><option value="">Any call disposition</option>{dispositions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>{quickField(lostReason, 'Lost reason')}
         <div className="hidden sm:block" />
         {money && <div className="min-w-0"><span className="text-xs font-medium text-muted">{money.label} range (₹)</span><RangeSlider low={0} high={1_000_000_000} money min={choices.min == null ? undefined : Number(choices.min)} max={choices.max == null ? undefined : Number(choices.max)} onChange={(min, max) => setChoices(previous => ({ ...previous, min, max }))} /></div>}
-        {size && <div className="min-w-0"><span className="text-xs font-medium text-muted">{size.label} range</span><RangeSlider low={0} high={10000} money={false} min={choices.sizeMin == null ? undefined : Number(choices.sizeMin)} max={choices.sizeMax == null ? undefined : Number(choices.sizeMax)} onChange={(sizeMin, sizeMax) => setChoices(previous => ({ ...previous, sizeMin, sizeMax }))} /></div>}
+        {size && <div className="min-w-0"><span className="text-xs font-medium text-muted">{size.label} range (Sq. Yd.)</span><RangeSlider low={0} high={10000} money={false} min={choices.sizeMin == null ? undefined : Number(choices.sizeMin)} max={choices.sizeMax == null ? undefined : Number(choices.sizeMax)} onChange={(sizeMin, sizeMax) => setChoices(previous => ({ ...previous, sizeMin, sizeMax }))} /><p className="text-2xs text-muted">Units with a configured conversion are included.</p></div>}
       </div>
       <p className="text-xs text-muted">Temporary search only — saved views stay unchanged.</p>
       {meta && <FilterBuilder compact module={meta} value={filter} onChange={setFilter} />}

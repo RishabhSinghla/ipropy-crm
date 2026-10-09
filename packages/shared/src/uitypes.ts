@@ -451,7 +451,7 @@ export interface FieldConfig {
    */
   unitField?: string;
   /** area/currency: units the `unitField` dropdown offers. */
-  unitOptions?: { value: string; label: string }[];
+  unitOptions?: { value: string; label: string; isDefault?: boolean; factorSqft?: number | null }[];
   /** Reusable Area or Budget / Demand Unit Master supplying `unitOptions`. */
   unitMaster?: 'area' | 'budget_demand';
 

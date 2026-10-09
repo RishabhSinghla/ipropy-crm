@@ -402,7 +402,7 @@ const MODULES: ModuleDef[] = [
           F.num('floor', 'Floor'),
           // Which unit, under the property's name — the one fact that tells
           // two floors of the same block apart at a glance.
-          F.text('unit_number', 'Unit Number', { config: { listSubtitle: 2 } }),
+          F.text('unit_number', 'Unit Number', { searchable: true, config: { listSubtitle: 2 } }),
           F.pick('facing', 'Facing', 'facing'),
           F.text('view_description', 'View'),
           F.bool('corner_unit', 'Corner Unit'),

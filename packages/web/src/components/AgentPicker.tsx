@@ -61,7 +61,7 @@ export function AgentPicker({ agent, onPickAgent, moduleName }: {
               className={cn(
                 'flex items-center justify-center gap-1 truncate rounded-md border px-1.5 py-1 text-[10px] transition-colors',
                 mine
-                  ? 'border-brand-200 bg-brand-50 font-semibold text-brand-700 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200'
+                  ? 'border-brand-700 bg-brand-700 font-semibold text-white'
                   : 'border-slate-200 bg-slate-50 font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-slate-800',
               )}
             >

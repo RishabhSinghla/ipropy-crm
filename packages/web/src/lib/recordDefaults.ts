@@ -26,6 +26,10 @@ export function startingValues(module: ModuleMeta, currentUserId?: string): Reco
   if (assignee && currentUserId) out[assignee.name] = currentUserId;
   for (const field of module.fields) {
     if (!field.isActive || field.displayType === 'detail_only') continue;
+    if (field.config.newRecordDefault !== undefined) {
+      out[field.name] = field.config.newRecordDefault;
+      continue;
+    }
     if (field.defaultValue !== null && field.defaultValue !== undefined) {
       out[field.name] = field.defaultValue;
       continue;

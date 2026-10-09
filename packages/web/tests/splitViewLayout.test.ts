@@ -9,7 +9,7 @@ describe('splitTabsFor', () => {
       after the tab he compared it to.
     */
     expect(splitTabsFor('leads', undefined).map((tab) => tab.key))
-      .toEqual(['timeline', 'matching', 'builders', 'files', 'calls', 'whatsapp']);
+      .toEqual(['timeline', 'matching', 'files', 'calls', 'whatsapp']);
   });
 
   it('gives Builder Floors the same tab, showing its own locality instead', () => {
