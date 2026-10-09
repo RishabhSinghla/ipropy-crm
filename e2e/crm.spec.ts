@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { unique, waitForRecords, fillRequiredFields, searchList, openCreateDialog, waitForShell, openFirstRecord } from './helpers';
+import { unique, waitForRecords, fillRequiredFields, searchList, openCreateDialog, waitForShell, openFirstRecord, openDetailsPane } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -55,6 +55,7 @@ test('inline-edits a text field on the record in the split view', async ({ page 
   await waitForRecords(page);
   // The record opens beside the queue; its fields edit where they stand.
   await openFirstRecord(page);
+  await openDetailsPane(page);
 
   // Fields live in the right-hand pane since 30 September 2026, beside
   // whichever tab is open, so there is no tab to ask for.
@@ -109,6 +110,7 @@ test('inline-edits a text field on the record in the split view', async ({ page 
   // The edit made this the most recently updated record, so it leads the queue.
   await page.reload();
   await openFirstRecord(page);
+  await openDetailsPane(page);
   await expect(page.getByTestId('record-inspector')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(typed).first()).toBeVisible({ timeout: 30_000 });
 });

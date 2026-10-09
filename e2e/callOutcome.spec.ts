@@ -102,7 +102,7 @@ test('saving the outcome records the call on the lead', async ({ page }) => {
   // The Calls tab is where the rep looks next, and an outcome that does not
   // show up there reads as a call that was not logged at all.
   await page.goto(recordUrl);
-  await page.getByRole('tab', { name: /calls/i }).or(page.getByRole('button', { name: /^calls$/i })).first().click();
+  await page.getByTestId('record-menu-bar').getByRole('button', { name: /^calls\b/i }).click();
   await expect(page.getByText('Interested').first()).toBeVisible({ timeout: 20_000 });
 });
 

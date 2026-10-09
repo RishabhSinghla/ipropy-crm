@@ -214,19 +214,16 @@ export async function dashboardWithRecordRows(page: Page): Promise<string> {
 }
 
 /**
- * Type into the list's search box, opening it first if it is collapsed.
- *
- * The box used to sit permanently in the toolbar. It collapses to a magnifier
- * now, so `getByTestId('list-search')` matches nothing until somebody clicks —
- * and the symptom is a `fill` that times out after 60s, reading as "search is
- * broken" when search is fine and the test simply never opened it.
+ * Search through the universal toolbar and choose the current module's list.
+ * The record pane no longer has a separate search input.
  */
 export async function searchList(page: Page, term: string): Promise<void> {
-  // Always open since 30 September 2026 — it sits in the record pane under the
-  // list's chips — so the only thing to wait for is the list to draw it.
-  const box = page.getByTestId('list-search').first();
-  await expect(box).toBeVisible({ timeout: 20_000 });
+  // Search moved to the universal toolbar. Its module heading's See all
+  // action applies the same words to the list, without opening a random hit.
+  const module = new URL(page.url()).pathname.split('/')[1];
+  const box = page.getByRole('combobox', { name: 'Search everything', exact: true });
   await box.fill(term);
+  await page.locator(`[data-search-module="${module}"]`).getByRole('button', { name: 'See all', exact: true }).click();
 }
 
 /**

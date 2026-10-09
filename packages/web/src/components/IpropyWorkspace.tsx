@@ -833,7 +833,7 @@ export function IpropyWorkspace({
                         type="button"
                         disabled={!chosen?.by && !sortBy && !firstSortable?.by}
                         title={dir === 'asc' ? (chosen?.ascHint ?? 'A–Z') : (chosen?.descHint ?? 'Z–A')}
-                        onClick={() => onSort(sortBy ?? chosen?.by ?? firstSortable?.by, dir)}
+                        onClick={() => { onSort(sortBy ?? chosen?.by ?? firstSortable?.by, dir); close(); }}
                         className={cn(
                           'rounded px-1.5 py-0.5 text-2xs font-bold transition-colors',
                           sortDir === dir && (chosen?.by || sortBy)

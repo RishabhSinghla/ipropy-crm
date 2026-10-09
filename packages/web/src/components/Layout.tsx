@@ -1046,7 +1046,7 @@ function GlobalSearch(): JSX.Element {
           )}
 
           {groups.map((group) => (
-            <div key={group.module}>
+            <div key={group.module} data-search-module={group.module}>
               {/* The heading says where these came from, how many, and is the
                   way to the module's own list with the same words in its box. */}
               <div className="sticky top-0 flex items-center gap-2 bg-[var(--surface-muted)] px-3 py-1.5">
