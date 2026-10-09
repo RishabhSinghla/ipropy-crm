@@ -15,6 +15,7 @@ import { assignOwner } from '../../core/workflow/assignment.js';
 import { notify } from '../../core/notifications/index.js';
 import { columnsOf, fieldText } from '../../core/entity/payloadColumns.js';
 import { AUTOMATION_USER_ID } from '../../core/auth/systemAccounts.js';
+import { getModule } from '../../core/metadata/registry.js';
 
 const SYSTEM_USER: AuthUser = {
   id: '00000000-0000-0000-0000-000000000000',
@@ -101,6 +102,13 @@ export async function captureLead(
     // exactly 10 digits". Splitting is the other half of the migration-026
     // breakage that lost every inbound enquiry.
     const parts = splitPhone(normalized.mobile);
+    // Administrators can rename both the stored value and its display label.
+    // Match the active Facebook option instead of assuming the seeded template.
+    const sourceOptions = source === 'facebook'
+      ? (await getModule('leads'))?.fields.find((f) => f.name === 'lead_source')?.options
+      : undefined;
+    const facebookSource = sourceOptions?.find((o) =>
+      [o.value, o.label].some((v) => /^facebook(?: lead ads?)?$/i.test(v.trim())));
 
     // Dedupe against recent leads on the same number/email.
     const windowDays = await getSetting<number>('leads.duplicate_window_days', 90);
@@ -149,7 +157,7 @@ export async function captureLead(
       // API actually send to, and it has no per-country length rule.
       whatsapp_number: mobile,
       status: 'New',
-      lead_source: normalized.source,
+      lead_source: facebookSource?.value ?? normalized.source,
       sub_source: normalized.subSource ?? null,
       interested_project: normalized.projectName ?? null,
       configuration: normalized.configuration ?? [],
