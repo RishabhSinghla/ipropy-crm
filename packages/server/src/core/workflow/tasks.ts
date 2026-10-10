@@ -14,6 +14,7 @@ import { formatValue } from '../metadata/values.js';
 import { createRecord, updateRecord, type ServiceContext } from '../entity/recordService.js';
 import { assignOwner } from './assignment.js';
 import { scheduleFollowUp } from './followUp.js';
+import { sendWhatsAppTemplate } from './whatsappTemplateStep.js';
 
 export interface TaskContext {
   workflowId: string;
@@ -243,7 +244,8 @@ const notifyUser: TaskHandler = async (config, ctx) => {
 /*
   `send_whatsapp` was here and went with WhatsApp on 17 September 2026. A
   workflow still carrying that step is safe: `runTask` logs an unknown type and
-  carries on, so the rest of the workflow's steps still run.
+  carries on, so the rest of the workflow's steps still run. Its replacement is
+  `send_whatsapp_template` (whatsappTemplateStep.ts): approved templates only.
 */
 const sendEmail: TaskHandler = async (config, ctx) => {
   const { sendTemplatedEmail } = await import('../../integrations/email/service.js');
@@ -329,6 +331,7 @@ const TASK_HANDLERS: Record<string, TaskHandler> = {
   notify_user: notifyUser,
   send_email: sendEmail,
   send_sms: sendSms,
+  send_whatsapp_template: sendWhatsAppTemplate,
   webhook,
   add_tag: addTag,
   ai_action: aiAction,

@@ -453,6 +453,7 @@ export type WorkflowTaskType =
   | 'create_record'
   | 'send_email'
   | 'send_sms'
+  | 'send_whatsapp_template'
   | 'create_task'
   | 'create_event'
   | 'assign_owner'

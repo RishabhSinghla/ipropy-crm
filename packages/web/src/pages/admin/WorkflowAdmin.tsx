@@ -402,6 +402,7 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   notify_user: 'Notify a user',
   send_email: 'Send email',
   send_sms: 'Send SMS',
+  send_whatsapp_template: 'Send a WhatsApp template',
   webhook: 'Call a webhook',
   add_tag: 'Add tags',
   ai_action: 'Run an AI action',
@@ -479,6 +480,50 @@ function RecipientPicker({
           placeholder="group:Sales or role:Sales Manager"
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Which approved template a rule sends. The list is the saved templates only,
+ * because WhatsApp refuses a free message to a stranger, and the blanks are
+ * filled from Admin → WhatsApp Templates — so an unmapped one is flagged here.
+ */
+function WhatsAppTemplateStep({ task, set }: {
+  task: TaskDraft;
+  set: (patch: Record<string, unknown>) => void;
+}): JSX.Element {
+  const { data: templates, isLoading } = useQuery({
+    queryKey: ['wa-biz-saved-templates'],
+    queryFn: () => api.waBizSavedTemplates(),
+  });
+  const chosenId = (task.config.templateId as string) ?? '';
+  const approved = (templates ?? []).filter((t) => t.status.toLowerCase() === 'approved');
+  const chosen = approved.find((t) => t.id === chosenId);
+  const unmapped = chosen
+    ? Array.from({ length: chosen.variableCount }, (_, i) => String(i + 1)).filter((slot) => !chosen.variableMap[slot])
+    : [];
+
+  return (
+    <div className="space-y-2">
+      <label className="label">Approved template</label>
+      <Select
+        value={chosenId}
+        onChange={(v) => set({ templateId: v })}
+        options={[
+          { value: '', label: isLoading ? 'Loading templates…' : 'Choose a template' },
+          ...approved.map((t) => ({ value: t.id, label: t.name })),
+        ]}
+      />
+      {chosen && <p className="whitespace-pre-wrap text-2xs text-muted">{chosen.bodyText}</p>}
+      {unmapped.length > 0 && (
+        <p className="text-2xs text-amber-700 dark:text-amber-300">
+          {unmapped.map((slot) => `{{${slot}}}`).join(', ')} not mapped yet — nothing will be sent until it is, in Admin → WhatsApp Templates.
+        </p>
+      )}
+      <p className="text-2xs text-muted">
+        Sent once per person, to the record&apos;s mobile. Anyone who opted out is skipped. To stop it, switch this workflow off.
+      </p>
     </div>
   );
 }
@@ -709,6 +754,9 @@ function TaskConfigFields({
           )}
         </div>
       );
+
+    case 'send_whatsapp_template':
+      return <WhatsAppTemplateStep task={task} set={set} />;
 
     case 'webhook':
       return (

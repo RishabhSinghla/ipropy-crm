@@ -1403,3 +1403,30 @@ stand-in answers the Cloud API's shapes; whether Meta itself accepts the same
 calls is what the Test Connection button on the live card is for. Inbound from
 WhatsMarketing is still polled rather than pushed, because their webhook is
 switched off at their end.
+
+## A workflow can send an approved template again — 10 October 2026
+
+**The owner:** a new lead arrives with status New, and the approved template goes to them
+automatically. `send_whatsapp` was removed on 17 September, so this is a new, narrower step:
+**`send_whatsapp_template`** (`core/workflow/whatsappTemplateStep.ts`), chosen in Admin →
+Workflows → *Send a WhatsApp template* from the saved, approved templates.
+
+Its safety lives in the step, not in how a rule is configured:
+
+* **Approved template only**, filled through `resolveTemplate` as the record's owner (else the
+  first active admin). A blank the record lacks **throws**, naming it, so it shows in the
+  workflow's log instead of sending a hole.
+* **Through `sendOnBusinessNumber`**, so opt-out and an undialable number are refused there.
+  An opt-out is logged and skipped — the person's answer, not a fault.
+* **Once per person per template**: it looks for an earlier outbound message with that template
+  on a conversation for this record. A rule that re-fires does not message twice.
+* **The kill switch is the workflow's own on/off.** No schedule: the trigger is `on_create`.
+
+**Not built, and worth knowing before this goes near a high-volume source** (Facebook leads
+arrive on their own): quiet hours, and a per-day ceiling. A lead at 2am gets the template at
+2am. Meta also limits *marketing* templates per person (131049); a utility-category template
+is the safe kind for a welcome.
+
+Pinned by `tests/integration/workflowSendsWhatsAppTemplate.test.ts`, against a stand-in for
+Meta's server: the right request leaves for a New lead, nothing for any other status, nothing
+twice, nothing to an opted-out number. **Never run against the real WhatsApp provider.**
