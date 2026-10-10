@@ -83,9 +83,11 @@ const QUEUE_LABEL: Record<TaskQueue, string> = {
 };
 
 export function FollowUpQueue({
-  moduleName, fieldName, viewId, fieldMap, active, onPick, ownerField, agent, onPickAgent,
+  moduleName, fieldName, viewId, fieldMap, active, onPick, ownerField, agent, onPickAgent, archive = false,
 }: {
   moduleName: string;
+  /** Count and open archived records only — the Archive's own queue. */
+  archive?: boolean;
   fieldName: string;
   viewId: string | undefined;
   fieldMap: Map<string, FieldMeta>;
@@ -99,22 +101,22 @@ export function FollowUpQueue({
 }): JSX.Element {
   const scope = ownerField && agent ? { field: ownerField, userId: agent } : null;
   const filters = followUpFiltersFor(fieldName, scope);
-  const countQuery = (queue: TaskQueue): ListQuery => ({ view: viewId, page: 1, pageSize: 1, filter: filters[queue] });
+  const countQuery = (queue: TaskQueue): ListQuery => ({ view: viewId, page: 1, pageSize: 1, filter: filters[queue], ...(archive ? { archive: true } : {}) });
 
   // Only the three the trigger adds up are fetched while the panel is shut.
   // The rest — this week, this month, and the rows themselves — are inside
   // the panel, which React does not mount until somebody opens it.
   const counts = {
     pending: useQuery({
-      queryKey: ['task-count', moduleName, viewId, 'pending', filters.pending],
+      queryKey: ['task-count', moduleName, viewId, 'pending', filters.pending, archive],
       queryFn: () => api.list(moduleName, countQuery('pending')),
     }).data?.total ?? 0,
     today: useQuery({
-      queryKey: ['task-count', moduleName, viewId, 'today', filters.today],
+      queryKey: ['task-count', moduleName, viewId, 'today', filters.today, archive],
       queryFn: () => api.list(moduleName, countQuery('today')),
     }).data?.total ?? 0,
     tomorrow: useQuery({
-      queryKey: ['task-count', moduleName, viewId, 'tomorrow', filters.tomorrow],
+      queryKey: ['task-count', moduleName, viewId, 'tomorrow', filters.tomorrow, archive],
       queryFn: () => api.list(moduleName, countQuery('tomorrow')),
     }).data?.total ?? 0,
   };
@@ -158,6 +160,7 @@ export function FollowUpQueue({
             viewId={viewId}
             fieldMap={fieldMap}
             filters={filters}
+            archive={archive}
             counts={counts}
             total={total}
             active={active}
@@ -185,9 +188,10 @@ export function FollowUpQueue({
 
 /** Mounted only while the panel is open, so its queries cost nothing when it is shut. */
 function QueuePanel({
-  moduleName, fieldName, viewId, filters, counts, total, active, onPick, agentPicker,
+  moduleName, fieldName, viewId, filters, counts, total, active, onPick, agentPicker, archive,
 }: {
   moduleName: string;
+  archive: boolean;
   fieldName: string;
   viewId: string | undefined;
   fieldMap: Map<string, FieldMeta>;
@@ -201,12 +205,12 @@ function QueuePanel({
   const navigate = useNavigate();
 
   const week = useQuery({
-    queryKey: ['task-count', moduleName, viewId, 'week', filters.week],
-    queryFn: () => api.list(moduleName, { view: viewId, page: 1, pageSize: 1, filter: filters.week }),
+    queryKey: ['task-count', moduleName, viewId, 'week', filters.week, archive],
+    queryFn: () => api.list(moduleName, { view: viewId, page: 1, pageSize: 1, filter: filters.week, ...(archive ? { archive: true } : {}) }),
   }).data?.total ?? 0;
   const month = useQuery({
-    queryKey: ['task-count', moduleName, viewId, 'month', filters.month],
-    queryFn: () => api.list(moduleName, { view: viewId, page: 1, pageSize: 1, filter: filters.month }),
+    queryKey: ['task-count', moduleName, viewId, 'month', filters.month, archive],
+    queryFn: () => api.list(moduleName, { view: viewId, page: 1, pageSize: 1, filter: filters.month, ...(archive ? { archive: true } : {}) }),
   }).data?.total ?? 0;
 
   /*
@@ -218,10 +222,11 @@ function QueuePanel({
   const next: TaskQueue = counts.pending > 0 ? 'pending' : counts.today > 0 ? 'today' : 'tomorrow';
 
   const { data: upNext } = useQuery({
-    queryKey: ['task-next', moduleName, viewId, next, filters[next]],
+    queryKey: ['task-next', moduleName, viewId, next, filters[next], archive],
     // Oldest first: the point of the queue is who has waited longest.
     queryFn: () => api.list(moduleName, {
       view: viewId, page: 1, pageSize: 1, filter: filters[next], sortBy: fieldName, sortDir: 'asc',
+      ...(archive ? { archive: true } : {}),
     }),
   });
   const rows = upNext?.rows ?? [];
@@ -231,7 +236,7 @@ function QueuePanel({
     if (rows[0]) {
       const params = new URLSearchParams({ open: rows[0].id, filter: JSON.stringify(filters[next]), sortBy: fieldName, sortDir: 'asc' });
       if (viewId) params.set('view', viewId);
-      navigate(`/${moduleName}?${params}`);
+      navigate(`${archive ? '/archive' : ''}/${moduleName}?${params}`);
     }
   };
 

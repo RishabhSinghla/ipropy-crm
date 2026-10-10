@@ -1,39 +1,49 @@
-import { useState, type JSX } from 'react';
-import { Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { isLostStatus, statusFieldOf } from '@ipropy/shared';
-import { Archive, RotateCcw, Search } from 'lucide-react';
-import { api } from '../lib/api';
-import { useApp, toast } from '../lib/store';
+import type { JSX } from 'react';
+import { Navigate, NavLink, Outlet, useParams } from 'react-router-dom';
+import { Archive } from 'lucide-react';
+import { useApp } from '../lib/store';
+import { cn } from '../lib/utils';
 
+/**
+ * The Archive: Lost records, 12 hours after they went Lost, kept for good.
+ *
+ * **10 October 2026, the owner:** *"The archived record Save as same format of
+ * module as split window and all timeline also be there as in records … The
+ * archive Record we are using back in near future, so … treated archived
+ * Folder as a archived module with full functioned module."*
+ *
+ * So this page is only a strip of module tabs over the ordinary split view
+ * (`ListView` with `archive`), the same queue, record, timeline, details, call,
+ * WhatsApp and notes as the module itself. Nothing here re-implements a record
+ * screen. A record comes back to its module the moment its status is changed
+ * away from Lost — the same save that cleared the 12-hour clock clears the
+ * archive stamp.
+ */
 export default function ArchivePage(): JSX.Element {
-  const modules = useApp().modules.filter(module => module.isEntity);
-  const [module, setModule] = useState(modules[0]?.name ?? 'leads');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [statuses, setStatuses] = useState<Record<string, string>>({});
-  const client = useQueryClient();
-  const metadata = useQuery({ queryKey: ['module', module], queryFn: () => api.module(module) });
-  const records = useQuery({ queryKey: ['archive', module, search, page], queryFn: () => api.list(module, { archive: true, search, page, pageSize: 50 }), refetchInterval: 30000 });
-  const field = metadata.data && statusFieldOf(metadata.data.fields);
-  const choices = field?.options?.filter(option => option.isActive !== false && !isLostStatus(option.value) && !isLostStatus(option.label)) ?? [];
-  const reopen = useMutation({ mutationFn: ({ id, status }: { id: string; status: string }) => api.reopen(module, id, status),
-    onSuccess: () => { void client.invalidateQueries(); toast.success('Record reopened'); }, onError: error => toast.error(error.message) });
-  return <section className="flex h-full min-h-0 flex-col p-4">
-    <h1 className="flex items-center gap-2 text-lg font-semibold"><Archive className="h-5 w-5" /> Archive</h1>
-    <p className="my-2 text-xs text-muted">Lost records move here after 12 hours and are retained without automatic deletion. Open a record to send SMS, email or WhatsApp using your usual permissions. Reopen by choosing its new status.</p>
-    <div className="mb-3 flex flex-wrap items-center gap-2">
-      <select aria-label="Archived module" className="rounded-full border bg-white px-3 py-1 text-sm dark:bg-slate-900" value={module} onChange={event => { setModule(event.target.value); setPage(1); }}>{modules.map(item => <option key={item.name} value={item.name}>{item.label}</option>)}</select>
-      <label className="flex items-center gap-2 rounded-full border px-3 py-1"><Search className="h-4 w-4" /><input aria-label="Search archived records" className="bg-transparent text-sm outline-none" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>
-      <span className="text-xs text-muted">{records.data?.total ?? 0} archived records</span>
-    </div>
-    <div className="min-h-0 flex-1 overflow-auto">
-      {records.isError ? <p role="alert">Archive could not load. Please try again.</p> : records.isLoading ? <p>Loading archive…</p> : !records.data?.rows.length ? <p className="p-8 text-center text-muted">No archived records match this module or search.</p> : records.data.rows.map(record => <div key={record.id} className="flex flex-wrap items-center gap-3 border-b py-3">
-        <Link className="min-w-0 flex-1 font-semibold text-brand-700" to={`/${module}/${record.id}`}>{record.label} <span className="text-xs font-normal text-muted">{record.recordNumber}</span></Link>
-        <select aria-label={`Reopen status for ${record.label}`} className="rounded-full border bg-white px-2 py-1 text-xs dark:bg-slate-900" value={statuses[record.id] ?? ''} onChange={event => setStatuses(previous => ({ ...previous, [record.id]: event.target.value }))}><option value="">Choose status…</option>{choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select>
-        <button className="btn-secondary rounded-full text-xs" disabled={!statuses[record.id] || reopen.isPending} onClick={() => reopen.mutate({ id: record.id, status: statuses[record.id]! })}><RotateCcw className="h-3 w-3" /> Reopen</button>
-      </div>)}
-    </div>
-    <div className="mt-2 flex items-center justify-end gap-3 text-xs"><button disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>{page} / {Math.max(1, records.data?.totalPages ?? 1)}</span><button disabled={page >= (records.data?.totalPages ?? 1)} onClick={() => setPage(value => value + 1)}>Next</button></div>
-  </section>;
+  const modules = useApp((state) => state.modules).filter((module) => module.isEntity && module.permissions.view);
+  const { module } = useParams<{ module?: string }>();
+  if (!module && modules[0]) return <Navigate to={`/archive/${modules[0].name}`} replace />;
+  return (
+    <section className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] bg-white px-4 py-2 dark:bg-slate-900">
+        <h1 className="mr-2 flex items-center gap-1.5 text-sm font-bold"><Archive className="h-4 w-4" /> Archive</h1>
+        <nav aria-label="Archived modules" className="flex flex-wrap gap-1">
+          {modules.map((item) => (
+            <NavLink
+              key={item.name}
+              to={`/archive/${item.name}`}
+              className={({ isActive }) => cn('rounded-full px-3 py-1 text-xs font-semibold transition-colors',
+                isActive ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-[var(--surface-muted)] dark:text-slate-300 dark:hover:bg-slate-800')}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <p className="ml-auto text-xs text-muted">Change the status away from Lost to bring a record back to its module.</p>
+      </div>
+      <div className="min-h-0 flex-1">
+        <Outlet />
+      </div>
+    </section>
+  );
 }

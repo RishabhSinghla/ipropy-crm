@@ -44,11 +44,11 @@ const ArchivePage = lazy(() => import('./pages/Archive'));
  * changes the key** — an ordinary filter, sort or page change writes no state,
  * so a rep working a list is never remounted under their own cursor.
  */
-function ListRoute(): JSX.Element {
+function ListRoute({ archive = false }: { archive?: boolean }): JSX.Element {
   const { state } = useLocation();
   const arrival = state as { callDeckHandoff?: number; searchHandoff?: number } | null;
   const handoff = arrival?.callDeckHandoff ?? arrival?.searchHandoff;
-  return <ListView key={handoff ? `handoff-${handoff}` : undefined} />;
+  return <ListView key={handoff ? `handoff-${handoff}` : undefined} archive={archive} />;
 }
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
@@ -146,7 +146,11 @@ export default function App(): JSX.Element {
               <Route path="whatsapp/*" element={<WhatsAppPage />} />
               <Route path="calls" element={<CallsPage />} />
               <Route path="tools" element={<ToolsPage />} />
-              <Route path="archive" element={<ArchivePage />} />
+              {/* The Archive is the same split view as a module, showing only
+                  records archived after 12 hours in Lost. */}
+              <Route path="archive" element={<ArchivePage />}>
+                <Route path=":module" element={<ListRoute archive />} />
+              </Route>
               {/* The official business number's shared inbox. Above the generic
                   `:module` route, which would otherwise treat "chats" as a
                   module name and 404 on the metadata lookup. It is no longer a

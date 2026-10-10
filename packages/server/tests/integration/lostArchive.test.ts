@@ -60,6 +60,11 @@ describe('retained Lost archive', () => {
     expect((await recordService.listRecords(outsider, 'leads', { archive: true, search: record.label })).total).toBe(0);
     const app = createApp();
     const auth = `Bearer ${await signIn(app, ctx.user.email)}`;
+    // The Archive's record header counts archived records only, so its
+    // "1 / n" and next arrow never step out into the live list.
+    const placed = await request(app).get(`/api/records/leads/${record.id}/neighbours?archive=1&search=${encodeURIComponent(record.label)}`)
+      .set('Authorization', auth).expect(200);
+    expect(placed.body).toMatchObject({ position: 1, total: 1 });
     await request(app).post(`/api/records/leads/${record.id}/reopen`).set('Authorization', auth).send({ status: lost.value }).expect(400);
     await request(app).post(`/api/records/leads/${record.id}/reopen`).set('Authorization', auth).send({ status: active.value }).expect(200);
     await request(app).post(`/api/records/leads/${record.id}/reopen`).set('Authorization', auth).send({ status: active.value }).expect(400);

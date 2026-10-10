@@ -191,7 +191,7 @@ export function IpropyWorkspace({
   /** The list's own ordering, so the queue's menu drives the same query the table does. */
   sortBy?: string; sortDir?: 'asc' | 'desc';
   /** The active list's filters, so record navigation follows the queue in view. */
-  neighbourContext?: { view?: string; search?: string; filter?: string };
+  neighbourContext?: { view?: string; search?: string; filter?: string; archive?: string };
   /** Snapshot of the effective queue, including unsaved quick-filter choices. */
   callQueueUrl: string;
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;

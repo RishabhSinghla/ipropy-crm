@@ -51,7 +51,14 @@ import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
-export default function ListView(): JSX.Element {
+/**
+ * `archive` is the Archive's own list: the same split view, timeline and
+ * details, showing only records archived after 12 hours in Lost. The owner,
+ * 10 October 2026: *"You treated archived Folder as a archived module with full
+ * functioned module"*. Changing the status away from Lost brings a record back
+ * (`updateLostArchiveDue` clears the stamp in the same save).
+ */
+export default function ListView({ archive = false }: { archive?: boolean } = {}): JSX.Element {
   const { module: moduleName } = useParams<{ module: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -522,6 +529,7 @@ export default function ListView(): JSX.Element {
     pageSize,
     search: search || undefined,
     filter: countConditions(effectiveFilter) ? canonicalFilter(effectiveFilter) : undefined,
+    ...(archive ? { archive: true } : {}),
     sortBy: effectiveSort.sortBy,
     sortDir: effectiveSort.sortDir,
     /*
@@ -535,7 +543,7 @@ export default function ListView(): JSX.Element {
       meta?.fields,
       (meta?.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config as { queueFields?: string[] } | undefined)?.queueFields,
     ),
-  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta]);
+  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta, archive]);
   // Prefetch the real first page, not just its count. Clicking New consumes
   // the same cache key immediately; a selected New view shares this request.
   const todayQuery: ListQuery = { ...query, page: 1,
@@ -552,7 +560,7 @@ export default function ListView(): JSX.Element {
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a
   // follow-up queue can supply its own sort even when no sort is named in the
   // URL. Capture the effective list query, not just the address bar.
-  const callQueueSnapshot = useMemo(() => callQueueUrl(moduleName ?? '', query), [moduleName, query]);
+  const callQueueSnapshot = useMemo(() => callQueueUrl(moduleName ?? '', query, archive ? '/archive' : ''), [moduleName, query, archive]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
@@ -988,6 +996,7 @@ export default function ListView(): JSX.Element {
             fieldMap={fieldMap}
             active={taskQueue}
             onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
+            archive={archive}
             ownerField={ownerField?.name ?? null}
             agent={agentPick}
             onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
@@ -1029,7 +1038,8 @@ export default function ListView(): JSX.Element {
 
       </div>
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
-        <TagCards moduleName={meta.name} owner={agentPick || undefined} />
+        {/* Tag counts are the live list's, so they would mislead in the Archive. */}
+        {!archive && <TagCards moduleName={meta.name} owner={agentPick || undefined} />}
         {/*
           **New moved to the main toolbar** — the owner, 10 October 2026:
           *"Move 'New' … from Left record pane to main Toolbar between Add +New
@@ -1374,6 +1384,7 @@ export default function ListView(): JSX.Element {
               ...(activeView?.id ? { view: activeView.id } : {}),
               ...(search ? { search } : {}),
               ...(countConditions(effectiveFilter) ? { filter: JSON.stringify(effectiveFilter) } : {}),
+              ...(archive ? { archive: '1' } : {}),
             }}
             callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}

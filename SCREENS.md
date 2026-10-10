@@ -3009,3 +3009,25 @@ change height, and icons on the record's menu bar.
   WhatsApp, Messages, Changes, More, and the Write a note / WhatsApp / Call
   buttons under it. `CallButton` and `WhatsAppButton` take `textOnly` for that;
   everywhere else they keep their icons.
+
+## 10 October 2026, night — the Archive is a full module screen
+
+The owner: *"The archived record Save as same format of module as split window
+and all timeline also be there as in records … The archive Record we are using
+back in near future, so … treated archived Folder as a archived module with full
+functioned module."*
+
+* **`/archive/:module` is the ordinary split view** — `ListView` with `archive`,
+  under a strip of module tabs (`pages/Archive.tsx`). Queue cards, the record, the
+  menu bar and its timeline, the details pane, Call, WhatsApp and notes are the
+  same components as Leads and Inventories, not a copy.
+* **Bringing a record back is changing its status** away from Lost, in the record
+  itself; it leaves the Archive and is in its module on the next refresh.
+* **The counter and next arrow stay inside the Archive** (`/neighbours?archive=1`,
+  and `callQueueUrl` takes `/archive` as its base so a page change does not jump to
+  the live list). The Task queue counts archived records only.
+* **Tag cards are hidden in the Archive**: their counts come from the live list.
+* Walked in a browser with three contacts archived: the queue showed exactly those
+  three, `2 / 3` moved between them, the Changes tab showed their history, none of
+  them appeared on `/leads`, and setting one back to Contacted took it out.
+

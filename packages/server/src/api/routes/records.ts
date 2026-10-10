@@ -67,7 +67,9 @@ const listSchema = z.object({
   columns: z.array(z.string()).optional(),
   groupBy: z.string().optional(),
   includeDeleted: z.coerce.boolean().optional(),
-  archive: z.boolean().optional(),
+  // A boolean in a POST body, and "1"/"true" on a GET query string — the
+  // record header's neighbours call is a GET.
+  archive: z.preprocess((value) => (value === 'true' || value === '1' ? true : value), z.boolean()).optional(),
 });
 
 /** GET/POST share a body-or-query parsing path so complex filters can use POST. */
@@ -851,6 +853,8 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
     ...(listInput.filter ? { filter: listInput.filter } : {}),
     ...(sortParam ? { sortBy: sortParam } : {}),
     ...(dirParam ? { sortDir: dirParam } : {}),
+    // Inside the Archive, "next" is the next archived record, not a live one.
+    ...(listInput.archive ? { archive: true } : {}),
   }, id);
   res.json(placed);
 }));
