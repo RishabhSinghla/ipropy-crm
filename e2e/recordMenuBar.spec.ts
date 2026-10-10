@@ -59,7 +59,9 @@ for (const module of MODULES) {
     await openFirstRecord(page, module);
     const bar = page.getByTestId('record-menu-bar');
     const wide = await bar.locator('button').count();
-    await page.setViewportSize({ width: 900, height: 900 });
+    // At 900px the responsive queue collapses, giving the menu more room.
+    // Use a phone-width window to actually exercise menu overflow.
+    await page.setViewportSize({ width: 600, height: 900 });
     // Measured, not read off a number: narrow the window and the bar gives
     // something up.
     await expect(async () => {
@@ -107,23 +109,13 @@ for (const module of MODULES) {
     expect(reloaded[0]).toBe(after[0]);
   });
 
-  test(`${module}: the star and the tag icon left the header for the menu`, async ({ page }) => {
+  test(`${module}: star and tag actions are available in the record header`, async ({ page }) => {
     await openFirstRecord(page, module);
-    // Gone from the icon bar…
-    await expect(page.locator('button[aria-label="Edit tags"]')).toHaveCount(0);
-    await expect(page.locator('button[aria-label="Star this record"], button[aria-label="Remove from starred"]')).toHaveCount(0);
-    // …and both still reachable, a few pixels away.
-    /*
-      The menu bar's own *More* — the header's separate three-dot circle went on
-      3 October 2026, so there is one More on this screen rather than two a few
-      pixels apart.
-
-      `Dropdown`'s panel is a plain positioned div, not `role="menu"` — reading
-      it as a menu finds nothing at all, which is how this spec first failed
-      against markup that was perfectly correct.
-    */
+    const header = page.getByTestId('ipropy-workspace');
+    await expect(header.getByRole('button', { name: /Star this record|Remove from starred/ })).toBeVisible();
+    await expect(header.getByRole('button', { name: 'Edit record tags', exact: true })).toBeVisible();
+    // The actions moved out of More; do not leave duplicate menu controls.
     await page.getByTestId('record-menu-more').click();
-    await expect(page.getByRole('button', { name: /Star this record|Remove from starred/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Add a tag|^Tags \(/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Add a tag|^Tags \(/ })).toHaveCount(0);
   });
 }

@@ -89,7 +89,9 @@ for (const module of MODULES) {
     const wide = await bar.locator('button').count();
     // Narrow the window until the bar has to give something up, then check it
     // did — measured, not read off a number written into the spec.
-    await page.setViewportSize({ width: 900, height: 900 });
+    // The queue collapses at tablet width, freeing menu space. A phone-width
+    // viewport genuinely constrains the bar and exercises its overflow.
+    await page.setViewportSize({ width: 600, height: 900 });
     await expect(async () => {
       expect(await bar.locator('button').count()).toBeLessThan(wide);
     }).toPass({ timeout: 10_000 });

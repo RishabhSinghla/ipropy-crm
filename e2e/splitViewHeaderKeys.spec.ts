@@ -95,25 +95,14 @@ test('each pinned fact is introduced by its own field name', async ({ page }) =>
   expect(Math.abs(value!.y + value!.height / 2 - (label!.y + label!.height / 2)), 'the two should share a row').toBeLessThan(12);
 });
 
-test('writing to them is in More, only when there is an address', async ({ page }) => {
+test('writing to them is in the header, only when there is an address', async ({ page }) => {
   const made = await makeLead(page);
   await page.goto(`/leads?open=${made.id}`);
   // A regex, not the bare name: the heading now holds the inline editor, so
   // its accessible name carries that control's label too.
   await expect(page.getByRole('heading', { name: new RegExp(made.name) })).toBeVisible({ timeout: 30_000 });
 
-  /*
-    **It left the header strip on 3 October 2026** — *"Move email icons from
-    Middle heade pane to Menu bar more tab"* — so the circle is gone and the row
-    is behind the menu bar's *More*. Asserting it is absent from the strip as
-    well, because a control that moved while the old one stayed is the bug this
-    kind of change produces.
-  */
-  await expect(page.getByTestId('split-hero-actions-status')
-    .getByRole('button', { name: `Email ${made.email}` })).toHaveCount(0);
-  await page.getByTestId('record-menu-more').click();
-
-  await page.keyboard.press('Escape');
+  // Email is now an icon beside the record's Star, Tags and AI actions.
   const write = page.getByRole('button', { name: 'Send email', exact: true });
   await expect(write).toBeVisible();
   await write.click();
