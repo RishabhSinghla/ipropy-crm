@@ -1659,7 +1659,7 @@ function QueueCard({
               *"I don't need to see it there"*. It is in the fields pane. */}
           {/* How stale it is, top right — the prototype's "6h ago". */}
           {row.updatedAt && (
-            <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] font-normal text-slate-400 dark:text-slate-500">
+            <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[10px] font-normal', active ? 'text-brand-800 dark:text-white' : 'text-[var(--muted)]')}>
               {queueAge(row.updatedAt)}
             </span>
           )}

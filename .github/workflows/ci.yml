@@ -111,7 +111,9 @@ jobs:
   # one to fail hiding the other.
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The full desktop/mobile suite is serial against a shared database.
+    # Keep a bounded limit without cancelling it before the report is written.
+    timeout-minutes: 60
     services:
       postgres:
         image: pgvector/pgvector:pg18

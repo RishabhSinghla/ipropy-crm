@@ -15,6 +15,7 @@
  * Both modules, because "it works on leads" is how a module gets left behind.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { openFirstRecord as openQueueRecord, openDetailsPane } from './helpers';
 
 const MODULES = ['leads', 'properties'] as const;
 
@@ -25,7 +26,7 @@ async function openFirstRecord(page: Page, module: string): Promise<void> {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto(`/${module}`);
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
-  await page.locator('[data-testid="ipropy-workspace"] button').first().click().catch(() => {});
+  await openQueueRecord(page);
   await expect(page.locator('section header').first()).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(1500);
 }
@@ -73,6 +74,7 @@ for (const module of MODULES) {
 */
 test('the chase date, stage and call log are pinned in the right pane', async ({ page }) => {
   await openFirstRecord(page, 'leads');
+  await openDetailsPane(page);
   const inspector = page.getByTestId('record-inspector');
   await expect(inspector).toBeVisible();
   await expect(inspector.getByText(/^Call Log$/i)).toBeVisible();
