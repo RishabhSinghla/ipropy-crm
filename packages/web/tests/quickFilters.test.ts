@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta } from '@ipropy/shared';
 import {
-  TAGS_KEY, arrangeQuickSections, defaultQuickSections, localDayBounds, pickIsActive, quickPickConditions, topValues,
+  EMPTY_PICK, TAGS_KEY, arrangeQuickSections, defaultQuickSections, localDayBounds, pickIsActive, quickPickConditions, topValues,
 } from '../src/lib/quickFilters';
 
 function field(name: string, uitype: string, extra: Partial<FieldMeta> = {}): FieldMeta {
@@ -20,6 +20,13 @@ const FIELDS = [
   field('area_size', 'area'),
   field('hidden_one', 'picklist', { displayType: 'hidden' } as Partial<FieldMeta>),
 ];
+
+it('filters unfilled tags alone or alongside chosen tags', () => {
+  expect(quickPickConditions({ [TAGS_KEY]: { kind: 'values', values: [EMPTY_PICK] } }, new Map())).toEqual([{ field: 'record_tags', operator: 'is_empty' }]);
+  expect(quickPickConditions({ [TAGS_KEY]: { kind: 'values', values: [EMPTY_PICK, 'hot'] } }, new Map())).toEqual([{
+    logic: 'OR', conditions: [{ field: 'record_tags', operator: 'has_any', value: ['hot'] }, { field: 'record_tags', operator: 'is_empty' }],
+  }]);
+});
 
 describe('the panel a module gets when nobody has arranged it', () => {
   const sections = defaultQuickSections(FIELDS, { ownerField: owner, stageField: stage, taskField: task });

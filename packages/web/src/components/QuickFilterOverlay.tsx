@@ -54,6 +54,7 @@ function useFacetCounts(module: string, field: string | undefined): { counts: Ma
     queryFn: () => api.facet(module, field!, undefined, 50, context),
     enabled: Boolean(field),
     staleTime: 60_000,
+    refetchInterval: 20_000,
   });
   return {
     counts: new Map((data?.values ?? []).map((row) => [row.value, row.count])),
@@ -524,11 +525,8 @@ function ValuesSection({ section, title, module, field, top, props }: {
  * on the top bar show the three most-used and choose one; this is the whole
  * list, and more than one at a time.
  *
- * Two things it does not do, both deliberate. It does not name a tag — the list
- * is whatever `GET /api/tags?module=` answers, which is already narrowed to the
- * tags this module is offered. And the count is that endpoint's own
- * `usage_count`, the same number the cards and the list picker print, rather
- * than a second count of its own that could disagree with them.
+ * The master supplies names and colours; scoped facets supply live counts,
+ * following the list's saved view, words, agent and temporary filters.
  */
 function TagsSection({ section, title, top, module, props }: {
   section: QuickFilterSection; title: string; top: number; module: string; props: QuickFilterPanelProps;
@@ -536,15 +534,18 @@ function TagsSection({ section, title, top, module, props }: {
   const pick = props.picks[TAGS_KEY];
   const ticked = pick?.kind === 'values' ? pick.values : [];
   const [open, setOpen] = useState(Boolean(section.open) || ticked.length > 0);
+  const { counts, blank, loading } = useFacetCounts(module, open ? 'record_tags' : undefined);
   const { data: tags, isLoading } = useQuery({
     queryKey: ['tags', module],
     queryFn: () => api.tags(module),
     enabled: open,
     staleTime: 60_000,
   });
-  const options: Option[] = (tags ?? [])
-    .map((tag) => ({ value: tag.name, label: tag.name, color: tag.color, count: tag.usage_count }))
-    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
+  const options: Option[] = [
+    { value: EMPTY_PICK, label: 'Unfilled', count: loading ? undefined : blank ?? 0 },
+    ...(tags ?? []).map((tag) => ({ value: tag.name, label: tag.name, color: tag.color, count: loading ? undefined : counts.get(tag.name) ?? 0 }))
+      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0)),
+  ];
   const tick = (value: string): void => {
     const next = ticked.includes(value) ? ticked.filter((item) => item !== value) : [...ticked, value];
     props.onPick(TAGS_KEY, next.length ? { kind: 'values', values: next } : null);
@@ -554,7 +555,7 @@ function TagsSection({ section, title, top, module, props }: {
       {/* Named so a spec can address "the tag choices" rather than "the second
           button in the panel", which is what it had to guess at first. */}
       <span data-testid="quick-filter-tags">
-        <ChoiceList options={options} ticked={ticked} top={top} loading={isLoading && open} onTick={tick} />
+        <ChoiceList options={options.slice(1)} always={options[0]} ticked={ticked} top={top} loading={(isLoading || loading) && open} onTick={tick} />
       </span>
     </Folding>
   );

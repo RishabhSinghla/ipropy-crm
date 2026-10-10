@@ -543,17 +543,13 @@ function NoteDock({ phrases, hasDraft, children }: {
 /**
  * `Sun 20 Sep, 4:12 pm` — the day and time a note was written.
  *
- * The year is printed only when it is not this one: 2026 on every row of 2026
- * is noise, and a note from 2021 without it is a note nobody can place.
+ * Always include the year, including the current year.
  */
 function noteStamp(at: string): string {
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return '';
   const time = when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-  const thisYear = when.getFullYear() === new Date().getFullYear();
-  const day = when.toLocaleDateString('en-IN', thisYear
-    ? { weekday: 'short', day: 'numeric', month: 'short' }
-    : { day: 'numeric', month: 'short', year: 'numeric' });
+  const day = when.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   return `${day}, ${time}`;
 }
 

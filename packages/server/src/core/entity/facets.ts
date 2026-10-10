@@ -52,6 +52,23 @@ export async function fieldFacets(
   options: { search?: string; limit?: number; context?: ListQuery } = {},
   conn: Tx = db,
 ): Promise<{ values: FacetValue[]; blank: number }> {
+  if (fieldName === 'record_tags') {
+    const { from, params } = await prepareList(ctx, moduleName, options.context ?? {}, conn);
+    // One scoped snapshot, including untagged records. A tag can be on many
+    // records, and a record can have many tags; blank is NOT total minus links.
+    const result = await conn.queryOne<{ values: FacetValue[]; blank: number }>(
+      `WITH visible AS MATERIALIZED (SELECT r.id ${from}),
+       tagged AS (
+         SELECT t.name AS value, t.name AS label, t.color,
+                count(DISTINCT v.id)::int AS count
+         FROM visible v JOIN ipy_tag_link l ON l.record_id=v.id JOIN ipy_tag t ON t.id=l.tag_id
+         GROUP BY t.id
+       )
+       SELECT COALESCE((SELECT jsonb_agg(tagged ORDER BY count DESC, label) FROM tagged), '[]'::jsonb) AS values,
+       (SELECT count(*)::int FROM visible v WHERE NOT EXISTS
+         (SELECT 1 FROM ipy_tag_link l WHERE l.record_id=v.id)) AS blank`, params.all());
+    return result ?? { values: [], blank: 0 };
+  }
   await readableField(ctx, moduleName, fieldName);
   const search = options.search?.trim();
   const valueFilter: FilterGroup | undefined = search

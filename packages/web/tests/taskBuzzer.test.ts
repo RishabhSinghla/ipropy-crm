@@ -6,10 +6,17 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta, TaskBuzzerSettings } from '@ipropy/shared';
 import {
-  closesAfter, isBusyDay, nextRoundAt, readMemory, taskDateFields, todaysTasksFilter, type TodayTask, whichToShow,
+  closesAfter, isBusyDay, nextRoundAt, readMemory, taskDateFields, todaysTasksFilter, type TodayTask, whichToShow, skipTasks, taskSkipUntil,
 } from '../src/lib/taskBuzzer';
 
 const SETTINGS: TaskBuzzerSettings = { on: true, everyMinutes: 15, onceOver: 50, closeAfterSeconds: 60 };
+
+it('skips all modules for exactly three hours, surviving midnight and blocked storage', () => {
+  const now = new Date('2026-10-10T23:00:00+05:30').getTime();
+  expect(skipTasks('skip-test-agent', now)).toBe(now + 3 * 60 * 60_000);
+  expect(taskSkipUntil('skip-test-agent')).toBe(now + 3 * 60 * 60_000);
+  expect(taskSkipUntil('another-agent')).toBe(0);
+});
 
 function tasks(n: number): TodayTask[] {
   return Array.from({ length: n }, (_, i) => ({ module: 'leads', moduleLabel: 'Contact', id: `r${i}`, label: `Lead ${i}` }));

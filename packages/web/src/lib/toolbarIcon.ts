@@ -26,7 +26,7 @@ const TONE: Record<ToolbarIconTone, string> = {
 };
 
 /** Every toolbar icon is drawn at this size. */
-export const TOOLBAR_ICON_SIZE = 'h-5 w-5';
+export const TOOLBAR_ICON_SIZE = 'h-[18px] w-[18px]';
 
 /**
  * The button around a toolbar icon. No border and no fill at rest; a faint
@@ -35,7 +35,7 @@ export const TOOLBAR_ICON_SIZE = 'h-5 w-5';
  */
 export function toolbarIcon(tone: ToolbarIconTone, on = false): string {
   return cn(
-    'relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors',
+    'relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
     'hover:bg-black/5 dark:hover:bg-white/10',
     TONE[tone],
     on && 'ring-2 ring-current',

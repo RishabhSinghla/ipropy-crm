@@ -14,6 +14,10 @@ import type { QueryClient } from '@tanstack/react-query';
 
 /** Anything that reads record data, anywhere in the app. */
 export function invalidateRecordQueries(qc: QueryClient, module?: string, id?: string): void {
+  // Quick-filter numbers are projections of records, not tag-master totals.
+  void qc.invalidateQueries({ queryKey: module ? ['facet', module] : ['facet'] });
+  void qc.invalidateQueries({ queryKey: module ? ['chip-count', module] : ['chip-count'] });
+  void qc.invalidateQueries({ queryKey: ['tags'] });
   if (module) {
     void qc.invalidateQueries({ queryKey: ['records', module] });
     void qc.invalidateQueries({ queryKey: ['queue-groups', module] });

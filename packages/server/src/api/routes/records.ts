@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { logger } from '../../utils/logger.js';
+import { broadcastModuleChange } from '../../realtime.js';
 import { z } from 'zod';
 import { createShareLink, listShareLinks, revokeShareLink } from '../../core/sharing/shareLinks.js';
 import type { FilterGroup, ListQuery } from '@ipropy/shared';
@@ -880,6 +881,7 @@ async function saveRecordTags(scope: ReturnType<typeof getScope>, module: string
     await recordService.writeAudit(tx, { recordId: id, module, userId: scope.user.id, action: 'update', changes: [{ field: 'record_tags', label: 'Tags', from: before.rows.map(t => t.name), to: after.rows.map(t => t.name) }], source: 'web' });
     await recordService.touchActivity(id, tx);
   });
+  broadcastModuleChange(module);
 }
 
 recordsRouter.post('/:module/mass-tags', asyncHandler(async (req, res) => {

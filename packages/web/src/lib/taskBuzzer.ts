@@ -81,6 +81,23 @@ export function nextRoundAt(endedAt: number, settings: TaskBuzzerSettings): numb
 /** A minute after opening the CRM — long enough to sit down, short enough to matter. */
 export const FIRST_ROUND_AFTER_MS = 60_000;
 
+export const SKIP_TASKS_MS = 3 * 60 * 60_000;
+const skippedUntil = new Map<string, number>();
+
+/** Per agent, across modules, tabs and midnight; never changes CRM task dates. */
+export function taskSkipUntil(userId: string): number {
+  let saved = 0;
+  try { saved = Number(localStorage.getItem(`ipropy.taskBuzzer.skip.${userId}`)) || 0; } catch { /* blocked storage */ }
+  return Math.max(saved, skippedUntil.get(userId) ?? 0);
+}
+
+export function skipTasks(userId: string, now = Date.now()): number {
+  const until = now + SKIP_TASKS_MS;
+  skippedUntil.set(userId, until);
+  try { localStorage.setItem(`ipropy.taskBuzzer.skip.${userId}`, String(until)); } catch { /* still works in this tab */ }
+  return until;
+}
+
 /**
  * What this browser remembers about today's buzzer, per person.
  *

@@ -10,7 +10,7 @@ import { assignmentField } from '../lib/fields';
 import { playBuzzer } from '../lib/buzzer';
 import {
   closesAfter, FIRST_ROUND_AFTER_MS, nextRoundAt, readMemory, taskDateFields, todaysTasksFilter,
-  type TodayTask, whichToShow, writeMemory,
+  type TodayTask, whichToShow, writeMemory, skipTasks, taskSkipUntil,
 } from '../lib/taskBuzzer';
 import type { DescribedModule } from '../lib/recordPanes';
 import { ChatRecordPane, ChatRecordPaneSkeleton, useChatRecord } from './ChatRecordPane';
@@ -57,6 +57,7 @@ export function TaskBuzzer(): JSX.Element | null {
     let hiddenNudgeFor: number | null = null;
 
     const check = async (): Promise<void> => {
+      if (Date.now() < taskSkipUntil(userId)) return;
       if (running.current) return;
       const memory = readMemory(userId);
       // A new day, or the first visit today: give them a minute to sit down.
@@ -79,6 +80,7 @@ export function TaskBuzzer(): JSX.Element | null {
       running.current = true;
       try {
         const tasks = await loadTodaysTasks(queryClient, modules, userId);
+        if (Date.now() < taskSkipUntil(userId)) { running.current = false; return; }
         const due = whichToShow(tasks, new Set(memory.shown), settings);
         if (!due.length) {
           writeMemory(userId, { ...readMemory(userId), nextAt: nextRoundAt(Date.now(), settings) });
@@ -97,9 +99,14 @@ export function TaskBuzzer(): JSX.Element | null {
     const timer = window.setInterval(() => { void check(); }, CHECK_EVERY_MS);
     const onVisible = (): void => { void check(); };
     document.addEventListener('visibilitychange', onVisible);
+    const onStorage = (): void => {
+      if (Date.now() < taskSkipUntil(userId)) { setRound(null); running.current = false; }
+    };
+    window.addEventListener('storage', onStorage);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('storage', onStorage);
     };
   }, [active, userId, settings, modules, queryClient]);
 
@@ -136,6 +143,11 @@ export function TaskBuzzer(): JSX.Element | null {
       dueToday={round.dueToday}
       closeAfterSeconds={closesAfter(round.dueToday, settings)}
       onNext={next}
+      onSkip={() => {
+        if (userId) skipTasks(userId);
+        running.current = false;
+        setRound(null);
+      }}
     />
   );
 }
@@ -192,7 +204,7 @@ function datesOf(values: Record<string, unknown>, dates: FieldMeta[]): string {
   return dates.map((field) => String(values[field.name] ?? '')).join('|');
 }
 
-function TaskPopup({ task, position, inRound, dueToday, closeAfterSeconds, onNext }: {
+function TaskPopup({ task, position, inRound, dueToday, closeAfterSeconds, onNext, onSkip }: {
   task: TodayTask;
   position: number;
   inRound: number;
@@ -200,6 +212,7 @@ function TaskPopup({ task, position, inRound, dueToday, closeAfterSeconds, onNex
   /** Null when the popup waits for the rep. */
   closeAfterSeconds: number | null;
   onNext: () => void;
+  onSkip: () => void;
 }): JSX.Element {
   const { module, record, loading, failed } = useChatRecord(task.module, task.id);
   const [secondsLeft, setSecondsLeft] = useState(closeAfterSeconds);
@@ -279,6 +292,7 @@ function TaskPopup({ task, position, inRound, dueToday, closeAfterSeconds, onNex
               : 'This keeps coming back every round until its date is moved off today.'}
           </span>
         )}
+        <button type="button" className="btn-secondary" onClick={onSkip} data-testid="task-buzzer-skip">Skip all · 3 hours</button>
         <Link
           to={`/${task.module}?open=${task.id}`}
           onClick={onNext}

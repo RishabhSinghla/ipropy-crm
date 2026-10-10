@@ -12,7 +12,8 @@ import request from 'supertest';
 import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
-import { signIn } from './fixtures.js';
+import { signIn, authUser, SEEDED, leadInput, adminContext } from './fixtures.js';
+import { recordService } from '../../src/core/entity/recordService.js';
 
 let app: Express;
 let token = '';
@@ -24,6 +25,27 @@ beforeAll(async () => {
 });
 
 describe('quick filter facets', () => {
+  it('counts tags and unfilled for the search and owner, and recounts tag edits', async () => {
+    const ownerA = await authUser(SEEDED.executiveA);
+    const ownerB = await authUser(SEEDED.executiveB);
+    const ctx = await adminContext();
+    const marker = `TagFacet-${Date.now()}`;
+    const a = await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `${marker} A`, owner_id: ownerA.id }));
+    await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `${marker} Blank`, owner_id: ownerA.id }));
+    const b = await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `${marker} B`, owner_id: ownerB.id }));
+    for (const id of [a.id, b.id]) await request(app).post(`/api/records/leads/${id}/tags`).set('Authorization', `Bearer ${token}`).send({ tags: ['facet-test-hot'] }).expect(200);
+    const facet = async (owner?: string) => {
+      const context = { search: marker, ...(owner ? { filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'equals', value: owner }] } } : {}) };
+      return (await request(app).get('/api/records/leads/facet').query({ field: 'record_tags', context: JSON.stringify(context) }).set('Authorization', `Bearer ${token}`).expect(200)).body;
+    };
+    expect((await facet()).values).toContainEqual(expect.objectContaining({ value: 'facet-test-hot', count: 2 }));
+    expect((await facet(ownerA.id)).values).toContainEqual(expect.objectContaining({ value: 'facet-test-hot', count: 1 }));
+    expect((await facet(ownerA.id)).blank).toBe(1);
+    expect((await facet(ownerB.id)).blank).toBe(0);
+    await request(app).post(`/api/records/leads/${a.id}/tags`).set('Authorization', `Bearer ${token}`).send({ tags: [] }).expect(200);
+    expect((await facet(ownerA.id)).blank).toBe(2);
+    expect((await facet(ownerA.id)).values).toEqual([]);
+  });
   it('counts the same filtered search as the visible list', async () => {
     const context = { search: `facet-no-match-${Date.now()}`, filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'today' }] } };
     const list = await request(app).get('/api/records/leads').query({ ...context, filter: JSON.stringify(context.filter), pageSize: 1 }).set('Authorization', `Bearer ${token}`).expect(200);

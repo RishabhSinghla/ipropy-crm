@@ -80,7 +80,7 @@ function emitTo(room: string, event: string, payload: unknown): void {
 }
 
 /** Tell every client that some record in this module changed. Name only. */
-function broadcastModuleChange(module: string): void {
+export function broadcastModuleChange(module: string): void {
   io?.emit('module:changed', { module });
 }
 

@@ -221,7 +221,12 @@ export function quickPickConditions(picks: QuickPicks, fields: Map<string, Field
       — or worse, silently matches nothing.
     */
     if (name === TAGS_KEY && pick.kind === 'values') {
-      conditions.push({ field: 'record_tags', operator: 'has_any', value: pick.values });
+      const real = pick.values.filter((value) => value !== EMPTY_PICK);
+      const tagged: FilterCondition = { field: 'record_tags', operator: 'has_any', value: real };
+      const empty: FilterCondition = { field: 'record_tags', operator: 'is_empty' };
+      conditions.push(pick.values.includes(EMPTY_PICK)
+        ? real.length ? { logic: 'OR', conditions: [tagged, empty] } : empty
+        : tagged);
       continue;
     }
     if (pick.kind === 'values') {

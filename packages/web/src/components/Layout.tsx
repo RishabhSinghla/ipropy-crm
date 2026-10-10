@@ -189,7 +189,7 @@ export default function Layout(): JSX.Element {
           </NavLink>
 
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
-          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
             <NewRecordButton modules={menuModules} />
             {/* A list page puts its New (recently added) chip here. */}
             <div id="global-new-records" className="shrink-0" />

@@ -81,3 +81,25 @@ test('pops today\'s tasks up with a buzzer, walks them with Next, and counts a m
   await page.getByRole('button', { name: /^Next Week$/ }).first().click();
   await expect(page.getByText('Done — date moved')).toBeVisible({ timeout: 10_000 });
 });
+
+test('Skip all dismisses reminders for three hours and survives reload', async ({ page }) => {
+  await page.goto('/dashboard');
+  await page.evaluate(() => {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('ipropy.taskBuzzer.')) localStorage.setItem(key, JSON.stringify({ shown: [], nextAt: 0 }));
+    }
+  });
+  await expect(page.getByTestId('task-buzzer')).toBeVisible({ timeout: 40_000 });
+  const before = Date.now();
+  await page.getByTestId('task-buzzer-skip').click();
+  await expect(page.getByTestId('task-buzzer')).toBeHidden();
+  const until = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith('ipropy.taskBuzzer.skip.'));
+    return Number(key && localStorage.getItem(key));
+  });
+  expect(until - before).toBeGreaterThanOrEqual(3 * 60 * 60_000);
+  expect(until - before).toBeLessThan(3 * 60 * 60_000 + 5000);
+  await page.reload();
+  await page.waitForTimeout(16_000);
+  await expect(page.getByTestId('task-buzzer')).toBeHidden();
+});
