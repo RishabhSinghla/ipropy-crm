@@ -358,7 +358,7 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
   // Tags now live beside Call and Favourite in the record header.
   const openTheDialog = async (): Promise<void> => {
     await expect(async () => {
-      await header.getByRole('button', { name: /Add a tag|^Tags \(/ }).click();
+      await header.getByRole('button', { name: 'Edit record tags', exact: true }).click();
       await expect(dialog).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 20_000 });
   };
