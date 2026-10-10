@@ -25,6 +25,7 @@ import { matchKey } from '../matchContact.js';
 import { activeBusinessProvider } from './registry.js';
 import { whyItFailed } from './whyItFailed.js';
 import { prepareOutgoingMedia } from './media.js';
+import { assertApprovedTemplate } from './templateApproval.js';
 
 export interface BusinessSendInput {
   userId: string;
@@ -223,6 +224,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     throw new BadRequestError('This person has opted out of WhatsApp messages.');
   }
 
+  if (input.template) await assertApprovedTemplate(input.template);
   const conversation = await conversationFor(handle, input.recordId ?? null, input.userId);
 
   const dialTo = await dialableNumber(conversation.waId, input.to, input.recordId ?? null);

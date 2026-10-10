@@ -213,9 +213,9 @@ async function templates({ fresh = false } = {}): Promise<TemplateSummary[]> {
       name: String(row.template_name ?? row.name ?? ''),
       language: String(row.locale ?? row.language ?? 'en'),
       category: String(row.category ?? row.check_wp_type ?? 'UTILITY'),
-      status: String(row.status ?? 'APPROVED'),
+      status: String(row.status ?? 'UNKNOWN'),
       bodyText: body,
-      variableCount: declared ?? (body ? (body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).length : 0),
+      variableCount: Math.max(declared ?? 0, ...Array.from(body?.matchAll(/\{\{\s*(\d+)\s*\}\}/g) ?? [], (m) => Number(m[1]))),
       /*
         **Two ids, and which one `/whatsapp/send/template` wants is not
         documented anywhere.** A row carries `template_id` (Meta's long id,
