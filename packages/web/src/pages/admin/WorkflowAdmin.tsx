@@ -402,6 +402,7 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   notify_user: 'Notify a user',
   send_email: 'Send email',
   send_sms: 'Send SMS',
+  send_whatsapp: 'Send WhatsApp template',
   webhook: 'Call a webhook',
   add_tag: 'Add tags',
   ai_action: 'Run an AI action',
@@ -483,6 +484,42 @@ function RecipientPicker({
   );
 }
 
+function WhatsAppWorkflowFields({ config, onChange, module }: {
+  config: Record<string, unknown>; onChange: (config: Record<string, unknown>) => void; module: ModuleMeta | undefined;
+}): JSX.Element {
+  const { data: templates = [], isLoading, error, refetch } = useQuery({
+    queryKey: ['wa-biz', 'templates', 'saved'], queryFn: api.waBizSavedTemplates,
+  });
+  const [syncing, setSyncing] = useState(false);
+  const selected = templates.find((t) => t.id === config.templateId);
+  const set = (patch: Record<string, unknown>): void => onChange({ ...config, deliveryVersion: 1, ...patch });
+  return <div className="space-y-3">
+    <label className="label">WhatsApp template</label>
+    <select className="input" value={String(config.templateId ?? '')}
+      onChange={(e) => set({ templateId: e.target.value, phoneField: config.phoneField ?? 'mobile' })}>
+      <option value="">{isLoading ? 'Loading templates…' : 'Choose an approved template'}</option>
+      {templates.map((t) => <option key={t.id} value={t.id} disabled={t.status.toUpperCase() !== 'APPROVED'}>
+        {t.name} ({t.language}) — {t.status}
+      </option>)}
+    </select>
+    {error && <p className="text-sm text-red-600">Could not load templates. Check the WhatsApp provider settings.</p>}
+    <div className="flex gap-3 items-center">
+      <button type="button" className="btn-secondary btn-sm" disabled={syncing} onClick={async () => {
+        setSyncing(true);
+        try { await api.waBizSyncTemplates(); await refetch(); toast.success('Template statuses refreshed'); }
+        catch (err) { toast.error('Could not sync templates', err instanceof Error ? err.message : String(err)); }
+        finally { setSyncing(false); }
+      }}>{syncing ? 'Syncing…' : 'Sync approval status'}</button>
+      <a className="text-sm underline" href="/whatsapp/templates" target="_blank" rel="noreferrer">Map template fields / preview</a>
+    </div>
+    <label className="label">Recipient mobile field</label>
+    <Select value={String(config.phoneField ?? 'mobile')} onChange={(phoneField) => set({ phoneField })}
+      options={(module?.fields ?? []).filter((f) => f.isActive && f.uitype === 'phone').map((f) => ({ value: f.name, label: f.label }))} />
+    {selected && <p className="text-sm text-slate-600 whitespace-pre-wrap">{selected.bodyText}</p>}
+    <p className="text-xs text-slate-500">Use “When a field changes”, watch Lead Status, and add the desired status condition. Choose one alternative template per status. Approval, opt-out and all mapped fields are checked before sending. Delayed actions recheck the current conditions.</p>
+  </div>;
+}
+
 function TaskConfigFields({
   task, onChange, module, users,
 }: {
@@ -495,6 +532,8 @@ function TaskConfigFields({
   const writable = module?.fields.filter((f) => f.isActive && !f.isReadonly) ?? [];
 
   switch (task.type) {
+    case 'send_whatsapp':
+      return <WhatsAppWorkflowFields config={task.config} onChange={onChange} module={module} />;
     case 'update_fields': {
       const values = (task.config.values as Record<string, string>) ?? {};
       const rows = Object.entries(values);
