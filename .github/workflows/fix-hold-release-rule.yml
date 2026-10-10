@@ -1,0 +1,93 @@
+# Stop the "Release expired blocks" rule announcing units that were never held.
+#
+# On production it had drifted: its conditions matched units that were never on
+# hold (every "Lost" unit), and its release step set the status to "Available
+# for Sale", which is not an option in Property Status — so the release failed,
+# the notification after it still went out, and the same units were announced
+# every hour. 10 October 2026.
+#
+# Production has no hold to release (no Held/Blocked status, no Blocked Until
+# field), so the fix is to switch the rule off. mode=check reads only;
+# mode=apply switches off this one rule and nothing else.
+#
+# Run by hand: Actions -> Fix hold release rule -> Run workflow.
+name: Fix hold release rule
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check (read only) or apply'
+        default: 'check'
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+      MODE: ${{ inputs.mode }}
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: The rule as it is now
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT w.id, w.is_active, w.execution_mode, w.schedule, w.conditions
+            FROM ipy_workflow w WHERE w.name = 'Release expired blocks';"
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT t.id, t.sequence, t.type, t.is_active, t.config
+            FROM ipy_workflow_task t JOIN ipy_workflow w ON w.id = t.workflow_id
+            WHERE w.name = 'Release expired blocks' ORDER BY t.sequence;"
+
+      - name: What a unit's status and hold fields are called on production
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT f.name, f.label, f.uitype, f.storage, f.column_name
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+            WHERE m.name = 'properties'
+              AND (f.name IN ('status','blocked_until','blocked_for_lead_id','full_name','unit_no','unit_number','house_no')
+                   OR f.uitype = 'picklist' AND f.name LIKE '%status%')
+            ORDER BY f.name;"
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT v.value, v.is_active FROM ipy_picklist_value v
+            JOIN ipy_picklist pl ON pl.id = v.picklist_id
+            WHERE pl.name = 'property_status' ORDER BY v.sequence;"
+
+      - name: Units the corrected rule would release right now
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT coalesce(to_jsonb(p)->>'status', p.custom_fields->>'status') AS status,
+                   count(*) AS units,
+                   count(*) FILTER (WHERE coalesce(to_jsonb(p)->>'blocked_until', p.custom_fields->>'blocked_until') IS NOT NULL) AS with_hold_date,
+                   count(*) FILTER (WHERE (coalesce(to_jsonb(p)->>'blocked_until', p.custom_fields->>'blocked_until'))::timestamptz < now()) AS hold_date_passed
+            FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id AND NOT r.is_deleted
+            GROUP BY 1 ORDER BY 2 DESC;"
+
+      - name: Apply
+        if: inputs.mode == 'apply'
+        run: |
+          psql "$PROD_DATABASE_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+          -- Production's inventory has no hold to release: Property Status has
+          -- no Held or Blocked option and there is no Blocked Until field. The
+          -- rule had been pointed at "On Hold" (not an option) and "Lost", so
+          -- every hour it tried to move every Lost unit to a status that does
+          -- not exist, failed, and announced the release anyway. Switched off,
+          -- not deleted: its settings stay, and turning it back on is one
+          -- toggle in Admin -> Workflows once units can actually be held.
+          UPDATE ipy_workflow SET is_active = false
+           WHERE name = 'Release expired blocks' AND is_active;
+          SELECT name, is_active FROM ipy_workflow WHERE name = 'Release expired blocks';
+          COMMIT;
+          SQL
