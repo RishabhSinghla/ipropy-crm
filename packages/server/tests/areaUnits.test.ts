@@ -101,8 +101,9 @@ describe('what the rep is shown', () => {
   it('quotes each side in the unit it was written in', () => {
     // A buyer who asked for 200 gaj should not read a converted number they
     // never typed. Their own figure is what they will recognise.
-    expect(formatArea(200, 'sqyd')).toContain('sq.yd');
-    expect(formatArea(1850, 'sqft')).toContain('sq.ft');
+    expect(formatArea(200, 'sqyd')).toContain('Sq. Yd.');
+    expect(formatArea(1850, 'sqft')).toContain('Sq. Ft.');
+    expect(formatArea(200, 'sqm')).toContain('Sq. Mtr.');
   });
 
   it('prints gaj as sq.yd, since that is what the dropdown says', () => {
@@ -110,6 +111,6 @@ describe('what the rep is shown', () => {
   });
 
   it('falls back to square feet when no unit was recorded', () => {
-    expect(formatArea(1850, null)).toContain('sq.ft');
+    expect(formatArea(1850, null)).toContain('Sq. Ft.');
   });
 });

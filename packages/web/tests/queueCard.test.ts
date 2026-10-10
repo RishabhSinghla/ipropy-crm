@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta } from '@ipropy/shared';
-import { cardArea, cardPrice, oneOfEach, queueCardColumns, queueCardFields, unitDescription, withQueueCardColumns } from '../src/lib/queueCard';
+import { cardArea, cardPrice, oneOfEach, queueAge, queueCardColumns, queueCardFields, unitDescription, withQueueCardColumns } from '../src/lib/queueCard';
 
 const field = (name: string, config: Record<string, unknown> = {}): FieldMeta =>
   ({ name, columnName: name, label: name, isActive: true, displayType: 'default', config }) as unknown as FieldMeta;
@@ -13,6 +13,18 @@ const leads = [
 ];
 
 describe('queue card', () => {
+  it('uses compact units for queue ages', () => {
+    const now = Date.parse('2026-10-11T12:00:00Z');
+    expect(queueAge('2026-10-11T11:59:40Z', now)).toBe('20 S ago');
+    expect(queueAge('2026-10-11T11:40:00Z', now)).toBe('20 M ago');
+    expect(queueAge('2026-10-09T12:00:00Z', now)).toBe('2 D ago');
+    expect(queueAge('bad date', now)).toBe('');
+  });
+  it('requests a renamed assignment field for the agent chip', () => {
+    const renamed = { ...field('agent'), columnName: 'owner_id', uitype: 'owner' } as FieldMeta;
+    expect(queueCardFields([renamed]).agent).toBe(renamed);
+    expect(queueCardColumns([renamed])).toContain('agent');
+  });
   it('finds each fact under the name this module uses', () => {
     const card = queueCardFields(leads);
     expect(card.unit?.name).toBe('unit_no');
@@ -59,7 +71,7 @@ describe('queue card', () => {
     expect(cardPrice(18500000)).toBe('₹1.85 Cr');
     expect(cardPrice(null)).toBe('');
     expect(cardPrice(0)).toBe('');
-    expect(cardArea(2100, 'sqft')).toBe('2,100 sq.ft');
+    expect(cardArea(2100, 'sqft')).toBe('2,100 Sq. Ft.');
     expect(cardArea(null, 'sqft')).toBe('');
   });
 });

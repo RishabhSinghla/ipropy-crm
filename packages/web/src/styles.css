@@ -13,6 +13,16 @@
 
 @tailwind base;
 @tailwind components;
+
+/* Theme-dark toolbar, with a light search surface and readable action icons. */
+[data-main-toolbar] > button,
+[data-main-toolbar] #global-quick-dashboard > button,
+[data-main-toolbar] #global-quick-filter > button,
+[data-main-toolbar] #global-list-options > button { color: #fff; }
+[data-main-toolbar] .toolbar-action { color: #e2e8f0; }
+[data-main-toolbar] .toolbar-action:hover { background: rgb(255 255 255 / 0.15); }
+[data-main-toolbar] input { color: #334155; }
+[data-main-toolbar] input::placeholder { color: #94a3b8; }
 @tailwind utilities;
 
 @layer base {
@@ -462,7 +472,7 @@
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded px-3 py-2 text-sm font-semibold
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold
            transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800; }
@@ -479,13 +489,14 @@
   .btn-sm { @apply px-2.5 py-1.5 text-xs; }
 
   .input {
-    @apply w-full rounded bg-white px-3 py-2 text-sm text-slate-900
+    @apply w-full rounded-xl bg-white px-3 py-2 text-sm text-slate-900
            placeholder:text-slate-400 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600
            disabled:bg-[var(--surface-muted)] disabled:text-slate-500
            dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500
            dark:disabled:bg-slate-800;
     border: 1px solid var(--border);
   }
+  select.input { @apply rounded-full bg-slate-50 text-xs dark:bg-slate-900; }
   /* `color` is set from the variable rather than @apply text-muted: @apply is
      resolved against the Tailwind config loaded when the dev server booted, so
      a token added to the config needs a restart before @apply can see it. The

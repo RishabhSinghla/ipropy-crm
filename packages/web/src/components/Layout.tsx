@@ -107,7 +107,7 @@ export default function Layout(): JSX.Element {
         {/* Top bar: brand and primary navigation on the left, search and
             actions on the right. One row, every width — the old sidebar spent
             its whole height saying what a 12px tab now says. */}
-        <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--frame-bg)] px-3 sm:gap-3 sm:px-4">
+        <header data-main-toolbar className="relative z-40 flex h-14 shrink-0 items-center gap-1.5 border-b border-brand-900 bg-brand-800 px-3 text-white sm:px-4">
           {/*
             One hamburger, two jobs, and the job is whichever navigation this
             screen has — *"the toolbar also have hamburg function before ipropy
@@ -414,14 +414,14 @@ function UserMenu(): JSX.Element {
         for two more lines.
       */
       trigger={
-        <button className="ml-1 flex items-center gap-2 rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800" data-testid="account-button">
+        <button className="ml-1 flex items-center gap-2 rounded-lg p-1 hover:bg-white/10" data-testid="account-button">
           <Avatar name={user?.fullName ?? '?'} src={user?.avatarUrl} size={28} />
           <span className="hidden min-w-0 flex-col items-start leading-tight sm:flex">
-            <span className="max-w-[9rem] truncate text-xs font-semibold text-slate-800 dark:text-slate-100">
+            <span className="max-w-[9rem] truncate text-xs font-semibold text-white">
               {user?.fullName}
             </span>
             {user?.roleName && (
-              <span className="max-w-[9rem] truncate text-[10px] text-muted">{user.roleName}</span>
+              <span className="max-w-[9rem] truncate text-[10px] text-slate-200">{user.roleName}</span>
             )}
           </span>
         </button>

@@ -22,6 +22,7 @@ import {
 import { db, onCommit, transaction, type Tx } from '../../db/pool.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
+import { updateLostArchiveDue } from './lostArchive.js';
 import { isSystemAccount } from '../auth/systemAccounts.js';
 import { emit, emitAsync } from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
@@ -206,6 +207,7 @@ export async function prepareList(ctx: ServiceContext, moduleName: string, q: Li
   const clauses: string[] = [
     `${RECORD_ALIAS}.module_id = ${params.add(module.id)}::uuid`,
     q.includeDeleted ? '' : `${RECORD_ALIAS}.is_deleted = false`,
+    q.archive ? `${RECORD_ALIAS}.archived_at IS NOT NULL` : `${RECORD_ALIAS}.archived_at IS NULL`,
   ].filter(Boolean);
 
   const joinMap = new Map<string, string>();
@@ -396,7 +398,7 @@ export async function listRecords(
   };
 
   if (q.groupBy) {
-    result.groups = await computeGroups(conn, module, q.groupBy, effectiveFilter, ctx, buildCtx);
+    result.groups = await computeGroups(conn, module, q.groupBy, effectiveFilter, ctx, buildCtx, q.archive);
   }
 
   return result;
@@ -460,6 +462,7 @@ async function computeGroups(
   filter: FilterGroup | undefined,
   ctx: ServiceContext,
   buildCtx: BuildContext,
+  archive = false,
 ): Promise<ListResult['groups']> {
   const params = new SqlParams();
   const joinMap = new Map<string, string>();
@@ -468,6 +471,7 @@ async function computeGroups(
   const clauses = [
     `${RECORD_ALIAS}.module_id = ${params.add(module.id)}::uuid`,
     `${RECORD_ALIAS}.is_deleted = false`,
+    archive ? `${RECORD_ALIAS}.archived_at IS NOT NULL` : `${RECORD_ALIAS}.archived_at IS NULL`,
   ];
   if (filter) {
     const where = await buildWhere(module, filter, params, buildCtx);
@@ -773,6 +777,7 @@ export async function createRecord(
     const recordId = rec.id;
 
     await insertPayload(conn, module, recordId, prepared);
+    await updateLostArchiveDue(conn, module, recordId, null, prepared.values);
 
     // Property folders are provisioned by the background worker. Queueing is
     // inside this transaction so a property can never commit without its
@@ -901,6 +906,7 @@ export async function updateRecord(
     await updatePayload(conn, module, recordId, prepared);
 
     const merged = { ...before.values, ...prepared.values };
+    await updateLostArchiveDue(conn, module, recordId, before.values, merged);
     const label = buildLabel(module, merged);
     const searchText = buildSearchText(module, merged);
 
@@ -2033,6 +2039,7 @@ async function outOfScopeMatches(
        LEFT JOIN ipy_user u ON u.id = ${RECORD_ALIAS}.owner_id
       WHERE ${RECORD_ALIAS}.module_id = ANY(${moduleIds}::uuid[])
         AND ${RECORD_ALIAS}.is_deleted = false
+        AND ${RECORD_ALIAS}.archived_at IS NULL
         AND ${search}
       ORDER BY ${RECORD_ALIAS}.updated_at DESC
       LIMIT 25`,
@@ -2119,6 +2126,7 @@ export async function globalSearch(
      LEFT JOIN ipy_user owner ON owner.id = ${RECORD_ALIAS}.owner_id
      WHERE (${branches.join(' OR ')})
        AND ${RECORD_ALIAS}.is_deleted = false
+       AND ${RECORD_ALIAS}.archived_at IS NULL
        AND ${search}
      ORDER BY ${RECORD_ALIAS}.updated_at DESC
      LIMIT ${limitParam}`,

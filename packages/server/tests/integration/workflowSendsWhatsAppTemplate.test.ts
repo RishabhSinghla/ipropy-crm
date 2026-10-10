@@ -52,6 +52,11 @@ beforeAll(async () => {
   await registry.warmup();
 
   stub = createServer((req, res) => {
+    if (req.method === 'GET' && req.url?.includes('message_templates')) {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ data: [{ name: TEMPLATE, language: 'en', status: 'APPROVED', category: 'UTILITY', components: [{ type: 'BODY', text: 'Hello {{1}}, thank you for your enquiry.' }] }] }));
+      return;
+    }
     let raw = '';
     req.on('data', (chunk) => { raw += chunk; });
     req.on('end', () => {
@@ -68,7 +73,7 @@ beforeAll(async () => {
   );
   wasActive = Boolean(before?.is_active);
   await saveIntegration('whatsapp_meta', {
-    config: { baseUrl: `http://127.0.0.1:${port}`, phoneNumberId: '555000111', apiVersion: 'v21.0' },
+    config: { baseUrl: `http://127.0.0.1:${port}`, phoneNumberId: '555000111', wabaId: '555000222', apiVersion: 'v21.0' },
     credentials: { accessToken: 'test-token-not-real' },
     isActive: true,
   });

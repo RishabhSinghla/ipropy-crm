@@ -75,6 +75,7 @@ async function baseQuery(
   const clauses = [
     `${RECORD_ALIAS}.module_id = ${params.add(module.id)}::uuid`,
     `${RECORD_ALIAS}.is_deleted = false`,
+    `${RECORD_ALIAS}.archived_at IS NULL`,
   ];
 
   if (filter) {

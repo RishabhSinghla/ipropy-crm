@@ -5,7 +5,7 @@
  * automation capability means adding one entry to TASK_HANDLERS — the engine,
  * the queue and the admin UI pick it up without further changes.
  */
-import { type AuthUser, renderTemplate, toE164, toInternational } from '@ipropy/shared';
+import { type AuthUser, renderTemplate, toE164, toInternational, evaluateFilter, type FilterGroup } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { registry } from '../metadata/registry.js';
@@ -241,12 +241,47 @@ const notifyUser: TaskHandler = async (config, ctx) => {
   });
 };
 
-/*
-  `send_whatsapp` was here and went with WhatsApp on 17 September 2026. A
-  workflow still carrying that step is safe: `runTask` logs an unknown type and
-  carries on, so the rest of the workflow's steps still run. Its replacement is
-  `send_whatsapp_template` (whatsappTemplateStep.ts): approved templates only.
-*/
+const sendWhatsApp: TaskHandler = async (config, ctx) => {
+  // Explicit opt-in keeps historical, queued WhatsApp actions dormant.
+  if (config.deliveryVersion !== 1 || typeof config.templateId !== 'string') {
+    throw new Error('Configure this WhatsApp action with an approved template before enabling it.');
+  }
+  const { recordService } = await import('../entity/recordService.js');
+  const { resolveTemplate, organisationName } = await import('../../integrations/whatsapp/business/templates.js');
+  const { sendOnBusinessNumber } = await import('../../integrations/whatsapp/business/send.js');
+  const scope = await systemContext(ctx.user);
+  const current = await recordService.getRecord(scope, ctx.module, ctx.recordId);
+  // A delayed message must not describe a stage the lead has already left.
+  const workflow = await db.queryOne<{ is_active: boolean; conditions: FilterGroup }>(
+    'SELECT is_active, conditions FROM ipy_workflow WHERE id = $1', [ctx.workflowId],
+  );
+  const { organisationTimezone } = await import('../settings/timezone.js');
+  if (!workflow?.is_active || !evaluateFilter(workflow.conditions, current.values, {
+    userId: ctx.user?.id, previous: ctx.previous, timezone: await organisationTimezone(),
+  })) return;
+  const meta = await registry.requireModule(ctx.module);
+  const phoneField = String(config.phoneField ?? 'mobile');
+  if (!meta.fields.some((f) => f.name === phoneField && f.uitype === 'phone' && f.isActive)) {
+    throw new Error('Choose an active mobile/phone field for this WhatsApp action.');
+  }
+  const to = String(current.values[phoneField] ?? '').trim();
+  if (!to) throw new Error('WhatsApp was not sent: the record has no mobile number.');
+  const actor = await db.queryOne<{ id: string; name: string }>(
+    `SELECT id, trim(concat_ws(' ', first_name, last_name)) AS name FROM ipy_user
+      WHERE id = $1 AND deleted_at IS NULL AND is_active`,
+    [current.values.owner_id ?? ctx.user?.id],
+  );
+  if (!actor) throw new Error('WhatsApp was not sent: choose an active record owner.');
+  const resolved = await resolveTemplate({
+    ctx: scope, templateId: config.templateId, module: ctx.module, recordId: ctx.recordId,
+    agentName: actor.name, orgName: await organisationName(),
+  });
+  if (resolved.missing.length) {
+    throw new Error(`WhatsApp was not sent: ${resolved.missing.map((m) => `{{${m.slot}}} ${m.reason}`).join('; ')}.`);
+  }
+  await sendOnBusinessNumber({ userId: actor.id, to, recordId: ctx.recordId,
+    template: { name: resolved.name, language: resolved.language, params: resolved.params } });
+};
 const sendEmail: TaskHandler = async (config, ctx) => {
   const { sendTemplatedEmail } = await import('../../integrations/email/service.js');
   const scope = await buildMergeScope(ctx);
@@ -332,6 +367,7 @@ const TASK_HANDLERS: Record<string, TaskHandler> = {
   send_email: sendEmail,
   send_sms: sendSms,
   send_whatsapp_template: sendWhatsAppTemplate,
+  send_whatsapp: sendWhatsApp,
   webhook,
   add_tag: addTag,
   ai_action: aiAction,

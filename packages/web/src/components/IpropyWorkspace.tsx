@@ -3,7 +3,7 @@ import { SummaryText } from './SummaryText';
 import { populatedQueueGroups, queueGroupField, queueGroupFilter } from '../lib/queueGroups';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { picklistOptionForValue, recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
+import { picklistOptionForValue, recordStrength, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
   History, Mail, MessageCircle, MessageSquare, MessagesSquare, MoreHorizontal, Phone, Search, Send,
@@ -27,7 +27,7 @@ import { RecordInspector } from './RecordInspector';
 import { AccessRequestBanner } from './AccessRequestBanner';
 import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
-import { cardArea, cardPrice, oneOfEach, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
+import { cardArea, cardPrice, oneOfEach, queueAge, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ShowOnWebsiteItem } from './ShowOnWebsite';
 import { ModuleIcon } from './Layout';
@@ -415,26 +415,6 @@ export function IpropyWorkspace({
     typing, and not while a dialog or a menu is open — there the arrows belong
     to what has the focus.
   */
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      if (isTypingOrInAPopup(event.target)) return;
-      if (groupField) {
-        const at = localityGroups.findIndex((group) => group.key === groupKey);
-        const next = localityGroups[event.key === 'ArrowDown' ? at + 1 : at - 1];
-        if (next) { event.preventDefault(); setSelectedGroup(next.key); setMenuPick('builders'); }
-        return;
-      }
-      const at = rows.findIndex((row) => row.id === activeId);
-      const next = rows[event.key === 'ArrowDown' ? at + 1 : at - 1];
-      if (!next) return;
-      event.preventDefault();
-      openRecord(next.id);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [rows, activeId, openRecord, groupField, localityGroups, groupKey]);
   /*
     A move that lands on a different page of the queue.
 
@@ -467,6 +447,27 @@ export function IpropyWorkspace({
       goToPage(queueRecordUrl(callQueueUrl, module.name, id, estimatedPosition));
     });
   }, [rows, openRecord, module.name, neighbourContext, sortBy, sortDir, callQueueUrl, goToPage]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || isTypingOrInAPopup(event.target)) return;
+      const forward = event.key === 'ArrowDown';
+      if (groupField) {
+        const at = localityGroups.findIndex(group => group.key === groupKey);
+        const next = localityGroups[at + (forward ? 1 : -1)];
+        if (next) { event.preventDefault(); setSelectedGroup(next.key); setMenuPick('builders'); }
+        return;
+      }
+      const at = rows.findIndex(row => row.id === activeId);
+      const id = (forward ? neighbours?.nextId : neighbours?.prevId) ?? rows[at + (forward ? 1 : -1)]?.id;
+      if (!id) return;
+      event.preventDefault();
+      openNeighbour(id, Math.max(1, (neighbours?.position ?? at + 1) + (forward ? 1 : -1)));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [rows, activeId, openNeighbour, neighbours, groupField, localityGroups, groupKey]);
 
   /*
     **Folded on arrival, every time** — the owner, 3 October 2026: *"the Right
@@ -774,7 +775,11 @@ export function IpropyWorkspace({
               <ModuleIcon name={module.icon} className="h-3 w-3 shrink-0 text-slate-400" />
               <span className="truncate">{module.label}</span>
               {groupField && <span className="shrink-0 font-normal text-muted">({localityGroups.length} localities)</span>}
-              {active && !groupField && rows.some((row) => row.id === active.id) && <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 normal-case tracking-normal dark:bg-blue-950 dark:text-blue-200" aria-label="Selected record on this page">{rows.findIndex((row) => row.id === active.id) + 1} / {rows.length}</span>}
+              {active && !groupField && rows.some((row) => row.id === active.id) && <span className="flex shrink-0 items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-800 normal-case tracking-normal dark:bg-blue-950 dark:text-blue-200" aria-label="Selected record on this page">
+                <button type="button" aria-label="Previous record in list" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="p-0.5 disabled:opacity-30"><ChevronLeft className="h-3 w-3" /></button>
+                {rows.findIndex((row) => row.id === active.id) + 1} / {rows.length}
+                <button type="button" aria-label="Next record in list" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="p-0.5 disabled:opacity-30"><ChevronRight className="h-3 w-3" /></button>
+              </span>}
             </span>
           </span>
           {/*
@@ -1507,6 +1512,7 @@ function QueueCard({
   const unit = card.unit ? read(card.unit) : '';
   const facts = queueFields ? queueFields.map((field) => read(field)) : [unitDescription(card, read)];
   const description = oneOfEach([unit, ...facts]);
+  const agentName = card.agent ? read(card.agent) : '';
   const statusValue = statusField ? row.values[statusField.name] : undefined;
   const status = statusField && statusValue != null && statusValue !== ''
     ? picklistOptionForValue(statusField.options, statusValue)
@@ -1576,7 +1582,7 @@ function QueueCard({
              record in the left record pane"* (3 October 2026). The padding is
              the gap: each card draws the hairline under itself, so growing the
              rule's margin would move the line rather than the breathing room. */
-          'relative block w-full cursor-pointer py-3 pl-[3.75rem] pr-3 text-left transition-colors',
+          'relative block min-h-[84px] w-full cursor-pointer py-3 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1653,8 +1659,8 @@ function QueueCard({
               *"I don't need to see it there"*. It is in the fields pane. */}
           {/* How stale it is, top right — the prototype's "6h ago". */}
           {row.updatedAt && (
-            <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[11px] font-medium', active ? 'text-brand-700 dark:text-brand-100' : 'text-muted')}>
-              {relativeTime(row.updatedAt)}
+            <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] font-normal text-slate-400 dark:text-slate-500">
+              {queueAge(row.updatedAt)}
             </span>
           )}
         </span>
@@ -1664,14 +1670,14 @@ function QueueCard({
 
         {/* 2. Which unit, cut short with "…" rather than wrapped — and not
             drawn at all when there is nothing to say, rather than a dash. */}
-        {description && <span className={cn(
+        {(description || area) && <span className={cn(
           'mt-1 block min-w-0 truncate text-xs',
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
           active ? 'font-semibold text-brand-700 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400',
         )}>
-          {description}
+          {oneOfEach([description, area])}
         </span>}
 
         {/*
@@ -1679,25 +1685,18 @@ function QueueCard({
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        {(price || area || statusLabel) && <span className="mt-1 flex items-center gap-2 text-xs">
+        {(price || agentName || statusLabel) && <span className="mt-1 flex items-center gap-2 text-xs">
           {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.
-              'shrink-0 whitespace-nowrap text-[13px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300',
+              'shrink-0 whitespace-nowrap text-[15px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300',
             )}>
               {price}
             </span>
           )}
           {/* `text-muted` and not a slate step: the token is the one that
               carries a contrast guarantee in both themes. */}
-          {area && (
-            <span className={cn(
-              'truncate text-[13px] font-medium',
-              // `text-muted` is a guaranteed pair on the page's own surface
-              // and not on a brand fill, so the open row states its own.
-              active ? 'text-brand-700 dark:text-brand-100' : 'text-muted',
-            )}>• {area}</span>
-          )}
+          {agentName && <span title={agentName} className="min-w-0 truncate rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">{agentName}</span>}
           {/*
             The record's status, hard against the right edge, in the colour the
             admin picked for it in the dropdown master — the owner, 10 October
@@ -1713,7 +1712,7 @@ function QueueCard({
               color={status?.color}
               /* The tick box appears over this corner on hover; the chip moves
                  left to make room rather than sitting under it. */
-              className={cn('ml-auto min-w-0 max-w-[8.5rem] shrink truncate transition-[margin]', checked ? 'mr-5' : 'group-hover:mr-5')}
+              className="ml-auto min-w-0 max-w-[7rem] shrink truncate rounded-full text-[10px]"
             >
               {statusLabel}
             </Badge>
@@ -1733,19 +1732,18 @@ function QueueCard({
         The box only shows on hover or once ticked, so the row reads as a name
         and a price until somebody reaches for a bulk action.
       */}
-      <span className="absolute left-3 top-1/2 z-[2] -translate-y-1/2">
+      <span className="absolute left-3 top-3 z-[2]">
         <RecordAvatar module={moduleName} recordId={row.id} name={row.label} canEdit={canEdit} size={40} />
       </span>
 
-      <span className="absolute bottom-2.5 right-2.5 flex items-center gap-1">
+      <span className="absolute bottom-2.5 left-6 flex items-center gap-1">
         <input
           aria-label={`Select ${row.label}`}
           type="checkbox"
           checked={checked}
           onChange={(event) => onToggle(event.target.checked)}
           className={cn(
-            'h-3.5 w-3.5 rounded border-slate-300 transition-opacity',
-            checked ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100',
+            'h-3 w-3 cursor-pointer rounded border-slate-300',
           )}
         />
       </span>

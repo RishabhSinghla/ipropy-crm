@@ -23,7 +23,7 @@ export async function recordCounts(ctx: ScopeContext, conn: Tx = db): Promise<Re
   for (const module of modules) {
     const params = new SqlParams();
     const moduleParam = params.add(module.id);
-    const clauses = [`r.module_id = ${moduleParam}::uuid`, 'r.is_deleted = false'];
+    const clauses = [`r.module_id = ${moduleParam}::uuid`, 'r.is_deleted = false', 'r.archived_at IS NULL'];
 
     // `recordScopeSql` writes its predicates against the `r` alias, which is
     // why the alias here has to be `r` — the same contract the analytics

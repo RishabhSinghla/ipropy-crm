@@ -3,7 +3,7 @@ import { logger } from '../../utils/logger.js';
 import { broadcastModuleChange } from '../../realtime.js';
 import { z } from 'zod';
 import { createShareLink, listShareLinks, revokeShareLink } from '../../core/sharing/shareLinks.js';
-import type { FilterGroup, ListQuery } from '@ipropy/shared';
+import { isLostStatus, picklistOptionForValue, statusFieldOf, type FilterGroup, type ListQuery } from '@ipropy/shared';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
@@ -67,6 +67,7 @@ const listSchema = z.object({
   columns: z.array(z.string()).optional(),
   groupBy: z.string().optional(),
   includeDeleted: z.coerce.boolean().optional(),
+  archive: z.boolean().optional(),
 });
 
 /** GET/POST share a body-or-query parsing path so complex filters can use POST. */
@@ -97,6 +98,29 @@ recordsRouter.post('/:module/search', asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const input = parseListInput(req);
   res.json(await recordService.listRecords(scope, req.params.module, input));
+}));
+
+recordsRouter.post('/:module/:id/reopen', blockApiKey, asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const module = await registry.requireModule(req.params.module);
+  const field = statusFieldOf(module.fields);
+  const { status } = z.object({ status: z.string().min(1) }).parse(req.body);
+  const option = field && picklistOptionForValue(field.options, status);
+  if (!field || !option || option.isActive === false || isLostStatus(option.value) || isLostStatus(option.label)) {
+    throw new BadRequestError('Choose an active non-Lost status to reopen this record');
+  }
+  const record = await transaction(async conn => {
+    await recordService.getRecord(scope, module.name, req.params.id, { conn });
+    const archived = await conn.queryOne<{ archived_at: string | null }>('SELECT archived_at FROM ipy_record WHERE id=$1 FOR UPDATE', [req.params.id]);
+    if (!archived?.archived_at) throw new BadRequestError('This record is not archived');
+    const result = await recordService.updateRecord(scope, module.name, req.params.id, { [field.name]: status }, { conn });
+    await conn.query('UPDATE ipy_record SET archived_at=NULL, lost_archive_due_at=NULL WHERE id=$1', [req.params.id]);
+    await recordService.writeAudit(conn, { recordId: req.params.id, module: module.name,
+      userId: getUser(req).id, action: 'restore', changes: [{ field: 'archived_at', label: 'Archive', from: 'Archived', to: 'Reopened' }], source: 'archive' });
+    return result;
+  });
+  broadcastModuleChange(module.name);
+  res.json(record);
 }));
 
 // ---------------------------------------------------------------------------

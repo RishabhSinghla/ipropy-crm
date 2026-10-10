@@ -19,6 +19,7 @@ import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
 import { notify } from '../notifications/index.js';
 import { runFacebookRecovery } from '../../integrations/leadsources/facebookRecovery.js';
+import { archiveDueLostRecords } from '../entity/lostArchive.js';
 import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import {
   buildWhere, quoteIdent, ENTITY_ALIAS, RECORD_ALIAS, SqlParams, type BuildContext,
@@ -90,6 +91,7 @@ async function tick(): Promise<void> {
       runSequences(),
       housekeeping(),
       runFacebookRecovery(),
+      archiveDueLostRecords().catch(err => logger.error({ err }, 'Lost record archive failed; will retry next tick')),
     ]);
   } catch (err) {
     logger.error({ err }, 'scheduler tick failed');
@@ -172,6 +174,13 @@ async function drainQueue(batchSize = 50): Promise<void> {
         [job.task_id],
       );
       if (!task) { await complete(job.id, 'cancelled'); continue; }
+
+      // A timeout may follow an accepted customer message. Do not blindly
+      // retry WhatsApp: an operator must inspect the delivery log first.
+      if (task.type === 'send_whatsapp') {
+        job.max_attempts = 1;
+        await db.query('UPDATE ipy_task_queue SET max_attempts = 1 WHERE id = $1', [job.id]);
+      }
 
       const record = await loadRecordValues(job.module_name, job.record_id);
       if (!record) {
@@ -371,7 +380,7 @@ async function scheduledCandidates(
  * Tasks that reach a customer. A mistake in one of these is not a wasted tick;
  * it is a message somebody receives.
  */
-const OUTBOUND_TASKS = ['send_email', 'send_sms'];
+const OUTBOUND_TASKS = ['send_email', 'send_sms', 'send_whatsapp'];
 
 /**
  * A scheduled rule that messages people and narrows on nothing.

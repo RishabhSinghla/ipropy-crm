@@ -114,10 +114,10 @@ export function formatArea(
 ): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—';
   const labels: Record<string, string> = {
-    sqft: 'sq.ft', sqm: 'sq.m', sqyd: 'sq.yd', gaj: 'sq.yd', acre: 'acre', hectare: 'ha',
+    sqft: 'Sq. Ft.', sqm: 'Sq. Mtr.', sqyd: 'Sq. Yd.', gaj: 'Sq. Yd.', acre: 'Acre', hectare: 'Ha',
   };
   const key = (unit ?? 'sqft').toLowerCase().replace(/[^a-z]/g, '');
-  return `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(value)} ${labels[key] ?? unit ?? 'sq.ft'}`;
+  return `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(value)} ${labels[key] ?? unit ?? 'Sq. Ft.'}`;
 }
 
 export function formatNumber(value: number | null | undefined, decimals = 0, locale = 'en-IN'): string {

@@ -11,7 +11,7 @@ import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
 import {
-  ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
+  ArrowLeftRight, ListFilter, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -1067,7 +1067,7 @@ export default function ListView(): JSX.Element {
               title="Quick and live filters"
               data-testid="quick-filter-button"
             >
-              <Filter className={TOOLBAR_ICON_SIZE} />
+              <ListFilter className={TOOLBAR_ICON_SIZE} />
               {quickFilterCount > 0 && (
                 <span className="absolute -right-1 -top-1 rounded-full bg-blue-600 px-1.5 text-2xs font-bold text-white">{quickFilterCount}</span>
               )}
@@ -1076,7 +1076,7 @@ export default function ListView(): JSX.Element {
 
         {toolbarSlots.options && createPortal(
             <Dropdown
-              trigger={<button className={toolbarIcon('exchange')} aria-label="Import, export and list options" title="Import / Export"><ArrowLeftRight className={TOOLBAR_ICON_SIZE} /></button>}
+              trigger={<button className={toolbarIcon('exchange')} aria-label="Import, export and list options" title="Import / Export"><FileUp className={TOOLBAR_ICON_SIZE} /></button>}
             >
               {(close) => (
                 <>

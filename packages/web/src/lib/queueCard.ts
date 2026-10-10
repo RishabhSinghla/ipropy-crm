@@ -13,7 +13,7 @@
  * does not have simply drops out of the line.
  */
 import { formatArea, formatIndianPrice, type FieldMeta } from '@ipropy/shared';
-import { fieldByKey } from './fields';
+import { assignmentField, fieldByKey } from './fields';
 
 const CANDIDATES = {
   type: ['contact_type'],
@@ -25,6 +25,7 @@ const CANDIDATES = {
   price: ['budget', 'demand', 'asking_price'],
   area: ['area_size', 'area'],
   followUp: ['next_followup_at', 'next_follow_up'],
+  agent: ['owner_id', 'assigned_to'],
 } as const;
 
 export type CardFact = keyof typeof CANDIDATES;
@@ -33,7 +34,10 @@ export type CardFields = Partial<Record<CardFact, FieldMeta>>;
 /** The field behind each fact on this module, skipping any switched off. */
 export function queueCardFields(fields: FieldMeta[]): CardFields {
   const found: CardFields = {};
+  const agent = assignmentField(fields);
+  if (agent) found.agent = agent;
   for (const fact of Object.keys(CANDIDATES) as CardFact[]) {
+    if (fact === 'agent' && found.agent) continue;
     for (const name of CANDIDATES[fact]) {
       const field = fieldByKey(fields, name);
       if (field?.isActive && field.displayType !== 'hidden') {
@@ -135,4 +139,16 @@ export function cardArea(value: unknown, unit: unknown): string {
   const size = Number(value);
   if (value === null || value === undefined || value === '' || !Number.isFinite(size) || size <= 0) return '';
   return formatArea(size, typeof unit === 'string' ? unit : undefined);
+}
+
+/** Compact queue age; months and minutes share M as requested. */
+export function queueAge(value: string, now = Date.now()): string {
+  const seconds = Math.max(0, Math.floor((now - new Date(value).getTime()) / 1000));
+  if (!Number.isFinite(seconds)) return '';
+  if (seconds < 60) return `${seconds} S ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} M ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} H ago`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 86400)} D ago`;
+  if (seconds < 31536000) return `${Math.floor(seconds / 2592000)} M ago`;
+  return `${Math.floor(seconds / 31536000)} Y ago`;
 }

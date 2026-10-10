@@ -847,6 +847,7 @@ export const api = {
     post<ListResult>(`/api/records/${module}/search`, query),
   quickDashboard: (module: string, query: ListQuery) => post<{ total: number; createdToday: number; changedToday: number; tagged: number; charts: { title: string; field?: string; unavailable: boolean; options?: { key: string; label: string; count: number }[]; slices: { key: string; label: string; count: number }[] }[] }>(`/api/records/${module}/quick-dashboard`, query),
   record: (module: string, id: string) => get<RecordEnvelope>(`/api/records/${module}/${id}`),
+  reopen: (module: string, id: string, status: string) => post<RecordEnvelope>(`/api/records/${module}/${id}/reopen`, { status }),
   create: (module: string, values: Record<string, unknown>) => post<RecordEnvelope>(`/api/records/${module}`, values),
   websiteState: (module: string, id: string) =>
     get<{ offered: boolean; shown: boolean; listed: boolean }>(`/api/records/${module}/${id}/website`),

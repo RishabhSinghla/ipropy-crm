@@ -1,7 +1,7 @@
 import { type JSX, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { PieChart, X, RefreshCw } from 'lucide-react';
+import { PanelsTopLeft, X, RefreshCw } from 'lucide-react';
 import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
 import type { ListQuery } from '@ipropy/shared';
 import { api } from '../lib/api';
@@ -46,7 +46,7 @@ export function QuickGraphicDashboard({ module, label, context }: { module: stri
   const users = useQuery({ queryKey: ['users', 'quick-dashboard', module], queryFn: () => api.users(false, false, true, module), enabled: open });
   const filterClass = 'h-7 min-w-0 rounded-md border border-slate-200 bg-white px-1 text-[11px] dark:border-slate-700 dark:bg-slate-900';
   return <>
-    {slot && createPortal(<button type="button" aria-label={open ? 'Close quick dashboard' : 'Open quick dashboard'} aria-expanded={open} aria-controls="quick-graphic-dashboard" className={toolbarIcon('dashboard', open)} title="Quick dashboard" onClick={() => setOpen(value => !value)}><PieChart className={TOOLBAR_ICON_SIZE} /></button>, slot)}
+    {slot && createPortal(<button type="button" aria-label={open ? 'Close quick dashboard' : 'Open quick dashboard'} aria-expanded={open} aria-controls="quick-graphic-dashboard" className={toolbarIcon('dashboard', open)} title="Quick dashboard" onClick={() => setOpen(value => !value)}><PanelsTopLeft className={TOOLBAR_ICON_SIZE} /></button>, slot)}
     {open && createPortal(<section id="quick-graphic-dashboard" role="dialog" aria-label={`${label} quick dashboard`} className="fixed inset-x-0 top-14 z-50 h-auto max-h-[calc(100dvh-4rem)] overflow-auto border-b-2 border-brand-200 bg-slate-50 p-2 shadow-xl dark:border-brand-800 dark:bg-slate-950">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold">{label} · Quick dashboard</h2>

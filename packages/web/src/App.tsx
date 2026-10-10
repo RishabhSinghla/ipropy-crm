@@ -20,6 +20,7 @@ const Layout = lazy(() => import('./components/Layout'));
 const MobileShell = lazy(() => import('./mobile/Shell'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const ListView = lazy(() => import('./pages/ListView'));
+const ArchivePage = lazy(() => import('./pages/Archive'));
 
 /**
  * A list, and a way to arrive at one as if it were a fresh visit.
@@ -145,6 +146,7 @@ export default function App(): JSX.Element {
               <Route path="whatsapp/*" element={<WhatsAppPage />} />
               <Route path="calls" element={<CallsPage />} />
               <Route path="tools" element={<ToolsPage />} />
+              <Route path="archive" element={<ArchivePage />} />
               {/* The official business number's shared inbox. Above the generic
                   `:module` route, which would otherwise treat "chats" as a
                   module name and 404 on the metadata lookup. It is no longer a

@@ -47,6 +47,8 @@ export interface ListQuery {
   /** kanban grouping */
   groupBy?: string;
   includeDeleted?: boolean;
+  /** Retained Lost records only; normal lists exclude archived records. */
+  archive?: boolean;
 }
 
 export interface ListResult<T = RecordEnvelope> {
@@ -454,6 +456,7 @@ export type WorkflowTaskType =
   | 'send_email'
   | 'send_sms'
   | 'send_whatsapp_template'
+  | 'send_whatsapp'
   | 'create_task'
   | 'create_event'
   | 'assign_owner'

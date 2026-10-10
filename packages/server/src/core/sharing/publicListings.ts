@@ -180,7 +180,7 @@ function visibleClause(f: ListingFields, alias = 'u'): string {
   const ticked = f.published.storage === 'column'
     ? `${alias}.${quoteIdent(f.published.columnName)}::text = 'true'`
     : `${alias}.custom_fields->>${pgString(f.published.columnName)} = 'true'`;
-  const live = `EXISTS (SELECT 1 FROM ipy_record lr WHERE lr.id = ${alias}.record_id AND lr.is_deleted = false)`;
+  const live = `EXISTS (SELECT 1 FROM ipy_record lr WHERE lr.id = ${alias}.record_id AND lr.is_deleted = false AND lr.archived_at IS NULL)`;
   const status = f.status
     ? `NOT (COALESCE(${textExpr(f.status, alias)}, '') ~* '\\m(${OFF_MARKET_WORDS})\\M')`
     : 'TRUE';

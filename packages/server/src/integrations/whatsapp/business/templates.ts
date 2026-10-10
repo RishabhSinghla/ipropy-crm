@@ -35,7 +35,7 @@ import { countVariables } from './metaCloud.js';
  * signing off, the business name, and a fixed word the template needs but
  * Meta would not approve inside the body.
  */
-export type MappingSource = `field:${string}` | 'agent:name' | 'org:name' | `text:${string}`;
+export type MappingSource = `field:${string}` | 'record:id' | 'agent:name' | 'org:name' | `text:${string}`;
 
 export interface StoredTemplate {
   id: string;
@@ -140,7 +140,7 @@ export async function saveMapping(
         // and the only clue is a provider's rejection code.
         throw new BadRequestError(`There is no field called "${name}" on ${module}.`);
       }
-    } else if (!['agent:name', 'org:name'].includes(source) && !source.startsWith('text:')) {
+    } else if (!['record:id', 'agent:name', 'org:name'].includes(source) && !source.startsWith('text:')) {
       throw new BadRequestError(`"${source}" is not something a template can be filled from.`);
     }
   }
@@ -202,7 +202,8 @@ export async function resolveTemplate(input: {
     }
 
     let value = '';
-    if (source === 'agent:name') value = input.agentName;
+    if (source === 'record:id') value = input.recordId;
+    else if (source === 'agent:name') value = input.agentName;
     else if (source === 'org:name') value = input.orgName;
     else if (source.startsWith('text:')) value = source.slice('text:'.length);
     else if (!source.startsWith('field:')) {

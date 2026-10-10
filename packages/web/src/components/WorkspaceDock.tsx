@@ -21,7 +21,7 @@
  */
 import { type JSX, type ReactNode, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Calculator, LayoutDashboard, MessagesSquare, PhoneIncoming, Star, UserRound } from 'lucide-react';
+import { Archive, Calculator, LayoutDashboard, MessagesSquare, PhoneIncoming, Star, UserRound } from 'lucide-react';
 import { ThreeContacts } from './ThreeContacts';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -134,6 +134,7 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
           ))}
           <div className="mt-auto border-t border-slate-300 pt-3 dark:border-slate-700">
             <DockLink to="/tools" label="Tools" iconOnly={!expanded}><Calculator className="h-[18px] w-[18px]" /></DockLink>
+            <DockLink to="/archive" label="Archive" iconOnly={!expanded}><Archive className="h-[18px] w-[18px]" /></DockLink>
           </div>
         </nav>
       </aside>
