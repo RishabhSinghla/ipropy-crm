@@ -71,6 +71,7 @@ test('they change the pipeline status without leaving the page', async ({ page }
 test('they leave a note for whoever picks this up next', async ({ page }) => {
   const note = `Rang them, call back Tuesday ${Date.now()}`;
   await page.goto(recordUrl);
+  await page.getByRole('button', { name: 'Write a note…', exact: true }).click();
 
   // The box at the foot of the timeline since 30 September 2026. Its button
   // says "Comment" there, beside Send WhatsApp.

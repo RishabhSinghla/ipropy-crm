@@ -163,8 +163,11 @@ test.describe('lead lifecycle through the UI', () => {
     await expect(confirm).toBeVisible({ timeout: 5_000 });
     await confirm.click();
     await page.goto('/leads');
-    await searchList(page, renamed);
-    await expect(row(renamed)).toHaveCount(0);
+    // A deleted lead has no search group and therefore no "See all" action.
+    // Verify the universal search's empty result instead of clicking a
+    // control that only exists when the record is still present.
+    await page.getByRole('combobox', { name: 'Search everything', exact: true }).fill(renamed);
+    await expect(page.getByText(`No matches for “${renamed}”`, { exact: true })).toBeVisible();
   });
 });
 

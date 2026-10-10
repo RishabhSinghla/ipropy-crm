@@ -100,7 +100,7 @@ test('the call log says who, which way and how long — and the chips narrow it'
   expect(first.split('\n')[1], 'the row should name somebody').not.toBe('Unknown number');
 
   const before = await rows.count();
-  await page.getByRole('button', { name: 'Missed' }).click();
+  await page.getByRole('button', { name: 'Missed', exact: true }).click();
   await page.waitForTimeout(2_000);
   // The filter has to reach the server: a chip that lights up while the list
   // stands still is a parameter the endpoint ignored.

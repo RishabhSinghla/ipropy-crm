@@ -355,18 +355,10 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
 
   const header = recordPane(page).locator('header').first();
   const dialog = page.getByRole('dialog');
-  /*
-    Through the menu bar's *More*, because the tag icon left this bar on
-    2 October 2026 — *"the extra icon of Header also will be remove from header like,
-    Star, Tag icons."* The chips stayed; only the icon went.
-
-    Retried, because the "Tags updated" toast lands over this corner of the
-    header for a few seconds and a click that hits it opens nothing at all.
-  */
+  // Tags now live beside Call and Favourite in the record header.
   const openTheDialog = async (): Promise<void> => {
     await expect(async () => {
-      await page.getByTestId('record-menu-more').click();
-      await page.getByRole('button', { name: /Add a tag|^Tags \(/ }).first().click();
+      await header.getByRole('button', { name: /Add a tag|^Tags \(/ }).click();
       await expect(dialog).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 20_000 });
   };

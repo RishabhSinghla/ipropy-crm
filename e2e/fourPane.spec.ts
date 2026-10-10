@@ -42,6 +42,7 @@ test('a note written in the box under the timeline appears in it', async ({ page
   await page.goto('/leads');
   await waitForRecords(page);
   const text = `Four pane note ${Date.now()}`;
+  await page.getByRole('button', { name: 'Write a note…', exact: true }).click();
   await page.getByTestId('note-dock').getByLabel('Add a note for the team').fill(text);
   await page.getByTestId('note-dock').getByRole('button', { name: 'Comment', exact: true }).click();
   await expect(page.getByTestId('activity-feed').getByText(text)).toBeVisible({ timeout: 15_000 });

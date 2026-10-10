@@ -347,6 +347,10 @@ export async function openFromListByName(page: Page, module: string, name: strin
  * that edits a field.
  */
 export async function openDetailsPane(page: Page): Promise<void> {
+  // Navigation returns before the record is loaded. Wait for the inspector
+  // before testing for its toggle, otherwise count() sees zero too early.
+  await expect(page.getByTestId('record-inspector')).toBeAttached({ timeout: 30_000 });
   const unfold = page.getByTestId('unfold-details');
   if (await unfold.count()) await unfold.click();
+  await expect(page.getByTestId('activity-pane')).not.toHaveAttribute('data-folded', 'true');
 }
