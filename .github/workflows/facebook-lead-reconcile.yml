@@ -99,3 +99,35 @@ jobs:
             WHERE i.source = 'facebook'
               AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
             GROUP BY 1 ORDER BY 2 DESC;"
+
+      # What the leads turned into, which is what return on ad spend is about.
+      # to_jsonb reads a field whether it is a real column or a custom one, and
+      # costs nothing at this size.
+      - name: What happened to them
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            WITH fb AS (
+              SELECT DISTINCT ON (r.id) r.id, i.received_at,
+                     coalesce(to_jsonb(l)->>'status', l.custom_fields->>'status', '(none)') AS stage,
+                     coalesce(to_jsonb(l)->>'contact_type', l.custom_fields->>'contact_type', '(none)') AS contact_type
+              FROM ipy_lead_inbox i
+              JOIN ipy_record r ON r.id = i.record_id AND NOT r.is_deleted
+              JOIN ipy_e_leads l ON l.record_id = r.id
+              WHERE i.source = 'facebook'
+                AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+              ORDER BY r.id, i.received_at
+            ),
+            called AS (
+              SELECT fb.id,
+                     min(c.started_at) FILTER (WHERE c.direction = 'outbound') AS first_call,
+                     bool_or(c.duration_seconds > 0) AS ever_connected
+              FROM fb LEFT JOIN ipy_call c ON c.record_id = fb.id AND c.started_at >= fb.received_at
+              GROUP BY fb.id
+            )
+            SELECT fb.contact_type, fb.stage, count(*) AS contacts,
+                   count(*) FILTER (WHERE called.first_call IS NOT NULL) AS called_since_enquiry,
+                   count(*) FILTER (WHERE called.ever_connected) AS spoke_to,
+                   round(avg(extract(epoch FROM called.first_call - fb.received_at) / 3600)::numeric, 1) AS avg_hours_to_first_call
+            FROM fb JOIN called USING (id)
+            GROUP BY ROLLUP (fb.contact_type, fb.stage)
+            ORDER BY fb.contact_type NULLS LAST, fb.stage NULLS LAST;"
