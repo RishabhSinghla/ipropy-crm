@@ -114,7 +114,7 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
     >
       <aside
         className={cn(
-          'absolute inset-y-0 left-0 flex h-full flex-col overflow-y-auto bg-[#f0f2f5] py-2 no-scrollbar dark:bg-slate-900',
+          'absolute inset-y-0 left-0 flex h-full flex-col overflow-y-auto bg-[var(--frame-bg)] py-2 no-scrollbar',
           expanded ? 'w-52' : 'w-14',
           folded && expanded && 'shadow-xl',
         )}

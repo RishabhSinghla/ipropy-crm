@@ -35,6 +35,7 @@ import {
   LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
 } from '../components/CallDispositionFilter';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
 import SiteCapture from './SiteCapture';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
@@ -1060,22 +1061,22 @@ export default function ListView(): JSX.Element {
         {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}
-              className={cn('btn-secondary btn-sm px-2', (showFilters || quickFilterCount > 0) && '!border-brand-700 !bg-brand-700 !text-white')}
+              className={toolbarIcon('filter', showFilters || quickFilterCount > 0)}
               aria-label="Quick and live filters"
               aria-expanded={showFilters}
               title="Quick and live filters"
               data-testid="quick-filter-button"
             >
-              <Filter className="h-3.5 w-3.5" />
+              <Filter className={TOOLBAR_ICON_SIZE} />
               {quickFilterCount > 0 && (
-                <span className="rounded-full bg-brand-600 px-1.5 text-2xs text-white">{quickFilterCount}</span>
+                <span className="absolute -right-1 -top-1 rounded-full bg-blue-600 px-1.5 text-2xs font-bold text-white">{quickFilterCount}</span>
               )}
             </button>
         , toolbarSlots.filter)}
 
         {toolbarSlots.options && createPortal(
             <Dropdown
-              trigger={<button className="btn-secondary btn-sm rounded-xl" aria-label="Import, export and list options" title="Import / Export"><ArrowLeftRight className="h-3.5 w-3.5" /></button>}
+              trigger={<button className={toolbarIcon('exchange')} aria-label="Import, export and list options" title="Import / Export"><ArrowLeftRight className={TOOLBAR_ICON_SIZE} /></button>}
             >
               {(close) => (
                 <>

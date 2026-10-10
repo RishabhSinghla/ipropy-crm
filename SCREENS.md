@@ -2453,6 +2453,30 @@ reflected"*. `adoptSession` in `lib/store.ts` asks `/me` now, falling back to th
 user so a slow answer never stops a sign-in. The same gap had been hiding the inline-edit
 and quick-filter settings after sign-in too.
 
+## The status chip, the frame and the toolbar icons — 10 October 2026
+
+**The owner:** *"in the left record pane, We need leads/Inventory status Button/chip. so
+please remove Assign to Agent name in replacement of Status … we want to see main toolbar
+colour differ from whole screen like Left toolbar and Right Details form closed pane … check
+Dashboard, Filter, Export/import Icon size and Button (We want to see all icons only in
+Separated colour 'Without Button/Box' And Size should Same)."*
+
+* **The queue row's third line ends in the record's status**, a solid `Badge` in the colour
+  the dropdown master gives that option (`picklistOptionForValue`), where the assigned
+  agent's face and name sat since 3 October. Which field is the status is `useRecordPanes`'
+  `statusField`, the same one the record header reads, so no screen names a field. The
+  agent is still on the open record's header. The hover tick box shares that corner, so the
+  chip steps left (`group-hover:mr-5`, `mr-5` once ticked) rather than sitting under it —
+  measured in a browser, not assumed.
+* **The top bar and the left toolbar are one frame**, `--frame-bg` in `styles.css` (#f0f2f5,
+  the toolbar's old hard-coded grey; slate-900 in dark). One variable, so the two cannot
+  drift. The search box is white on it now, or it would vanish into the bar.
+* **Every main-toolbar icon is `toolbarIcon(tone)` in `lib/toolbarIcon.ts`**: no border, no
+  fill, one size (`TOOLBAR_ICON_SIZE`, 20px), and its own colour — quick dashboard violet,
+  filter blue, import/export teal, bell amber, light/dark slate. "On" (a panel open, a filter
+  applied) is a ring in the icon's own colour rather than a filled box. They were a ghost
+  circle, a bordered square and a bordered rounded square at 14px and 20px.
+
 ## Projects — a fourth module, and why it is not the one 031 removed
 
 **8 October 2026, the owner:** *"make me a project module in the CRM wherein we can

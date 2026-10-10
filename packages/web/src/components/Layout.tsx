@@ -14,6 +14,7 @@ import { TaskBuzzer } from './TaskBuzzer';
 import { useDockFolded, WorkspaceDock } from './WorkspaceDock';
 import { AiBubble } from './AiBubble';
 import { cn } from '../lib/utils';
+import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
 import { resolveIcon } from '../lib/icons';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Avatar, Badge, Dropdown, DropdownItem, Modal, Spinner } from './ui';
@@ -106,7 +107,7 @@ export default function Layout(): JSX.Element {
         {/* Top bar: brand and primary navigation on the left, search and
             actions on the right. One row, every width — the old sidebar spent
             its whole height saying what a 12px tab now says. */}
-        <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 dark:bg-slate-900 sm:gap-3 sm:px-4">
+        <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--frame-bg)] px-3 sm:gap-3 sm:px-4">
           {/*
             One hamburger, two jobs, and the job is whichever navigation this
             screen has — *"the toolbar also have hamburg function before ipropy
@@ -202,10 +203,10 @@ export default function Layout(): JSX.Element {
 
               <button
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="btn-ghost p-2"
+                className={toolbarIcon('theme')}
                 title="Toggle theme"
               >
-                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === 'dark' ? <Sun className={TOOLBAR_ICON_SIZE} /> : <Moon className={TOOLBAR_ICON_SIZE} />}
               </button>
 
               <UserMenu />
@@ -702,11 +703,11 @@ function NotificationBell(): JSX.Element {
     <Dropdown
       trigger={
         <button
-          className="btn-ghost relative rounded-full p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 group-data-[open=true]/dropdown:!bg-brand-700 group-data-[open=true]/dropdown:!text-white"
+          className={cn(toolbarIcon('bell'), 'group-data-[open=true]/dropdown:ring-2 group-data-[open=true]/dropdown:ring-current')}
           title="Notifications"
           aria-label={unread > 0 ? `${unread} unread notification${unread === 1 ? '' : 's'}` : 'Notifications'}
         >
-          <Bell className={cn('h-4 w-4 transition-transform group-data-[open=true]/dropdown:!text-white', unread > 0 && 'text-brand-600 dark:text-brand-400')} />
+          <Bell className={TOOLBAR_ICON_SIZE} />
           {unread > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] animate-pulse-success items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white ring-2 ring-white dark:ring-slate-900">
               {unread > 9 ? '9+' : unread}
@@ -995,7 +996,7 @@ function GlobalSearch(): JSX.Element {
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         ref={inputRef}
-        className="input h-11 rounded-2xl border-transparent bg-slate-100 pl-10 pr-20 text-sm focus:bg-white dark:bg-slate-800 dark:focus:bg-slate-900"
+        className="input h-11 rounded-2xl border-[var(--border)] bg-white pl-10 pr-20 text-sm dark:bg-slate-800 dark:focus:bg-slate-900"
         placeholder="Search everything…"
         aria-label="Search everything"
         value={query}

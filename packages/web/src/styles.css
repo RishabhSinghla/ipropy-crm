@@ -54,6 +54,10 @@
        near-white that makes a white pane read as a raised card rather than as
        more of the same page. */
     --app-bg: #f2f4f2;
+    /* The frame round the work: the top bar and the left toolbar share it, so
+       the white panes read as the page and the frame as the controls
+       (10 October 2026). */
+    --frame-bg: #f0f2f5;
     /*
       Secondary copy. The design names `#50434e`, which is 7.6:1 on white and
       6.5:1 on the recessed tone — both clear AA, and `tests/color.test.ts`
@@ -216,6 +220,7 @@
     --cream-200: #2e2f29;
 
     --app-bg: #0b1220;
+    --frame-bg: #0f172a;
     --surface: #0f172a;
     --surface-muted: #1e293b;
     /* Dark mode goes the other way: a band *below* the panel, not above it. */

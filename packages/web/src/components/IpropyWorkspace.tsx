@@ -3,7 +3,7 @@ import { SummaryText } from './SummaryText';
 import { populatedQueueGroups, queueGroupField, queueGroupFilter } from '../lib/queueGroups';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
+import { picklistOptionForValue, recordStrength, relativeTime, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
   History, Mail, MessageCircle, MessageSquare, MessagesSquare, MoreHorizontal, Phone, Search, Send,
@@ -31,7 +31,7 @@ import { cardArea, cardPrice, oneOfEach, queueCardFields, unitDescription, type 
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ShowOnWebsiteItem } from './ShowOnWebsite';
 import { ModuleIcon } from './Layout';
-import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
+import { Badge, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ShareLinksPanel } from './ShareLinks';
 import { canShareRecords } from '../lib/sharing';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
@@ -560,25 +560,6 @@ export function IpropyWorkspace({
     enabled: Boolean(assignedField),
     staleTime: 5 * 60_000,
   });
-  /*
-    Every agent's photo, by their id — *"Replace small Avtar from Agent Name in
-    the left pane of records if profile Picture available, the the profile pic
-    will be shown on Agent/User Avtar"* (3 October 2026).
-
-    **By id, never by name.** The record stores the user's id and the queue row
-    carries it, so the lookup is exact; matching on the displayed name would
-    silently lose anybody whose name is spelt two ways. This is the directory
-    the pane already fetches for the assignment control — no second request.
-  */
-  const agentPhotos = useMemo(
-    () => new Map<string, string | null>(
-      assignableUsers.map((candidate) => [
-        String(candidate.id ?? ''),
-        candidate.avatarUrl ? String(candidate.avatarUrl) : null,
-      ]),
-    ),
-    [assignableUsers],
-  );
   const assignedUserId = assignedField ? String(active?.values[assignedField.name] ?? '') : '';
   const assignedName = assignedField
     ? String(active?.display?.[assignedField.name]
@@ -882,8 +863,7 @@ export function IpropyWorkspace({
               queueFields={queueFields}
               moduleName={module.name}
               nameField={nameField}
-              assignedField={assignedField}
-              agentPhotos={agentPhotos}
+              statusField={statusField}
               canEdit={canEdit}
               onEdited={() => invalidateRecordQueries(queryClient, module.name, row.id)}
               onSelect={() => openRecord(row.id)}
@@ -1476,7 +1456,7 @@ export function IpropyWorkspace({
  */
 function QueueCard({
   row, active, checked, card, queueFields,
-  moduleName, nameField, assignedField, agentPhotos, canEdit, onEdited, onSelect, onToggle,
+  moduleName, nameField, statusField, canEdit, onEdited, onSelect, onToggle,
 }: {
   row: RecordEnvelope;
   active: boolean;
@@ -1486,15 +1466,11 @@ function QueueCard({
   moduleName: string;
   nameField?: FieldMeta;
   /**
-   * Who the record is assigned to.
-   *
-   * Passed in rather than found here: which field that is is `useRecordPanes`'
-   * decision, the same one the record header reads, and a second answer to it
-   * is how two screens come to name different agents for one record.
+   * The record's status — Lead Status, Property Status. Passed in rather than
+   * found here: which field that is is `useRecordPanes`' decision, the same
+   * one the record header reads.
    */
-  assignedField?: FieldMeta;
-  /** Each agent's photo by user id, so the row can show a face. */
-  agentPhotos?: Map<string, string | null>;
+  statusField?: FieldMeta;
   canEdit: boolean;
   onEdited: () => void;
   onSelect: () => void;
@@ -1531,8 +1507,11 @@ function QueueCard({
   const unit = card.unit ? read(card.unit) : '';
   const facts = queueFields ? queueFields.map((field) => read(field)) : [unitDescription(card, read)];
   const description = oneOfEach([unit, ...facts]);
-  const agent = assignedField ? read(assignedField) : '';
-  const agentId = assignedField ? String(row.values[assignedField.name] ?? '') : '';
+  const statusValue = statusField ? row.values[statusField.name] : undefined;
+  const status = statusField && statusValue != null && statusValue !== ''
+    ? picklistOptionForValue(statusField.options, statusValue)
+    : undefined;
+  const statusLabel = status?.label ?? (statusValue == null ? '' : String(statusValue));
   const price = card.price ? cardPrice(row.values[card.price.name]) : '';
   const areaUnitField = card.area?.config.unitField;
   const area = card.area
@@ -1700,7 +1679,7 @@ function QueueCard({
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        {(price || area || agent) && <span className="mt-1 flex items-center gap-2 text-xs">
+        {(price || area || statusLabel) && <span className="mt-1 flex items-center gap-2 text-xs">
           {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.
@@ -1720,33 +1699,24 @@ function QueueCard({
             )}>• {area}</span>
           )}
           {/*
-            Who it belongs to, hard against the right edge — the owner,
-            3 October 2026: *"We Need to display a Text of assign to agent name
-            in third row After the Area/Size and agent name should be aligned
-            from Right of the Record pane."*
+            The record's status, hard against the right edge, in the colour the
+            admin picked for it in the dropdown master — the owner, 10 October
+            2026: *"in the left record pane, We need leads/Inventory status
+            Button/chip. so please remove Assign to Agent name in replacement
+            of Status"*. The agent's name and face that sat here on 3 October
+            are on the open record's header.
 
-            `ml-auto` pushes it right and `truncate` makes it the thing that
-            gives way: the money and the size are what a rep is scanning this
-            row for, and a long name must not squeeze them.
+            `truncate` on the chip makes it give way before the price does.
           */}
-          {agent && (
-            <span
-              title={`Assigned to ${agent}`}
-              className={cn(
-                'ml-auto flex min-w-0 shrink items-center gap-1 pl-1 text-[11px] font-medium',
-                active ? 'text-brand-700 dark:text-brand-100' : 'text-muted',
-              )}
+          {statusLabel && (
+            <Badge
+              color={status?.color}
+              /* The tick box appears over this corner on hover; the chip moves
+                 left to make room rather than sitting under it. */
+              className={cn('ml-auto min-w-0 max-w-[8.5rem] shrink truncate transition-[margin]', checked ? 'mr-5' : 'group-hover:mr-5')}
             >
-              {/*
-                Their photo, and their initials when they have not added one —
-                *"if profile Picture available, the the profile pic will be
-                shown on Agent/User Avtar"* (3 October 2026). `Avatar` already
-                does both, and already knows that a CRM-hosted photo needs the
-                session token in its address.
-              */}
-              <Avatar name={agent} src={agentPhotos?.get(agentId) ?? null} size={16} />
-              <span className="min-w-0 truncate">{agent}</span>
-            </span>
+              {statusLabel}
+            </Badge>
           )}
         </span>}
       </button>
