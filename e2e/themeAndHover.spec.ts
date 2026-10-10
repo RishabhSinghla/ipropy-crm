@@ -55,10 +55,10 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
   await fresh.click();
   await page.getByRole('menuitemradio', { name: 'Today' }).click();
   await expect(fresh).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(async () => {
-    const tagColour = await tag.evaluate(element => getComputedStyle(element).backgroundColor);
-    return await fresh.evaluate(element => getComputedStyle(element).backgroundColor) === tagColour;
-  }).toBe(true);
+  // New is its own green square since 10 October 2026 (the owner: *"background
+  // colour should Green in Square Box"*), not the theme colour the tags wear.
+  await expect.poll(async () => fresh.evaluate(element => getComputedStyle(element).backgroundColor))
+    .toBe('rgb(6, 95, 70)');
   await expect(page.getByRole('navigation', { name: 'Record workspace sections' })).not.toContainText("Builder's Inventory");
   await page.getByTestId('visits-chip').click();
   await page.getByRole('menuitemradio', { name: 'Today' }).click();
