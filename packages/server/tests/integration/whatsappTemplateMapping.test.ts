@@ -53,12 +53,6 @@ afterAll(async () => {
 });
 
 describe('template field mapping', () => {
-  it('maps the enquiry reference to this record rather than a hard-coded client reference', async () => {
-    await saveMapping(templateId, 'leads', { 1: 'field:full_name', 2: 'record:id', 3: 'agent:name', 4: 'org:name' });
-    const resolved = await resolveTemplate({ ctx, templateId, module: 'leads', recordId, agentName: 'Agent', orgName: 'iPROPY' });
-    expect(resolved.missing).toHaveLength(0);
-    expect(resolved.params[1]).toBe(recordId);
-  });
   it('refuses a mapping that names a field the module does not have', async () => {
     await expect(saveMapping(templateId, 'leads', { 1: 'field:not_a_field' }))
       .rejects.toThrow(/no field called/i);

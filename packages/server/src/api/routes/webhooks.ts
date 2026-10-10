@@ -25,9 +25,6 @@ import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
 import { notifyMany } from '../../core/notifications/index.js';
 
-// Keep this aligned with the app's subscribed webhook version in Meta.
-const FACEBOOK_GRAPH_API_VERSION = 'v26.0';
-
 export const webhooksRouter = Router();
 
 // ---------------------------------------------------------------------------

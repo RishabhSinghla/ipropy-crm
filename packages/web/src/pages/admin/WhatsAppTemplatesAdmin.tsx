@@ -25,7 +25,6 @@ function sourceOptions(fields: { name: string; label: string }[]): { value: stri
     { value: '', label: '— nothing yet —' },
     ...fields.map((field) => ({ value: `field:${field.name}`, label: field.label })),
     { value: 'agent:name', label: 'The agent sending it' },
-    { value: 'record:id', label: 'Enquiry / transaction reference (record ID)' },
     { value: 'org:name', label: 'The business name' },
   ];
 }

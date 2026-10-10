@@ -135,16 +135,6 @@ describe('sending', () => {
 });
 
 describe('templates', () => {
-  it('never assumes an unspecified approval status is approved', async () => {
-    answerWith({ status: '1', message: [{ template_name: 'pending', body_content: 'Hi {{1}}', variable_map: { body: [] } }] });
-    const rows = await whatsMarketingProvider.listTemplates();
-    expect(rows[0].status).toBe('UNKNOWN');
-    expect(rows[0].variableCount).toBe(1);
-  });
-  it('counts repeated positional variables once', async () => {
-    answerWith({ status: '1', message: [{ template_name: 'repeat', body_content: '{{1}} {{1}} {{2}}' }] });
-    expect((await whatsMarketingProvider.listTemplates())[0].variableCount).toBe(2);
-  });
   it('turns a template name into their numeric id before sending', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       sent.push({ url: String(url), body: String(init?.body ?? '') });
@@ -154,7 +144,6 @@ describe('templates', () => {
       return { ok: true, status: 200, text: async () => JSON.stringify(payload) } as unknown as Response;
     }));
 
-    await whatsMarketingProvider.listTemplates();
     await whatsMarketingProvider.sendTemplate({
       to: '919876543210', templateName: 'site_visit_reminder', language: 'en',
       params: ['Rishabh', '20 Sep'],

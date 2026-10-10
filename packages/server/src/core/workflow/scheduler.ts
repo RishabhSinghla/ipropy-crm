@@ -175,13 +175,6 @@ async function drainQueue(batchSize = 50): Promise<void> {
       );
       if (!task) { await complete(job.id, 'cancelled'); continue; }
 
-      // A timeout may follow an accepted customer message. Do not blindly
-      // retry WhatsApp: an operator must inspect the delivery log first.
-      if (task.type === 'send_whatsapp') {
-        job.max_attempts = 1;
-        await db.query('UPDATE ipy_task_queue SET max_attempts = 1 WHERE id = $1', [job.id]);
-      }
-
       const record = await loadRecordValues(job.module_name, job.record_id);
       if (!record) {
         // The record was deleted while the task waited — that's not a failure.
@@ -380,7 +373,7 @@ async function scheduledCandidates(
  * Tasks that reach a customer. A mistake in one of these is not a wasted tick;
  * it is a message somebody receives.
  */
-const OUTBOUND_TASKS = ['send_email', 'send_sms', 'send_whatsapp'];
+const OUTBOUND_TASKS = ['send_email', 'send_sms'];
 
 /**
  * A scheduled rule that messages people and narrows on nothing.

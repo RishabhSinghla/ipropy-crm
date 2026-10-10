@@ -60,7 +60,6 @@ describe('a scheduled workflow that narrows on nothing', () => {
   it('treats email and SMS the same way', async () => {
     expect((await guardWith('send_email', NARROWS_ON_NOTHING)).refused).toBe(true);
     expect((await guardWith('send_sms', NARROWS_ON_NOTHING)).refused).toBe(true);
-    expect((await guardWith('send_whatsapp', NARROWS_ON_NOTHING)).refused).toBe(true);
   });
 
   it('leaves a workflow alone when it does narrow', async () => {

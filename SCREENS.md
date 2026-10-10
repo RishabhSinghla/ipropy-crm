@@ -2477,6 +2477,43 @@ Separated colour 'Without Button/Box' And Size should Same)."*
   applied) is a ring in the icon's own colour rather than a filled box. They were a ghost
   circle, a bordered square and a bordered rounded square at 14px and 20px.
 
+## Lost goes to an Archive, and nine more on the list — 10 October 2026
+
+**The owner:** *"send lost leads/Inventory status records into recycle/archive folder for
+lifetime so that if we need to came back those record we can do reopen those records … and
+we can Send SMS/Email/Whatsapp etc from this folder … This folder show bottom of Left toolbar
+after tool, the Records moved after 12 hours when we change the Status of Lost of All
+modules"*, then eight changes to the frame and the left pane.
+
+* **Archive** — see `CLAUDE.md`, *A Lost record leaves the lists after 12 hours*.
+  `pages/Archive.tsx` lists one module at a time with search; a record opens on its own
+  page, where call, WhatsApp and email already are; **Reopen** asks which non-Lost status
+  it goes back to. Walked in a browser with the scheduler on a 20-second tick: marked Lost,
+  archived by the scheduler itself, gone from the list, found in Archive, opened, reopened,
+  back in the list.
+* **The top bar is the brand colour** (dark, follows the theme), not the toolbar's grey of
+  the morning before. The search box stays white on it.
+* **Queue row, third line:** the price (15px, was 13px), then the **assigned agent in a white
+  rounded chip** where the size was — the size moved into the middle line — then the status
+  chip on the right, rounded and smaller.
+* **Updated time is short and pale:** `13H ago`, `7D ago`, `2M ago` (`lib/queueCard.ts`).
+  The first pale grey failed the contrast scan; the shipped step clears AA.
+* **Area units read properly everywhere:** `Sq. Ft.`, `Sq. Yd.`, `Sq. Mtr.` — `formatArea`
+  in `@ipropy/shared` plus migration `201` relabelling the unit master's three rows.
+* **The tick box is always shown**, smaller, under the face, rather than appearing on hover.
+* **The count beside the module name is `< 2 / 25 >`**, the same record stepper as the
+  middle header, and the up/down arrow keys move through the queue.
+* **Toolbar icons are smaller and closer**, at the middle header's size and gap, in a newer
+  style (layout, filter, file-in-out).
+
+**What was taken out of this release, and why.** The branch it came from also re-added a
+`send_whatsapp` workflow step and an approval check on every WhatsApp template send. Main
+already has `send_whatsapp_template` (another session's, the day before), so this was a
+second copy of a shipped feature. The approval check also read a template with no status
+from WhatsMarketing as *not approved*, which could have refused every template the CRM
+sends. Neither was asked for in this batch, so both went back to main's versions before
+deploying.
+
 ## Projects — a fourth module, and why it is not the one 031 removed
 
 **8 October 2026, the owner:** *"make me a project module in the CRM wherein we can

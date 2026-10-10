@@ -176,6 +176,18 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   Migrations `030`, `031` and `048` removed the other eleven. Do not reintroduce one to hold a field —
   Projects and Activities both died because they existed only to carry a value the lead or the unit
   could hold itself.
+* **A Lost record leaves the lists after 12 hours and is never deleted** (10 October 2026,
+  owner's instruction; migration `201`, `core/entity/lostArchive.ts`). Changing a record's
+  status to a Lost option stamps `ipy_record.lost_archive_due_at` in the same transaction;
+  the scheduler then sets `archived_at`. Changing the status back before then cancels it.
+  **An archived record is hidden by `archived_at IS NULL`**, written into `prepareList`,
+  group counts, `recordCounts`, dashboard widgets, global search and the public listings —
+  so **any new query that lists or counts records must add the same clause**, or archived
+  records reappear there. `getRecord` deliberately does not filter: the Archive page
+  (`/archive`, the last icon in the left toolbar) opens them for calls, SMS, email and
+  WhatsApp, and `POST /:module/:id/reopen` takes a non-Lost status and clears both stamps.
+  Records that were already Lost when this shipped got a fresh 12 hours from the first
+  scheduler tick, not an instant sweep.
 * **There is no separate Contacts module.** Leads is the single party record carrying
   `lifecycle_stage`: `Lead → Prospect → Customer → Past Customer`. Conversion promotes the record
   **in place** — it does not create a second person.
