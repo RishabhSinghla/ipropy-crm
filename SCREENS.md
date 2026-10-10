@@ -2493,11 +2493,12 @@ modules"*, then eight changes to the frame and the left pane.
   back in the list.
 * **The top bar is the brand colour** (dark, follows the theme), not the toolbar's grey of
   the morning before. The search box stays white on it.
-* **Queue row, third line:** the price (15px, was 13px), then the **assigned agent in a white
-  rounded chip** where the size was — the size moved into the middle line — then the status
+* **Queue row, third line:** the price (15px, was 13px), then the **assigned agent in a rounded
+  chip** (light grey since the evening) where the size was — the size moved into the middle line — then the status
   chip on the right, rounded and smaller.
-* **Updated time is short and pale:** `13H ago`, `7D ago`, `2M ago` (`lib/queueCard.ts`).
-  The first pale grey failed the contrast scan; the shipped step clears AA.
+* **Updated time is short and pale:** `13h ago`, `7d ago`, `2m ago` (`lib/queueCard.ts`) —
+  lower case and no gap since the evening (below). The first pale grey failed the contrast
+  scan; the shipped step clears AA.
 * **Area units read properly everywhere:** `Sq. Ft.`, `Sq. Yd.`, `Sq. Mtr.` — `formatArea`
   in `@ipropy/shared` plus migration `201` relabelling the unit master's three rows.
 * **The tick box is always shown**, smaller, under the face, rather than appearing on hover.
@@ -2977,3 +2978,34 @@ converted against configured unit factors; unknown conversions are not guessed.
 House-number metadata is searchable and existing house text is indexed by
 migration 199. Builder's Inventory leaves the Leads tabs, not the Builder Floors
 module. Notifications use quiet type-specific backgrounds.
+
+## 10 October 2026, evening — six on the frame and the queue
+
+The owner, of the morning's release: lower-case times, a grey agent chip, the
+"+ New" menu hidden under the left toolbar, colours on the header, cards that
+change height, and icons on the record's menu bar.
+
+* **Times read `13h ago`, `7d ago`** — lower case, no gap; minutes and months
+  are both `m`, as asked. The grey is `#6e7685`, the palest that still clears
+  4.5:1 on white — a paler one fails the contrast scan, which is how the
+  morning's first try was caught. Dark mode keeps `slate-400`.
+* **The agent's chip is light grey** (`slate-100`, `slate-700` in dark).
+* **The "+ New" menu was under the left toolbar.** The header and the toolbar
+  were both `z-40`, and the toolbar comes later in the page, so it painted over
+  every menu dropping out of the header. The header is `z-50` now. "+ New" is
+  **blue** (`blue-600`, white on it 5.2:1).
+* **The "New" (added today) chip is a green square** (`emerald-700`, its count
+  on `emerald-950`). **Its list showed no words**: the items had no colour of
+  their own, so inside the header they inherited the bar's white on a white
+  panel. Every item in `ChoiceChip` now sets its own colour.
+* **Each header icon has its own colour** — dashboard pink, filter sky, import/
+  export green, bell amber, theme orange, all light steps for the dark bar. A
+  stylesheet rule painted every `.toolbar-action` one grey (`#e2e8f0`) and beat
+  the colours `lib/toolbarIcon.ts` gave them; it is gone, and the white rule
+  for the bar's other buttons skips `.toolbar-action`.
+* **Every queue card is 92px**, whatever it holds: the middle and bottom lines
+  are always drawn, a blank line when there is nothing to say.
+* **The record's menu bar is words only** — Notes, Matching, Files, Calls,
+  WhatsApp, Messages, Changes, More, and the Write a note / WhatsApp / Call
+  buttons under it. `CallButton` and `WhatsAppButton` take `textOnly` for that;
+  everywhere else they keep their icons.

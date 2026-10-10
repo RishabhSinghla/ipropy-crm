@@ -106,8 +106,12 @@ export default function Layout(): JSX.Element {
 
         {/* Top bar: brand and primary navigation on the left, search and
             actions on the right. One row, every width — the old sidebar spent
-            its whole height saying what a 12px tab now says. */}
-        <header data-main-toolbar className="relative z-40 flex h-14 shrink-0 items-center gap-1.5 border-b border-brand-900 bg-brand-800 px-3 text-white sm:px-4">
+            its whole height saying what a 12px tab now says.
+            **z-50, one above the left toolbar's z-40**: at equal levels the
+            toolbar comes later in the page and painted over every menu that
+            drops out of this bar — the "+ New" list was hidden under it
+            (10 October 2026). */}
+        <header data-main-toolbar className="relative z-50 flex h-14 shrink-0 items-center gap-1.5 border-b border-brand-900 bg-brand-800 px-3 text-white sm:px-4">
           {/*
             One hamburger, two jobs, and the job is whichever navigation this
             screen has — *"the toolbar also have hamburg function before ipropy
@@ -275,6 +279,12 @@ export default function Layout(): JSX.Element {
  * admin adds later appears without a code change, and one a profile cannot
  * create into never does.
  */
+/**
+ * "+ New" is blue — the owner, 10 October 2026: *"the button colour should be
+ * Blue"*. Blue-600 under white is 5.2:1, so the word still clears AA.
+ */
+const NEW_BUTTON = 'btn btn-sm shrink-0 gap-1 bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800';
+
 function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element | null {
   const creatable = modules.filter((m) => m.permissions.create);
   const [creating, setCreating] = useState<ModuleSummary | null>(null);
@@ -334,7 +344,7 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
         <button
           type="button"
           onClick={() => setCreating(only)}
-          className="btn-primary btn-sm shrink-0 gap-1"
+          className={NEW_BUTTON}
           title={`New ${only.singularLabel}`}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -354,7 +364,7 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
            the accessible name falls back to this — and "Create a new record"
            collided with every form's own Create button in the mobile suite,
            which is the kind of failure a name chosen for prose causes. */
-        <button className="btn-primary btn-sm shrink-0 gap-1" title="New record" aria-label="New record" data-testid="global-create">
+        <button className={NEW_BUTTON} title="New record" aria-label="New record" data-testid="global-create">
           <Plus className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">New</span>
           <ChevronDown className="h-3 w-3 opacity-80" />

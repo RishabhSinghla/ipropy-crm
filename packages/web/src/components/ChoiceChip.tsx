@@ -48,7 +48,10 @@ export function ChoiceChip<T extends string>({
               onClick={() => { onPick(choice.key === active ? null : choice.key); close(); }}
               className={cn(
                 'flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800',
-                choice.key === active && 'font-semibold text-brand-700 dark:text-brand-300',
+                /* Its own text colour, always: in the main toolbar this list
+                   would otherwise inherit the bar's white and vanish on the
+                   white panel — *"text not showing in Drop-down"*. */
+                choice.key === active ? 'font-semibold text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-200',
               )}
             >
               {choice.label}

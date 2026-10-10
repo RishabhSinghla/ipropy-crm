@@ -65,7 +65,11 @@ export function WhatsAppIconButton({ to, className }: { to: string; className?: 
  * rather than a plain link, because `window.open` returns null inside the phone
  * app and nothing happens.
  */
-export function WhatsAppButton({ to, iconOnly = false, round = false }: { to: string; iconOnly?: boolean; round?: boolean }): JSX.Element | null {
+export function WhatsAppButton({ to, iconOnly = false, round = false, textOnly = false }: {
+  to: string; iconOnly?: boolean; round?: boolean;
+  /** The word and no icon — the record's menu bar is words only (10 October 2026). */
+  textOnly?: boolean;
+}): JSX.Element | null {
   const digits = waDigits(to);
   if (!digits) return null;
   return (
@@ -85,8 +89,8 @@ export function WhatsAppButton({ to, iconOnly = false, round = false }: { to: st
       aria-label={`WhatsApp ${to}`}
       onClick={() => void openExternal(`https://api.whatsapp.com/send/?phone=${digits}`)}
     >
-      <MessageCircle className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-emerald-600'} />
-      {!iconOnly && !round && <span className="hidden sm:inline">WhatsApp</span>}
+      {!textOnly && <MessageCircle className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-emerald-600'} />}
+      {textOnly ? 'WhatsApp' : !iconOnly && !round && <span className="hidden sm:inline">WhatsApp</span>}
     </button>
   );
 }

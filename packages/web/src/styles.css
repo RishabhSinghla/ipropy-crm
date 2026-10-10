@@ -15,11 +15,13 @@
 @tailwind components;
 
 /* Theme-dark toolbar, with a light search surface and readable action icons. */
-[data-main-toolbar] > button,
-[data-main-toolbar] #global-quick-dashboard > button,
-[data-main-toolbar] #global-quick-filter > button,
-[data-main-toolbar] #global-list-options > button { color: #fff; }
-[data-main-toolbar] .toolbar-action { color: #e2e8f0; }
+/* A toolbar icon keeps the colour `lib/toolbarIcon.ts` gives it — one hue
+   each, *"change the all icon colour separately"* (10 October 2026) — so only
+   the buttons that are not icons are painted white here. */
+[data-main-toolbar] > button:not(.toolbar-action),
+[data-main-toolbar] #global-quick-dashboard > button:not(.toolbar-action),
+[data-main-toolbar] #global-quick-filter > button:not(.toolbar-action),
+[data-main-toolbar] #global-list-options > button:not(.toolbar-action) { color: #fff; }
 [data-main-toolbar] .toolbar-action:hover { background: rgb(255 255 255 / 0.15); }
 [data-main-toolbar] input { color: #334155; }
 [data-main-toolbar] input::placeholder { color: #94a3b8; }

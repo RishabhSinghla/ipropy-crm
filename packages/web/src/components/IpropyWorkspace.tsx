@@ -5,10 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { picklistOptionForValue, recordStrength, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, FileText, GripVertical,
-  History, Mail, MessageCircle, MessageSquare, MessagesSquare, MoreHorizontal, Phone, Search, Send,
-  Sparkles, Star, Tag, Trash2, Users, X,
-  Building2, CalendarDays, PanelRightClose, PanelRightOpen,
+  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, GripVertical, Mail, Search, Send, Sparkles, Star, Tag, Trash2, X, CalendarDays, PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
@@ -55,18 +52,6 @@ import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
   the activity stream to one kind of thing that happened. What each one *is*
   lives in `lib/recordMenu.ts`, pure and tested — this file only draws it.
 */
-const MENU_ICON: Record<MenuKey, JSX.Element> = {
-  timeline: <MessagesSquare className="h-4 w-4" />,
-  matching: <Users className="h-4 w-4" />,
-  builders: <Building2 className="h-4 w-4" />,
-  units: <Building2 className="h-4 w-4" />,
-  files: <FileText className="h-4 w-4" />,
-  calls: <Phone className="h-4 w-4" />,
-  whatsapp: <MessageCircle className="h-4 w-4" />,
-  comment: <MessageSquare className="h-4 w-4" />,
-  message: <Send className="h-4 w-4" />,
-  audit: <History className="h-4 w-4" />,
-};
 
 /** The three the activity stream contributes. Tab labels stay the Layout Designer's. */
 /*
@@ -1582,7 +1567,11 @@ function QueueCard({
              record in the left record pane"* (3 October 2026). The padding is
              the gap: each card draws the hairline under itself, so growing the
              rule's margin would move the line rather than the breathing room. */
-          'relative block min-h-[84px] w-full cursor-pointer py-3 pl-[3.75rem] pr-3 text-left transition-colors',
+          /* **One height for every card** — the owner, 10 October 2026: *"Fix
+             the height of Left pane record Height from Auto adjust, even the
+             Middle row blank or not."* So the rows are always drawn, an empty
+             one as a blank line, and the card never grows or shrinks. */
+          'relative block h-[92px] w-full cursor-pointer overflow-hidden py-3 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1657,9 +1646,11 @@ function QueueCard({
           </span>
           {/* No contact-type chip beside the name since 2 October 2026 —
               *"I don't need to see it there"*. It is in the fields pane. */}
-          {/* How stale it is, top right — the prototype's "6h ago". */}
+          {/* How stale it is, top right — "13h ago". The palest grey that still
+              reads at 4.5:1 on white (10 October 2026: *"make pale grey more
+              lighter"*); any paler and the a11y scan fails it. */}
           {row.updatedAt && (
-            <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[10px] font-normal', active ? 'text-brand-800 dark:text-white' : 'text-[var(--muted)]')}>
+            <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[10px] font-normal', active ? 'text-brand-800 dark:text-white' : 'text-[#6e7685] dark:text-slate-400')}>
               {queueAge(row.updatedAt)}
             </span>
           )}
@@ -1668,24 +1659,24 @@ function QueueCard({
         {/* No number here — *"I dont want to see phone number there"* (1 October
             2026). It is on the open record, beside its WhatsApp icon. */}
 
-        {/* 2. Which unit, cut short with "…" rather than wrapped — and not
-            drawn at all when there is nothing to say, rather than a dash. */}
-        {(description || area) && <span className={cn(
+        {/* 2. Which unit, cut short with "…" rather than wrapped. A blank line
+            when there is nothing to say, so every card is the same height. */}
+        <span className={cn(
           'mt-1 block min-w-0 truncate text-xs',
           // `brand-100` on the fill rather than a slate step: slate on brand
           // is the pair that lands around 2–3:1, which is the whole reason
           // `lib/color.ts` exists.
           active ? 'font-semibold text-brand-700 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400',
         )}>
-          {oneOfEach([description, area])}
-        </span>}
+          {oneOfEach([description, area]) || '\u00a0'}
+        </span>
 
         {/*
           3. The money and the size. No rule above it — *"Remove Separator Line
           In between second and Third Row"* — because the line between one
           record and the next is the only one this queue needs.
         */}
-        {(price || agentName || statusLabel) && <span className="mt-1 flex items-center gap-2 text-xs">
+        <span className="mt-1 flex min-h-[22px] items-center gap-2 text-xs">
           {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.
@@ -1696,7 +1687,7 @@ function QueueCard({
           )}
           {/* `text-muted` and not a slate step: the token is the one that
               carries a contrast guarantee in both themes. */}
-          {agentName && <span title={agentName} className="min-w-0 truncate rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">{agentName}</span>}
+          {agentName && <span title={agentName} className="min-w-0 truncate rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">{agentName}</span>}
           {/*
             The record's status, hard against the right edge, in the colour the
             admin picked for it in the dropdown master — the owner, 10 October
@@ -1717,7 +1708,7 @@ function QueueCard({
               {statusLabel}
             </Badge>
           )}
-        </span>}
+        </span>
       </button>
 
       {/*
@@ -1763,12 +1754,11 @@ function QueueCard({
  * than on its own page. Gating it on that setting is what put an Edit button
  * here, which is the thing the owner asked to be rid of.
  */
-function DeskTab({ active = false, onClick, label, count, children, drag }: {
+function DeskTab({ active = false, onClick, label, count, drag }: {
   active?: boolean;
   onClick: () => void;
   label: string;
   count?: string | null;
-  children: React.ReactNode;
   /** Where this entry sits, and how to move it. Absent: not arrangeable. */
   drag?: {
     index: number;
@@ -1819,9 +1809,10 @@ function DeskTab({ active = false, onClick, label, count, children, drag }: {
           : 'rounded-full text-slate-500 hover:bg-[var(--surface-muted)] hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200',
       )}
     >
-      {children}
-      {/* The name beside the icon — *"team is unable to understand just from
-          icon"* (1 October 2026). */}
+      {/* Words only, no icons — the owner, 10 October 2026: *"Remove All icon
+          from all Buttons of Menu bar in Middle Header Pane, keep Text Only
+          Manu button"*. The words were added on 1 October because the team
+          could not tell the icons apart; now the words are the whole button. */}
       <span className="whitespace-nowrap">{label}</span>
       {/* The count rides on whichever fill the button wears — a slate chip on
           a brand pill is the pair that lands around 2–3:1. */}
@@ -1946,12 +1937,9 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count, actions 
       */}
       <div ref={ghostRef} aria-hidden className="pointer-events-none absolute left-4 top-0 flex items-center gap-4" style={{ visibility: 'hidden' }}>
         {order.map((key) => (
-          <DeskTab key={key} onClick={() => undefined} label={label(key)} count={count(key)}>
-            {MENU_ICON[key]}
-          </DeskTab>
+          <DeskTab key={key} onClick={() => undefined} label={label(key)} count={count(key)} />
         ))}
         <span data-more className="flex items-center gap-1.5 px-1.5 py-2 text-xs font-semibold">
-          <MoreHorizontal className="h-4 w-4" />
           <span>More</span>
         </span>
       </div>
@@ -1969,9 +1957,7 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count, actions 
           label={label(key)}
           count={count(key)}
           drag={{ index, dragging: dragFrom === index, onPickUp: pickUp, onDrop: drop, onNudge: onReorder }}
-        >
-          {MENU_ICON[key]}
-        </DeskTab>
+        />
       ))}
       {/*
         **Always here, even when nothing overflowed** — the record's own
@@ -1990,7 +1976,6 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count, actions 
               title="More"
               data-testid="record-menu-more"
             >
-              <MoreHorizontal className="h-4 w-4" />
               <span className="whitespace-nowrap">More</span>
             </button>
           )}
@@ -2009,7 +1994,6 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count, actions 
                         shown === key ? 'text-brand-600 dark:text-brand-300' : 'text-slate-600 hover:bg-[var(--surface-muted)] dark:text-slate-300 dark:hover:bg-slate-800',
                       )}
                     >
-                      {MENU_ICON[key]}
                       <span className="min-w-0 flex-1 truncate">{label(key)}</span>
                       {count(key) && <span className="shrink-0 text-[10px] tabular-nums text-muted">{count(key)}</span>}
                     </button>
@@ -2091,7 +2075,7 @@ function RecordMenuAction({ shown, onStream, phone, recordId }: {
   if (shown === 'calls') {
     return phone ? (
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900" data-testid="record-menu-action">
-        <CallButton to={phone} />
+        <CallButton to={phone} textOnly />
       </div>
     ) : null;
   }
@@ -2108,10 +2092,9 @@ function RecordMenuAction({ shown, onStream, phone, recordId }: {
         className="btn-secondary btn-sm"
         onClick={() => putTheCursorInTheNoteBox(recordId)}
       >
-        <MessageSquare className="h-3.5 w-3.5" />
         Write a note
       </button>
-      {phone && <WhatsAppButton to={phone} />}
+      {phone && <WhatsAppButton to={phone} textOnly />}
     </div>
   );
 }

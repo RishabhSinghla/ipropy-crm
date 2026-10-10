@@ -15,9 +15,10 @@ const leads = [
 describe('queue card', () => {
   it('uses compact units for queue ages', () => {
     const now = Date.parse('2026-10-11T12:00:00Z');
-    expect(queueAge('2026-10-11T11:59:40Z', now)).toBe('20 S ago');
-    expect(queueAge('2026-10-11T11:40:00Z', now)).toBe('20 M ago');
-    expect(queueAge('2026-10-09T12:00:00Z', now)).toBe('2 D ago');
+    expect(queueAge('2026-10-11T11:59:40Z', now)).toBe('20s ago');
+    expect(queueAge('2026-10-11T11:40:00Z', now)).toBe('20m ago');
+    expect(queueAge('2026-10-09T12:00:00Z', now)).toBe('2d ago');
+    expect(queueAge('2026-10-11T01:00:00Z', now)).toBe('11h ago');
     expect(queueAge('bad date', now)).toBe('');
   });
   it('requests a renamed assignment field for the agent chip', () => {

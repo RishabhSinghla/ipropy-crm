@@ -1051,9 +1051,13 @@ export default function ListView(): JSX.Element {
                 : withoutChoice(filter, CREATED_FIELD));
               setPage(1);
             }}
-            buttonClass={(on) => cn('flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold',
-              on ? 'border-brand-700 bg-brand-700 text-white' : 'border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-slate-900 dark:text-brand-300')}
-            countClass={(on) => cn('rounded-full px-1.5', on ? 'bg-white/20 text-white' : 'bg-brand-100 dark:bg-brand-900')}
+            /* A green square, the owner, 10 October 2026: *"next button of
+               Today Lead/Inventory button background colour should Green in
+               Square Box"*. emerald-700 rather than 600 so white on it clears
+               AA; chosen, it goes a step darker and gains a ring. */
+            buttonClass={(on) => cn('flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-white',
+              on ? 'bg-emerald-800 ring-2 ring-white/70' : 'bg-emerald-700 hover:bg-emerald-800')}
+            countClass={() => 'rounded bg-emerald-950 px-1.5 text-white'}
             testId="new-records-chip"
           />
         , toolbarSlots.created)}

@@ -10,19 +10,24 @@
  * They were three different boxes — a ghost circle, a bordered square and a
  * bordered rounded square — at 14px and 20px. One function means a new icon
  * on that bar starts out looking like its neighbours. Icons are not text, so
- * the colours only need 3:1 against the bar; each step here clears that on
- * `--frame-bg` in both themes.
+ * the colours only need 3:1 against the bar.
  */
 import { cn } from './utils';
 
 export type ToolbarIconTone = 'dashboard' | 'filter' | 'exchange' | 'bell' | 'theme';
 
+/*
+  The bar is the dark brand in both themes, so every hue is a light step —
+  and five different families, so no two icons can be mistaken for each other
+  (*"Please change the all icon colour separately /different in Main Menu
+  bar"*, 10 October 2026). Each clears 3:1 on `brand-800`, the rule for icons.
+*/
 const TONE: Record<ToolbarIconTone, string> = {
-  dashboard: 'text-violet-600 dark:text-violet-300',
-  filter: 'text-blue-600 dark:text-blue-300',
-  exchange: 'text-teal-700 dark:text-teal-300',
-  bell: 'text-amber-700 dark:text-amber-300',
-  theme: 'text-slate-600 dark:text-slate-300',
+  dashboard: 'text-pink-300',
+  filter: 'text-sky-300',
+  exchange: 'text-emerald-300',
+  bell: 'text-amber-300',
+  theme: 'text-orange-200',
 };
 
 /** Every toolbar icon is drawn at this size. */
@@ -36,7 +41,7 @@ export const TOOLBAR_ICON_SIZE = 'h-4 w-4';
 export function toolbarIcon(tone: ToolbarIconTone, on = false): string {
   return cn(
     'toolbar-action relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
-    'hover:bg-black/5 dark:hover:bg-white/10',
+    'hover:bg-white/15',
     TONE[tone],
     on && 'ring-2 ring-current',
   );

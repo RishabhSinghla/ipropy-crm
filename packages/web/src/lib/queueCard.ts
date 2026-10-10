@@ -141,14 +141,18 @@ export function cardArea(value: unknown, unit: unknown): string {
   return formatArea(size, typeof unit === 'string' ? unit : undefined);
 }
 
-/** Compact queue age; months and minutes share M as requested. */
+/**
+ * Compact queue age: "13h ago", "7d ago" — lower case and no gap, the owner,
+ * 10 October 2026. Minutes and months share "m" as he asked; the size of the
+ * number tells them apart (a month is never under 30d).
+ */
 export function queueAge(value: string, now = Date.now()): string {
   const seconds = Math.max(0, Math.floor((now - new Date(value).getTime()) / 1000));
   if (!Number.isFinite(seconds)) return '';
-  if (seconds < 60) return `${seconds} S ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} M ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} H ago`;
-  if (seconds < 2592000) return `${Math.floor(seconds / 86400)} D ago`;
-  if (seconds < 31536000) return `${Math.floor(seconds / 2592000)} M ago`;
-  return `${Math.floor(seconds / 31536000)} Y ago`;
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 86400)}d ago`;
+  if (seconds < 31536000) return `${Math.floor(seconds / 2592000)}m ago`;
+  return `${Math.floor(seconds / 31536000)}y ago`;
 }

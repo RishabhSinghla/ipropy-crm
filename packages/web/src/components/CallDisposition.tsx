@@ -230,7 +230,9 @@ export function CallDispositionProvider({
   );
 }
 
-export function CallButton({ to, iconOnly = false, round = false, plain = false, active = false, recordId, module }: { to: string; iconOnly?: boolean; round?: boolean; plain?: boolean; active?: boolean;
+export function CallButton({ to, iconOnly = false, round = false, plain = false, active = false, textOnly = false, recordId, module }: { to: string; iconOnly?: boolean; round?: boolean; plain?: boolean; active?: boolean;
+  /** The word and no icon — the record's menu bar is words only (10 October 2026). */
+  textOnly?: boolean;
   /** The record this call is about, when it is not the one the pane has open. */
   recordId?: string; module?: string }): JSX.Element {
   const calls = useCallDisposition();
@@ -254,8 +256,8 @@ export function CallButton({ to, iconOnly = false, round = false, plain = false,
       aria-pressed={round ? active : undefined}
       onClick={() => void calls?.startCall(to, 'phone', recordId, module)}
     >
-      <Phone className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-blue-600'} />
-      {!iconOnly && !round && <span className="hidden sm:inline">Call</span>}
+      {!textOnly && <Phone className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-blue-600'} />}
+      {textOnly ? 'Call' : !iconOnly && !round && <span className="hidden sm:inline">Call</span>}
     </button>
   );
 }
