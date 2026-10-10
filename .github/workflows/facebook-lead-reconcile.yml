@@ -1,0 +1,101 @@
+# Did every Facebook lead reach the CRM?
+#
+# Meta's Ads Manager counts leads on its side; this counts them on ours, so the
+# two numbers can be put side by side. Read-only: SELECTs only, and no names or
+# phone numbers are printed — a lead is identified by the last six digits of
+# Meta's own lead id, which is enough to look one up in Meta and nothing more.
+#
+# Run by hand: Actions -> Facebook lead reconcile -> Run workflow.
+name: Facebook lead reconcile
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Count leads received on or after this date (YYYY-MM-DD, India time)'
+        default: '2026-09-29'
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+      SINCE: ${{ inputs.since }}
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Totals by outcome
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          # The date goes into the SQL text, so nothing but a date may get in.
+          [[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "since must be YYYY-MM-DD"; exit 1; }
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT i.status,
+                   count(*)                                             AS leads,
+                   count(*) FILTER (WHERE r.id IS NOT NULL AND NOT r.is_deleted) AS on_a_live_record,
+                   count(*) FILTER (WHERE r.is_deleted)                 AS on_a_deleted_record
+            FROM ipy_lead_inbox i
+            LEFT JOIN ipy_record r ON r.id = i.record_id
+            WHERE i.source = 'facebook'
+              AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+            GROUP BY ROLLUP (i.status)
+            ORDER BY i.status NULLS LAST;"
+
+      - name: By form and campaign
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT coalesce(i.raw_payload->>'form_id', '?')     AS form_id,
+                   coalesce(i.raw_payload->>'campaign_id', '?') AS campaign_id,
+                   count(*) AS leads
+            FROM ipy_lead_inbox i
+            WHERE i.source = 'facebook'
+              AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+            GROUP BY 1, 2 ORDER BY 3 DESC;"
+
+      - name: Leads per day
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT to_char(i.received_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon') AS day,
+                   count(*) AS leads,
+                   count(*) FILTER (WHERE i.status IN ('processed','duplicate')) AS reached_crm
+            FROM ipy_lead_inbox i
+            WHERE i.source = 'facebook'
+              AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+            GROUP BY 1, date_trunc('day', i.received_at AT TIME ZONE 'Asia/Kolkata')
+            ORDER BY date_trunc('day', i.received_at AT TIME ZONE 'Asia/Kolkata');"
+
+      - name: Every lead that did not reach a live record
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT right(i.external_id, 6) AS lead_id_end,
+                   i.status,
+                   left(i.error, 90) AS why,
+                   to_char(i.received_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS arrived
+            FROM ipy_lead_inbox i
+            LEFT JOIN ipy_record r ON r.id = i.record_id
+            WHERE i.source = 'facebook'
+              AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+              AND (r.id IS NULL OR r.is_deleted)
+            ORDER BY i.received_at;"
+
+      - name: Who owns them
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT coalesce(nullif(trim(u.first_name || ' ' || u.last_name), ''), 'Unassigned') AS owner,
+                   count(DISTINCT r.id) AS contacts
+            FROM ipy_lead_inbox i
+            JOIN ipy_record r ON r.id = i.record_id AND NOT r.is_deleted
+            LEFT JOIN ipy_user u ON u.id = r.owner_id
+            WHERE i.source = 'facebook'
+              AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+            GROUP BY 1 ORDER BY 2 DESC;"
