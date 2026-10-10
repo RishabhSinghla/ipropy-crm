@@ -478,18 +478,12 @@ function SystemLine({ children }: { children: ReactNode }): JSX.Element {
  * was to scroll up until a chip came into view. A note is a thing somebody
  * comes back to on its own; it has to say its own date.
  *
- * Today says the time alone — "today at 4:12 pm" is three words to say "now-ish"
- * — and anything older carries the day with it. The year appears only when it
- * is not this one, because printing 2026 on every row of 2026 is noise.
+ * Every entry carries its complete date, including today's date and year.
  */
 function clock(at: string): string {
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return relativeTime(at);
   const time = when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-  const today = new Date();
-  if (when.toDateString() === today.toDateString()) return time;
-  const day = when.toLocaleDateString('en-IN', when.getFullYear() === today.getFullYear()
-    ? { weekday: 'short', day: 'numeric', month: 'short' }
-    : { day: 'numeric', month: 'short', year: 'numeric' });
+  const day = when.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   return `${day}, ${time}`;
 }
