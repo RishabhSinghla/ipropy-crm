@@ -1,4 +1,4 @@
-# Put the "Release expired blocks" rule back the way it was meant to work.
+# Stop the "Release expired blocks" rule announcing units that were never held.
 #
 # On production it had drifted: its conditions matched units that were never on
 # hold (every "Lost" unit), and its release step set the status to "Available
@@ -6,8 +6,9 @@
 # the notification after it still went out, and the same units were announced
 # every hour. 10 October 2026.
 #
-# mode=check reads only. mode=apply changes this one rule, in one transaction,
-# and prints the values it replaced so they can be put back by hand.
+# Production has no hold to release (no Held/Blocked status, no Blocked Until
+# field), so the fix is to switch the rule off. mode=check reads only;
+# mode=apply switches off this one rule and nothing else.
 #
 # Run by hand: Actions -> Fix hold release rule -> Run workflow.
 name: Fix hold release rule
@@ -78,21 +79,15 @@ jobs:
         run: |
           psql "$PROD_DATABASE_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
           BEGIN;
-          -- Only Held or Blocked units whose hold date has passed — the rule's
-          -- whole job. Anything wider re-announces units that were never held.
-          UPDATE ipy_workflow
-             SET conditions = '{"logic":"AND","conditions":[
-                   {"field":"status","operator":"in","value":["Held","Blocked"]},
-                   {"field":"blocked_until","operator":"older_than_n_days","value":0}]}'::jsonb
-           WHERE name = 'Release expired blocks';
-          -- "Available" is the option Property Status actually has. The hold
-          -- date and the buyer go with it, or the unit still reads as held.
-          UPDATE ipy_workflow_task t
-             SET config = '{"values":{"status":"Available","blocked_until":null,"blocked_for_lead_id":null}}'::jsonb
-            FROM ipy_workflow w
-           WHERE w.id = t.workflow_id AND w.name = 'Release expired blocks' AND t.type = 'update_fields';
-          SELECT w.conditions, t.type, t.config
-            FROM ipy_workflow w JOIN ipy_workflow_task t ON t.workflow_id = w.id
-           WHERE w.name = 'Release expired blocks' ORDER BY t.sequence;
+          -- Production's inventory has no hold to release: Property Status has
+          -- no Held or Blocked option and there is no Blocked Until field. The
+          -- rule had been pointed at "On Hold" (not an option) and "Lost", so
+          -- every hour it tried to move every Lost unit to a status that does
+          -- not exist, failed, and announced the release anyway. Switched off,
+          -- not deleted: its settings stay, and turning it back on is one
+          -- toggle in Admin -> Workflows once units can actually be held.
+          UPDATE ipy_workflow SET is_active = false
+           WHERE name = 'Release expired blocks' AND is_active;
+          SELECT name, is_active FROM ipy_workflow WHERE name = 'Release expired blocks';
           COMMIT;
           SQL
