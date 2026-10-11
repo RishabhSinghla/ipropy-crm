@@ -1,0 +1,72 @@
+# Is the live CRM's front door actually shut? Read-only.
+#
+# 11 October 2026, security review: the repository publishes `Admin@123` for the
+# seeded admin and for every demo account, and the readiness screen only counts
+# accounts by e-mail domain. It never tests a password. This does.
+#
+# It reads each active login's stored hash into the runner's memory, asks
+# bcrypt whether it matches a short list of passwords that are published or
+# obvious, and prints YES or NO per account. Never a hash, never a password
+# that was *not* on the list. Staff e-mail addresses are masked in the log.
+# Then it reads the live site's response headers. workflow_dispatch only.
+name: Security check
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "The CRM to look at"
+        default: "https://crm.ipropy.com"
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Which logins still use a published password
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ]; then echo "No PROD_DATABASE_URL secret." >&2; exit 1; fi
+          mkdir -p "$RUNNER_TEMP/check" && cd "$RUNNER_TEMP/check"
+          npm init -y >/dev/null 2>&1 && npm i bcryptjs@3 --silent >/dev/null 2>&1
+          printf 'BEGIN READ ONLY;\n\\copy (SELECT email, is_admin, is_active, coalesce(last_login_at::date::text, %s), password_hash FROM ipy_user WHERE deleted_at IS NULL) TO %s WITH (FORMAT csv)\nCOMMIT;\n' "''" "'users.csv'" \
+            | psql "$PROD_DATABASE_URL" -X -q 2>&1 | head -5
+          cat > check.mjs <<'JS'
+          import fs from 'node:fs';
+          import bcrypt from 'bcryptjs';
+          const KNOWN = ['Admin@123', 'admin@123', 'Admin@1234', 'password', 'Password@123', 'password123', '12345678', 'ipropy@123', 'iPropy@123', 'Ipropy@123', 'welcome123', 'Welcome@123'];
+          const mask = (e) => e.replace(/^(.{2}).*(@.*)$/, '$1***$2');
+          const rows = fs.readFileSync('users.csv', 'utf8').trim().split('\n').filter(Boolean);
+          let weak = 0, admins = 0, activeCount = 0, noPassword = 0;
+          for (const line of rows) {
+            const m = line.match(/^([^,]*),([tf]),([tf]),([^,]*),(.*)$/);
+            if (!m) continue;
+            const [, email, isAdmin, isActive, lastLogin, hash] = m;
+            if (isActive !== 't') continue;
+            activeCount += 1;
+            if (isAdmin === 't') admins += 1;
+            if (!hash || hash === '""') { noPassword += 1; continue; }
+            let hit = null;
+            for (const guess of KNOWN) { if (await bcrypt.compare(guess, hash.replace(/^"|"$/g, ''))) { hit = true; break; } }
+            if (hit) weak += 1;
+            console.log(`${hit ? 'WEAK ' : 'ok   '} ${isAdmin === 't' ? 'ADMIN' : 'user '} ${mask(email).padEnd(34)} last sign-in ${lastLogin || 'never'}  uses a published/obvious password: ${hit ? 'YES' : 'no'}`);
+          }
+          console.log(`\n${activeCount} active logins, ${admins} of them admins, ${noPassword} with no password (passkey/PIN only), ${weak} using a published or obvious password.`);
+          JS
+          node check.mjs
+
+      - name: What the live site tells every browser
+        env:
+          BASE: ${{ inputs.base_url }}
+        run: |
+          echo "=== response headers of the page ==="
+          curl -sI --max-time 30 "$BASE/" | grep -iE "^(HTTP|strict-transport|content-security|x-frame|x-content-type|referrer-policy|permissions-policy|cross-origin|server|x-powered)" || true
+          echo; echo "=== does a wrong login get slowed down? five quick wrong tries ==="
+          for i in 1 2 3 4 5 6; do
+            curl -s -o /dev/null -w "%{http_code}  %{time_total}s\n" --max-time 30 -H 'content-type: application/json' \
+              -d '{"email":"nobody-security-check@example.invalid","password":"wrong-password-check"}' "$BASE/api/auth/login"
+          done
