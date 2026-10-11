@@ -1,0 +1,99 @@
+# Ask production's database why it is slow, on demand.
+#
+# 11 October 2026, the owner: lists, filters and saves have all got slow over
+# the last two or three days. A guess at the cause would be a fix to the wrong
+# thing, so this reads the evidence: what is running now, which tables carry
+# dead rows, whether a recent index is healthy, which statements cost the
+# most, and how long the list's own queries take.
+#
+# Read-only twice over: the session is set to refuse writes, and nothing it
+# prints is row data. Query text is shown with long digit runs masked, because
+# a running query can carry a phone number. workflow_dispatch only.
+name: Why the CRM is slow
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Ask the database
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PGOPTIONS: "-c default_transaction_read_only=on -c statement_timeout=60000"
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ]; then echo "No PROD_DATABASE_URL secret." >&2; exit 1; fi
+          q() { echo; echo "=== $1 ==="; psql "$PROD_DATABASE_URL" -X -P pager=off -c "$2" 2>&1 || true; }
+
+          q "server" "SELECT version(), current_setting('max_connections') AS max_conn,
+                             current_setting('shared_buffers') AS shared_buffers,
+                             current_setting('work_mem') AS work_mem;"
+
+          q "connections by state" "SELECT state, count(*) FROM pg_stat_activity
+                                    WHERE datname = current_database() GROUP BY 1 ORDER BY 2 DESC;"
+
+          q "longest running right now (digits masked)" "SELECT now() - query_start AS running, state, wait_event_type, wait_event,
+                 left(regexp_replace(query, '[0-9]{5,}', '#', 'g'), 110) AS query
+               FROM pg_stat_activity
+               WHERE datname = current_database() AND pid <> pg_backend_pid()
+                 AND state <> 'idle' ORDER BY query_start LIMIT 12;"
+
+          q "blocked waiting on a lock" "SELECT count(*) AS waiting_on_locks FROM pg_stat_activity
+                                         WHERE wait_event_type = 'Lock' AND datname = current_database();"
+
+          q "cache hit ratio (should be above 0.99)" "SELECT round(blks_hit::numeric / nullif(blks_hit + blks_read, 0), 4) AS hit_ratio,
+                 xact_commit, xact_rollback, temp_files, pg_size_pretty(temp_bytes) AS temp_bytes, deadlocks
+               FROM pg_stat_database WHERE datname = current_database();"
+
+          q "biggest tables: size, dead rows, last vacuum" "SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) AS total,
+                 n_live_tup AS live, n_dead_tup AS dead,
+                 round(100.0 * n_dead_tup / nullif(n_live_tup + n_dead_tup, 0), 1) AS dead_pct,
+                 last_autovacuum::date AS autovac, last_autoanalyze::date AS autoanalyze
+               FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 14;"
+
+          q "ipy_record indexes: size, use, valid" "SELECT i.indexrelid::regclass AS index,
+                 pg_size_pretty(pg_relation_size(i.indexrelid)) AS size,
+                 s.idx_scan AS scans, i.indisvalid AS valid
+               FROM pg_index i JOIN pg_stat_user_indexes s ON s.indexrelid = i.indexrelid
+               WHERE i.indrelid = 'ipy_record'::regclass
+               ORDER BY pg_relation_size(i.indexrelid) DESC;"
+
+          q "sequential scans on the big tables" "SELECT relname, seq_scan, seq_tup_read, idx_scan
+               FROM pg_stat_user_tables WHERE relname IN ('ipy_record','ipy_e_leads','ipy_e_properties','ipy_audit','ipy_call','ipy_message')
+               ORDER BY seq_tup_read DESC;"
+
+          q "costliest statements (needs pg_stat_statements)" "SELECT calls, round(total_exec_time::numeric / 1000) AS total_s,
+                 round(mean_exec_time::numeric, 1) AS mean_ms,
+                 left(regexp_replace(query, '\s+', ' ', 'g'), 110) AS query
+               FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 15;"
+
+          q "round trip: 20 trivial queries" "\\timing on
+                SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1;"
+
+          q "list shape: first page of the newest contacts" "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)
+               SELECT r.id FROM ipy_record r
+               WHERE r.module_id = (SELECT id FROM ipy_module WHERE name = 'leads')
+                 AND r.is_deleted = false AND r.archived_at IS NULL
+               ORDER BY r.updated_at DESC, r.id DESC LIMIT 25;"
+
+          q "count shape: how many contacts" "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)
+               SELECT count(*) FROM ipy_record r
+               WHERE r.module_id = (SELECT id FROM ipy_module WHERE name = 'leads')
+                 AND r.is_deleted = false AND r.archived_at IS NULL;"
+
+          q "search shape: a part of a number" "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)
+               SELECT r.id FROM ipy_record r
+               WHERE r.is_deleted = false AND r.search_text ILIKE '%98111%' LIMIT 25;"
+
+          q "search_text size (what the trigram index has to hold)" "SELECT count(*) AS rows,
+                 pg_size_pretty(sum(length(search_text))::bigint) AS text_total,
+                 round(avg(length(search_text))) AS avg_len, max(length(search_text)) AS max_len
+               FROM ipy_record WHERE is_deleted = false;"
+
+          q "background pollers: recent activity per minute (audit rows, last hour)" "SELECT date_trunc('minute', created_at) AS minute, count(*)
+               FROM ipy_audit WHERE created_at > now() - interval '60 minutes' GROUP BY 1 ORDER BY 1 DESC LIMIT 8;"
