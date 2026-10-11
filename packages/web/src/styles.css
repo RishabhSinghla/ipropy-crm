@@ -25,6 +25,12 @@
 [data-main-toolbar] .toolbar-action:hover { background: rgb(255 255 255 / 0.15); }
 [data-main-toolbar] input { color: #334155; }
 [data-main-toolbar] input::placeholder { color: #94a3b8; }
+/* Highlighted text must stay readable. The browser's own highlight is a pale
+   blue that can pick up the toolbar's light text, which is white on pale blue
+   and reads as blank. Both colours are set together, so neither can be
+   inherited from somewhere else. */
+::selection { background: #c7d2fe; color: #0f172a; }
+.dark ::selection { background: #4338ca; color: #ffffff; }
 @tailwind utilities;
 
 @layer base {
