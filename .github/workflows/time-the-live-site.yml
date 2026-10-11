@@ -1,0 +1,47 @@
+# Time the live CRM from outside, on demand.
+#
+# 11 October 2026: "the CRM is slow". The database answered its own list query
+# in about 28 ms, so the time is going somewhere else. This asks the running
+# site, over its public doors only, how long it takes to answer: the page, the
+# health check that reaches Postgres, and two feed endpoints that run real
+# queries. Several tries each, because one number is luck.
+#
+# The runner is in the US and the CRM in Singapore, so every figure carries
+# roughly 0.2 s of distance. Read the *differences* between rows, and the
+# first try against the rest (a cold start shows as a slow first answer).
+#
+# Read-only: GET requests to public addresses. No login, no secrets.
+name: Time the live site
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "The CRM to time"
+        default: "https://crm.ipropy.com"
+
+permissions:
+  contents: read
+
+jobs:
+  time:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Time it
+        env:
+          BASE: ${{ inputs.base_url }}
+        run: |
+          fmt='%{http_code}  first byte %{time_starttransfer}s  total %{time_total}s  %{size_download} bytes'
+          t() {
+            echo; echo "=== $1 ==="
+            for i in 1 2 3 4 5 6; do
+              curl -s -o /dev/null -w "$fmt\n" --max-time 30 "$BASE$1" || echo "failed"
+            done
+          }
+          t "/api/health"
+          t "/"
+          t "/api/public/listings?limit=18&sort=newest"
+          t "/api/public/listings/filters"
+          echo; echo "=== TLS and distance only (a file the server answers without the database) ==="
+          for i in 1 2 3; do curl -s -o /dev/null -w "$fmt\n" --max-time 30 "$BASE/robots.txt" || true; done
