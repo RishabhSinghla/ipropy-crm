@@ -51,12 +51,14 @@ export function readVitals(): Record<string, number> {
   The vitals say the process is busy; they cannot say with what. This asks V8
   for eight seconds of samples and reports the functions that held the CPU
   longest — names and file lines only, never a value from a request. A visitor
-  can start one at most every five minutes, so it cannot be used to slow the
-  server down, and the answer stays for ten minutes so a second look finds it.
+  can start one at most every minute (an eight-second sample is a small share
+  of that), and the answer stays for forty seconds so a second look finds it.
+  It was five minutes and ten, and a result kept that long hid the very moment
+  being looked for: the load only shows several minutes after a restart.
 */
 const PROFILE_SECONDS = 8;
-const PROFILE_COOLDOWN_MS = 5 * 60_000;
-const PROFILE_KEEP_MS = 10 * 60_000;
+const PROFILE_COOLDOWN_MS = 60_000;
+const PROFILE_KEEP_MS = 40_000;
 
 interface ProfileNode { id: number; callFrame: { functionName: string; url: string; lineNumber: number } }
 interface CpuProfile { nodes: ProfileNode[]; samples: number[]; timeDeltas: number[] }

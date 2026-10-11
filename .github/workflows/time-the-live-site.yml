@@ -58,19 +58,27 @@ jobs:
             sleep 5
           done
 
-      - name: Where the CPU time goes
+      - name: Where the CPU time goes, across the first ten minutes after a start
+        timeout-minutes: 14
         env:
           BASE: ${{ inputs.base_url }}
         run: |
-          # The first look starts an eight-second sample; the later ones find
-          # the answer. Read-only: it reports function names, never data.
-          curl -s --max-time 30 "$BASE/api/health?profile=1" | tr -d '\n'; echo
-          sleep 14
-          curl -s --max-time 30 "$BASE/api/health?profile=1" | python3 -c "
+          # The load was absent just after a restart and heavy about six
+          # minutes in, so one sample proves nothing. Ten samples, a minute
+          # apart: each starts an eight-second look, waits, and prints the
+          # busiest functions beside the process's own uptime and CPU share.
+          # Read-only: function names and numbers, never data.
+          for i in $(seq 1 10); do
+            curl -s --max-time 30 "$BASE/api/health?profile=1" > /dev/null
+            sleep 12
+            curl -s --max-time 30 "$BASE/api/health?profile=1" | python3 -c "
           import sys, json
           d = json.load(sys.stdin)
+          v = d.get('vitals', {})
           p = d.get('cpuProfile', {})
-          print('state:', p.get('state'))
-          for row in p.get('top', []):
+          print('--- uptime', d.get('uptimeSeconds'), 's | cpu', v.get('cpuPercentOfOneCpu'), '% | loop max', v.get('loopDelayMaxMs'), 'ms | state', p.get('state'))
+          for row in p.get('top', [])[:7]:
               print(f\"{row['ms']:>6} ms  {row['where']}\")
           "
+            sleep 45
+          done
