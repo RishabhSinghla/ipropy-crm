@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response } from 'express';
 import cors from 'cors';
+import { readVitals } from './utils/vitals.js';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -261,6 +262,7 @@ export function createApp(): Express {
       // actually landed rather than mistaking a healthy old instance for it.
       buildCommit: process.env.RENDER_GIT_COMMIT ?? null,
       uptimeSeconds: Math.round(process.uptime()),
+      vitals: readVitals(),
       timestamp: new Date().toISOString(),
     });
   });

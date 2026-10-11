@@ -45,3 +45,15 @@ jobs:
           t "/api/public/listings/filters"
           echo; echo "=== TLS and distance only (a file the server answers without the database) ==="
           for i in 1 2 3; do curl -s -o /dev/null -w "$fmt\n" --max-time 30 "$BASE/robots.txt" || true; done
+
+      - name: Watch the server's own vitals
+        env:
+          BASE: ${{ inputs.base_url }}
+        run: |
+          # Each answer describes the time since the one before it. Twelve
+          # looks, five seconds apart: a busy server shows as a high loop
+          # delay or CPU share, a starved one as memory near 512 MB.
+          for i in $(seq 1 12); do
+            curl -s --max-time 30 "$BASE/api/health" | tr -d '\n'; echo
+            sleep 5
+          done
