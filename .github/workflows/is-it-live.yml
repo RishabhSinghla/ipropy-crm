@@ -1,0 +1,43 @@
+# Is the newest code actually running on crm.ipropy.com? Read-only.
+#
+# Prints the commit production built from, whether the newest migrations ran,
+# and whether the live page bundle carries a given phrase. No row data.
+name: Is it live
+
+on:
+  workflow_dispatch:
+    inputs:
+      phrase:
+        description: A phrase only the new web code contains
+        required: false
+        default: Dealer groups
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Which commit is running
+        run: |
+          curl -s --max-time 30 https://crm.ipropy.com/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); print('running commit:', d.get('buildCommit')); print('status:', d.get('status'))" || true
+      - name: Newest migrations applied
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          printf 'BEGIN READ ONLY;\nSELECT name FROM ipy_migration ORDER BY name DESC LIMIT 5;\nSELECT count(*) AS dealer_group_deals FROM ipy_market_post;\nCOMMIT;\n' \
+            | psql "$PROD_DATABASE_URL" -X -q -P pager=off 2>&1 || true
+      - name: Does the live web code carry the phrase
+        env:
+          PHRASE: ${{ inputs.phrase }}
+        run: |
+          base=https://crm.ipropy.com
+          entry=$(curl -s --max-time 30 "$base/" | grep -o '/assets/index-[^"]*\.js' | head -1)
+          echo "entry: $entry"
+          found=no
+          for chunk in $entry $(curl -s "$base$entry" | grep -ao 'assets/[A-Za-z0-9_-]*\.js' | sort -u | sed 's#^#/#'); do
+            if curl -s --max-time 30 "$base$chunk" | grep -aq "$PHRASE"; then found="yes ($chunk)"; break; fi
+          done
+          echo "phrase '$PHRASE' in live code: $found"
