@@ -169,7 +169,7 @@ function UserEditor({
           <button
             className="btn-primary"
             onClick={() => void save()}
-            disabled={saving || !form.email || !form.firstName || (!isEdit && form.password.length < 8)}
+            disabled={saving || !form.email || !form.firstName || (!isEdit && form.password.length < 10)}
           >
             {saving && <Spinner />} {isEdit ? 'Save changes' : 'Create user'}
           </button>
@@ -201,7 +201,7 @@ function UserEditor({
               className="input font-mono"
               value={form.password}
               onChange={(e) => set({ password: e.target.value })}
-              placeholder="At least 8 characters"
+              placeholder="At least 10 characters"
             />
           </div>
         )}
@@ -263,7 +263,7 @@ function PasswordReset({ user, onClose }: { user: User; onClose: () => void }): 
           <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
           <button
             className="btn-primary"
-            disabled={password.length < 8 || busy}
+            disabled={password.length < 10 || busy}
             onClick={async () => {
               setBusy(true);
               try {
@@ -290,7 +290,7 @@ function PasswordReset({ user, onClose }: { user: User; onClose: () => void }): 
         className="input font-mono"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        placeholder="At least 8 characters"
+        placeholder="At least 10 characters"
         autoFocus
       />
       <p className="mt-2 text-xs text-muted">

@@ -200,6 +200,7 @@ pinAuthRouter.post('/login', pinLimiter, asyncHandler(async (req, res) => {
          JOIN ipy_user u ON u.id = d.user_id
         WHERE d.token_hash = $1 AND d.revoked_at IS NULL AND d.expires_at > now()
           AND u.deleted_at IS NULL AND u.is_active = true
+          AND u.password_login_disabled = false
         FOR UPDATE OF d`,
       [tokenHash],
     );

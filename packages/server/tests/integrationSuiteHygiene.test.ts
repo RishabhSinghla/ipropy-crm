@@ -38,6 +38,7 @@ function suiteFiles(): { file: string; text: string }[] {
 const AUTH_SUITES = new Set([
   'api.test.ts',                         // asserts the login contract, including its failures
   'logoutEndsTheSession.test.ts',
+  'passkeyOnlySignIn.test.ts',           // asserts a locked account is refused the password door
   'pinAuth.test.ts',
   'refreshRotation.test.ts',
   'refreshTokenLivesInACookie.test.ts',

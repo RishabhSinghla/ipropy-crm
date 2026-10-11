@@ -634,6 +634,8 @@ export const api = {
     }),
   passkeys: () => get<Record<string, unknown>[]>('/api/auth/passkeys'),
   deletePasskey: (id: string) => del(`/api/auth/passkeys/${id}`),
+  passkeyOnly: () => get<{ enabled: boolean; canEnable: boolean }>('/api/auth/passkeys/lock'),
+  setPasskeyOnly: (enabled: boolean) => post<{ enabled: boolean }>('/api/auth/passkeys/lock', { enabled }),
 
   // --- trusted-device four-digit PIN ---------------------------------------
   pinStatus: () => request<PinStatus>('/api/auth/pin/status', { skipRefresh: true }),

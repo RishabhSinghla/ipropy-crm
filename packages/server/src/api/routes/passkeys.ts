@@ -187,7 +187,48 @@ passkeyRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
   res.json(rows.rows);
 }));
 
+/**
+ * "Passkey only". Offered once a passkey has been used to sign in at least once —
+ * proof it works on a real device — because turning the password off for someone
+ * whose passkey does not work is a locked door with the key inside.
+ */
+passkeyRouter.get('/lock', requireAuth, asyncHandler(async (req, res) => {
+  const row = await queryOne<{ locked: boolean; proven: string }>(
+    `SELECT u.password_login_disabled AS locked,
+            (SELECT count(*) FROM ipy_webauthn_credential c WHERE c.user_id = u.id AND c.last_used_at IS NOT NULL) AS proven
+       FROM ipy_user u WHERE u.id = $1`,
+    [getUser(req).id],
+  );
+  res.json({ enabled: Boolean(row?.locked), canEnable: Number(row?.proven ?? 0) > 0 });
+}));
+
+passkeyRouter.post('/lock', requireAuth, asyncHandler(async (req, res) => {
+  const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+  const me = getUser(req).id;
+  if (enabled) {
+    const proven = await queryOne<{ n: string }>(
+      `SELECT count(*) AS n FROM ipy_webauthn_credential WHERE user_id = $1 AND last_used_at IS NOT NULL`, [me],
+    );
+    if (Number(proven?.n ?? 0) === 0) {
+      throw new BadRequestError('Sign in once with your passkey first, so we know it works on your device. Then you can turn the password off.');
+    }
+  }
+  await db.query(`UPDATE ipy_user SET password_login_disabled = $2 WHERE id = $1`, [me, enabled]);
+  logger.info({ userId: me, enabled }, 'passkey-only sign-in changed');
+  res.json({ enabled });
+}));
+
 passkeyRouter.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
+  // Removing the last passkey from a passkey-only account would lock its owner out.
+  const mine = await queryOne<{ locked: boolean; left: string }>(
+    `SELECT u.password_login_disabled AS locked,
+            (SELECT count(*) FROM ipy_webauthn_credential c WHERE c.user_id = u.id AND c.id <> $2) AS left
+       FROM ipy_user u WHERE u.id = $1`,
+    [getUser(req).id, req.params.id],
+  );
+  if (mine?.locked && Number(mine.left) === 0) {
+    throw new BadRequestError('This is your last passkey and your password is turned off. Turn "passkey only" off first, or add another device.');
+  }
   await db.query(
     `DELETE FROM ipy_webauthn_credential WHERE id = $1 AND user_id = $2`,
     [req.params.id, getUser(req).id],

@@ -11,7 +11,7 @@ import { loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
-import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
+import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs, Toggle } from '../components/ui';
 import { copyText } from '../lib/nativeActions';
 import { isNative } from '../lib/native';
 import { needsUninstallFirst, updateAvailable, UNKNOWN_VERSION } from '../lib/appVersion';
@@ -288,13 +288,13 @@ function SecurityTab(): JSX.Element {
             </div>
           </div>
           <p className="text-2xs text-muted">
-            At least 8 characters, with upper case, lower case and a number.
+            At least 10 characters, with upper case, lower case and a number.
           </p>
         </div>
         <div className="mt-4 flex justify-end">
           <button
             onClick={() => void change()}
-            disabled={busy || !current || next.length < 8}
+            disabled={busy || !current || next.length < 10}
             className="btn-primary"
           >
             {busy && <Spinner />} Change password
@@ -859,10 +859,26 @@ function PasskeysCard(): JSX.Element {
     }
   };
 
+  const { data: lock, refetch: refetchLock } = useQuery({ queryKey: ['passkey-only'], queryFn: () => api.passkeyOnly() });
+
   const remove = async (id: string): Promise<void> => {
-    await api.deletePasskey(id);
-    toast.success('Device removed');
-    await refetch();
+    try {
+      await api.deletePasskey(id);
+      toast.success('Device removed');
+      await refetch();
+    } catch (err) {
+      toast.error('Could not remove that device', (err as Error).message);
+    }
+  };
+
+  const setPasskeyOnly = async (enabled: boolean): Promise<void> => {
+    try {
+      await api.setPasskeyOnly(enabled);
+      toast.success(enabled ? 'Password sign-in is off for you' : 'Password sign-in is back on');
+      await refetchLock();
+    } catch (err) {
+      toast.error('Could not change that', (err as Error).message);
+    }
   };
 
   return (
@@ -886,6 +902,29 @@ function PasskeysCard(): JSX.Element {
           Set up on this device
         </button>
       )}
+
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700" data-testid="passkey-only">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Sign in with a passkey only</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Turns your password off, so a stolen or guessed password opens nothing. If you lose
+              the device, an admin can reset your password to let you back in.
+            </p>
+            {lock && !lock.canEnable && !lock.enabled && (
+              <p className="mt-1 text-xs text-muted">
+                Available after you have signed in once with a passkey, so we know it works on your device.
+              </p>
+            )}
+          </div>
+          <Toggle
+            checked={Boolean(lock?.enabled)}
+            disabled={!lock || (!lock.enabled && !lock.canEnable)}
+            onChange={(on) => void setPasskeyOnly(on)}
+            ariaLabel="Sign in with a passkey only"
+          />
+        </div>
+      </div>
 
       <div>
         <p className="mb-2 text-sm font-medium">Devices that can sign in</p>

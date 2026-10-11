@@ -477,3 +477,16 @@ doors only) and `why-the-crm-is-slow.yml` (read-only database check):
 **Still seen, not explained:** a single stall of about 1.3 s roughly every four minutes
 (07:55:09 and 07:59:09 UTC). It no longer repeats every few seconds. Cause unknown.
 **Tabs opened before the fix keep the old behaviour until reloaded.**
+
+## Sign-in hardening — 11 October 2026
+
+* **Passwords** need 10+ characters with upper, lower and a digit, not a common guess, not
+  the person's own email name (`core/security/passwordPolicy.ts`). Applies to new, changed,
+  reset and admin-created passwords. Existing passwords are not touched until changed.
+* **Passkey-only lock** (migration `203`, `ipy_user.password_login_disabled`). Settings →
+  Passkeys → the switch. Needs one passkey that has actually signed in, and the last passkey
+  cannot be removed while it is on. While on, the password door **and the device-PIN door**
+  both refuse that account. **Recovery:** an admin resets the password in Admin → Users, which
+  also turns the lock off.
+* **Accepted risk:** the `uuid` advisory is not upgraded — unreachable here, and the upgrade
+  risks breaking `exceljs`.

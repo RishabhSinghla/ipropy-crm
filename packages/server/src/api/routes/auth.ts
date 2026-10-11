@@ -1,3 +1,4 @@
+import { strongPassword } from '../../core/security/passwordPolicy.js';
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
@@ -95,8 +96,8 @@ authRouter.post('/login', loginSprayLimiter, loginLimiter, asyncHandler(async (r
   // Email or mobile. The phone branch compares on the last ten digits, since
   // the same number is stored with and without +91 across imported records.
   const mobile = phoneKey(identifier);
-  const row = await queryOne<{ id: string; password_hash: string | null; is_active: boolean }>(
-    `SELECT id, password_hash, is_active FROM ipy_user
+  const row = await queryOne<{ id: string; password_hash: string | null; is_active: boolean; password_login_disabled: boolean }>(
+    `SELECT id, password_hash, is_active, password_login_disabled FROM ipy_user
      WHERE deleted_at IS NULL
        AND ( lower(email) = lower($1)
              OR ($2::text IS NOT NULL AND right(regexp_replace(coalesce(phone,''), '\\D', '', 'g'), 10) = $2) )
@@ -110,6 +111,17 @@ authRouter.post('/login', loginSprayLimiter, loginLimiter, asyncHandler(async (r
     throw new UnauthorizedError('Incorrect email/mobile or password');
   }
   if (!row.is_active) throw new UnauthorizedError('This account has been deactivated');
+  /*
+    Said only after the password was right, so it tells a stranger nothing they
+    did not know, and tells the person who owns the account exactly what to do.
+    The password stays refused even though it is correct: that is the point of
+    the lock — a stolen password must open nothing.
+  */
+  if (row.password_login_disabled) {
+    throw new UnauthorizedError(
+      'This account signs in with a passkey only. Use "Sign in with passkey", or ask an admin to reset your password if you have lost the device.',
+    );
+  }
 
   const session = await issueSession(row.id, req);
   /*
@@ -308,7 +320,7 @@ authRouter.patch('/me', requireAuth, asyncHandler(async (req, res) => {
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  newPassword: strongPassword,
 });
 
 /**
@@ -402,7 +414,7 @@ function escapeHtml(value: string): string {
 authRouter.post('/reset-password', loginSprayLimiter, loginLimiter, asyncHandler(async (req, res) => {
   const { token, newPassword } = z.object({
     token: z.string().min(20).max(200),
-    newPassword: z.string().min(8).max(200),
+    newPassword: strongPassword,
   }).parse(req.body);
 
   if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword)) {

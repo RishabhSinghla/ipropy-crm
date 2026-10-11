@@ -1,3 +1,4 @@
+import { strongPassword } from '../../core/security/passwordPolicy.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { CAPABILITIES } from '@ipropy/shared';
@@ -104,7 +105,7 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
 
 const userSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: strongPassword,
   firstName: z.string().min(1),
   lastName: z.string().default(''),
   phone: z.string().optional(),
@@ -194,9 +195,12 @@ adminRouter.patch('/users/:id', asyncHandler(async (req, res) => {
 
 adminRouter.post('/users/:id/reset-password', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.users');
-  const { password } = z.object({ password: z.string().min(8) }).parse(req.body);
+  const { password } = z.object({ password: strongPassword }).parse(req.body);
   await db.query(
-    `UPDATE ipy_user SET password_hash = $2, password_changed_at = now() WHERE id = $1`,
+    // Also lifts "passkey only": an admin choosing to reset this password is the
+    // recovery for a lost device. The e-mailed reset link deliberately does not,
+    // or a hijacked mailbox would undo the lock.
+    `UPDATE ipy_user SET password_hash = $2, password_changed_at = now(), password_login_disabled = false WHERE id = $1`,
     [req.params.id, await hashPassword(password)],
   );
   // Existing sessions must not survive an admin-forced reset.

@@ -100,7 +100,7 @@ function ChooseNew({ token }: { token: string }): JSX.Element {
   // Checked here as well as on the server so somebody is told before they
   // spend their one-use link on a password that was never going to be accepted.
   const tooWeak = password.length > 0 && !(
-    password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password)
+    password.length >= 10 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password)
   );
   const mismatch = confirm.length > 0 && confirm !== password;
 
@@ -138,7 +138,7 @@ function ChooseNew({ token }: { token: string }): JSX.Element {
         <KeyRound className="h-6 w-6 text-brand-500" />
         <h1 className="mt-3 text-base font-semibold">Choose a new password</h1>
         <p className="mt-1 text-sm text-muted">
-          At least 8 characters, with an upper case letter, a lower case letter and a number.
+          At least 10 characters, with an upper case letter, a lower case letter and a number.
         </p>
       </div>
 
@@ -160,7 +160,7 @@ function ChooseNew({ token }: { token: string }): JSX.Element {
           value={password}
           onChange={(ev) => setPassword(ev.target.value)}
         />
-        {tooWeak && <p className="mt-1 text-xs text-negative">Needs 8 characters, upper and lower case, and a number.</p>}
+        {tooWeak && <p className="mt-1 text-xs text-negative">Needs 10 characters, upper and lower case, and a number.</p>}
       </div>
 
       <div>
