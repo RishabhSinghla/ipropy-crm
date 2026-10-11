@@ -48,16 +48,23 @@ export interface StoredTemplate {
   /** `{ "1": "field:full_name", "2": "agent:name" }` */
   variableMap: Record<string, string>;
   providerTemplateId: string | null;
+  providerRowId: string | null;
+  providerUpdatedAt: string | null;
 }
 
 export async function listStoredTemplates(): Promise<StoredTemplate[]> {
   const { rows } = await db.query<{
     id: string; name: string; language: string; category: string; status: string;
     body_text: string; variable_map: Record<string, string>; provider_template_id: string | null;
+    provider_row_id: string | null; provider_updated_at: string | null;
   }>(
-    `SELECT id, name, language, category, status, body_text, variable_map, provider_template_id
+    `SELECT id, name, language, category, status, body_text, variable_map, provider_template_id,
+            provider_row_id, provider_updated_at
        FROM ipy_whatsapp_template
-      ORDER BY status DESC, name`,
+      WHERE upper(status) = 'APPROVED'
+      ORDER BY provider_updated_at DESC NULLS LAST,
+               CASE WHEN provider_row_id ~ '^[0-9]+$' THEN provider_row_id::numeric END DESC NULLS LAST,
+               name`,
   );
   return rows.map((row) => ({
     id: row.id,
@@ -69,6 +76,8 @@ export async function listStoredTemplates(): Promise<StoredTemplate[]> {
     variableCount: countVariables(row.body_text),
     variableMap: row.variable_map ?? {},
     providerTemplateId: row.provider_template_id,
+    providerRowId: row.provider_row_id,
+    providerUpdatedAt: row.provider_updated_at,
   }));
 }
 
@@ -79,13 +88,14 @@ export async function listStoredTemplates(): Promise<StoredTemplate[]> {
  * nothing when somebody is looking for the template they had approved this
  * morning.
  */
-export async function syncTemplates(): Promise<{ added: string[]; updated: string[]; skipped: string }> {
+export async function syncTemplates(): Promise<{ added: string[]; updated: string[]; removed: string[]; skipped: string }> {
   const provider = activeBusinessProvider();
   if (!provider) throw new BadRequestError('No official WhatsApp provider is switched on.');
   if (!provider.capabilities.has('templateSync')) {
     return {
       added: [],
       updated: [],
+      removed: [],
       // AiSensy publishes no template list, so its templates are added by hand
       // and this says so rather than reporting an empty success.
       skipped: `${provider.name} does not hand its template list back, so add them here by name.`,
@@ -95,18 +105,24 @@ export async function syncTemplates(): Promise<{ added: string[]; updated: strin
   const remote = await provider.listTemplates();
   const added: string[] = [];
   const updated: string[] = [];
+  const currentKeys = new Set<string>();
 
   for (const template of remote) {
     if (!template.name || !template.bodyText) continue;
+    currentKeys.add(`${template.name}\u0000${template.language}`);
     const row = await db.queryOne<{ id: string; inserted: boolean }>(
       `INSERT INTO ipy_whatsapp_template
-         (name, language, category, status, body_text, provider_template_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (name, language, category, status, body_text, provider_template_id,
+          provider_source, provider_row_id, provider_updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz)
        ON CONFLICT (name, language) DO UPDATE
          SET category = EXCLUDED.category,
              status = EXCLUDED.status,
              body_text = EXCLUDED.body_text,
-             provider_template_id = EXCLUDED.provider_template_id
+             provider_template_id = EXCLUDED.provider_template_id,
+             provider_source = EXCLUDED.provider_source,
+             provider_row_id = EXCLUDED.provider_row_id,
+             provider_updated_at = EXCLUDED.provider_updated_at
              -- variable_map is deliberately absent: the provider owns the
              -- wording, the CRM owns what fills the blanks, and a sync that
              -- wiped somebody's mapping would be a message going out with
@@ -114,13 +130,40 @@ export async function syncTemplates(): Promise<{ added: string[]; updated: strin
        RETURNING id, (xmax = 0) AS inserted`,
       [
         template.name, template.language, template.category, template.status,
-        template.bodyText, template.providerTemplateId,
+        template.bodyText, template.providerTemplateId, provider.name,
+        template.providerRowId ?? null, template.providerUpdatedAt ?? null,
       ],
     );
     (row?.inserted ? added : updated).push(`${template.name} (${template.language})`);
   }
 
-  return { added, updated, skipped: '' };
+  // Keep old rows and their campaign references for audit/history, but retire
+  // anything missing from this provider's authoritative snapshot. Legacy rows
+  // without a source are adopted only when they carry a provider ID.
+  const values = [...currentKeys].map((key) => {
+    const [name, language] = key.split('\u0000');
+    return { name, language };
+  });
+  const removedRows = await db.query<{ name: string; language: string }>(
+    `UPDATE ipy_whatsapp_template
+        SET status = 'REMOVED', provider_source = $1
+      WHERE (provider_source = $1 OR (provider_source IS NULL AND provider_template_id IS NOT NULL))
+        AND upper(status) <> 'REMOVED'
+        AND NOT EXISTS (
+          SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS remote(name text, language text)
+           WHERE remote.name = ipy_whatsapp_template.name
+             AND remote.language = ipy_whatsapp_template.language
+        )
+      RETURNING name, language`,
+    [provider.name, JSON.stringify(values)],
+  );
+
+  return {
+    added,
+    updated,
+    removed: removedRows.rows.map((row) => `${row.name} (${row.language})`),
+    skipped: '',
+  };
 }
 
 /** An admin setting what fills the blanks. Checked against real fields, now. */

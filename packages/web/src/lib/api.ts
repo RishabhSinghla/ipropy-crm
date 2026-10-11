@@ -1373,6 +1373,7 @@ export const api = {
   waBizSavedTemplates: () => get<{
     id: string; name: string; language: string; category: string; status: string;
     bodyText: string; variableCount: number; variableMap: Record<string, string>;
+    providerTemplateId: string | null; providerRowId: string | null; providerUpdatedAt: string | null;
   }[]>('/api/whatsapp-business/templates/saved'),
 
   // Campaigns: one approved template to many people. `preview` writes nothing
@@ -1417,7 +1418,7 @@ export const api = {
     recordId: string; label: string; handle: string; status: string;
     error: string | null; sentAt: string | null;
   }[]>(`/api/whatsapp-business/campaigns/${id}/recipients${status ? `?status=${status}` : ''}`),
-  waBizSyncTemplates: () => post<{ added: string[]; updated: string[]; skipped: string }>(
+  waBizSyncTemplates: () => post<{ added: string[]; updated: string[]; removed: string[]; skipped: string }>(
     '/api/whatsapp-business/templates/sync', {},
   ),
   waBizSaveMapping: (id: string, module: string, map: Record<string, string>) =>
