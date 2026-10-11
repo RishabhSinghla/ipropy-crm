@@ -1274,6 +1274,8 @@ export const api = {
       '/api/market/import', { method: 'POST', body: form },
     );
   },
+  marketMatches: (postId: string) =>
+    get<Array<{ recordId: string; module: 'leads' | 'properties'; label: string; ownerId: string | null }>>(`/api/market/posts/${postId}/matches`),
   marketPosts: (query: Record<string, string | number | undefined>) => {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '') params.set(key, String(value));

@@ -7,10 +7,12 @@
  * thinks — have or want, BHK, budget, locality. The same list is what
  * chat.ipropy.com searches when somebody asks "who has a 3 BHK under 1.5 Cr".
  */
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
-import { Phone, Upload } from 'lucide-react';
+import { Phone, Upload, Users } from 'lucide-react';
+import { PeekLink } from '../components/PeekLink';
 import { api, type MarketPost } from '../lib/api';
 import { Badge, EmptyState, Spinner } from '../components/ui';
 import { toast } from '../lib/store';
@@ -24,10 +26,35 @@ function priceText(post: MarketPost): string | null {
 
 const KIND_LABEL: Record<MarketPost['kind'], string> = { have: 'Has a property', want: 'Wants a property', unknown: 'Not sure' };
 
-function DealCard({ post }: { post: MarketPost }): JSX.Element {
-  const price = priceText(post);
+/** Our own records this deal fits, asked for only when somebody wants to know. */
+function DealMatches({ postId }: { postId: string }): JSX.Element {
+  const { data, isLoading, error } = useQuery({ queryKey: ['market', 'matches', postId], queryFn: () => api.marketMatches(postId) });
+  if (isLoading) return <Spinner />;
+  if (error) return <p className="text-xs text-negative">{(error as Error).message}</p>;
+  if (!data?.length) {
+    return <p className="text-xs text-muted">None of the records you can open fit this. Matching needs a locality from your list, plus a BHK or a price.</p>;
+  }
   return (
-    <li className="card space-y-2 p-4">
+    <ul className="space-y-1">
+      {data.map((match) => (
+        <li key={match.recordId}>
+          <PeekLink module={match.module} id={match.recordId} label={match.label} className="text-sm font-medium text-brand-700 hover:underline dark:text-brand-300">
+            {match.label}
+          </PeekLink>
+          <span className="ml-2 text-xs text-muted">{match.module === 'leads' ? 'Contact' : 'Inventory'}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DealCard({ post, focused }: { post: MarketPost; focused: boolean }): JSX.Element {
+  const price = priceText(post);
+  const [showMatches, setShowMatches] = useState(focused);
+  const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => { if (focused) ref.current?.scrollIntoView({ block: 'center' }); }, [focused]);
+  return (
+    <li ref={ref} className={`card space-y-2 p-4 ${focused ? 'ring-2 ring-brand-400' : ''}`}>
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Badge color={post.kind === 'have' ? '#16a34a' : post.kind === 'want' ? '#2563eb' : '#64748b'}>{KIND_LABEL[post.kind]}</Badge>
         {post.bhk && <Badge>{post.bhk} BHK</Badge>}
@@ -48,6 +75,14 @@ function DealCard({ post }: { post: MarketPost }): JSX.Element {
           </a>
         )}
       </div>
+      {post.kind !== 'unknown' && (
+        <div className="border-t border-[var(--border)] pt-2">
+          <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300" onClick={() => setShowMatches((open) => !open)}>
+            <Users className="h-3.5 w-3.5" /> {post.kind === 'have' ? 'Which of our contacts want this?' : 'Which of our units fit this buyer?'}
+          </button>
+          {showMatches && <div className="mt-2"><DealMatches postId={post.id} /></div>}
+        </div>
+      )}
     </li>
   );
 }
@@ -97,6 +132,9 @@ function ImportBox(): JSX.Element {
 }
 
 export default function MarketFeedPage(): JSX.Element {
+  // An alert links here with ?deal=<id>; that card opens with its matches showing.
+  const [params] = useSearchParams();
+  const focusedDeal = params.get('deal');
   const [kind, setKind] = useState('');
   const [bhk, setBhk] = useState('');
   const [maxCr, setMaxCr] = useState('');
@@ -149,7 +187,7 @@ export default function MarketFeedPage(): JSX.Element {
           {data.posts.length === 0 ? (
             <EmptyState title="No deals yet" body="Add a group's export above, or loosen the filters." />
           ) : (
-            <ul className="space-y-3">{data.posts.map((post) => <DealCard key={post.id} post={post} />)}</ul>
+            <ul className="space-y-3">{data.posts.map((post) => <DealCard key={post.id} post={post} focused={post.id === focusedDeal} />)}</ul>
           )}
         </>
       )}

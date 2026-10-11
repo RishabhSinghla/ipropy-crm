@@ -6,7 +6,10 @@
  * and asking it questions — the same question a rep types into chat.ipropy.com.
  */
 import { db } from '../../db/pool.js';
+import { notify } from '../notifications/index.js';
+import { logger } from '../../utils/logger.js';
 import { fingerprintOf, looksLikeADeal, parseWhatsAppExport, readPost } from './readPost.js';
+import { matchDeal, type DealMatch } from './matchDeal.js';
 
 /** The business's own locality names, from the `locality` dropdown an admin edits. */
 export async function knownLocalities(): Promise<string[]> {
@@ -23,7 +26,16 @@ export interface ImportOutcome {
   deals: number;
   newDeals: number;
   repeats: number;
+  /** People told that a fresh deal fits one of their records. */
+  alerted: number;
 }
+
+/**
+ * Only a fresh deal is worth an alert. The first upload of a group is often a
+ * year of history, and ringing the team about a flat posted in March is how
+ * they learn to switch alerts off — older deals are matched when somebody asks.
+ */
+const ALERT_WITHIN_DAYS = 7;
 
 /**
  * Put one group's export into the feed.
@@ -35,7 +47,8 @@ export interface ImportOutcome {
 export async function importGroupExport(groupName: string, text: string, userId: string): Promise<ImportOutcome> {
   const localities = await knownLocalities();
   const messages = parseWhatsAppExport(text);
-  const outcome: ImportOutcome = { messages: messages.length, deals: 0, newDeals: 0, repeats: 0 };
+  const outcome: ImportOutcome = { messages: messages.length, deals: 0, newDeals: 0, repeats: 0, alerted: 0 };
+  const fresh: string[] = [];
 
   for (const message of messages) {
     const reading = readPost(message.body, localities);
@@ -43,7 +56,7 @@ export async function importGroupExport(groupName: string, text: string, userId:
     outcome.deals += 1;
 
     const posted = message.postedAt?.toISOString() ?? null;
-    const result = await db.queryOne<{ inserted: boolean }>(
+    const result = await db.queryOne<{ id: string; inserted: boolean }>(
       `INSERT INTO ipy_market_post
          (fingerprint, body, kind, bhk, price_min_lakh, price_max_lakh, localities,
           poster_name, poster_phone, groups, first_posted_at, last_posted_at, imported_by)
@@ -53,18 +66,66 @@ export async function importGroupExport(groupName: string, text: string, userId:
                        ELSE ipy_market_post.groups || $10::text END,
          seen_count = ipy_market_post.seen_count + 1,
          last_posted_at = GREATEST(ipy_market_post.last_posted_at, EXCLUDED.last_posted_at)
-       RETURNING (xmax = 0) AS inserted`,
+       RETURNING id, (xmax = 0) AS inserted`,
       [
         fingerprintOf(message.body), message.body, reading.kind, reading.bhk,
         reading.priceMinLakh, reading.priceMaxLakh, reading.localities,
         message.sender, reading.phone, groupName, posted, userId,
       ],
     );
-    if (result?.inserted) outcome.newDeals += 1;
-    else outcome.repeats += 1;
+    if (result?.inserted) {
+      outcome.newDeals += 1;
+      const ageDays = message.postedAt ? (Date.now() - message.postedAt.getTime()) / 86_400_000 : Infinity;
+      if (ageDays <= ALERT_WITHIN_DAYS) fresh.push(result.id);
+    } else {
+      outcome.repeats += 1;
+    }
   }
 
+  outcome.alerted = await alertOwners(groupName, fresh);
   return outcome;
+}
+
+/**
+ * Tell each owner, once per deal, which of their own records it fits. One
+ * notification per person per deal rather than per record, so a deal that fits
+ * five of somebody's contacts is one line in their bell, not five.
+ */
+async function alertOwners(groupName: string, postIds: string[]): Promise<number> {
+  const told = new Set<string>();
+  for (const postId of postIds) {
+    let matches: DealMatch[] = [];
+    try {
+      matches = await matchDeal(postId);
+    } catch (err) {
+      // A deal that cannot be matched is still in the feed; the upload must not fail over it.
+      logger.warn({ err, postId }, 'market: matching a deal failed');
+      continue;
+    }
+    const byOwner = new Map<string, DealMatch[]>();
+    for (const match of matches) {
+      if (!match.ownerId) continue;
+      byOwner.set(match.ownerId, [...(byOwner.get(match.ownerId) ?? []), match]);
+    }
+    const post = await db.queryOne<{ kind: string; poster_name: string | null }>(
+      `SELECT kind, poster_name FROM ipy_market_post WHERE id = $1`, [postId],
+    );
+    for (const [ownerId, theirs] of byOwner) {
+      const names = theirs.slice(0, 3).map((m) => m.label).join(', ') + (theirs.length > 3 ? ` and ${theirs.length - 3} more` : '');
+      await notify({
+        userId: ownerId,
+        kind: 'market_match',
+        title: post?.kind === 'have'
+          ? `A dealer has a property for ${theirs.length === 1 ? 'your contact' : `${theirs.length} of your contacts`}`
+          : `A dealer's buyer fits ${theirs.length === 1 ? 'your unit' : `${theirs.length} of your units`}`,
+        body: `${post?.poster_name ?? 'Someone'} in ${groupName} — fits ${names}`,
+        link: `/market?deal=${postId}`,
+        recordId: theirs.length === 1 ? theirs[0]!.recordId : undefined,
+      });
+      told.add(ownerId);
+    }
+  }
+  return told.size;
 }
 
 export interface MarketQuery {

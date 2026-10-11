@@ -11,9 +11,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { blockApiKey, getUser, requireAuth } from '../../middleware/auth.js';
+import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { assertCapability } from '../../core/permissions/index.js';
 import { importGroupExport, searchMarket } from '../../core/market/feed.js';
+import { matchDeal } from '../../core/market/matchDeal.js';
 import { BadRequestError } from '../../utils/errors.js';
 
 export const marketRouter = Router();
@@ -43,4 +44,11 @@ marketRouter.get('/posts', asyncHandler(async (req, res) => {
     limit: z.coerce.number().int().min(1).max(100).optional(),
   }).parse(req.query);
   res.json(await searchMarket(query));
+}));
+
+/** Our own records this deal fits — only the ones the person asking may open. */
+marketRouter.get('/posts/:id/matches', asyncHandler(async (req, res) => {
+  const id = z.string().uuid().parse(req.params.id);
+  const scope = getScope(req);
+  res.json(await matchDeal(id, scope));
 }));

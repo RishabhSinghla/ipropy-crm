@@ -245,6 +245,19 @@ number. Chatter ("ok", "👍") is skipped. Table `ipy_market_post` (migration `2
 The other developer's Hermes + Jev pipeline can hand deals to the same table later; the
 upload is the door that works today.
 
-Still to build: **matching both ways** with alerts (a new deal against the leads and stock,
-a new lead against the feed), AI reading for posts the rules miss, and the website as a
-source for the chat.
+**Matching both ways** (`core/market/matchDeal.ts`). A dealer who *has* a property is matched
+to our open contacts by preferred locality, BHK and budget (15% grace); a dealer's client who
+*wants* one is matched to our open units by locality, bedrooms and price. **A locality from
+the CRM's own list is required**, plus a BHK or a price — a "3 BHK, 1.5 Cr" with no place
+fits half the database, and alerting on it would teach the team to ignore alerts.
+
+* On upload, every **new deal posted in the last 7 days** alerts the owners of the records
+  it fits — one notification per person per deal (`kind = 'market_match'`), linking to
+  `/market?deal=<id>`. Older deals in a first big export are matched only when asked, so a
+  year of history does not ring the team.
+* Each card has "Which of our contacts want this?" / "Which of our units fit this buyer?",
+  answered **as the person asking** — a colleague never sees a contact they cannot open
+  (`tests/integration/marketDealMatches.test.ts`).
+
+Still to build: a new *lead* checked against the feed as it arrives (the other direction in
+time), AI reading for posts the rules miss, and the website as a source for the chat.

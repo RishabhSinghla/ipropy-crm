@@ -26,5 +26,8 @@ test('a group export becomes searchable deals', async ({ page }) => {
   await page.getByLabel('Has or wants').selectOption('have');
   await expect(page.getByText(/^1 deal/)).toBeVisible();
   await expect(page.getByRole('link', { name: '9811012345' })).toBeVisible();
+  // The deal names no locality this database knows, so it fits nothing — and says why.
+  await page.getByRole('button', { name: 'Which of our contacts want this?' }).click();
+  await expect(page.getByText(/Matching needs a locality from your list/)).toBeVisible();
   await page.screenshot({ path: 'test-results/market-feed.png', fullPage: true });
 });
