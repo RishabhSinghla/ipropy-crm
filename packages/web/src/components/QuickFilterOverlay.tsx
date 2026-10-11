@@ -54,7 +54,9 @@ function useFacetCounts(module: string, field: string | undefined): { counts: Ma
     queryFn: () => api.facet(module, field!, undefined, 50, context),
     enabled: Boolean(field),
     staleTime: 60_000,
-    refetchInterval: 20_000,
+    // Edits refresh these (invalidate.ts); a timer on top recounted every open
+    // filter for every person every 20 seconds, and that was most of the load.
+    refetchInterval: 120_000,
   });
   return {
     counts: new Map((data?.values ?? []).map((row) => [row.value, row.count])),

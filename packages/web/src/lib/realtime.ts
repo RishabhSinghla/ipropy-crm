@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
 import { api, tokenStore } from './api';
 import { invalidateRecordQueries } from './invalidate';
+import { limitBursts } from './burstLimiter';
 import { apiBase, isNative } from './native';
 import { takePendingDial } from './dialWatch';
 import { announceWhatsApp, askForDesktopNotificationsOnFirstClick, isWhatsAppMessage, type LiveNotification } from './whatsappAlert';
@@ -64,8 +65,10 @@ export function useRealtime(enabled: boolean): void {
 
     const s = connect(token);
 
+    // One refresh per module every few seconds, not one per edit: see burstLimiter.ts.
+    const refreshAfterEdit = limitBursts((module, recordId) => invalidateRecordQueries(qc, module, recordId), 5_000);
     const onRecordChanged = (p: { module?: string; recordId?: string }): void => {
-      invalidateRecordQueries(qc, p?.module, p?.recordId);
+      refreshAfterEdit(p?.module, p?.recordId);
     };
     const onTimeline = (p: { recordId?: string }): void => {
       void qc.invalidateQueries({ queryKey: ['timeline'] });

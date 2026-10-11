@@ -37,12 +37,12 @@ export function QuickGraphicDashboard({ module, label, context }: { module: stri
     ] },
   }), [context.view, context.search, context.filter, created, changed, agent, agentBasis]);
   // Keep options available when a combination returns zero records.
-  const options = useQuery({ queryKey: ['dashboard', 'quick', module, baseQuery], queryFn: () => api.quickDashboard(module, baseQuery), enabled: open, refetchInterval: open ? 20000 : false });
+  const options = useQuery({ queryKey: ['dashboard', 'quick', module, baseQuery], queryFn: () => api.quickDashboard(module, baseQuery), enabled: open, refetchInterval: open ? 90_000 : false });
   const query = useMemo<ListQuery>(() => {
     const selected = Object.entries(choices).filter(([, value]) => value).map(([field, value]) => dashboardChoiceCondition(field, value));
     return selected.length ? { ...baseQuery, filter: { logic: 'AND', conditions: [...(baseQuery.filter ? [baseQuery.filter] : []), ...selected] } } : baseQuery;
   }, [baseQuery, choices]);
-  const data = useQuery({ queryKey: ['dashboard', 'quick', module, query], queryFn: () => api.quickDashboard(module, query), enabled: open, refetchInterval: open ? 20000 : false });
+  const data = useQuery({ queryKey: ['dashboard', 'quick', module, query], queryFn: () => api.quickDashboard(module, query), enabled: open, refetchInterval: open ? 90_000 : false });
   const users = useQuery({ queryKey: ['users', 'quick-dashboard', module], queryFn: () => api.users(false, false, true, module), enabled: open });
   const filterClass = 'h-7 min-w-0 rounded-md border border-slate-200 bg-white px-1 text-[11px] dark:border-slate-700 dark:bg-slate-900';
   return <>
