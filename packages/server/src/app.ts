@@ -1,6 +1,6 @@
 import express, { type Express, type Request, type Response } from 'express';
 import cors from 'cors';
-import { readVitals } from './utils/vitals.js';
+import { readCpuProfile, readVitals } from './utils/vitals.js';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -252,7 +252,7 @@ export function createApp(): Express {
   }));
 
   // --- health ---------------------------------------------------------------
-  app.get('/api/health', async (_req, res) => {
+  app.get('/api/health', async (req, res) => {
     const dbOk = await checkConnection();
     res.status(dbOk ? 200 : 503).json({
       status: dbOk ? 'ok' : 'degraded',
@@ -263,6 +263,7 @@ export function createApp(): Express {
       buildCommit: process.env.RENDER_GIT_COMMIT ?? null,
       uptimeSeconds: Math.round(process.uptime()),
       vitals: readVitals(),
+      ...(req.query.profile === '1' ? { cpuProfile: readCpuProfile() } : {}),
       timestamp: new Date().toISOString(),
     });
   });
