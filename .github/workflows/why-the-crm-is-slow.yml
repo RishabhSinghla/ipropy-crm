@@ -6,7 +6,7 @@
 # dead rows, whether a recent index is healthy, which statements cost the
 # most, and how long the list's own queries take.
 #
-# Read-only twice over: the session is set to refuse writes, and nothing it
+# Read-only twice over: every question runs inside a READ ONLY transaction, and nothing it
 # prints is row data. Query text is shown with long digit runs masked, because
 # a running query can carry a phone number. workflow_dispatch only.
 name: Why the CRM is slow
@@ -25,10 +25,16 @@ jobs:
       - name: Ask the database
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          PGOPTIONS: "-c default_transaction_read_only=on -c statement_timeout=60000"
         run: |
           if [ -z "$PROD_DATABASE_URL" ]; then echo "No PROD_DATABASE_URL secret." >&2; exit 1; fi
-          q() { echo; echo "=== $1 ==="; psql "$PROD_DATABASE_URL" -X -P pager=off -c "$2" 2>&1 || true; }
+          # Neon's pooler refuses startup options, so read-only and the timeout
+          # are set inside the session instead: the whole statement is sent as
+          # one read-only transaction that cannot write and gives up after 60s.
+          q() {
+            echo; echo "=== $1 ==="
+            printf 'BEGIN READ ONLY;\nSET LOCAL statement_timeout = 60000;\n%s\nCOMMIT;\n' "$2" \
+              | psql "$PROD_DATABASE_URL" -X -q -P pager=off 2>&1 || true
+          }
 
           q "server" "SELECT version(), current_setting('max_connections') AS max_conn,
                              current_setting('shared_buffers') AS shared_buffers,
@@ -72,8 +78,8 @@ jobs:
                  left(regexp_replace(query, '\s+', ' ', 'g'), 110) AS query
                FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 15;"
 
-          q "round trip: 20 trivial queries" "\\timing on
-                SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1;"
+          q "round trip: 5 trivial queries, timed" "\\timing on
+                SELECT 1; SELECT 1; SELECT 1; SELECT 1; SELECT 1;"
 
           q "list shape: first page of the newest contacts" "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)
                SELECT r.id FROM ipy_record r
