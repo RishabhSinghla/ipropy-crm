@@ -595,6 +595,21 @@ export interface PinDevice {
   is_current: boolean;
 }
 
+export interface MarketPost {
+  id: string;
+  body: string;
+  kind: 'have' | 'want' | 'unknown';
+  bhk: number | null;
+  priceMinLakh: number | null;
+  priceMaxLakh: number | null;
+  localities: string[];
+  posterName: string | null;
+  posterPhone: string | null;
+  groups: string[];
+  lastPostedAt: string | null;
+  seenCount: number;
+}
+
 export const api = {
   contactMergePreview: () => get<{ groups: Array<{ key: string; members: Array<{ id: string; module: string; updatedAt: string; label: string }> }>; records: number; review: number }>('/api/contact-merges/preview'),
   contactMergeHistory: () => get<Array<{ key: string; survivor_id: string; created_at: string; label: string; agent: string }>>('/api/contact-merges/history'),
@@ -1249,6 +1264,20 @@ export const api = {
     const extension = audio.type.includes('ogg') ? 'ogg' : audio.type.includes('mp4') ? 'm4a' : 'webm';
     form.append('audio', audio, `ask-ipropy.${extension}`);
     return request<{ transcript: string }>('/api/ai/transcribe', { method: 'POST', body: form });
+  },
+  /** Dealer-group deals: put a WhatsApp group export in, and search what it held. */
+  importMarketGroup: (group: string, file: File) => {
+    const form = new FormData();
+    form.append('group', group);
+    form.append('file', file, file.name);
+    return request<{ messages: number; deals: number; newDeals: number; repeats: number }>(
+      '/api/market/import', { method: 'POST', body: form },
+    );
+  },
+  marketPosts: (query: Record<string, string | number | undefined>) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '') params.set(key, String(value));
+    return get<{ total: number; posts: MarketPost[] }>(`/api/market/posts?${params}`);
   },
   digest: () => get<{ greeting: string; summary: string; priorities: Record<string, unknown>[]; stats: Record<string, number> }>('/api/ai/digest'),
   dashboardInsight: (scope: string, prompt?: string) => post<{ insight: string }>('/api/ai/insight', { scope, prompt }),

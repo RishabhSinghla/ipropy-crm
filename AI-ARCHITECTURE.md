@@ -223,6 +223,28 @@ To make the address work: add `chat.ipropy.com` as a custom domain on the Render
 point its DNS at Render, and add `https://chat.ipropy.com` to `APP_URL` (passkeys refuse an
 origin not listed there; passwords work regardless).
 
-Still to build, in this order: the **market feed** (dealer-group deals handed in through
-one door, de-duplicated, fading after about 30 days), **matching both ways** with alerts,
-then teaching this chat to search that feed and the website, each answer naming its source.
+### The market feed — dealer-group deals (built the same day)
+
+**Dealer groups** (`/market`, left toolbar) takes a WhatsApp group's export (⋮ → More →
+Export chat → Without media → the `.txt`) and turns each message into a deal: has or wants,
+BHK, price in lakh, the CRM's own localities (the `locality` dropdown), the poster and their
+number. Chatter ("ok", "👍") is skipped. Table `ipy_market_post` (migration `205`).
+
+* **Reading is rules, not AI** (`core/market/readPost.ts`, pure, `tests/marketReadPost.test.ts`),
+  so it works with no provider. "Need buyer" is a *seller* — the word need misleads.
+* **A deal is stored once** by a fingerprint of its words, however many groups forwarded it;
+  its groups and a count sit beside it. Re-uploading an export adds only what is new
+  (`tests/integration/marketFeed.test.ts`).
+* **Everyone signed in can read it** — group broadcasts are market talk, not one rep's
+  customer. Uploading needs `records.import`.
+* **The chat searches it**: the agent's `search_market` tool, told to name the group, the
+  poster and the number, and to say the deal came from a dealer group, not the CRM.
+* Times in an export carry no zone and are read as India time. The page shows 90 days;
+  the chat looks back 30 unless asked.
+
+The other developer's Hermes + Jev pipeline can hand deals to the same table later; the
+upload is the door that works today.
+
+Still to build: **matching both ways** with alerts (a new deal against the leads and stock,
+a new lead against the feed), AI reading for posts the rules miss, and the website as a
+source for the chat.

@@ -30,6 +30,7 @@ import { telephonyRouter } from './api/routes/telephony.js';
 import { aiRouter } from './api/routes/ai.js';
 import { webhooksRouter } from './api/routes/webhooks.js';
 import { miscRouter } from './api/routes/misc.js';
+import { marketRouter } from './api/routes/market.js';
 import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
 
@@ -314,6 +315,7 @@ export function createApp(): Express {
   app.use('/api/whatsapp-business', whatsappBusinessRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
+  app.use('/api/market', marketRouter);
   // Connected assistants. Mounted before miscRouter's catch-all /api paths.
   app.use('/api/mcp', mcpRouter);
   app.use('/api', miscRouter);

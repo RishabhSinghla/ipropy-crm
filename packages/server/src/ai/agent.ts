@@ -96,6 +96,14 @@ search_records — the matching records themselves, newest first unless you sort
 get_record — one record in full, with its recent activity.
   args: { "module": ..., "search": "record number, name, phone or exact id" }
 
+search_market — deals other dealers posted in WhatsApp groups: who has a property ("have") and who
+  is looking for one ("want"). Not CRM records — say they came from a dealer group, name the group
+  and the poster, and give the poster's number when there is one.
+  args: { "kind": "have" | "want", "bhk": 3, "minLakh": 100, "maxLakh": 150, "locality": "Greenfield",
+          "text": "any word in the post", "days": 30 }   (every arg optional; 1 Cr = 100 lakh)
+  Use it for "who has…", "any buyer for…", "find me a 3 BHK…", and whenever a lead's need is not met
+  by the CRM's own properties.
+
 answer — you have enough. Give the final answer.
   args: { "text": "..." }
 
@@ -222,6 +230,30 @@ async function runTool(
     return {
       observation: `${result.total} match. First ${result.rows.length}:\n${lines || '(none)'}${note}`,
       label: `Searched ${moduleName} — ${result.total} found`,
+    };
+  }
+
+  if (tool === 'search_market') {
+    const { searchMarket } = await import('../core/market/feed.js');
+    const number = (value: unknown): number | undefined => (Number(value) > 0 ? Number(value) : undefined);
+    const found = await searchMarket({
+      kind: args.kind === 'have' || args.kind === 'want' ? args.kind : undefined,
+      bhk: number(args.bhk),
+      minLakh: number(args.minLakh),
+      maxLakh: number(args.maxLakh),
+      locality: typeof args.locality === 'string' ? args.locality : undefined,
+      text: typeof args.text === 'string' ? args.text : undefined,
+      days: number(args.days),
+      limit: SAMPLE_ROWS,
+    });
+    const lines = found.posts.map((post) => {
+      const when = post.lastPostedAt ? new Date(post.lastPostedAt).toLocaleDateString('en-IN') : 'date unknown';
+      const where = post.groups.length > 1 ? `${post.groups[0]} and ${post.groups.length - 1} more groups` : post.groups[0];
+      return `- [${post.kind}] ${post.posterName ?? 'someone'} in ${where}, ${when}${post.posterPhone ? `, phone ${post.posterPhone}` : ''}: ${post.body.slice(0, 280).replace(/\s+/g, ' ')}`;
+    });
+    return {
+      observation: `${found.total} dealer-group deals match. Newest ${found.posts.length}:\n${lines.join('\n') || '(none)'}`,
+      label: `Searched dealer groups — ${found.total} found`,
     };
   }
 

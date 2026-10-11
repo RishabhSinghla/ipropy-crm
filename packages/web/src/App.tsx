@@ -20,6 +20,7 @@ const Layout = lazy(() => import('./components/Layout'));
 const MobileShell = lazy(() => import('./mobile/Shell'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const AskPage = lazy(() => import('./pages/AskPage'));
+const MarketFeedPage = lazy(() => import('./pages/MarketFeed'));
 
 /** chat.ipropy.com is this same app; on that address the front door is the assistant. */
 const onChatHost = typeof window !== 'undefined' && window.location.hostname.startsWith('chat.');
@@ -153,6 +154,8 @@ export default function App(): JSX.Element {
                   the door, not the room. */}
               <Route path="whatsapp/*" element={<WhatsAppPage />} />
               <Route path="calls" element={<CallsPage />} />
+              {/* Dealer-group deals. Above `:module`, which would read "market" as a module. */}
+              <Route path="market" element={<MarketFeedPage />} />
               <Route path="tools" element={<ToolsPage />} />
               {/* The Archive is the same split view as a module, showing only
                   records archived after 12 hours in Lost. */}

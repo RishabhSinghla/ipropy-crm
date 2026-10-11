@@ -522,6 +522,7 @@ function MobileNav({
                 repo already learned twice, with Chats and then Reports. */}
             <DrawerLink to="/whatsapp" icon="message-circle" label="WhatsApp" />
             <DrawerLink to="/calls" icon="phone" label="Calls" />
+            <DrawerLink to="/market" icon="users" label="Dealer groups" />
             <DrawerLink to="/tools" icon="calculator" label="Calculators" />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
