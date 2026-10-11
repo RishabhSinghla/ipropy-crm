@@ -193,6 +193,24 @@ describe('templates', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe('only_one');
   });
+
+  it('preserves WhatsMarketing row ID separately from Meta ID and reads provider update time', async () => {
+    answerWith({ status: '1', message: [{
+      id: 456809, template_id: '987654321', template_name: 'ipropy_lost_contact_instruction_mkt',
+      body_content: 'Hi {{1}}', status: 'Approved', updated_at: '2026-10-10 18:22:00',
+    }] });
+    const row = (await whatsMarketingProvider.listTemplates())[0];
+    expect(row.providerRowId).toBe('456809');
+    expect(row.providerTemplateId).toBe('987654321');
+    expect(row.providerUpdatedAt).toBe(new Date('2026-10-10 18:22:00').toISOString());
+  });
+
+  it('does not fail template sync on an unparseable provider timestamp', async () => {
+    answerWith({ status: '1', message: [{
+      id: 456809, template_name: 'template', body_content: 'Hi', updated_at: 'not-a-date',
+    }] });
+    expect((await whatsMarketingProvider.listTemplates())[0].providerUpdatedAt).toBeNull();
+  });
 });
 
 describe('the webhook door', () => {

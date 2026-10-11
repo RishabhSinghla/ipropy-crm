@@ -72,6 +72,10 @@ export interface TemplateSummary {
   /** How many {{n}} the body carries, so the mapping screen cannot under-fill it. */
   variableCount: number;
   providerTemplateId: string | null;
+  /** Provider's own row ID (distinct from Meta's template ID where applicable). */
+  providerRowId?: string | null;
+  /** Provider's last-modified timestamp; never substitute the local sync time. */
+  providerUpdatedAt?: string | null;
 }
 
 /** What the CRM hands a provider to check a webhook it did not expect. */

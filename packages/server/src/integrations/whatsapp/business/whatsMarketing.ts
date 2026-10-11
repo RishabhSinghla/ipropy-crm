@@ -75,6 +75,14 @@ const missing = (): Error => new Error(
   'Add the WhatsMarketing API token and Phone Number ID in Admin → Integrations first.',
 );
 
+function providerTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const parsed = typeof value === 'number'
+    ? new Date(value < 1_000_000_000_000 ? value * 1000 : value)
+    : new Date(value.trim());
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 /**
  * One POST, form-encoded, with the answer already judged.
  *
@@ -229,6 +237,8 @@ async function templates({ fresh = false } = {}): Promise<TemplateSummary[]> {
         is what put a red bubble in front of the owner.
       */
       providerTemplateId: String(row.template_id ?? row.id ?? '') || null,
+      providerRowId: String(row.id ?? '') || null,
+      providerUpdatedAt: providerTimestamp(row.updated_at ?? row.updatedAt ?? row.modified_at ?? row.modifiedAt),
     };
   }).filter((t) => t.name || t.providerTemplateId);
 
