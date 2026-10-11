@@ -14,6 +14,7 @@ import { registry } from '../../src/core/metadata/registry.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { db } from '../../src/db/pool.js';
 import { adminContext, authUser, leadInput, signIn, SEEDED } from './fixtures.js';
+import { registerMarketListeners } from '../../src/core/market/newBuyerAlert.js';
 
 let app: Express;
 let adminToken = '';
@@ -94,5 +95,27 @@ describe('matching a dealer-group deal', () => {
     const post = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_market_post WHERE body ILIKE $1`, [`%${marker} premium%`]);
     const res = await request(app).get(`/api/market/posts/${post!.id}/matches`).set('Authorization', `Bearer ${adminToken}`);
     expect(res.body.map((m: { recordId: string }) => m.recordId)).not.toContain(leadId);
+  });
+
+  it('a new buyer created after the deal tells their owner the groups already had something', async () => {
+    registerMarketListeners();
+    const buyer = await recordService.createRecord(await adminContext(), 'leads', leadInput({
+      full_name: `Late buyer ${marker}`,
+      preferred_locations: [locality],
+      configuration: ['3 BHK'],
+      budget: 15_000_000,
+      owner_id: ownerId,
+    }));
+    // The alert runs after commit, off the event bus.
+    let told = 0;
+    for (let i = 0; i < 20 && !told; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const row = await db.queryOne<{ n: number }>(
+        `SELECT count(*)::int AS n FROM ipy_notification WHERE user_id = $1 AND record_id = $2 AND kind = 'market_match'`,
+        [ownerId, buyer.id],
+      );
+      told = row?.n ?? 0;
+    }
+    expect(told).toBe(1);
   });
 });

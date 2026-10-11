@@ -259,5 +259,10 @@ fits half the database, and alerting on it would teach the team to ignore alerts
   answered **as the person asking** — a colleague never sees a contact they cannot open
   (`tests/integration/marketDealMatches.test.ts`).
 
-Still to build: a new *lead* checked against the feed as it arrives (the other direction in
-time), AI reading for posts the rules miss, and the website as a source for the chat.
+* **The other direction in time** (`core/market/newBuyerAlert.ts`): a record created with
+  `preferred_locations` — somebody looking to buy — is checked once against sellers' deals
+  from the last 30 days, and its owner is told how many fit, linking to the list already
+  narrowed. Keyed on the record's shape, not a module name; runs after commit off the event
+  bus and never throws. Registered in `index.ts` only, where records are created.
+
+Still to build: AI reading for posts the rules miss, and the website as a source for the chat.

@@ -132,13 +132,14 @@ function ImportBox(): JSX.Element {
 }
 
 export default function MarketFeedPage(): JSX.Element {
-  // An alert links here with ?deal=<id>; that card opens with its matches showing.
+  // Alerts link here: ?deal=<id> opens that card with its matches showing, and
+  // ?kind=&locality= (a new buyer's alert) opens the list already narrowed.
   const [params] = useSearchParams();
   const focusedDeal = params.get('deal');
-  const [kind, setKind] = useState('');
+  const [kind, setKind] = useState(params.get('kind') ?? '');
   const [bhk, setBhk] = useState('');
   const [maxCr, setMaxCr] = useState('');
-  const [locality, setLocality] = useState('');
+  const [locality, setLocality] = useState(params.get('locality') ?? '');
   const [text, setText] = useState('');
 
   const query = {
