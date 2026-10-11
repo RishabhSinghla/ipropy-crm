@@ -19,6 +19,10 @@ const Layout = lazy(() => import('./components/Layout'));
 */
 const MobileShell = lazy(() => import('./mobile/Shell'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
+const AskPage = lazy(() => import('./pages/AskPage'));
+
+/** chat.ipropy.com is this same app; on that address the front door is the assistant. */
+const onChatHost = typeof window !== 'undefined' && window.location.hostname.startsWith('chat.');
 const ListView = lazy(() => import('./pages/ListView'));
 const ArchivePage = lazy(() => import('./pages/Archive'));
 
@@ -115,6 +119,10 @@ export default function App(): JSX.Element {
             {/* Public too: the enquiry form a website visitor fills. */}
             <Route path="/f/:publicKey" element={<PublicFormPage />} />
 
+            {/* chat.ipropy.com, and /ask on any host: the assistant as a full
+                screen. Outside Layout on purpose — it is the whole page. */}
+            <Route path="/ask" element={<RequireAuth><AskPage /></RequireAuth>} />
+
             {/*
               Installed, so this is the app's own shell — a phone-shaped
               product, not the website at a narrow width.
@@ -130,7 +138,7 @@ export default function App(): JSX.Element {
               <Route path="/*" element={<RequireAuth><MobileShell /></RequireAuth>} />
             ) : (
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route index element={<Navigate to={onChatHost ? '/ask' : '/dashboard'} replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="dashboard/:id" element={<DashboardPage />} />
 
@@ -167,7 +175,7 @@ export default function App(): JSX.Element {
             )}
 
 
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to={onChatHost ? '/ask' : '/dashboard'} replace />} />
           </Routes>
         </Suspense>
       </ErrorBoundary>

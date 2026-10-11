@@ -210,3 +210,19 @@ off blind would take every AI feature down with it.
 
 Steps 2 and 3 are the ones that make the difference between a demo and something a team can rely
 on, and neither needs a single new dependency.
+
+## chat.ipropy.com — 11 October 2026
+
+The owner asked for a ChatGPT-style screen at `chat.ipropy.com`. It is **not a second
+assistant**: `/ask` renders `AiAssistant` with `asPage`, the same brain, tools, history,
+memory and confirm-before-change rule as the sparkle bubble. On a host starting `chat.`
+the app's front door is `/ask` instead of `/dashboard` (`onChatHost` in `App.tsx`).
+`e2e/askPage.spec.ts` pins the full-page layout.
+
+To make the address work: add `chat.ipropy.com` as a custom domain on the Render service,
+point its DNS at Render, and add `https://chat.ipropy.com` to `APP_URL` (passkeys refuse an
+origin not listed there; passwords work regardless).
+
+Still to build, in this order: the **market feed** (dealer-group deals handed in through
+one door, de-duplicated, fading after about 30 days), **matching both ways** with alerts,
+then teaching this chat to search that feed and the website, each answer naming its source.

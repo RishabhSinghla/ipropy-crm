@@ -70,8 +70,13 @@ function ActionCard({
 }
 
 export default function AiAssistant({
-  open, onClose,
-}: { open: boolean; onClose: () => void }): JSX.Element | null {
+  open, onClose, asPage = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** The whole screen, ChatGPT-style — chat.ipropy.com. Same brain, same rules. */
+  asPage?: boolean;
+}): JSX.Element | null {
   const { aiAvailable, sttAvailable } = useApp();
   const location = useLocation();
   const [messages, setMessages] = useState<AiAssistantMessage[]>([]);
@@ -257,15 +262,19 @@ export default function AiAssistant({
       {/* The backdrop dims and blurs what is behind, and a click closes the
           panel — the split the desk asked for: the assistant comes in from the
           right over part of the screen rather than popping out of nowhere. */}
-      <div
-        aria-hidden
-        className="fixed inset-0 z-40 animate-fade-in bg-slate-950/25 backdrop-blur-[2px]"
-        onClick={onClose}
-      />
+      {!asPage && (
+        <div
+          aria-hidden
+          className="fixed inset-0 z-40 animate-fade-in bg-slate-950/25 backdrop-blur-[2px]"
+          onClick={onClose}
+        />
+      )}
       <aside
-        role="complementary"
+        role={asPage ? 'main' : 'complementary'}
         aria-label="Ask iPropy"
-        className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[min(26rem,calc(100vw-3rem))] animate-slide-in-right flex-col overflow-hidden border-l border-slate-200 bg-white shadow-float dark:border-slate-800 dark:bg-slate-900"
+        className={asPage
+          ? 'relative flex h-[100dvh] w-full flex-col overflow-hidden bg-white text-[var(--text)] dark:bg-slate-900'
+          : 'fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[min(26rem,calc(100vw-3rem))] animate-slide-in-right flex-col overflow-hidden border-l border-slate-200 bg-white shadow-float dark:border-slate-800 dark:bg-slate-900'}
       >
         <header className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-800">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 dark:bg-brand-950">
@@ -283,7 +292,7 @@ export default function AiAssistant({
           <button onClick={() => setHistoryOpen((value) => !value)} className={cn('btn-ghost p-1.5', historyOpen && 'bg-slate-100 dark:bg-slate-800')} title="Chat history and memory">
             <History className="h-4 w-4" />
           </button>
-          <button onClick={onClose} className="btn-ghost p-1.5" title="Close"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="btn-ghost p-1.5" title={asPage ? 'Open the CRM' : 'Close'}><X className="h-4 w-4" /></button>
         </header>
 
         {historyOpen && (
@@ -332,7 +341,7 @@ export default function AiAssistant({
           </div>
         )}
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <div className={cn('min-h-0 flex-1 space-y-4 overflow-y-auto p-4', asPage && 'mx-auto w-full max-w-3xl')}>
           {messages.length === 0 && (
             <div className="space-y-3">
               <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 text-sm text-slate-700 dark:border-brand-900 dark:bg-brand-950/30 dark:text-slate-200">
@@ -407,7 +416,7 @@ export default function AiAssistant({
           <div ref={bottomRef} />
         </div>
 
-        <form className="shrink-0 border-t border-slate-200 p-3 dark:border-slate-800" onSubmit={(event) => { event.preventDefault(); void send(input); }}>
+        <form className={cn('shrink-0 border-t border-slate-200 p-3 dark:border-slate-800', asPage && 'mx-auto w-full max-w-3xl border-t-0 pb-5')} onSubmit={(event) => { event.preventDefault(); void send(input); }}>
           {(voice.recording || voice.busy) && (
             <p className="mb-2 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
               {voice.recording ? (
