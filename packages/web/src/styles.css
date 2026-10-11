@@ -550,6 +550,9 @@
   .popover {
     @apply rounded-lg bg-white shadow-float dark:bg-slate-900;
     border: 1px solid var(--border);
+    /* A panel opened from the dark toolbar would otherwise inherit its white
+       text and print every name white on white. */
+    color: var(--text);
   }
 
   /* A field tile — the recessed square a value sits in on a dossier panel. */
