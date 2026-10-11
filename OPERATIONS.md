@@ -444,3 +444,36 @@ commit each row links to now carries the right author, which is the readable hal
 hook wrapped everything in a `try` that exited 0 silently, so when an edit removed the
 name table it looked like it had run while every commit still said `Claude`. A hook is
 the easiest place in the repo for a silent failure to hide. It says why it failed now.
+
+## The CRM was slow for the whole team, and why — 11 October 2026
+
+**The owner:** lists, filters and saves had all got slow over two or three days.
+
+What the live server said, read with `.github/workflows/time-the-live-site.yml` (public
+doors only) and `why-the-crm-is-slow.yml` (read-only database check):
+
+* **The database was never the problem.** No stuck queries, no locks, a list page in
+  about 28 ms. One real fault did turn up and is fixed: migration `201` added
+  `archived_at` and nobody re-ran statistics, so the planner believed
+  `archived_at IS NULL` kept 0.5% of rows and expected 60 where there were 14,365.
+  Migration `202` runs `ANALYZE`. **Any migration that adds a column to a hot table should
+  end with an `ANALYZE` of it.**
+* **The server was.** `/api/health` now carries `vitals` (event-loop delay, share of one
+  CPU, memory, pool queue). Before: a stall of about 1.2 s in *every* sample, ~44% of one
+  CPU, with memory (~160 MB) and the pool both fine. After the fix below: CPU 2–7%, loop
+  delay 20–100 ms.
+* **The cause was a refresh storm, not any one slow function.** After every edit the
+  server tells every open screen "this module changed", and each screen refetched its
+  lists, counts, filters and dashboards — once per edit, per screen. Every open filter
+  section also recounted on a 20-second timer. On a 0.5 CPU instance, with a team working,
+  that was the whole load. `lib/burstLimiter.ts` now folds a burst into one refresh per
+  module every 5 s (the first is still immediate), and the facet and graph timers are 120 s
+  and 90 s because edits already refresh them.
+* **`GET /api/health?profile=1`** samples the CPU for eight seconds and reports function
+  names and file lines only (never data), at most once a minute. Use it before guessing
+  at a slow server. **A sample taken just after a restart is idle** — the load appeared
+  minutes later — so take several.
+
+**Still seen, not explained:** a single stall of about 1.3 s roughly every four minutes
+(07:55:09 and 07:59:09 UTC). It no longer repeats every few seconds. Cause unknown.
+**Tabs opened before the fix keep the old behaviour until reloaded.**
