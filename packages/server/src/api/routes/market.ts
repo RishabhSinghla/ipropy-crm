@@ -13,13 +13,14 @@ import { z } from 'zod';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { assertCapability } from '../../core/permissions/index.js';
-import { importGroupExport, searchMarket } from '../../core/market/feed.js';
+import { getPostDetail, importGroupExport, afterImport, searchMarket } from '../../core/market/feed.js';
+import { listImports, queueImports } from '../../core/market/imports.js';
 import { matchDeal } from '../../core/market/matchDeal.js';
 import { DEAL_STATUSES, findCrossMatches, recordOutcome } from '../../core/market/crossMatch.js';
 import { dealsOfRecord } from '../../core/market/dealerDeals.js';
 import { dealerDirectory, saveDealersAsAssociates } from '../../core/market/dealers.js';
 import { chatTextFromZip, looksLikeAZip } from '../../core/market/unzipChat.js';
-import { BadRequestError } from '../../utils/errors.js';
+import { NotFoundError, BadRequestError } from '../../utils/errors.js';
 
 export const marketRouter = Router();
 marketRouter.use(requireAuth);
@@ -34,7 +35,43 @@ marketRouter.post('/import', blockApiKey, upload.single('file'), asyncHandler(as
   const file = req.file?.buffer;
   const text = !file ? '' : looksLikeAZip(file) ? await chatTextFromZip(file) : file.toString('utf8');
   if (!text.trim()) throw new BadRequestError('Choose the .txt or .zip file WhatsApp made when you exported the group');
-  res.json(await importGroupExport(group, text, user.id));
+  const outcome = await importGroupExport(group, text, user.id);
+  void afterImport(group);
+  res.json(outcome);
+}));
+
+// A year of a busy group is a few megabytes; a drop may be dozens of them.
+const uploadMany = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024, files: 60 } });
+
+/**
+ * Drop any number of .txt or .zip exports. Each chat is named from its file, read in the
+ * background and only from where its group was last read to; the answer is a row per chat
+ * to watch on `GET /imports`.
+ */
+marketRouter.post('/import-files', blockApiKey, uploadMany.array('files', 60), asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.import');
+  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+  if (!files.length) throw new BadRequestError('Drop the .txt or .zip files WhatsApp made when you exported the groups');
+  const { group } = z.object({ group: z.string().trim().max(120).optional() }).parse(req.body);
+  const imports = await queueImports(
+    files.map((file) => ({ name: Buffer.from(file.originalname, 'latin1').toString('utf8'), buffer: file.buffer })),
+    group || null,
+    user.id,
+  );
+  res.status(202).json({ imports });
+}));
+
+/** What has been dropped, newest first, and what came of each. */
+marketRouter.get('/imports', asyncHandler(async (_req, res) => {
+  res.json({ imports: await listImports() });
+}));
+
+/** One message in full, with the properties read out of it and everywhere it was posted. */
+marketRouter.get('/posts/:id', asyncHandler(async (req, res) => {
+  const detail = await getPostDetail(z.string().uuid().parse(req.params.id));
+  if (!detail) throw new NotFoundError('That message is no longer in the feed');
+  res.json(detail);
 }));
 
 marketRouter.get('/posts', asyncHandler(async (req, res) => {

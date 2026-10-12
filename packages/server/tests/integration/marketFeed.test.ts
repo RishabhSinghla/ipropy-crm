@@ -50,12 +50,17 @@ describe('the market feed', () => {
     const forward = await upload(adminToken, 'Dealers B', groupB);
     expect(forward.body).toMatchObject({ deals: 1, newDeals: 0, repeats: 1 });
 
+    // The same export again is read from where the last one ended: the two older messages (a deal and a line of chatter) are skipped,
+    // and the one at the mark is read but is not counted twice.
     const again = await upload(adminToken, 'Dealers A', groupA);
-    expect(again.body).toMatchObject({ newDeals: 0, repeats: 2 });
+    expect(again.body).toMatchObject({ newDeals: 0, repeats: 0, skippedOld: 2 });
 
     const held = await db.query(`SELECT groups FROM ipy_market_post WHERE body ILIKE $1 AND kind = 'have'`, [`%${marker}%`]);
     expect(held.rows).toHaveLength(1);
     expect(held.rows[0].groups.sort()).toEqual(['Dealers A', 'Dealers B']);
+    // Posted in two groups, so seen twice — however often either export is dropped again.
+    const seen = await db.queryOne<{ seen_count: number }>(`SELECT seen_count FROM ipy_market_post WHERE body ILIKE $1 AND kind = 'have'`, [`%${marker}%`]);
+    expect(seen?.seen_count).toBe(2);
   });
 
   it('finds a seller by BHK, budget and words, for anybody signed in', async () => {

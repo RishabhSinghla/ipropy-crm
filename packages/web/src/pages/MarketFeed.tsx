@@ -13,7 +13,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import { Phone, Upload, Users } from 'lucide-react';
 import { PeekLink } from '../components/PeekLink';
-import { api, type MarketPost } from '../lib/api';
+import { api, type MarketImportRow, type MarketPost } from '../lib/api';
+import DealMessageDialog, { type MessageToShow } from '../components/DealMessageDialog';
 import { Badge, EmptyState, Spinner } from '../components/ui';
 import MarketDealers from '../components/MarketDealers';
 import MarketIntroductions from '../components/MarketIntroductions';
@@ -50,7 +51,7 @@ function DealMatches({ postId }: { postId: string }): JSX.Element {
   );
 }
 
-function DealCard({ post, focused }: { post: MarketPost; focused: boolean }): JSX.Element {
+function DealCard({ post, focused, onOpen }: { post: MarketPost; focused: boolean; onOpen: (message: MessageToShow) => void }): JSX.Element {
   const price = priceText(post);
   const [showMatches, setShowMatches] = useState(focused);
   const ref = useRef<HTMLLIElement>(null);
@@ -65,7 +66,14 @@ function DealCard({ post, focused }: { post: MarketPost; focused: boolean }): JS
         {post.localities.map((name) => <Badge key={name}>{name}</Badge>)}
         <span className="ml-auto text-muted">{post.lastPostedAt ? relativeTime(post.lastPostedAt) : ''}</span>
       </div>
-      <p className="whitespace-pre-wrap text-sm">{post.body}</p>
+      <button
+        type="button"
+        className="block w-full text-left"
+        onClick={() => onOpen({ postId: post.id, body: post.body, posterName: post.posterName, posterPhone: post.posterPhone, groups: post.groups, postedAt: post.lastPostedAt })}
+        aria-label="Read the full message"
+      >
+        <span className="line-clamp-6 whitespace-pre-wrap text-sm">{post.body}</span>
+      </button>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span className="font-medium text-[var(--text)]">{post.posterName ?? 'Unknown sender'}</span>
         <span>
@@ -90,46 +98,109 @@ function DealCard({ post, focused }: { post: MarketPost; focused: boolean }): JS
   );
 }
 
+const STATUS_TEXT: Record<MarketImportRow['status'], string> = {
+  queued: 'Waiting', running: 'Reading…', done: 'Done', failed: 'Failed', duplicate: 'Already read',
+};
+
+function importSummary(row: MarketImportRow): string {
+  if (row.status === 'failed' || row.status === 'duplicate') return row.error ?? '';
+  if (row.status !== 'done') return 'Names, sectors and prices are being read — you can leave this page.';
+  // A message can be many properties: say both, or "2 messages" hides what was found.
+  const parts = [`${row.newDeals} new message${row.newDeals === 1 ? '' : 's'}`, `${row.listings} propert${row.listings === 1 ? 'y' : 'ies'} found`];
+  if (row.repeats) parts.push(`${row.repeats} already known`);
+  if (row.skippedOld) parts.push(`${row.skippedOld} older messages skipped — read before`);
+  return `${parts.join(' · ')} · ${row.messages} lines in the file`;
+}
+
+/**
+ * Drop any number of group exports. Each is named from its file, read in the
+ * background and only from where that group was last read to, so a second drop of a
+ * group costs only what is new. The list below is what became of everything dropped.
+ */
 function ImportBox(): JSX.Element {
   const queryClient = useQueryClient();
   const [group, setGroup] = useState('');
-  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [over, setOver] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
 
-  const send = async (): Promise<void> => {
-    if (!group.trim() || !file) return;
+  const imports = useQuery({
+    queryKey: ['market', 'imports'],
+    queryFn: api.marketImports,
+    // Watch while anything is still being read, rest when nothing is.
+    refetchInterval: (query) => (query.state.data?.imports.some((row) => row.status === 'queued' || row.status === 'running') ? 2000 : false),
+  });
+  const running = imports.data?.imports.filter((row) => row.status === 'queued' || row.status === 'running').length ?? 0;
+  const wasRunning = useRef(0);
+  useEffect(() => {
+    // A group finishing is news for every list on this page.
+    if (wasRunning.current > 0 && running < wasRunning.current) void queryClient.invalidateQueries({ queryKey: ['market'] });
+    wasRunning.current = running;
+  }, [running, queryClient]);
+
+  const send = async (files: File[]): Promise<void> => {
+    const wanted = files.filter((file) => /\.(txt|zip)$/i.test(file.name) || file.type === 'text/plain' || file.type.includes('zip'));
+    if (!wanted.length) { toast.error('Those are not WhatsApp exports', 'Drop the .txt or .zip file WhatsApp made.'); return; }
     setBusy(true);
     try {
-      const result = await api.importMarketGroup(group.trim(), file);
-      toast.success(
-        `${result.newDeals} new deal${result.newDeals === 1 ? '' : 's'} from ${group.trim()}`,
-        `${result.messages} messages read · ${result.deals} looked like deals · ${result.repeats} already held`,
-      );
-      setFile(null);
-      await queryClient.invalidateQueries({ queryKey: ['market'] });
+      const result = await api.importMarketFiles(wanted, wanted.length === 1 ? group.trim() || undefined : undefined);
+      const queued = result.imports.filter((row) => row.status === 'queued').length;
+      toast.success(`${queued} group${queued === 1 ? '' : 's'} queued`, result.imports.length > queued ? 'The rest were already read or could not be.' : 'You can leave this page; they are read in the background.');
+      setGroup('');
+      await imports.refetch();
     } catch (err) {
-      toast.error('Could not read that export', (err as Error).message);
+      toast.error('Could not take those files', (err as Error).message);
     } finally {
       setBusy(false);
+      if (input.current) input.current.value = '';
     }
   };
 
   return (
     <div className="card space-y-3 p-4">
       <div>
-        <h2 className="text-sm font-semibold">Add a group</h2>
+        <h2 className="text-sm font-semibold">Add groups</h2>
         <p className="text-xs text-muted">
-          In WhatsApp, open the group → ⋮ → More → Export chat → Without media, and choose the .txt or .zip file here.
-          Uploading the same group again only adds what is new.
+          In WhatsApp, open a group → ⋮ → More → Export chat → Without media. Drop the .txt or .zip files here, as many at once as you like.
+          Each group is named from its file. Dropping a group again reads only what is new.
         </p>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <input className="input max-w-xs" placeholder="Group name, e.g. Greenfields Dealers" value={group} onChange={(e) => setGroup(e.target.value)} />
-        <input type="file" accept=".txt,.zip,text/plain,application/zip" className="text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Exported chat file" />
-        <button type="button" className="btn-primary" disabled={busy || !group.trim() || !file} onClick={() => void send()}>
-          {busy ? <Spinner /> : <Upload className="h-4 w-4" />} Read the deals
-        </button>
+      <div
+        className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm transition-colors ${over ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-[var(--border)]'}`}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); void send([...e.dataTransfer.files]); }}
+        data-testid="market-dropzone"
+      >
+        {busy ? <Spinner /> : <Upload className="h-5 w-5 text-muted" />}
+        <p>Drop group exports here, or</p>
+        <button type="button" className="btn-primary" disabled={busy} onClick={() => input.current?.click()}>Choose files</button>
+        <input
+          ref={input}
+          type="file"
+          multiple
+          accept=".txt,.zip,text/plain,application/zip"
+          className="sr-only"
+          aria-label="Exported chat files"
+          onChange={(e) => void send([...(e.target.files ?? [])])}
+        />
+        <label className="flex items-center gap-2 text-xs text-muted">
+          Group name, only if you drop one file and want to rename it
+          <input className="input w-56" placeholder="Taken from the file's name" value={group} onChange={(e) => setGroup(e.target.value)} />
+        </label>
       </div>
+      {imports.data && imports.data.imports.length > 0 && (
+        <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]" data-testid="market-imports">
+          {imports.data.imports.slice(0, 6).map((row) => (
+            <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs">
+              <span className="min-w-[10rem] font-semibold">{row.groupName}</span>
+              <Badge color={row.status === 'done' ? '#16a34a' : row.status === 'failed' ? '#dc2626' : row.status === 'duplicate' ? '#64748b' : '#d97706'}>{STATUS_TEXT[row.status]}</Badge>
+              <span className="text-muted">{importSummary(row)}</span>
+              <span className="ml-auto text-muted">{relativeTime(row.createdAt)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -144,6 +215,7 @@ function DealsTab(): JSX.Element {
   const [maxCr, setMaxCr] = useState('');
   const [locality, setLocality] = useState(params.get('locality') ?? '');
   const [text, setText] = useState('');
+  const [message, setMessage] = useState<MessageToShow | null>(null);
 
   const query = {
     kind: kind || undefined,
@@ -178,6 +250,7 @@ function DealsTab(): JSX.Element {
         <input className="input min-w-[10rem] flex-1" placeholder="Any word in the post" value={text} onChange={(e) => setText(e.target.value)} />
       </div>
 
+      <DealMessageDialog message={message} onClose={() => setMessage(null)} />
       {isLoading && <div className="flex justify-center py-10"><Spinner /></div>}
       {error && <p className="text-sm text-negative">Could not load the deals: {(error as Error).message}</p>}
       {data && (
@@ -186,7 +259,7 @@ function DealsTab(): JSX.Element {
           {data.posts.length === 0 ? (
             <EmptyState title="No deals yet" body="Add a group's export above, or loosen the filters." />
           ) : (
-            <ul className="space-y-3">{data.posts.map((post) => <DealCard key={post.id} post={post} focused={post.id === focusedDeal} />)}</ul>
+            <ul className="space-y-3">{data.posts.map((post) => <DealCard key={post.id} post={post} focused={post.id === focusedDeal} onOpen={setMessage} />)}</ul>
           )}
         </>
       )}

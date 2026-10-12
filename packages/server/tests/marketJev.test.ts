@@ -72,7 +72,9 @@ describe('what leaves for a third party', () => {
 describe('reading a plot post', () => {
   it('finds sector, block and size in square yards', () => {
     const reading = readPost('Req 250 sq yd plot in Sector 85 Block D demand 3.5cr');
-    expect(reading.places).toEqual(['sector 85', 'block D']);
+    // "block D" alone is in every project, so it is not a place until a project names it.
+    expect(reading.places).toEqual(['sector 85']);
+    expect(readPost('Req 500 yd plot in BPTP D block').places).toEqual(['bptp:block D']);
     expect(reading.sizeSqYd).toBe(250);
   });
 
@@ -103,5 +105,21 @@ describe('reading a phone number', () => {
   it('never builds one out of the end of a longer number and the digits after it', () => {
     expect(readPost('plot ref 1791809876543 25000 per month call 9703330888').phone).toBe('9703330888');
     expect(readPost('call 97033 30888 or +91 97033-30888').phone).toBe('9703330888');
+  });
+});
+
+describe('reading sectors', () => {
+  const sectors = (text: string) => readPost(text).places;
+  it('a number after a sector is a sector only when a list says so', () => {
+    expect(sectors('3 BHK builder floor sector 21 1.1 cr')).toEqual(['sector 21']);
+    expect(sectors('Sec 21 3 BHK available')).toEqual(['sector 21']);
+    expect(sectors('Sector 85 250 yd plot')).toEqual(['sector 85']);
+  });
+
+  it('reads lists written with commas, slashes, dashes, "or" and pockets', () => {
+    expect(sectors('Required in Sector 75-76-77-78')).toEqual(['sector 75', 'sector 76', 'sector 77', 'sector 78']);
+    expect(sectors('Sector 28 or 29, 160 yd')).toEqual(['sector 28', 'sector 29']);
+    expect(sectors('Location Sector-21-B,C,D and Sector-45,46')).toEqual(['sector 21b', 'sector 21c', 'sector 21d', 'sector 45', 'sector 46']);
+    expect(sectors('plot in Sector-21A Faridabad')).toEqual(['sector 21a']);
   });
 });

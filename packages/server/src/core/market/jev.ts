@@ -204,3 +204,45 @@ export function mergeReadings(words: PostReading, jev: JevReading): MergedReadin
     urgency: jev.urgency,
   };
 }
+
+// ---------------------------------------------------------------------------
+// A second opinion on a pairing
+// ---------------------------------------------------------------------------
+
+const FIT_QUESTIONS = {
+  fit: {
+    type: 'noul',
+    instructions: 'The OFFER is a property that would genuinely satisfy the REQUIREMENT: the same kind of property, in the same area, with a size and price a buyer or tenant could accept.',
+  },
+};
+
+/**
+ * Jev's probability that an offer answers a requirement, or null when it could not say.
+ *
+ * Only the two listings' own lines are sent, never the whole messages: a broker's
+ * twenty-plot broadcast beside a one-line requirement is not a question Jev can answer,
+ * and the other nineteen plots are nobody's business.
+ */
+export async function askJevFit(requirement: string, offer: string): Promise<number | null> {
+  const key = jevKey();
+  if (!key) return null;
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: MODEL,
+        state: withoutPhoneNumbers(`REQUIREMENT:\n${requirement.slice(0, 600)}\n\nOFFER:\n${offer.slice(0, 600)}`),
+        questions: FIT_QUESTIONS,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return null;
+    const payload = asObject(await res.json());
+    const answers = asObject(payload?.answers) ?? payload;
+    return number(answers?.fit, ['noul', 'probability', 'yes', 'value']);
+  } catch (err) {
+    logger.warn({ err }, 'market: Jev could not check a pairing');
+    return null;
+  }
+}

@@ -8,11 +8,12 @@
  * once — so a row links back there, where "which of our contacts want this?"
  * is one click away.
  */
-import { type JSX } from 'react';
+import { type JSX, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import { api, type DealerDeal, type DealerDeals } from '../lib/api';
+import DealMessageDialog, { type MessageToShow } from './DealMessageDialog';
 import { Badge, EmptyState, Spinner } from './ui';
 import type { DealTabKey } from '../lib/splitViewLayout';
 
@@ -45,6 +46,7 @@ function price(deal: DealerDeal): string {
 }
 
 export function DealerDealsTab({ module, recordId, tab }: { module: string; recordId: string; tab: DealTabKey }): JSX.Element {
+  const [message, setMessage] = useState<MessageToShow | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: dealsQueryKey(recordId),
     queryFn: () => api.dealerDeals(module, recordId),
@@ -69,13 +71,20 @@ export function DealerDealsTab({ module, recordId, tab }: { module: string; reco
           </thead>
           <tbody>
             {rows.map((deal) => (
-              <tr key={deal.id} className="border-t border-[var(--border)] align-top">
+              <tr
+                key={deal.id}
+                className="cursor-pointer border-t border-[var(--border)] align-top hover:bg-[var(--surface-muted)]"
+                onClick={() => setMessage({ postId: deal.postId, body: deal.body, posterName: null, posterPhone: null, groups: deal.groups, postedAt: deal.postedAt, highlight: deal.summary })}
+              >
                 <td className="px-3 py-2">
                   <p className="font-semibold">{sizeAndType(deal)}</p>
-                  <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap text-muted">{deal.body}</p>
-                  <Link to={`/market?deal=${deal.id}`} className="mt-1 inline-block font-semibold text-brand-700 hover:underline dark:text-brand-300">
-                    Who fits this? →
-                  </Link>
+                  <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap text-muted">{deal.summary || deal.body}</p>
+                  <span className="mt-1 inline-flex gap-3">
+                    <button type="button" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">Read full message</button>
+                    <Link to={`/market?deal=${deal.postId}`} onClick={(e) => e.stopPropagation()} className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
+                      Who fits this? →
+                    </Link>
+                  </span>
                 </td>
                 <td className="px-3 py-2">
                   <span className="flex flex-wrap gap-1">{deal.places.length ? deal.places.slice(0, 3).map((place) => <Badge key={place}>{place}</Badge>) : '—'}</span>
@@ -92,6 +101,7 @@ export function DealerDealsTab({ module, recordId, tab }: { module: string; reco
         </table>
       </div>
       {data?.truncated && <p className="text-xs text-muted">Showing the newest {rows.length}.</p>}
+      <DealMessageDialog message={message} onClose={() => setMessage(null)} />
     </div>
   );
 }

@@ -30,6 +30,8 @@ export interface Dealer {
   localities: string[];
   /** What they mostly post about, in the categories Jev answers in. */
   category: string | null;
+  /** A second number the dealer's posts give, usually a partner or the office. */
+  altPhone: string | null;
   lastSeenAt: string | null;
 }
 
@@ -70,6 +72,13 @@ export async function dealerDirectory(minPosts = 1): Promise<Dealer[]> {
       WHERE poster_phone IS NOT NULL AND NOT is_noise
       GROUP BY poster_phone, l ORDER BY count(*) DESC`,
   );
+  const alts = await db.query<{ phone: string; alt: string }>(
+    `SELECT DISTINCT ON (poster_phone) poster_phone AS phone, ph AS alt
+       FROM ipy_market_post, unnest(phones) AS ph
+      WHERE poster_phone IS NOT NULL AND ph <> poster_phone AND NOT is_noise
+      GROUP BY poster_phone, ph ORDER BY poster_phone, count(*) DESC`,
+  );
+  const altByPhone = new Map(alts.rows.map((row) => [row.phone, row.alt]));
   const localitiesByPhone = new Map<string, string[]>();
   for (const row of places.rows) localitiesByPhone.set(row.phone, [...(localitiesByPhone.get(row.phone) ?? []), row.locality]);
 
@@ -82,6 +91,7 @@ export async function dealerDirectory(minPosts = 1): Promise<Dealer[]> {
     groups: row.groups as string[],
     localities: localitiesByPhone.get(row.phone as string) ?? [],
     category: row.category as string | null,
+    altPhone: altByPhone.get(row.phone as string) ?? null,
     lastSeenAt: row.last_seen ? new Date(row.last_seen as string).toISOString() : null,
   }));
 }
@@ -146,6 +156,7 @@ export function associateValues(dealer: Dealer, fields: Map<string, FieldInfo>):
     category: pick(fields.get('category'), dealer.category, 'Unknown'),
     company: looksLikeAFirm(name) ? pick(fields.get('company'), name) : undefined,
     source: pick(fields.get('source'), 'WhatsApp'),
+    alternate_phone: fields.has('alternate_phone') && dealer.altPhone && dealer.altPhone !== dealer.phone ? dealer.altPhone : undefined,
   };
   for (const [field, value] of Object.entries(optional)) {
     if (value !== undefined) values[field] = value;
@@ -175,7 +186,14 @@ export async function saveDealersAsAssociates(dealers: Dealer[]): Promise<Associ
     const values = associateValues(dealer, fields);
     if (!values) { outcome.noLocation += 1; continue; }
     try {
-      await createRecord(ctx, 'associates', values);
+      try {
+        await createRecord(ctx, 'associates', values);
+      } catch (err) {
+        // The second number may already belong to somebody else; the dealer is still worth having without it.
+        if (!(err instanceof ConflictError) || !values.alternate_phone) throw err;
+        const { alternate_phone: _dropped, ...withoutAlternate } = values;
+        await createRecord(ctx, 'associates', withoutAlternate);
+      }
       outcome.created += 1;
     } catch (err) {
       if (err instanceof ConflictError) { outcome.alreadyKnown += 1; continue; }

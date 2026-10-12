@@ -612,24 +612,34 @@ export interface MarketPost {
   posterRole: string | null;
 }
 
+/** One property offered or wanted, with the message it came from. */
 export interface MarketDealSide {
+  /** The listing. An outcome is recorded against a pair of these. */
   id: string;
+  postId: string;
   kind: 'have' | 'want';
+  purpose: 'sale' | 'rent';
   category: string | null;
   bhk: number | null;
   sizeSqYd: number | null;
   priceMinLakh: number | null;
   priceMaxLakh: number | null;
+  placeKeys: string[];
+  /** The words of this property only. */
+  summary: string;
+  /** The whole message it was one of. */
+  body: string;
   posterName: string | null;
   posterPhone: string | null;
   groups: string[];
-  body: string;
+  postedAt: string | null;
 }
 
-export type MarketIntroductionStatus = 'new' | 'called' | 'meeting' | 'won' | 'lost' | 'dismissed';
+export type MarketIntroductionStatus = 'new' | 'called' | 'meeting' | 'won' | 'lost' | 'dismissed' | 'bad_match';
 
 /** A buyer in one dealer group and a seller in another who fit each other. */
 export interface MarketIntroduction {
+  id: string;
   want: MarketDealSide;
   have: MarketDealSide;
   score: number;
@@ -637,9 +647,12 @@ export interface MarketIntroduction {
   crossGroup: boolean;
   status: MarketIntroductionStatus;
   note: string | null;
+  /** Jev's probability that the offer answers the requirement; null while it has not looked. */
+  jevFit: number | null;
 }
 
 export interface MarketDealer {
+  altPhone?: string | null;
   phone: string;
   name: string | null;
   posts: number;
@@ -652,7 +665,10 @@ export interface MarketDealer {
 }
 
 export interface DealerDeal {
+  /** The listing — one property. */
   id: string;
+  postId: string;
+  summary: string;
   body: string;
   category: string | null;
   bhk: number | null;
@@ -664,6 +680,7 @@ export interface DealerDeal {
   seenCount: number;
   postedAt: string | null;
   urgency: number | null;
+  purpose: 'sale' | 'rent';
 }
 
 export interface DealerDeals {
@@ -672,6 +689,31 @@ export interface DealerDeals {
   forRent: DealerDeal[];
   tenantRequirements: DealerDeal[];
   truncated: boolean;
+}
+
+export interface MarketPostDetail {
+  post: MarketPost;
+  listings: Array<{
+    id: string; kind: 'have' | 'want'; purpose: 'sale' | 'rent'; category: string | null; bhk: number | null;
+    sizeSqYd: number | null; priceMinLakh: number | null; priceMaxLakh: number | null; places: string[]; summary: string; source: 'rules' | 'ai';
+  }>;
+  sightings: Array<{ group: string; postedAt: string | null; sender: string }>;
+}
+
+export interface MarketImportRow {
+  id: string;
+  groupName: string;
+  fileName: string;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'duplicate';
+  messages: number;
+  deals: number;
+  newDeals: number;
+  repeats: number;
+  skippedOld: number;
+  listings: number;
+  error: string | null;
+  createdAt: string;
+  finishedAt: string | null;
 }
 
 export interface AssociateOutcome {
@@ -1347,6 +1389,14 @@ export const api = {
       '/api/market/import', { method: 'POST', body: form },
     );
   },
+  importMarketFiles: (files: File[], group?: string) => {
+    const form = new FormData();
+    if (group) form.append('group', group);
+    for (const file of files) form.append('files', file, file.name);
+    return request<{ imports: MarketImportRow[] }>('/api/market/import-files', { method: 'POST', body: form });
+  },
+  marketImports: () => get<{ imports: MarketImportRow[] }>('/api/market/imports'),
+  marketPostDetail: (id: string) => get<MarketPostDetail>(`/api/market/posts/${id}`),
   marketIntroductions: (query: { crossGroupOnly: boolean; minScore: number; includeWorked: boolean }) =>
     get<MarketIntroduction[]>(`/api/market/matches?crossGroupOnly=${query.crossGroupOnly}&minScore=${query.minScore}&includeWorked=${query.includeWorked}&limit=100`),
   setMarketIntroduction: (wantId: string, haveId: string, status: MarketIntroductionStatus, note?: string) =>

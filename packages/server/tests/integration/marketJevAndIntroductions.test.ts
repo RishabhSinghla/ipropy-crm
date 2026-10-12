@@ -41,6 +41,7 @@ const groupBuyers = `${stamp}, 10:15 am - Anil Buyer: Required 250 gaj plot sect
 const groupSellers = `${stamp}, 10:20 am - Bhoomi Associates: 260 sq yd residential plot for sale sector 85 ${marker} demand 3.5 cr call ${sellerPhone}`;
 
 const jevCalls: string[] = [];
+const pairChecks: string[] = [];
 
 beforeAll(async () => {
   await registry.warmup();
@@ -52,6 +53,11 @@ beforeAll(async () => {
   // Jev, as the network sees it: a requirement is a lead, anything else is inventory.
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: string }) => {
     const sent = JSON.parse(init.body) as { state: string };
+    // A pairing question asks only "fit"; the answer is yes when both name the same sector.
+    if (sent.state.startsWith('REQUIREMENT:')) {
+      pairChecks.push(sent.state);
+      return new Response(JSON.stringify({ answers: { fit: { noul: /sector 85/i.test(sent.state) ? 0.93 : 0.1 } } }), { status: 200 });
+    }
     jevCalls.push(sent.state);
     const isLead = /required/i.test(sent.state);
     return new Response(JSON.stringify({
@@ -88,7 +94,6 @@ describe('a dealer group read by Jev and matched across groups', () => {
     expect(row?.size_sqyd).toBe(260);
     expect(row?.category).toBe('Residential Plot');
     expect(row?.place_keys).toContain('sector 85');
-    expect(row?.jev_checked_at).toBeNull();
   });
 
   it('Jev reads each waiting post once, hides nothing it should not, and never sees a phone number', async () => {
@@ -166,7 +171,7 @@ describe('a dealer group read by Jev and matched across groups', () => {
     expect(deals.forRent.map((d) => d.body).join('|')).toContain('2 BHK flat available on rent');
     expect(deals.tenantRequirements.map((d) => d.body).join('|')).toContain('Tenant required');
     expect(deals.buyerRequirements).toHaveLength(0);
-    expect(deals.forSale[0]!.places).toContain('sector 85');
+    expect(deals.forSale[0]!.places).toContain('Sector 85');
 
     const none = await dealsOfRecord(ctx, 'leads', stranger.id);
     expect([none.forSale, none.forRent, none.buyerRequirements, none.tenantRequirements].every((list) => list.length === 0)).toBe(true);

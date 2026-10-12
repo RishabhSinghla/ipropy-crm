@@ -16,10 +16,13 @@
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { notifyMany } from '../notifications/index.js';
+import { isAiAvailable } from '../../ai/client.js';
 import { findCrossMatches } from './crossMatch.js';
-import { alertOwners, knownLocalities } from './feed.js';
-import { askJev, jevIsAvailable, mergeReadings } from './jev.js';
-import { placeKeysOf, readPost, type PostReading } from './readPost.js';
+import { syncDealerNotes } from './dealerNotes.js';
+import { alertOwners, knownLocalities, READ_VERSION } from './feed.js';
+import { askJev, askJevFit, jevIsAvailable, mergeReadings } from './jev.js';
+import { extractListingsWithAi, saveListings, splitListings, worthAnAiRead } from './listings.js';
+import { looksLikeANotice, placeKeysOf, readPost, type PostReading } from './readPost.js';
 
 const EVERY_MS = 30_000;
 const PER_VISIT = 24;
@@ -50,6 +53,12 @@ async function readOne(post: WaitingPost): Promise<{ read: boolean; tell: string
         SET kind = $2, is_noise = $3, category = coalesce($4, category), poster_role = $5, urgency = $6, purpose = $7, jev_checked_at = now()
       WHERE id = $1`,
     [post.id, merged.kind, merged.isNoise, merged.category, merged.role, merged.urgency, merged.purpose],
+  );
+  // A message with one property in it takes Jev's word on what it is; a list keeps the split of its own lines.
+  await db.query(
+    `UPDATE ipy_market_listing SET kind = $2, purpose = $3
+      WHERE post_id = $1 AND $2 IN ('have', 'want') AND 1 = (SELECT count(*) FROM ipy_market_listing WHERE post_id = $1)`,
+    [post.id, merged.kind === 'have' || merged.kind === 'want' ? merged.kind : 'none', merged.purpose],
   );
   const ageDays = post.last_posted_at ? (Date.now() - post.last_posted_at.getTime()) / 86_400_000 : Infinity;
   const worthTelling = !post.alerted_at && !merged.isNoise && merged.kind !== 'unknown' && ageDays <= ALERT_WITHIN_DAYS;
@@ -83,33 +92,110 @@ export async function readWaitingPosts(limit = PER_VISIT): Promise<{ read: numbe
   return { read, failed, alerted };
 }
 
-/** Bump when `readPost` learns something new; every older row is then re-read once. */
-const READ_VERSION = 2;
-
 /**
  * Re-read stored posts with the word lists. No network, so it is cheap and runs
  * whether or not Jev is connected: it is how posts imported before sectors,
  * sizes and categories were understood become matchable.
  */
-export async function reReadOldPosts(limit = 500): Promise<number> {
-  const old = await db.query<{ id: string; body: string }>(
-    `SELECT id, body FROM ipy_market_post WHERE read_version < $1 ORDER BY last_posted_at DESC NULLS LAST LIMIT $2`,
+export async function reReadOldPosts(limit = 300): Promise<number> {
+  const old = await db.query<{ id: string; body: string; listings_source: string | null }>(
+    `SELECT id, body, listings_source FROM ipy_market_post WHERE read_version < $1 ORDER BY last_posted_at DESC NULLS LAST LIMIT $2`,
     [READ_VERSION, limit],
   );
   if (!old.rows.length) return 0;
   const localities = await knownLocalities();
   for (const post of old.rows) {
     const reading = readPost(post.body, localities);
+    const notice = looksLikeANotice(post.body);
     await db.query(
       `UPDATE ipy_market_post
           SET places = $2, size_sqyd = $3, category = coalesce(category, $4), place_keys = $5, read_version = $6,
+              phones = $8, poster_phone = coalesce($9, poster_phone), is_noise = is_noise OR $10,
+              price_min_lakh = $11, price_max_lakh = $12,
               -- Jev's reading of sale or rent outranks the words, so a post it has already read keeps it.
               purpose = CASE WHEN jev_checked_at IS NULL THEN $7 ELSE coalesce(purpose, $7) END
         WHERE id = $1`,
-      [post.id, reading.places, reading.sizeSqYd, reading.category, placeKeysOf(reading), READ_VERSION, reading.purpose],
+      [post.id, reading.places, reading.sizeSqYd, reading.category, placeKeysOf(reading), READ_VERSION, reading.purpose,
+        reading.phones, reading.phone, notice, reading.priceMinLakh, reading.priceMaxLakh],
     );
+    // An AI model's split is better than the rules' and is kept; the rules' split is simply redone.
+    if (post.listings_source !== 'ai') {
+      if (notice) await db.query(`DELETE FROM ipy_market_listing WHERE post_id = $1`, [post.id]);
+      else await saveListings(post.id, splitListings(post.body, localities, reading), 'rules', worthAnAiRead(post.body, localities));
+    }
   }
   return old.rows.length;
+}
+
+/**
+ * The AI model's read of the long messages — the broadcasts of twenty plots, where
+ * the rules are weakest. It replaces the rules' listings with its own, and it throws
+ * out what is not a listing at all (a dispute notice, a greeting). Without a model
+ * connected nothing happens and the rules' split stands.
+ */
+const AI_PER_VISIT = 24;
+const AI_AT_ONCE = 3;
+const AI_GIVE_UP_AFTER = 2;
+
+export async function refineWithAi(limit = AI_PER_VISIT): Promise<number> {
+  if (!isAiAvailable()) return 0;
+  const waiting = await db.query<{ id: string; body: string }>(
+    `SELECT id, body FROM ipy_market_post
+      WHERE ai_pending AND NOT is_noise AND ai_attempts < $1
+      ORDER BY last_posted_at DESC NULLS LAST LIMIT $2`,
+    [AI_GIVE_UP_AFTER, limit],
+  );
+  if (!waiting.rows.length) return 0;
+  const localities = await knownLocalities();
+  let done = 0;
+  for (let i = 0; i < waiting.rows.length; i += AI_AT_ONCE) {
+    await Promise.all(waiting.rows.slice(i, i + AI_AT_ONCE).map(async (post) => {
+      const drafts = await extractListingsWithAi(post.body, localities);
+      if (drafts === null) {
+        // After the last try the rules' split stands, and the message stops waiting to be written into notes.
+        await db.query(`UPDATE ipy_market_post SET ai_attempts = ai_attempts + 1, ai_pending = (ai_attempts + 1 < $2) WHERE id = $1`, [post.id, AI_GIVE_UP_AFTER]);
+        return;
+      }
+      if (!drafts.length) {
+        await db.query(`DELETE FROM ipy_market_listing WHERE post_id = $1`, [post.id]);
+        await db.query(`UPDATE ipy_market_post SET is_noise = true, ai_pending = false, listings_source = 'ai' WHERE id = $1`, [post.id]);
+      } else {
+        await saveListings(post.id, drafts, 'ai');
+      }
+      done += 1;
+    }));
+  }
+  return done;
+}
+
+/**
+ * Jev's second opinion on the pairings that would be shown. Each pairing is asked once,
+ * best first; "no" takes it off the call sheet, and nothing is ever re-asked.
+ */
+const VERIFY_PER_VISIT = 40;
+
+export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
+  if (!jevIsAvailable()) return 0;
+  const unchecked = (await findCrossMatches({ limit: 300, includeWorked: false })).filter((match) => match.jevFit === null).slice(0, limit);
+  let checked = 0;
+  let failures = 0;
+  for (const match of unchecked) {
+    const fit = await askJevFit(match.want.summary || match.want.body, match.have.summary || match.have.body);
+    if (fit === null) {
+      failures += 1;
+      // Jev refusing three in a row is down or misconfigured; stop paying for attempts.
+      if (failures >= 3) break;
+      continue;
+    }
+    failures = 0;
+    await db.query(
+      `INSERT INTO ipy_market_pair_check (want_listing_id, have_listing_id, fit) VALUES ($1, $2, $3)
+       ON CONFLICT (want_listing_id, have_listing_id) DO UPDATE SET fit = EXCLUDED.fit, checked_at = now()`,
+      [match.want.id, match.have.id, fit],
+    );
+    checked += 1;
+  }
+  return checked;
 }
 
 /**
@@ -134,8 +220,14 @@ export async function marketWork(): Promise<void> {
       const reread = await reReadOldPosts();
       const result = await readWaitingPosts();
       if (result.read || result.failed) logger.info({ ...result }, 'market: Jev read a batch');
-      if (!reread && !result.read) break;
+      const refined = await refineWithAi();
+      if (refined) logger.info({ refined }, 'market: the AI model read long messages');
+      const verified = await verifyPairs();
+      if (verified) logger.info({ verified }, 'market: Jev checked pairings');
+      if (!reread && !result.read && !refined && !verified) break;
     }
+    const noted = await syncDealerNotes();
+    if (noted) logger.info({ noted }, 'market: messages written into dealers\' notes');
     await sendCallSheet();
   } catch (err) {
     logger.warn({ err }, 'market: background work failed; it will be tried again');

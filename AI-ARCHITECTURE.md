@@ -323,6 +323,42 @@ Associates.** Migration `206`.
 * **A phone number is never glued together from two numbers** — `readPost`'s number pattern now
   starts at a digit boundary; before, `…76543 25000` read as 7654325000. Found by a test that
   failed only for some timestamps.
+* **One message, many properties** (13 October 2026, owner: his call sheet paired a broker's
+  twenty-plot broadcast with everybody). A message is split into **listings**, one per property
+  (`ipy_market_listing`, migration `208`; `core/market/listings.ts`), and the tabs, the call sheet and the
+  matching all work on those. Two splits, the second better: **rules** (`splitListings`, no network —
+  a sector heading carries down onto the lines under it, a new size starts a new property, "250 / 350 / 500
+  yd" beside three prices is three properties, a contact footer is dropped, a dispute notice has none) and
+  **the AI model** (`extractListingsWithAi`, the CRM's own model through `completeJson`) for the long
+  broadcasts, which also throws out what is not a listing at all. Every field the model returns is
+  validated (`draftsFromAi`). Without a model the rules' split stands. The tests are real messages from
+  the FEAWA group (`tests/marketListings.test.ts`).
+* **Matching is stricter, on purpose** (`crossMatch.ts`). Found by reading the owner's real call sheet: a bare
+  city ("Faridabad", "Delhi", "Industrial") is **not a place** and no longer scores; sector 28 is not
+  sector 2; a requirement for 160 yd is not offered 1,050 yd; a kothi is not offered a flat; a buyer is never
+  offered a rental; the same person under two numbers is recognised by name; and an area plus a type with
+  no agreeing detail (size, BHK or budget) never reaches the sheet. A project ("BPTP") or a wide area is a
+  weak reason, a named sector a strong one.
+* **Jev checks every pairing that would be shown** (`askJevFit`, `verifyPairs`): only the two listings'
+  own lines go to it, never the whole broadcast; a no (<0.45) takes the pair off the sheet; each pair is
+  asked once (`ipy_market_pair_check`). **"Not a real match"** is its own answer and is never shown again;
+  a listing marked wrong repeatedly has to be a better fit each time (the matcher learns from it).
+* **Only what is new is read.** An export is the whole history every time. `ipy_market_group.read_up_to`
+  is where each group was read to; the next export reads from there (the message at the mark is read
+  again, harmlessly, because every sighting is recorded in `ipy_market_post_seen` and counted once). The
+  same file dropped twice is recognised by its hash. A group is named from its file ("WhatsApp Chat with
+  X.txt", a folder, or the zip) and `groupKey` makes "FEAWA  Members " and "feawa members" one group — but
+  a group **renamed in WhatsApp** is a new group and is read in full once.
+* **Many files at once, in the background** (`imports.ts`, `POST /api/market/import-files`,
+  `GET /api/market/imports`): a drop answers at once with a row per chat and they are read one after
+  another; the page watches the rows. A zip may hold several chats. The text waits in memory and is not
+  kept; a restart marks unfinished rows failed and dropping the file again carries on from the mark.
+* **The full message** opens from every card (`DealMessageDialog`, `GET /api/market/posts/:id`): the
+  dealer's exact words with the property the card was about marked, every property read out of it, and
+  every group and time it was seen, with Call and WhatsApp.
+* **Messages go into the dealer's Notes** (`dealerNotes.ts`): one note per message, written once
+  (`ipy_comment.market_post_id`), dated when it was posted, saying which tabs it falls under ("For Sale ×6
+  · For Rent"). A long message waits for the AI model's read first so its note carries the right tabs.
 * **iPhone exports are a `.zip`** and are read as such (`unzipChat.ts`).
 * **Still open:** the seed does not create the Associates module (see CLAUDE.md, migration
   `175`), so a brand-new database has none and the dealer step reports `noModule`. And nothing

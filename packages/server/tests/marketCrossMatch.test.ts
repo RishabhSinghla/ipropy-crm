@@ -1,71 +1,115 @@
 import { describe, expect, it } from 'vitest';
-import { bestPerBuyer, scorePair, type MarketDeal } from '../src/core/market/crossMatch.js';
+import { areaScore, bestPerRequirement, samePerson, scorePair, type MarketListing } from '../src/core/market/crossMatch.js';
 import { onceEach } from '../src/core/market/dealerDeals.js';
 import { associateValues, looksLikeAFirm, usableName, type FieldInfo } from '../src/core/market/dealers.js';
 
 const NOW = new Date('2026-10-12T05:00:00Z');
 const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000);
 
-function deal(over: Partial<MarketDeal>): MarketDeal {
+let seq = 0;
+function listing(over: Partial<MarketListing>): MarketListing {
+  seq += 1;
   return {
-    id: Math.random().toString(36).slice(2), kind: 'have', purpose: 'sale', placeKeys: ['sector 85'], category: 'Residential Plot',
-    bhk: null, sizeSqYd: 250, priceMinLakh: 350, priceMaxLakh: 350, posterName: 'A', posterPhone: '9811111111',
+    id: `l${seq}`, postId: `p${seq}`, kind: 'have', purpose: 'sale', category: 'Residential Plot', bhk: null,
+    sizeSqYd: 250, priceMinLakh: 350, priceMaxLakh: 350, placeKeys: ['sector 85'], project: null, summary: '',
+    posterName: `Dealer ${seq}`, posterPhone: `98000000${String(seq).padStart(2, '0')}`, phones: [`98000000${String(seq).padStart(2, '0')}`],
     groups: ['FEAWA'], postedAt: daysAgo(5), body: '', ...over,
   };
 }
+const buyer = (over: Partial<MarketListing> = {}) => listing({ kind: 'want', priceMinLakh: null, priceMaxLakh: 400, ...over });
 
-describe('scoring a buyer against a seller', () => {
+describe('scoring a requirement against an offer', () => {
   it('a plot of the right size in the same sector, in budget, is a strong match', () => {
-    const buyer = deal({ kind: 'want', priceMaxLakh: 400, posterPhone: '9822222222' });
-    const pairing = scorePair(buyer, deal({}), NOW)!;
+    const pairing = scorePair(buyer(), listing({}), NOW)!;
     expect(pairing.score).toBeGreaterThanOrEqual(0.9);
     expect(pairing.reasons).toContain('within budget');
   });
 
-  it('never matches different areas, different kinds of property or an over-budget ask', () => {
-    const buyer = deal({ kind: 'want', priceMaxLakh: 300 });
-    expect(scorePair(buyer, deal({ placeKeys: ['sector 21'] }), NOW)).toBeNull();
-    expect(scorePair(buyer, deal({ category: 'Apartment' }), NOW)).toBeNull();
-    expect(scorePair(buyer, deal({ priceMinLakh: 500 }), NOW)).toBeNull();
+  it('never matches different sectors, a different kind of property or an over-budget ask', () => {
+    expect(scorePair(buyer(), listing({ placeKeys: ['sector 21'] }), NOW)).toBeNull();
+    expect(scorePair(buyer(), listing({ category: 'Apartment' }), NOW)).toBeNull();
+    expect(scorePair(buyer({ priceMaxLakh: 300 }), listing({ priceMinLakh: 500 }), NOW)).toBeNull();
   });
 
-  it('never pairs a purchase with a rental', () => {
-    expect(scorePair(deal({ kind: 'want', purpose: 'rent' }), deal({}), NOW)).toBeNull();
-    expect(scorePair(deal({ kind: 'want', purpose: 'rent' }), deal({ purpose: 'rent' }), NOW)).not.toBeNull();
+  it('sector 28 is not sector 2, and sector 21 is close to sector 21C but not to sector 31', () => {
+    expect(areaScore(['sector 28'], ['sector 2'])).toBeNull();
+    expect(areaScore(['sector 21'], ['sector 21c'])!.score).toBeGreaterThanOrEqual(0.4);
+    expect(areaScore(['sector 21a'], ['sector 21c'])!.score).toBeLessThan(0.2);
+    expect(areaScore(['sector 21'], ['sector 31'])).toBeNull();
   });
 
-  it('a seller a little over budget still counts; a buyer asking a different BHK does not', () => {
-    const buyer = deal({ kind: 'want', priceMaxLakh: 300, category: 'Apartment', bhk: 3, sizeSqYd: null });
-    const flat = (over: Partial<MarketDeal>) => deal({ category: 'Apartment', sizeSqYd: null, bhk: 3, ...over });
-    expect(scorePair(buyer, flat({ priceMinLakh: 340 }), NOW)).not.toBeNull();
-    expect(scorePair(buyer, flat({ bhk: 2 }), NOW)).toBeNull();
+  it('a developer in common is a weak reason, a sector in common a strong one', () => {
+    expect(areaScore(['bptp'], ['bptp'])!.score).toBeLessThan(0.3);
+    expect(areaScore(['sector 85'], ['sector 85'])!.score).toBeGreaterThanOrEqual(0.45);
+  });
+
+  it('a size four times the one asked for is another property, however well the sector fits', () => {
+    expect(scorePair(buyer({ sizeSqYd: 160 }), listing({ sizeSqYd: 1050 }), NOW)).toBeNull();
+    expect(scorePair(buyer({ sizeSqYd: 250 }), listing({ sizeSqYd: 330 }), NOW)).not.toBeNull();
+  });
+
+  it('somebody wanting a kothi is not offered a flat', () => {
+    const wants = buyer({ category: 'Kothi/Villa', sizeSqYd: null });
+    expect(scorePair(wants, listing({ category: 'Apartment', sizeSqYd: null }), NOW)).toBeNull();
+    expect(scorePair(wants, listing({ category: 'Builder Floor', sizeSqYd: null }), NOW)).not.toBeNull();
+  });
+
+  it('a place and a type alone are not enough — one agreeing detail makes it a lead', () => {
+    const bare = (over: Partial<MarketListing> = {}) => ({ sizeSqYd: null, priceMinLakh: null, priceMaxLakh: null, ...over });
+    const pairing = scorePair(buyer(bare()), listing(bare()), NOW)!;
+    expect(pairing.score).toBeLessThan(0.5);
+  });
+
+  it('never pairs a purchase with a rental, or different BHKs', () => {
+    expect(scorePair(buyer({ purpose: 'rent' }), listing({}), NOW)).toBeNull();
+    expect(scorePair(buyer({ purpose: 'rent' }), listing({ purpose: 'rent' }), NOW)).not.toBeNull();
+    const flat = (over: Partial<MarketListing>) => ({ category: 'Apartment', sizeSqYd: null, bhk: 3, ...over });
+    expect(scorePair(buyer(flat({})), listing(flat({ bhk: 2 })), NOW)).toBeNull();
   });
 
   it('a stale pair scores below a fresh one', () => {
-    // No size or price, so neither side is held at the ceiling of 1.
-    const bare = (over: Partial<MarketDeal>) => deal({ sizeSqYd: null, priceMinLakh: null, priceMaxLakh: null, ...over });
-    const fresh = scorePair(bare({ kind: 'want' }), bare({}), NOW)!.score;
-    const stale = scorePair(bare({ kind: 'want', postedAt: daysAgo(300) }), bare({ postedAt: daysAgo(300) }), NOW)!.score;
+    const bare = (over: Partial<MarketListing>) => ({ sizeSqYd: null, priceMinLakh: null, priceMaxLakh: null, bhk: 3, category: 'Apartment', ...over });
+    const fresh = scorePair(buyer(bare({})), listing(bare({})), NOW)!.score;
+    const stale = scorePair(buyer(bare({ postedAt: daysAgo(300) })), listing(bare({ postedAt: daysAgo(300) })), NOW)!.score;
     expect(stale).toBeLessThan(fresh);
   });
 });
 
-describe('the best seller for each buyer', () => {
+describe('the best offer for each requirement', () => {
   it('lists only introductions across groups unless asked for the rest', () => {
-    const buyer = deal({ kind: 'want', groups: ['A'], posterPhone: '9822222222' });
-    const sameGroup = deal({ groups: ['A'], posterPhone: '9833333333' });
-    const otherGroup = deal({ groups: ['B'], posterPhone: '9844444444' });
-    expect(bestPerBuyer([buyer, sameGroup], {}, NOW)).toHaveLength(0);
-    expect(bestPerBuyer([buyer, sameGroup], { crossGroupOnly: false }, NOW)).toHaveLength(1);
-    const found = bestPerBuyer([buyer, sameGroup, otherGroup], {}, NOW);
+    const wants = buyer({ groups: ['A'] });
+    const sameGroup = listing({ groups: ['A'] });
+    const otherGroup = listing({ groups: ['B'] });
+    expect(bestPerRequirement([wants, sameGroup], {}, NOW)).toHaveLength(0);
+    expect(bestPerRequirement([wants, sameGroup], { crossGroupOnly: false }, NOW)).toHaveLength(1);
+    const found = bestPerRequirement([wants, sameGroup, otherGroup], {}, NOW);
     expect(found).toHaveLength(1);
-    expect(found[0]!.have.posterPhone).toBe('9844444444');
+    expect(found[0]!.have.id).toBe(otherGroup.id);
     expect(found[0]!.crossGroup).toBe(true);
   });
 
-  it('never introduces somebody to themselves', () => {
-    const buyer = deal({ kind: 'want', groups: ['A'], posterPhone: '9811111111' });
-    expect(bestPerBuyer([buyer, deal({ groups: ['B'] })], {}, NOW)).toHaveLength(0);
+  it('never introduces somebody to themselves — by number, or by the name WhatsApp shows', () => {
+    const me = buyer({ groups: ['A'], phones: ['9811111111'], posterName: 'Sanjay Kumar DS21' });
+    expect(samePerson(me, listing({ groups: ['B'], phones: ['9811111111', '9822222222'] }))).toBe(true);
+    // Two numbers, one man: Sanjay Arora posts his requirement and his offer under different numbers.
+    expect(samePerson(me, listing({ groups: ['B'], posterName: '~ Sanjay Kumar DS21' }))).toBe(true);
+    expect(bestPerRequirement([me, listing({ groups: ['B'], posterName: 'Sanjay Kumar DS21' })], {}, NOW)).toHaveLength(0);
+  });
+
+  it('a listing people have called wrong needs to be a better fit each time', () => {
+    const wants = buyer({ groups: ['A'] });
+    const offer = listing({ groups: ['B'] });
+    const fresh = bestPerRequirement([wants, offer], {}, NOW);
+    const once = bestPerRequirement([wants, offer], {}, NOW, new Map([[offer.id, 1]]));
+    const thrice = bestPerRequirement([wants, offer], { minScore: 0.9 }, NOW, new Map([[offer.id, 3]]));
+    expect(once[0]!.score).toBeLessThan(fresh[0]!.score);
+    expect(once[0]!.reasons).toContain('marked wrong 1 time before');
+    // Three strikes and even a strong fit no longer clears a high bar.
+    expect(thrice).toHaveLength(0);
+  });
+
+  it('a listing with nothing but a city to say where it is matches nobody', () => {
+    expect(bestPerRequirement([buyer({ placeKeys: [], groups: ['A'] }), listing({ placeKeys: [], groups: ['B'] })], {}, NOW)).toHaveLength(0);
   });
 });
 

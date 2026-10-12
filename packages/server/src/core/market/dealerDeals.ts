@@ -1,23 +1,32 @@
 /**
  * What one dealer has posted in the groups, as four lists on their record.
  *
- * An Associate is a dealer; the deals they post are the reason they are worth
- * having in the CRM. Sorted the way a rep thinks about them: what they have to
- * sell, what they have to let, what their buyers want, what their tenants want.
- * It is the same table the Dealer groups page reads — a deal is stored once —
- * so nothing here is a second copy to keep in step.
+ * An Associate is a dealer; the properties they post are the reason they are worth
+ * having in the CRM. Sorted the way a rep thinks about them: what they have to sell,
+ * what they have to let, what their buyers want, what their tenants want.
  *
- * Found by the dealer's number (the last ten digits, as every other match in
- * this CRM). A record whose number nobody has posted under simply has four
- * empty lists.
+ * Each row is one **listing** (one property), not one message — a broker who posts
+ * twenty plots in a message has twenty rows, each with its own sector, size and
+ * price, and each opens the whole message when clicked. They are the same rows the
+ * introductions are made from, so nothing here is a second copy to keep in step.
+ *
+ * Found by the dealer's number (the last ten digits, as every other match in this
+ * CRM). A record whose number nobody has posted under simply has four empty lists.
  */
 import { db } from '../../db/pool.js';
 import { registry } from '../metadata/registry.js';
 import { getRecord, type ServiceContext } from '../entity/recordService.js';
 import { mobileIdentities } from '../entity/mobileIdentity.js';
+import { label } from './crossMatch.js';
+import { quadrantOf } from './dealerNotes.js';
+import { tidyBody } from './readPost.js';
 
 export interface DealerDeal {
+  /** The listing — one property. */
   id: string;
+  postId: string;
+  /** The words of this listing; `body` is the whole message it came from. */
+  summary: string;
   body: string;
   category: string | null;
   bhk: number | null;
@@ -29,6 +38,7 @@ export interface DealerDeal {
   seenCount: number;
   postedAt: string | null;
   urgency: number | null;
+  purpose: 'sale' | 'rent';
 }
 
 export interface DealerDeals {
@@ -56,8 +66,7 @@ export function onceEach(names: string[]): string[] {
 export function bucketDeals(rows: Array<{ kind: string; purpose: string | null; deal: DealerDeal }>): DealerDeals {
   const result: DealerDeals = { forSale: [], buyerRequirements: [], forRent: [], tenantRequirements: [], truncated: false };
   for (const { kind, purpose, deal } of rows) {
-    const rent = purpose === 'rent';
-    const list = kind === 'have' ? (rent ? result.forRent : result.forSale) : (rent ? result.tenantRequirements : result.buyerRequirements);
+    const list = result[quadrantOf(kind, purpose ?? 'sale')];
     if (list.length < LIMIT) list.push(deal);
     else result.truncated = true;
   }
@@ -72,12 +81,12 @@ export async function dealsOfRecord(ctx: ServiceContext, moduleName: string, rec
   if (!numbers.length) return bucketDeals([]);
 
   const rows = await db.query<Record<string, unknown>>(
-    `SELECT id, body, kind, purpose, category, bhk, size_sqyd, price_min_lakh, price_max_lakh,
-            places, localities, groups, seen_count, urgency, coalesce(last_posted_at, created_at) AS posted_at
-       FROM ipy_market_post
-      WHERE poster_phone = ANY($1::text[]) AND NOT is_noise AND kind IN ('have', 'want')
-        AND coalesce(last_posted_at, created_at) > now() - make_interval(days => $2::int)
-      ORDER BY coalesce(last_posted_at, created_at) DESC
+    `SELECT l.id, l.post_id, l.kind, l.purpose, l.summary, l.category, l.bhk, l.size_sqyd, l.price_min_lakh, l.price_max_lakh,
+            l.place_keys, p.body, p.groups, p.seen_count, p.urgency, coalesce(p.last_posted_at, p.created_at) AS posted_at
+       FROM ipy_market_listing l JOIN ipy_market_post p ON p.id = l.post_id
+      WHERE p.poster_phone = ANY($1::text[]) AND NOT p.is_noise
+        AND coalesce(p.last_posted_at, p.created_at) > now() - make_interval(days => $2::int)
+      ORDER BY coalesce(p.last_posted_at, p.created_at) DESC, l.ord
       LIMIT 1000`,
     [numbers, DAYS],
   );
@@ -86,17 +95,20 @@ export async function dealsOfRecord(ctx: ServiceContext, moduleName: string, rec
     purpose: row.purpose as string | null,
     deal: {
       id: row.id as string,
-      body: row.body as string,
+      postId: row.post_id as string,
+      summary: row.summary as string,
+      body: tidyBody(row.body as string),
       category: row.category as string | null,
       bhk: row.bhk as number | null,
       sizeSqYd: row.size_sqyd as number | null,
       priceMinLakh: row.price_min_lakh as number | null,
       priceMaxLakh: row.price_max_lakh as number | null,
-      places: onceEach([...(row.localities as string[]), ...(row.places as string[])]),
+      places: onceEach((row.place_keys as string[]).map(label)),
       groups: row.groups as string[],
       seenCount: row.seen_count as number,
       postedAt: row.posted_at ? new Date(row.posted_at as string).toISOString() : null,
       urgency: row.urgency as number | null,
+      purpose: row.purpose as 'sale' | 'rent',
     },
   })));
 }

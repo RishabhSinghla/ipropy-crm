@@ -5,6 +5,8 @@ import { test, expect } from '@playwright/test';
 // never depends on what is already in the database.
 test('a group export becomes searchable deals', async ({ page }) => {
   const marker = `e2emkt${Date.now()}`;
+  // A group read before is read only from where it ended, so each run needs a group of its own.
+  const group = `E2E Dealers ${marker}`;
   // Today's date: the page shows the last 90 days, so a fixed old date would fade out.
   const now = new Date();
   const day = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
@@ -16,10 +18,12 @@ test('a group export becomes searchable deals', async ({ page }) => {
 
   await page.goto('/market');
   await expect(page.getByRole('heading', { name: 'Dealer groups' })).toBeVisible();
-  await page.getByPlaceholder('Group name, e.g. Greenfields Dealers').fill('E2E Dealers');
-  await page.getByLabel('Exported chat file').setInputFiles({ name: 'chat.txt', mimeType: 'text/plain', buffer: Buffer.from(exportText) });
-  await page.getByRole('button', { name: 'Read the deals' }).click();
-  await expect(page.getByText(/2 new deals from E2E Dealers/)).toBeVisible();
+  // The group is named from the file: WhatsApp calls it "WhatsApp Chat with <group>.txt".
+  await page.getByLabel('Exported chat files').setInputFiles({ name: `WhatsApp Chat with ${group}.txt`, mimeType: 'text/plain', buffer: Buffer.from(exportText) });
+  const row = page.getByTestId('market-imports').locator('li', { hasText: group }).first();
+  await expect(row).toContainText('Done', { timeout: 30_000 });
+  await expect(row).toContainText('2 new messages');
+  await expect(row).toContainText('properties found');
 
   // The call sheet leads; the full list is one tab over.
   await page.getByRole('tab', { name: 'All deals' }).click();
@@ -41,7 +45,8 @@ test('a group export becomes searchable deals', async ({ page }) => {
 // whatever earlier runs left in the database.
 test('a buyer and a seller in different groups appear as a call, and what was done is kept', async ({ page }) => {
   const stamp = Date.now();
-  const sector = `${stamp % 900 + 100}`;
+  // Real sectors run 1 to 150; anything higher is not read as a sector at all.
+  const sector = `${stamp % 130 + 10}`;
   const buyerPhone = `98${String(stamp).slice(-8)}`;
   const sellerPhone = `97${String(stamp).slice(-8)}`;
   const now = new Date();
@@ -50,11 +55,13 @@ test('a buyer and a seller in different groups appear as a call, and what was do
   const sellers = `${day}, 10:20 am - E2E Seller ${stamp}: 260 sq yd residential plot for sale sector ${sector} demand 3.5 cr call ${sellerPhone}`;
 
   await page.goto('/market');
-  for (const [group, text] of [[`E2E Buyers ${stamp}`, buyers], [`E2E Sellers ${stamp}`, sellers]] as const) {
-    await page.getByPlaceholder('Group name, e.g. Greenfields Dealers').fill(group);
-    await page.getByLabel('Exported chat file').setInputFiles({ name: 'chat.txt', mimeType: 'text/plain', buffer: Buffer.from(text) });
-    await page.getByRole('button', { name: 'Read the deals' }).click();
-    await expect(page.getByText(new RegExp(`1 new deal from ${group}`))).toBeVisible();
+  // Two groups in one drop, each named from its own file.
+  await page.getByLabel('Exported chat files').setInputFiles([
+    { name: `WhatsApp Chat with E2E Buyers ${stamp}.txt`, mimeType: 'text/plain', buffer: Buffer.from(buyers) },
+    { name: `WhatsApp Chat with E2E Sellers ${stamp}.txt`, mimeType: 'text/plain', buffer: Buffer.from(sellers) },
+  ]);
+  for (const group of [`E2E Buyers ${stamp}`, `E2E Sellers ${stamp}`]) {
+    await expect(page.getByTestId('market-imports').locator('li', { hasText: group })).toContainText('Done', { timeout: 30_000 });
   }
 
   // Calls today is the tab the page opens on.
@@ -64,6 +71,14 @@ test('a buyer and a seller in different groups appear as a call, and what was do
   await expect(call).toContainText(`sector ${sector}`);
   await expect(call.getByRole('link', { name: buyerPhone })).toBeVisible();
   await expect(call.getByRole('link', { name: sellerPhone })).toBeVisible();
+
+  // A card shows the property's own lines; the whole message opens in a popup.
+  await call.getByRole('button', { name: 'Read full message' }).first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByTestId('full-message')).toContainText(`Required 250 gaj plot sector ${sector}`);
+  await expect(dialog).toContainText(`E2E Buyer ${stamp}`);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
 
   // Marking it is kept on the server: a reload is the only proof of that.
   await call.getByRole('button', { name: 'Called', exact: true }).click();
@@ -136,9 +151,17 @@ test('an Associate shows what the dealer posted in four tabs', async ({ page, re
   await tabs.getByRole('button', { name: /^For Sale/ }).click();
   await expect(page.getByText('Residential Plot · 150 yd')).toBeVisible();
   await expect(page.getByText('Residential Plot · 200 yd')).toBeVisible();
+  // Clicking a row opens the whole message the property came from.
+  await page.getByRole('row', { name: /150 yd/ }).click();
+  await expect(page.getByRole('dialog').getByTestId('full-message')).toContainText(`150 gaj plot for sale ${place}`);
+  await page.keyboard.press('Escape');
   await tabs.getByRole('button', { name: /^For Rent/ }).click();
   await expect(page.getByText(/2 BHK flat available on rent/)).toBeVisible();
   await tabs.getByRole('button', { name: /^Tenant Requirements/ }).click();
   await expect(page.getByText(/Tenant required 3 BHK builder floor/)).toBeVisible();
+  // The messages are in the dealer's notes too, each said to belong to the tabs it fills.
+  await tabs.getByRole('button', { name: /^Notes/ }).click();
+  await expect(page.getByText(/💬 WhatsApp · E2E Dealer Group/).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/💬 WhatsApp · E2E Dealer Group/).first()).toContainText('For Sale');
   await page.screenshot({ path: 'test-results/associate-deal-tabs.png' });
 });
