@@ -34,7 +34,9 @@ const made: string[] = [];
 
 async function newLead(overrides: Record<string, unknown> = {}): Promise<{ id: string; mobile: string; name: string }> {
   const ctx = await adminContext();
-  const input = leadInput({ status: 'New', ...overrides });
+  // The WhatsApp sender intentionally refuses ambiguous local numbers; give
+  // this Indian test contact the same country context a real CRM record has.
+  const input = leadInput({ status: 'New', country_code: '+91', ...overrides });
   const rec = await createRecord(ctx, 'leads', input);
   made.push(rec.id as string);
   return { id: rec.id as string, mobile: String(input.mobile), name: String(input.full_name) };
