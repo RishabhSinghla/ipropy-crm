@@ -120,7 +120,12 @@ projectWorkspaceRouter.put('/:id/profile', blockApiKey, asyncHandler(async (req,
   const profile = profileSchema.parse(req.body);
   const entries = Object.entries(profile).filter(([key]) => PROFILE_COLUMNS[key]);
   const columns = ['project_id', ...entries.map(([key]) => PROFILE_COLUMNS[key]), 'updated_by', 'updated_at'];
-  const values: unknown[] = [req.params.id, ...entries.map(([, value]) => value), scope.user.id];
+  const jsonFields = new Set(['paymentPlans', 'approvals', 'amenities']);
+  const values: unknown[] = [
+    req.params.id,
+    ...entries.map(([key, value]) => jsonFields.has(key) && value != null ? JSON.stringify(value) : value),
+    scope.user.id,
+  ];
   const placeholders = values.map((_, index) => `$${index + 1}`);
   const updates = entries.map(([key]) => {
     const column = PROFILE_COLUMNS[key];
