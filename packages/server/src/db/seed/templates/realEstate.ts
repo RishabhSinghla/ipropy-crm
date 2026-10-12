@@ -1051,6 +1051,32 @@ const MODULES: ModuleDef[] = [
 
 ];
 
+/*
+ * Migration 175 creates the Associates storage table by cloning Leads. On an
+ * existing CRM it also creates the module metadata, but migrations run before
+ * the first seed on a fresh database and therefore cannot clone a Leads
+ * module that does not exist yet. Seed the matching metadata here as well so
+ * clean installs and production installs expose the same module contract.
+ */
+const leadsModule = MODULES.find((module) => module.name === 'leads');
+if (leadsModule) {
+  const associatesModule: ModuleDef = {
+    ...leadsModule,
+    name: 'associates',
+    label: 'Associates',
+    singular: 'Associate',
+    table: 'ipy_e_associates',
+    sequence: 30,
+    settings: { ...leadsModule.settings, shortLabel: 'ASC' },
+    blocks: structuredClone(leadsModule.blocks),
+    views: structuredClone(leadsModule.views ?? []).map((view) => ({
+      ...view,
+      name: view.name.replace(/Leads/g, 'Associates'),
+    })),
+  };
+  MODULES.splice(1, 0, associatesModule);
+}
+
 export const REAL_ESTATE: IndustryTemplate = {
   key: 'real-estate',
   label: 'Real estate',

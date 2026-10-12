@@ -57,7 +57,12 @@ test('↑↓ walk the answers and ↵ opens the highlighted one', async ({ page 
   // The record that opened is the one that was highlighted, not whichever
   // happened to be first — ↵ opening a different row from the one on screen is
   // the whole reason the flat order is derived from the groups.
-  if (name) await expect(page.locator('main')).toContainText(name.trim().slice(0, 12));
+  if (name) {
+    // The result's name may have the mobile number immediately appended;
+    // compare the identity portion, not punctuation/number from the summary.
+    const identity = name.trim().split(/\s*\+/)[0].slice(0, 12);
+    await expect(page.locator('main')).toContainText(identity);
+  }
 });
 
 test('remembers the last search under an empty box, and the × forgets it', async ({ page }) => {
@@ -82,7 +87,7 @@ test('remembers the last search under an empty box, and the × forgets it', asyn
   await expect(page.getByTestId('search-recent')).toHaveCount(0);
 });
 
-test('the brand mark sits inside the header with room above and below', async ({ page }) => {
+test('the company name sits inside the header with room above and below', async ({ page }) => {
   /*
     *"Company Profile Logo, Poor Alignment & Size adjustment."* A ring is drawn
     outside the box, so the old circle plus its ring was taller than the row's own
@@ -91,9 +96,9 @@ test('the brand mark sits inside the header with room above and below', async ({
     exactly the bug.
   */
   await page.goto('/dashboard');
-  const mark = page.getByTestId('brand-mark');
-  await expect(mark).toBeVisible();
-  const box = (await mark.boundingBox())!;
+  const brand = page.getByRole('link', { name: 'iPropy Realty' });
+  await expect(brand).toBeVisible();
+  const box = (await brand.boundingBox())!;
   const header = (await page.locator('header').first().boundingBox())!;
   expect(box.y).toBeGreaterThan(header.y);
   expect(box.y + box.height).toBeLessThan(header.y + header.height);
