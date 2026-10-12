@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
 // Dealer groups: a WhatsApp export goes in through the page, and the deals it
 // held come out as cards a rep can filter. Unique marker per run, so the spec
@@ -101,7 +102,8 @@ test('a buyer and a seller in different groups appear as a call, and what was do
 // migration 175) — there the spec says so and stops rather than failing for no fault of the tabs.
 test.use({ viewport: { width: 1500, height: 950 } });
 
-test('an Associate shows what the dealer posted in four tabs', async ({ page, request }) => {
+/** An Associate who has posted five properties in a group: two to sell, one to let, one buyer, one tenant. */
+async function dealerWithDeals(page: Page, request: APIRequestContext): Promise<{ recordId: string; place: string; auth: { Authorization: string } }> {
   await page.goto('/market');
   const token = await page.evaluate(() => localStorage.getItem('ipropy.token'));
   const auth = { Authorization: `Bearer ${token}` };
@@ -139,29 +141,177 @@ test('an Associate shows what the dealer posted in four tabs', async ({ page, re
     recordId = rows[0]?.id ?? '';
     return recordId;
   }, { timeout: 30_000 }).not.toBe('');
+  return { recordId, place, auth };
+}
+
+test('an Associate shows what the dealer posted in two tabs', async ({ page, request }) => {
+  const { recordId, place } = await dealerWithDeals(page, request);
 
   await page.goto(`/associates?open=${recordId}`);
   const tabs = page.getByTestId('record-menu-bar');
-  // Counts sit on the tabs themselves: two for sale, one of each of the rest.
-  await expect(tabs.getByRole('button', { name: /^For Sale \(2\)$/ })).toBeVisible({ timeout: 20_000 });
-  await expect(tabs.getByRole('button', { name: /^Buyer Requirements \(1\)$/ })).toBeVisible();
-  await expect(tabs.getByRole('button', { name: /^For Rent \(1\)$/ })).toBeVisible();
-  await expect(tabs.getByRole('button', { name: /^Tenant Requirements \(1\)$/ })).toBeVisible();
+  // Counts sit on the tabs themselves: two to sell and one to let are three available, a buyer and a tenant are two wanted.
+  await expect(tabs.getByRole('button', { name: /^Availability \(3\)$/ })).toBeVisible({ timeout: 20_000 });
+  await expect(tabs.getByRole('button', { name: /^Requirement \(2\)$/ })).toBeVisible();
+  await expect(tabs.getByRole('button', { name: /^For Sale/ })).toHaveCount(0);
 
-  await tabs.getByRole('button', { name: /^For Sale/ }).click();
-  await expect(page.getByText('Residential Plot · 150 yd')).toBeVisible();
-  await expect(page.getByText('Residential Plot · 200 yd')).toBeVisible();
-  // Clicking a row opens the whole message the property came from.
-  await page.getByRole('row', { name: /150 yd/ }).click();
+  await tabs.getByRole('button', { name: /^Availability/ }).click();
+  await expect(page.getByText(/Residential Plot · 150 yd/)).toBeVisible();
+  await expect(page.getByText(/Residential Plot · 200 yd/)).toBeVisible();
+  await expect(page.getByText(/2 BHK flat available on rent/)).toBeVisible();
+  // View opens the whole message the property came from.
+  await page.getByRole('row', { name: /150 yd/ }).getByTestId('deal-view').click();
   await expect(page.getByRole('dialog').getByTestId('full-message')).toContainText(`150 gaj plot for sale ${place}`);
   await page.keyboard.press('Escape');
-  await tabs.getByRole('button', { name: /^For Rent/ }).click();
-  await expect(page.getByText(/2 BHK flat available on rent/)).toBeVisible();
-  await tabs.getByRole('button', { name: /^Tenant Requirements/ }).click();
+  await tabs.getByRole('button', { name: /^Requirement/ }).click();
   await expect(page.getByText(/Tenant required 3 BHK builder floor/)).toBeVisible();
+  await expect(page.getByText(/Required 300 gaj plot/)).toBeVisible();
   // The messages are in the dealer's notes too, each said to belong to the tabs it fills.
   await tabs.getByRole('button', { name: /^Notes/ }).click();
   await expect(page.getByText(/💬 WhatsApp · E2E Dealer Group/).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/💬 WhatsApp · E2E Dealer Group/).first()).toContainText('For Sale');
   await page.screenshot({ path: 'test-results/associate-deal-tabs.png' });
+});
+
+test('the deal table filters by column, one line a row, and each row has its own form', async ({ page, request }) => {
+  const { recordId } = await dealerWithDeals(page, request);
+  await page.goto(`/associates?open=${recordId}`);
+  await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Availability/ }).click();
+  const table = page.getByTestId('associate-deals-table');
+  await expect(table.getByTestId('deal-row')).toHaveCount(3, { timeout: 20_000 });
+
+  // Excel-style: a filter under every column heading, and a row never wraps onto a second line.
+  await expect(table.getByTestId('deal-filters')).toBeVisible();
+  const heights = await table.getByTestId('deal-row').evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+  expect(Math.max(...heights)).toBeLessThan(48);
+  await expect(table.getByText('Posted Date')).toBeVisible();
+
+  // For Sale / For Rent is one column, and filters.
+  await table.getByLabel('Filter by For Sale or For Rent').selectOption('rent');
+  await expect(table.getByTestId('deal-row')).toHaveCount(1);
+  await expect(table.getByTestId('deal-count')).toContainText('1 of 3');
+  await table.getByRole('button', { name: /Clear 1 filter/ }).click();
+  await expect(table.getByTestId('deal-row')).toHaveCount(3);
+
+  // The row's own form: fill a box, leave it, and it is still there after a reload.
+  await table.getByRole('row', { name: /150 yd/ }).getByTestId('deal-edit').click();
+  const form = page.getByTestId('deal-form');
+  await expect(form).toBeVisible();
+  const houseNo = `B-${String(Date.now()).slice(-4)}`;
+  await form.getByLabel('House / Unit No.').fill(houseNo);
+  await form.getByLabel('Portion').fill('Ground');
+  await form.getByLabel('Portion').blur();
+  await expect(form.getByTestId('deal-form-state')).toHaveText('Saved', { timeout: 15_000 });
+  await page.screenshot({ path: 'test-results/associate-deal-form-open.png' });
+
+  // Readable in both themes: the table, its filter row and the form, scanned as they stand.
+  const scan = async (): Promise<string[]> => {
+    const { violations } = await new AxeBuilder({ page })
+      .include('[data-testid="associate-deals-table"]')
+      .withTags(['wcag2a', 'wcag2aa'])
+      .analyze();
+    return violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(' ')).join(' | ')}`);
+  };
+  expect(await scan(), 'light theme').toEqual([]);
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  expect(await scan(), 'dark theme').toEqual([]);
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+  // None of the dealer's own details is on a property's form.
+  await expect(form.getByLabel(/^Mobile/)).toHaveCount(0);
+  await expect(form.getByLabel(/Assigned To/)).toHaveCount(0);
+  await expect(form.getByLabel(/Contact Type/)).toHaveCount(0);
+
+  await page.reload();
+  await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Availability/ }).click();
+  await expect(table.getByRole('row', { name: new RegExp(houseNo) })).toBeVisible({ timeout: 20_000 });
+  await table.getByLabel('Filter by house number').fill(houseNo.toLowerCase());
+  await expect(table.getByTestId('deal-row')).toHaveCount(1);
+  await page.screenshot({ path: 'test-results/associate-deal-form.png' });
+});
+
+test('rows can be ticked, compared, duplicated and removed', async ({ page, request }) => {
+  const { recordId } = await dealerWithDeals(page, request);
+  await page.goto(`/associates?open=${recordId}`);
+  await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Availability/ }).click();
+  const table = page.getByTestId('associate-deals-table');
+  await expect(table.getByTestId('deal-row')).toHaveCount(3, { timeout: 20_000 });
+
+  // The Matching button is there on every row with its count.
+  await expect(table.getByTestId('deal-matching').first()).toBeVisible();
+  await expect(table.getByTestId('deal-match-count').first()).toHaveText(/^\d+$/, { timeout: 20_000 });
+
+  // Tick two and compare.
+  await table.getByTestId('deal-select').nth(0).check();
+  await table.getByTestId('deal-select').nth(1).check();
+  await expect(table.getByTestId('deal-bulk-bar')).toContainText('2 selected');
+  await table.getByTestId('deal-bulk-bar').getByRole('button', { name: 'Compare' }).click();
+  await expect(page.getByTestId('deal-compare-table')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // Duplicate the first row: one more on the list.
+  await table.getByTestId('deal-bulk-bar').getByRole('button', { name: 'Clear' }).click();
+  await table.getByTestId('deal-duplicate').first().click();
+  await expect(table.getByTestId('deal-row')).toHaveCount(4, { timeout: 15_000 });
+
+  // Remove one: it leaves the list, and stays gone after a reload.
+  await table.getByTestId('deal-delete').first().click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
+  await expect(table.getByTestId('deal-row')).toHaveCount(3, { timeout: 15_000 });
+  await page.reload();
+  await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Availability/ }).click();
+  await expect(table.getByTestId('deal-row')).toHaveCount(3, { timeout: 20_000 });
+});
+
+test('Admin -> Layouts chooses the deal columns and the form fields, and a field can be added', async ({ page, request }) => {
+  test.setTimeout(150_000);
+  const { recordId } = await dealerWithDeals(page, request);
+  const designer = async (): Promise<void> => {
+    await page.goto('/admin/layouts');
+    await page.locator('select').filter({ has: page.locator('option[value="associates"]') }).first().selectOption('associates');
+    await expect(page.getByTestId('zone-associate-deal-columns')).toBeVisible({ timeout: 20_000 });
+  };
+  const save = async (): Promise<void> => {
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByRole('button', { name: 'Saved' })).toBeVisible({ timeout: 15_000 });
+  };
+
+  await designer();
+  try {
+    const columns = page.getByTestId('zone-associate-deal-columns');
+    const form = page.getByTestId('zone-associate-deal-form');
+    // House number and For Sale / For Rent are columns an admin can switch off and on.
+    await expect(columns.getByLabel('House / Unit No.')).toBeChecked();
+    await expect(columns.getByLabel('For Sale / For Rent')).toBeChecked();
+    await columns.getByLabel('Facing').uncheck();
+    await form.getByLabel('Lost Reason').uncheck();
+    await form.getByLabel('Name for a new deal form field').fill('Owner name');
+    await form.getByRole('button', { name: 'Add field' }).click();
+    await expect(form.getByLabel('Name of the field Owner name')).toBeVisible();
+    await save();
+
+    await page.goto(`/associates?open=${recordId}`);
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Availability/ }).click();
+    const table = page.getByTestId('associate-deals-table');
+    await expect(table.getByTestId('deal-row')).toHaveCount(3, { timeout: 20_000 });
+    await expect(table.getByRole('columnheader', { name: /^Facing/ })).toHaveCount(0);
+    await expect(table.getByRole('columnheader', { name: /^House \/ Unit No\./ })).toBeVisible();
+
+    await table.getByTestId('deal-edit').first().click();
+    const rowForm = page.getByTestId('deal-form');
+    await expect(rowForm.getByLabel('Lost Reason')).toHaveCount(0);
+    await rowForm.getByLabel('Owner name').fill('Mr Sharma');
+    await rowForm.getByLabel('Owner name').blur();
+    await expect(rowForm.getByTestId('deal-form-state')).toHaveText('Saved', { timeout: 15_000 });
+    await page.reload();
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Availability/ }).click();
+    await table.getByTestId('deal-edit').first().click();
+    await expect(page.getByTestId('deal-form').getByLabel('Owner name')).toHaveValue('Mr Sharma', { timeout: 20_000 });
+  } finally {
+    // The layout is shared by everybody on this database: put it back however the test ended.
+    await designer();
+    for (const zone of ['zone-associate-deal-columns', 'zone-associate-deal-form']) {
+      const reset = page.getByTestId(zone).getByRole('button', { name: 'Default' });
+      if (await reset.count()) await reset.click();
+    }
+    await save().catch(() => undefined);
+  }
 });

@@ -17,9 +17,11 @@
  * Pure, and tested as such: this file decides nothing about how a menu looks.
  */
 
+import { LEGACY_DEAL_TAB } from './splitViewLayout';
+
 /** A record tab that draws its own screen. */
 export type RecordTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls' | 'whatsapp'
-  | 'deals_sale' | 'deals_buyer' | 'deals_rent' | 'deals_tenant';
+  | 'deals_availability' | 'deals_requirement';
 
 /** The stream, narrowed to one kind of thing that happened. */
 export type ActivityKind = 'comment' | 'message' | 'audit';
@@ -50,8 +52,8 @@ export const DEFAULT_ORDER: MenuKey[] = [
     cannot have meant to leave it out, which is the same rule `arrangeHeaderTabs`
     holds to and the reason the Chats page was once unreachable.
   */
-  // An Associate's four deal lists sit straight after Comments — they are why the record is opened.
-  'units', 'comment', 'deals_sale', 'deals_buyer', 'deals_rent', 'deals_tenant', 'matching', 'builders', 'files', 'calls', 'whatsapp', 'message', 'audit', 'timeline',
+  // An Associate's two deal lists sit straight after Comments — they are why the record is opened.
+  'units', 'comment', 'deals_availability', 'deals_requirement', 'matching', 'builders', 'files', 'calls', 'whatsapp', 'message', 'audit', 'timeline',
 ];
 
 /** Which of the stream's kinds an entry shows, or `null` for a tab of its own. */
@@ -73,7 +75,9 @@ export function activityKindOf(key: MenuKey): ActivityKind | null {
  */
 export function arrangeRecordMenu(available: MenuKey[], saved: MenuKey[] | null): MenuKey[] {
   const offered = new Set(available);
-  const kept = (saved ?? []).filter((key) => offered.has(key));
+  // The four deal tabs were merged into two on 13 October 2026; an order saved before that still names them.
+  const current = (saved ?? []).map((key) => (LEGACY_DEAL_TAB[key] ?? key) as MenuKey);
+  const kept = [...new Set(current)].filter((key) => offered.has(key));
   const seen = new Set(kept);
   const appended = DEFAULT_ORDER.filter((key) => offered.has(key) && !seen.has(key));
   // A module can offer something neither list names — a new tab, this build.

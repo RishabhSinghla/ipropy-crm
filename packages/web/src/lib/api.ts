@@ -665,8 +665,13 @@ export interface MarketDealer {
 }
 
 export interface DealerDeal {
-  /** The listing — one property. */
+  /** The listing — one property — or, once the team has touched it, their own row standing in for it. */
   id: string;
+  /** Same before and after the first edit: use it to keep a row selected. */
+  key: string;
+  /** What the edit, duplicate and delete calls take. */
+  ref: string;
+  stored: boolean;
   postId: string;
   summary: string;
   body: string;
@@ -684,6 +689,22 @@ export interface DealerDeal {
   postedAt: string | null;
   urgency: number | null;
   purpose: 'sale' | 'rent';
+  houseNo: string | null;
+  portion: string | null;
+  nextFollowUpAt: string | null;
+  propertyStatus: string | null;
+  lostReason: string | null;
+  source: string | null;
+  extra: Record<string, string>;
+}
+
+/** What a row's form may change. A key left out is left alone; `null` empties it. */
+export interface DealerDealPatch {
+  purpose?: 'sale' | 'rent';
+  houseNo?: string | null; locality?: string | null; category?: string | null; facing?: string | null;
+  floor?: string | null; portion?: string | null; bedrooms?: number | null; sizeSqYd?: number | null;
+  priceLakh?: number | null; nextFollowUpAt?: string | null; propertyStatus?: string | null;
+  lostReason?: string | null; source?: string | null; extra?: Record<string, string | null>;
 }
 
 export interface DealerDeals {
@@ -1405,6 +1426,14 @@ export const api = {
   setMarketIntroduction: (wantId: string, haveId: string, status: MarketIntroductionStatus, note?: string) =>
     put<{ ok: true }>(`/api/market/matches/${wantId}/${haveId}`, { status, note: note ?? null }),
   dealerDeals: (module: string, id: string) => get<DealerDeals>(`/api/market/records/${module}/${id}/deals`),
+  updateDealerDeal: (module: string, id: string, ref: string, changes: DealerDealPatch) =>
+    patch<{ id: string }>(`/api/market/records/${module}/${id}/deals/${encodeURIComponent(ref)}`, changes),
+  duplicateDealerDeal: (module: string, id: string, ref: string) =>
+    post<{ id: string }>(`/api/market/records/${module}/${id}/deals/${encodeURIComponent(ref)}/duplicate`, {}),
+  deleteDealerDeal: (module: string, id: string, ref: string) =>
+    del(`/api/market/records/${module}/${id}/deals/${encodeURIComponent(ref)}`),
+  dealMatchCounts: (postIds: string[]) =>
+    get<Record<string, number>>(`/api/market/deal-match-counts?posts=${postIds.join(',')}`),
   marketDealers: () => get<{ total: number; dealers: MarketDealer[] }>('/api/market/dealers?limit=200'),
   saveMarketDealers: () => post<AssociateOutcome>('/api/market/dealers/save', {}),
   marketMatches: (postId: string) =>

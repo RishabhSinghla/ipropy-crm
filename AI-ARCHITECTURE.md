@@ -307,11 +307,12 @@ Associates.** Migration `206`.
   refused. A dealer whose posts name no location the field lists is **counted and skipped, never
   guessed**; the first refusal reason is returned so a dead feature says so. Found by running it:
   the first version wrote "Dealer" into a list that has none and every record was refused.
-* **An Associate's page has four deal tabs** (12 October 2026, owner): **For Sale**, **Buyer
-  Requirements**, **For Rent**, **Tenant Requirements**, straight after Comments, each a table
+* **An Associate's page has two deal tabs** (merged from four on 13 October 2026 — see the next
+  entry): **Availability** (For Sale + For Rent) and **Requirement** (Buyer + Tenant), straight
+  after Comments. Written on 12 October as four, each a table
   (property, where, price, posted, and a "Who fits this?" link) — not text in a note. They are
   `DEAL_TABS` in `lib/splitViewLayout.ts`, offered for the `associates` module only and drawn by
-  `components/DealerDeals.tsx`. **One answer feeds all four and their counts**
+  `components/DealerDeals.tsx`. **One answer feeds both and their counts**
   (`GET /api/market/records/:module/:id/deals`, `core/market/dealerDeals.ts`), found by the
   record's number, and read **as the person asking** — a record they cannot open answers the same
   refusal as anywhere else. A deal has a **purpose** (`sale` / `rent`, migration `207`) besides

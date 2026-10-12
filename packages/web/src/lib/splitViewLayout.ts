@@ -29,17 +29,31 @@ export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'file
 
 /**
  * An Associate is a dealer, and what a dealer posts in the WhatsApp groups is
- * four different things. One tab each, so a rep reads "what do they have to
- * sell" without sifting a single list.
+ * two things: what they have, and what their clients want. Two tabs — each
+ * carries a For Sale / For Rent column, so a rep filters the one list rather
+ * than hopping between four.
+ *
+ * It was four tabs (For Sale, Buyer Requirements, For Rent, Tenant
+ * Requirements) until 13 October 2026, when the owner asked for them merged.
  */
-export type DealTabKey = 'deals_sale' | 'deals_buyer' | 'deals_rent' | 'deals_tenant';
+export type DealTabKey = 'deals_availability' | 'deals_requirement';
 
 export const DEAL_TABS: Array<SplitTab & { key: DealTabKey }> = [
-  { key: 'deals_sale', label: 'For Sale' },
-  { key: 'deals_buyer', label: 'Buyer Requirements' },
-  { key: 'deals_rent', label: 'For Rent' },
-  { key: 'deals_tenant', label: 'Tenant Requirements' },
+  { key: 'deals_availability', label: 'Availability' },
+  { key: 'deals_requirement', label: 'Requirement' },
 ];
+
+/**
+ * The four tabs this replaced, and where each one went. A layout or a menu order
+ * somebody saved before the merge still names them: dropped, those people would
+ * lose both tabs until an admin ticked them again, so each maps to its new home.
+ */
+export const LEGACY_DEAL_TAB: Record<string, DealTabKey> = {
+  deals_sale: 'deals_availability',
+  deals_rent: 'deals_availability',
+  deals_buyer: 'deals_requirement',
+  deals_tenant: 'deals_requirement',
+};
 
 export interface SplitTab {
   key: SplitTabKey;
@@ -117,9 +131,11 @@ export function splitTabsFor(
   if (!saved?.length) return all;
   const chosen: SplitTab[] = [];
   for (const item of saved) {
-    const known = all.find((tab) => tab.key === item.key);
+    const moved = LEGACY_DEAL_TAB[item.key];
+    const known = all.find((tab) => tab.key === (moved ?? item.key));
     if (!known || chosen.some((tab) => tab.key === known.key)) continue;
-    chosen.push({ key: known.key, label: savedLabel(item.label) || known.label });
+    // A merged tab takes the new name: the old one ("For Sale") described half of it.
+    chosen.push({ key: known.key, label: (!moved && savedLabel(item.label)) || known.label });
   }
   return chosen.length ? chosen : all;
 }

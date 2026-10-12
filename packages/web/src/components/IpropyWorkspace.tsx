@@ -12,7 +12,8 @@ import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { BuilderFloorTable, localityFilter, matchesForContact, unitsOfProject } from './BuilderFloorTable';
 import { MatchingTab } from './MatchingTab';
-import { DealerDealsTab, LIST_OF, dealsQueryKey } from './DealerDeals';
+import { DealerDealsTab, dealsQueryKey } from './DealerDeals';
+import { DEAL_TAB_OF, tabCountLabel, type CustomDealField } from '../lib/dealGrid';
 import type { DealTabKey } from '../lib/splitViewLayout';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
@@ -617,6 +618,10 @@ export function IpropyWorkspace({
     enabled: Boolean(active?.id) && module.name === 'associates',
     staleTime: 60_000,
   });
+  // What Admin -> Layouts chose for the Associates deal table and its form.
+  const associateDealSettings = (module.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config ?? {}) as {
+    associateDealColumns?: string[]; associateDealFormFields?: string[]; associateDealCustomFields?: CustomDealField[];
+  };
   const menuCount = (key: MenuKey): string | null => {
     const shown = (count: number | undefined, cap: number): string | null => {
       if (!count) return null;
@@ -626,7 +631,7 @@ export function IpropyWorkspace({
     if (key === 'matching') return shown(matchingCount, 50);
     if (key === 'files') return shown(fileRows?.length, 1000);
     if (key === 'calls') return shown(callRows?.length, 50);
-    if (key in LIST_OF) return shown(dealerDeals?.[LIST_OF[key as DealTabKey]].length, 100);
+    if (key in DEAL_TAB_OF) return tabCountLabel(dealerDeals, DEAL_TAB_OF[key]);
     // The three stream entries count out of the same answer the tabs do, so a
     // badge and the list it labels cannot disagree and nothing is asked twice.
     const kind = activityKindOf(key);
@@ -871,7 +876,7 @@ export function IpropyWorkspace({
               onEdited={() => invalidateRecordQueries(queryClient, module.name, row.id)}
               onSelect={() => openRecord(row.id)}
               onFullView={() => navigate(`/${module.name}/${row.id}`)}
-              onMatch={() => { openRecord(row.id); setMenuPick('deals_sale'); setShowing('record'); }}
+              onMatch={() => { openRecord(row.id); setMenuPick('deals_availability'); setShowing('record'); }}
               onDuplicate={module.name === 'associates' && canEdit ? async () => {
                 const copy = Object.fromEntries(module.fields
                   .filter((field) => field.isActive && !field.isReadonly && field.name !== 'mobile' && field.uitype !== 'autonumber')
@@ -1295,11 +1300,13 @@ export function IpropyWorkspace({
               emptyLine="No inventory carries this project's name yet. Set Project on a unit in Inventories and it appears here."
             />
           )}
-          {module.name === 'associates' && shownKey in LIST_OF && <DealerDealsTab
+          {module.name === 'associates' && shownKey in DEAL_TAB_OF && <DealerDealsTab
             module={module.name}
             recordId={active.id}
             tab={shownKey as DealTabKey}
-            columns={((module.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config ?? {}) as { associateDealColumns?: string[] }).associateDealColumns}
+            columns={associateDealSettings.associateDealColumns}
+            formFields={associateDealSettings.associateDealFormFields}
+            customFields={associateDealSettings.associateDealCustomFields}
           />}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownKey === 'calls' && <CallsTab recordId={active.id} />}
