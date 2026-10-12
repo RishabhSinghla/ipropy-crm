@@ -49,6 +49,8 @@ export interface ImportOutcome {
  * they learn to switch alerts off — older deals are matched when somebody asks.
  */
 const ALERT_WITHIN_DAYS = 7;
+/** Keep a small group of messages moving together instead of making each DB round-trip wait for the last. */
+const IMPORT_CONCURRENCY = 8;
 
 /** "FEAWA  Registered Members " and "feawa registered members" are one group. */
 export function groupKey(name: string): string {
@@ -139,16 +141,25 @@ export async function importGroupExport(rawGroupName: string, text: string, user
     }
   };
 
-  for (const message of messages) {
+  const freshMessages = messages.filter((message) => {
     if (message.postedAt && (!newest || message.postedAt > newest)) newest = message.postedAt;
-    if (readUpTo && message.postedAt && message.postedAt < readUpTo) { outcome.skippedOld += 1; continue; }
-    try {
-      await storeMessage(message);
-    } catch (err) {
-      // One message the database refuses must not throw away the other thousands in the export.
-      outcome.refused += 1;
-      logger.error({ err, group: groupName }, 'market: a message could not be stored; skipped');
+    if (readUpTo && message.postedAt && message.postedAt < readUpTo) {
+      outcome.skippedOld += 1;
+      return false;
     }
+    return true;
+  });
+  for (let offset = 0; offset < freshMessages.length; offset += IMPORT_CONCURRENCY) {
+    const batch = freshMessages.slice(offset, offset + IMPORT_CONCURRENCY);
+    await Promise.all(batch.map(async (message) => {
+      try {
+        await storeMessage(message);
+      } catch (err) {
+        // One message the database refuses must not throw away the other thousands in the export.
+        outcome.refused += 1;
+        logger.error({ err, group: groupName }, 'market: a message could not be stored; skipped');
+      }
+    }));
   }
 
   await db.query(
