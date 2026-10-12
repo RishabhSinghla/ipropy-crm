@@ -30,13 +30,12 @@ const received: { path: string; body: Record<string, unknown> }[] = [];
 let workflowId = '';
 let templateId = '';
 let wasActive = false;
+let previousCountryCode: { value: unknown; category: string | null; label: string | null } | undefined;
 const made: string[] = [];
 
 async function newLead(overrides: Record<string, unknown> = {}): Promise<{ id: string; mobile: string; name: string }> {
   const ctx = await adminContext();
-  // The WhatsApp sender intentionally refuses ambiguous local numbers; give
-  // this Indian test contact the same country context a real CRM record has.
-  const input = leadInput({ status: 'New', country_code: '+91', ...overrides });
+  const input = leadInput({ status: 'New', ...overrides });
   const rec = await createRecord(ctx, 'leads', input);
   made.push(rec.id as string);
   return { id: rec.id as string, mobile: String(input.mobile), name: String(input.full_name) };
@@ -52,6 +51,18 @@ async function arrives(lead: { id: string; mobile: string; name: string }, statu
 
 beforeAll(async () => {
   await registry.warmup();
+
+  // The sender resolves national numbers through the organisation's default
+  // country code, not a separate field on the lead. Restore the prior setting
+  // after this test so it cannot leak state into the shared integration DB.
+  previousCountryCode = await db.queryOne(
+    `SELECT value, category, label FROM ipy_setting WHERE key = 'org.country_code'`,
+  ) ?? undefined;
+  await db.query(
+    `INSERT INTO ipy_setting (key, value, category, label)
+     VALUES ('org.country_code', '"91"'::jsonb, 'organisation', 'Default country code')
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+  );
 
   stub = createServer((req, res) => {
     let raw = '';
@@ -106,6 +117,14 @@ afterAll(async () => {
   await db.query(`DELETE FROM ipy_whatsapp_template WHERE id = $1`, [templateId]);
   await saveIntegration('whatsapp_meta', { config: { baseUrl: '', phoneNumberId: '' }, credentials: { accessToken: '' }, isActive: wasActive });
   await reloadIntegrations();
+  if (previousCountryCode) {
+    await db.query(
+      `UPDATE ipy_setting SET value = $1, category = $2, label = $3 WHERE key = 'org.country_code'`,
+      [JSON.stringify(previousCountryCode.value), previousCountryCode.category, previousCountryCode.label],
+    );
+  } else {
+    await db.query(`DELETE FROM ipy_setting WHERE key = 'org.country_code'`);
+  }
   invalidateWorkflows();
   if (made.length) await db.query(`DELETE FROM ipy_record WHERE id = ANY($1::uuid[])`, [made]);
   await new Promise<void>((resolve) => stub.close(() => resolve()));
