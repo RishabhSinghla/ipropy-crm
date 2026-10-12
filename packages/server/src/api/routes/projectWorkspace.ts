@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
-import { assertCapability, assertModuleAccess } from '../../core/permissions/index.js';
+import { assertCapability, assertModuleAccess, canAccessRecord } from '../../core/permissions/index.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 
@@ -115,8 +115,8 @@ projectWorkspaceRouter.get('/:id/profile', asyncHandler(async (req, res) => {
 projectWorkspaceRouter.put('/:id/profile', blockApiKey, asyncHandler(async (req, res) => {
   const scope = getScope(req);
   await assertModuleAccess(scope.user, 'projects', 'edit');
-  const baseRecord = await recordService.getRecord(scope, 'projects', req.params.id);
-  if (!baseRecord.can?.edit) throw new NotFoundError('Project not found');
+  await recordService.getRecord(scope, 'projects', req.params.id);
+  if (!(await canAccessRecord(scope, 'projects', req.params.id, 'edit'))) throw new NotFoundError('Project not found');
   const profile = profileSchema.parse(req.body);
   const entries = Object.entries(profile).filter(([key]) => PROFILE_COLUMNS[key]);
   const columns = ['project_id', ...entries.map(([key]) => PROFILE_COLUMNS[key]), 'updated_by', 'updated_at'];
@@ -219,7 +219,7 @@ async function getProject(req: Parameters<Parameters<typeof asyncHandler>[0]>[0]
   await assertModuleAccess(scope.user, 'projects', edit ? 'edit' : 'view');
   const projectId = z.string().uuid().parse(req.params.id);
   const project = await recordService.getRecord(scope, 'projects', projectId);
-  if (edit && !project.can?.edit) throw new NotFoundError('Project not found');
+  if (edit && !(await canAccessRecord(scope, 'projects', projectId, 'edit'))) throw new NotFoundError('Project not found');
 }
 
 projectWorkspaceRouter.get('/:id/accommodations', asyncHandler(async (req, res) => {
