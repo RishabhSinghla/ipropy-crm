@@ -47,3 +47,17 @@ jobs:
           q "SELECT group_name, status, messages, new_deals, listings, left(coalesce(error,''), 60) FROM ipy_market_import ORDER BY created_at DESC LIMIT 10;"
           echo "=== Associates, and how many carry a phone a message was posted under ==="
           q "SELECT count(*) FROM ipy_record WHERE module_name = 'associates' AND NOT is_deleted;"
+          echo "=== recent (90 days) properties that name a place, by kind ==="
+          q "SELECT l.kind, count(*) FROM ipy_market_listing l JOIN ipy_market_post p ON p.id = l.post_id
+              WHERE NOT p.is_noise AND l.place_keys <> '{}' AND coalesce(p.last_posted_at, p.created_at) > now() - interval '90 days' GROUP BY 1;"
+          echo "=== how old the newest and oldest messages are ==="
+          q "SELECT min(coalesce(last_posted_at, created_at))::date, max(coalesce(last_posted_at, created_at))::date FROM ipy_market_post;"
+          echo "=== candidate pairs sharing a place and a purpose: in different groups / in any groups ==="
+          q "WITH r AS (SELECT l.id, l.kind, l.purpose, l.place_keys, p.groups, p.poster_phone
+                          FROM ipy_market_listing l JOIN ipy_market_post p ON p.id = l.post_id
+                         WHERE NOT p.is_noise AND l.place_keys <> '{}' AND coalesce(p.last_posted_at, p.created_at) > now() - interval '90 days')
+             SELECT count(*) FILTER (WHERE NOT (h.groups && w.groups)) AS different_groups, count(*) AS any_groups
+               FROM r w JOIN r h ON w.kind = 'want' AND h.kind = 'have' AND h.purpose = w.purpose AND h.place_keys && w.place_keys
+              WHERE h.poster_phone IS DISTINCT FROM w.poster_phone;"
+          echo "=== the distinct group names on messages ==="
+          q "SELECT g, count(*) FROM ipy_market_post, unnest(groups) g GROUP BY 1 ORDER BY 2 DESC LIMIT 12;"
