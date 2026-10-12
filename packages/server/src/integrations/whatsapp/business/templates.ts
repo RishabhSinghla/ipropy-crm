@@ -299,3 +299,20 @@ export async function organisationName(): Promise<string> {
   );
   return (typeof row?.value === 'string' && row.value.trim()) || 'iPropy';
 }
+
+/**
+ * The words a customer actually received: the approved wording with each {{n}} replaced by what was sent for it.
+ * A blank with no value is left as written rather than hidden, so a missing value is visible, not silent.
+ */
+export function fillTemplateBody(bodyText: string, params: string[]): string {
+  return bodyText.replace(/\{\{\s*(\d+)\s*\}\}/g, (whole, n: string) => params[Number(n) - 1] ?? whole);
+}
+
+/** What to show in the chat for a template that was sent — its wording, not its name. */
+export async function templateWording(name: string, language: string, params: string[]): Promise<string> {
+  const row = await db.queryOne<{ body_text: string }>(
+    `SELECT body_text FROM ipy_whatsapp_template WHERE name = $1 ORDER BY (language = $2) DESC, created_at DESC LIMIT 1`,
+    [name, language],
+  );
+  return row?.body_text?.trim() ? fillTemplateBody(row.body_text, params) : `[template: ${name}]`;
+}

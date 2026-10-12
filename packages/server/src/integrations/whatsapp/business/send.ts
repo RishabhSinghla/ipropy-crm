@@ -24,6 +24,7 @@ import { toInternational } from '@ipropy/shared';
 import { matchKey } from '../matchContact.js';
 import { activeBusinessProvider } from './registry.js';
 import { whyItFailed } from './whyItFailed.js';
+import { templateWording } from './templates.js';
 import { prepareOutgoingMedia } from './media.js';
 
 export interface BusinessSendInput {
@@ -257,7 +258,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     : null;
 
   const body = input.template
-    ? `[template: ${input.template.name}]`
+    ? await templateWording(input.template.name, input.template.language, input.template.params)
     : input.text ?? (media ? media.fileName : '');
 
   // Written first, on purpose: a provider that accepts and then times out on
