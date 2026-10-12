@@ -29,6 +29,9 @@ export interface DealerDeal {
   summary: string;
   body: string;
   category: string | null;
+  project: string | null;
+  facing: string | null;
+  floor: string | null;
   bhk: number | null;
   sizeSqYd: number | null;
   priceMinLakh: number | null;
@@ -55,7 +58,9 @@ export interface DealerDeals {
 }
 
 const LIMIT = 100;
-const DAYS = 365;
+// Keep the Associate's personal deal lists aligned with the Market screen's
+// freshness window: stale posts should not crowd out today's useful stock.
+const DAYS = 45;
 
 /** The business's own spelling first ("Sector 78"); the reader's lower-cased twin of it is dropped. */
 export function onceEach(names: string[]): string[] {
@@ -81,7 +86,7 @@ export async function dealsOfRecord(ctx: ServiceContext, moduleName: string, rec
   if (!numbers.length) return bucketDeals([]);
 
   const rows = await db.query<Record<string, unknown>>(
-    `SELECT l.id, l.post_id, l.kind, l.purpose, l.summary, l.category, l.bhk, l.size_sqyd, l.price_min_lakh, l.price_max_lakh,
+    `SELECT l.id, l.post_id, l.kind, l.purpose, l.summary, l.category, l.project, l.facing, l.floor, l.bhk, l.size_sqyd, l.price_min_lakh, l.price_max_lakh,
             l.place_keys, p.body, p.groups, p.seen_count, p.urgency, coalesce(p.last_posted_at, p.created_at) AS posted_at
        FROM ipy_market_listing l JOIN ipy_market_post p ON p.id = l.post_id
       WHERE p.poster_phone = ANY($1::text[]) AND NOT p.is_noise
@@ -99,6 +104,9 @@ export async function dealsOfRecord(ctx: ServiceContext, moduleName: string, rec
       summary: row.summary as string,
       body: tidyBody(row.body as string),
       category: row.category as string | null,
+      project: row.project as string | null,
+      facing: row.facing as string | null,
+      floor: row.floor as string | null,
       bhk: row.bhk as number | null,
       sizeSqYd: row.size_sqyd as number | null,
       priceMinLakh: row.price_min_lakh as number | null,

@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { picklistOptionForValue, recordStrength, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, GripVertical, Mail, Search, Send, Sparkles, Star, Tag, Trash2, X, CalendarDays, PanelRightClose, PanelRightOpen,
+  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, Copy, Eye, GripVertical, Mail, Pencil, Search, Send, Sparkles, Star, Tag, Trash2, X, CalendarDays, PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
@@ -864,9 +864,25 @@ export function IpropyWorkspace({
               moduleName={module.name}
               nameField={nameField}
               statusField={statusField}
+              phoneField={module.name === 'associates' ? module.fields.find((field) => field.uitype === 'phone') : undefined}
+              companyField={module.name === 'associates' ? module.fields.find((field) => ['company', 'company_name'].includes(field.name)) : undefined}
+              localityField={module.name === 'associates' ? module.fields.find((field) => ['locality', 'city'].includes(field.name)) : undefined}
               canEdit={canEdit}
               onEdited={() => invalidateRecordQueries(queryClient, module.name, row.id)}
               onSelect={() => openRecord(row.id)}
+              onFullView={() => navigate(`/${module.name}/${row.id}`)}
+              onMatch={() => { openRecord(row.id); setMenuPick('deals_sale'); setShowing('record'); }}
+              onDuplicate={module.name === 'associates' && canEdit ? async () => {
+                const copy = Object.fromEntries(module.fields
+                  .filter((field) => field.isActive && !field.isReadonly && field.name !== 'mobile' && field.uitype !== 'autonumber')
+                  .map((field) => [field.name, row.values[field.name]])
+                  .filter(([, value]) => value !== null && value !== undefined && value !== ''));
+                try {
+                  await api.create(module.name, copy);
+                  await queryClient.invalidateQueries({ queryKey: ['list', module.name] });
+                  toast.success('Associate duplicated', 'Mobile was left blank so the new record does not collide with the original.');
+                } catch (error) { toast.error('Could not duplicate Associate', (error as Error).message); }
+              } : undefined}
               onToggle={(checked) => onToggleSelect(row.id, checked)}
             />
           ))}
@@ -1279,7 +1295,12 @@ export function IpropyWorkspace({
               emptyLine="No inventory carries this project's name yet. Set Project on a unit in Inventories and it appears here."
             />
           )}
-          {module.name === 'associates' && shownKey in LIST_OF && <DealerDealsTab module={module.name} recordId={active.id} tab={shownKey as DealTabKey} />}
+          {module.name === 'associates' && shownKey in LIST_OF && <DealerDealsTab
+            module={module.name}
+            recordId={active.id}
+            tab={shownKey as DealTabKey}
+            columns={((module.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config ?? {}) as { associateDealColumns?: string[] }).associateDealColumns}
+          />}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownKey === 'calls' && <CallsTab recordId={active.id} />}
           {shownKey === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
@@ -1457,7 +1478,8 @@ export function IpropyWorkspace({
  */
 function QueueCard({
   row, active, checked, card, queueFields,
-  moduleName, nameField, statusField, canEdit, onEdited, onSelect, onToggle,
+  moduleName, nameField, statusField, phoneField, companyField, localityField,
+  canEdit, onEdited, onSelect, onToggle, onFullView, onMatch, onDuplicate,
 }: {
   row: RecordEnvelope;
   active: boolean;
@@ -1472,10 +1494,16 @@ function QueueCard({
    * one the record header reads.
    */
   statusField?: FieldMeta;
+  phoneField?: FieldMeta;
+  companyField?: FieldMeta;
+  localityField?: FieldMeta;
   canEdit: boolean;
   onEdited: () => void;
   onSelect: () => void;
   onToggle: (checked: boolean) => void;
+  onFullView: () => void;
+  onMatch: () => void;
+  onDuplicate?: () => void;
 }): JSX.Element {
   /*
     Which of the two facts on this row is being changed, if either.
@@ -1655,20 +1683,29 @@ function QueueCard({
           >
             {row.label}
           </span>
+          {moduleName === 'associates' && phoneField && read(phoneField) && (
+            <>
+              <span aria-hidden="true" className="shrink-0 text-muted">|</span>
+              <span className="min-w-0 truncate text-[11px] font-medium text-muted">{read(phoneField)}</span>
+            </>
+          )}
+          {moduleName === 'associates' && row.updatedAt && (
+            <>
+              <span aria-hidden="true" className="shrink-0 text-muted">|</span>
+              <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] font-normal text-[#6e7685] dark:text-slate-400">{queueAge(row.updatedAt)}</span>
+            </>
+          )}
           {/* No contact-type chip beside the name since 2 October 2026 —
               *"I don't need to see it there"*. It is in the fields pane. */}
           {/* How stale it is, top right — "13h ago". The palest grey that still
               reads at 4.5:1 on white (10 October 2026: *"make pale grey more
               lighter"*); any paler and the a11y scan fails it. */}
-          {row.updatedAt && (
+          {moduleName !== 'associates' && row.updatedAt && (
             <span className={cn('ml-auto shrink-0 whitespace-nowrap text-[10px] font-normal', active ? 'text-brand-800 dark:text-white' : 'text-[#6e7685] dark:text-slate-400')}>
               {queueAge(row.updatedAt)}
             </span>
           )}
         </span>
-
-        {/* No number here — *"I dont want to see phone number there"* (1 October
-            2026). It is on the open record, beside its WhatsApp icon. */}
 
         {/* 2. Which unit, cut short with "…" rather than wrapped. A blank line
             when there is nothing to say, so every card is the same height. */}
@@ -1679,7 +1716,9 @@ function QueueCard({
           // `lib/color.ts` exists.
           active ? 'font-semibold text-brand-700 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400',
         )}>
-          {oneOfEach([description, area]) || '\u00a0'}
+          {moduleName === 'associates'
+            ? oneOfEach([companyField ? read(companyField) : '', localityField ? read(localityField) : '']) || '\u00a0'
+            : oneOfEach([description, area]) || '\u00a0'}
         </span>
 
         {/*
@@ -1688,7 +1727,8 @@ function QueueCard({
           record and the next is the only one this queue needs.
         */}
         <span className="mt-1 flex min-h-[22px] items-center gap-2 text-xs">
-          {price && (
+          {moduleName === 'associates' && <span className="min-w-0 truncate font-medium text-muted">{agentName || 'Unassigned'} <span aria-hidden="true">·</span> Associates</span>}
+          {moduleName !== 'associates' && price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.
               'shrink-0 whitespace-nowrap text-[15px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300',
@@ -1698,7 +1738,7 @@ function QueueCard({
           )}
           {/* `text-muted` and not a slate step: the token is the one that
               carries a contrast guarantee in both themes. */}
-          {agentName && <span title={agentName} className="min-w-0 truncate rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">{agentName}</span>}
+          {moduleName !== 'associates' && agentName && <span title={agentName} className="min-w-0 truncate rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">{agentName}</span>}
           {/*
             The record's status, hard against the right edge, in the colour the
             admin picked for it in the dropdown master — the owner, 10 October
@@ -1709,7 +1749,7 @@ function QueueCard({
 
             `truncate` on the chip makes it give way before the price does.
           */}
-          {statusLabel && (
+          {moduleName !== 'associates' && statusLabel && (
             <Badge
               color={status?.color}
               /* The tick box appears over this corner on hover; the chip moves
@@ -1721,6 +1761,17 @@ function QueueCard({
           )}
         </span>
       </button>
+
+      {moduleName === 'associates' && (
+        <span className="absolute right-2 top-2 z-[3] flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-white/95 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 dark:bg-slate-900/95">
+          <button type="button" aria-label={`Quick view ${row.label}`} title="Quick full record view" onClick={onSelect} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800"><Eye className="h-3.5 w-3.5" /></button>
+          <button type="button" aria-label={`Edit ${row.label}`} title="Open full record to edit" onClick={onFullView} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800"><Pencil className="h-3.5 w-3.5" /></button>
+          {onDuplicate && <button type="button" aria-label={`Duplicate ${row.label}`} title="Duplicate Associate (mobile left blank)" onClick={() => void onDuplicate()} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800"><Copy className="h-3.5 w-3.5" /></button>}
+          {phoneField && read(phoneField) && <CallButton to={read(phoneField)} recordId={row.id} module={moduleName} round />}
+          {phoneField && read(phoneField) && <WhatsAppButton to={read(phoneField)} round />}
+          <button type="button" aria-label={`Open matching for ${row.label}`} title="Open Associate property and requirement matches" onClick={onMatch} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800"><ArrowRightLeft className="h-3.5 w-3.5" /></button>
+        </span>
+      )}
 
       {/*
         The tick box, and nothing else, over the card's top-right corner.
