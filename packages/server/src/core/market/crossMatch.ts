@@ -155,9 +155,9 @@ export function scorePair(want: MarketListing, have: MarketListing, now = new Da
   const times = [want.postedAt?.getTime(), have.postedAt?.getTime()].filter((t): t is number => typeof t === 'number');
   if (times.length) {
     const ageDays = (now.getTime() - Math.min(...times)) / DAY_MS;
-    if (ageDays <= 90) {
+    if (ageDays <= 45) {
       score += 0.07;
-      reasons.push('recent (within 90 days)');
+      reasons.push('recent (within 45 days)');
     } else if (ageDays > 200) {
       score -= 0.05;
       reasons.push('older postings');
@@ -301,7 +301,7 @@ export async function loadListings(days: number): Promise<MarketListing[]> {
 }
 
 export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<CrossMatch[]> {
-  const days = Math.min(Math.max(query.days ?? 90, 1), 365);
+  const days = Math.min(Math.max(query.days ?? 45, 1), 365);
   const limit = Math.min(Math.max(query.limit ?? 100, 1), 500);
   const learned = await db.query<{ listing: string; n: number }>(
     `SELECT l AS listing, count(*)::int AS n FROM (

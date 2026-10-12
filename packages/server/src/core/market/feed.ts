@@ -256,7 +256,7 @@ export interface MarketPost {
 
 export async function searchMarket(query: MarketQuery): Promise<{ total: number; posts: MarketPost[] }> {
   const where: string[] = [`NOT is_noise`, `coalesce(last_posted_at, created_at) > now() - make_interval(days => $1::int)`];
-  const params: unknown[] = [Math.min(Math.max(query.days ?? 30, 1), 365)];
+  const params: unknown[] = [Math.min(Math.max(query.days ?? 45, 1), 365)];
   const add = (value: unknown): string => { params.push(value); return `$${params.length}`; };
 
   if (query.kind) where.push(`kind = ${add(query.kind)}`);
