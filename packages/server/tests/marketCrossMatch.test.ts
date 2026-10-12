@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bestPerBuyer, scorePair, type MarketDeal } from '../src/core/market/crossMatch.js';
+import { onceEach } from '../src/core/market/dealerDeals.js';
 import { associateValues, looksLikeAFirm, usableName, type FieldInfo } from '../src/core/market/dealers.js';
 
 const NOW = new Date('2026-10-12T05:00:00Z');
@@ -7,7 +8,7 @@ const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000);
 
 function deal(over: Partial<MarketDeal>): MarketDeal {
   return {
-    id: Math.random().toString(36).slice(2), kind: 'have', placeKeys: ['sector 85'], category: 'Residential Plot',
+    id: Math.random().toString(36).slice(2), kind: 'have', purpose: 'sale', placeKeys: ['sector 85'], category: 'Residential Plot',
     bhk: null, sizeSqYd: 250, priceMinLakh: 350, priceMaxLakh: 350, posterName: 'A', posterPhone: '9811111111',
     groups: ['FEAWA'], postedAt: daysAgo(5), body: '', ...over,
   };
@@ -26,6 +27,11 @@ describe('scoring a buyer against a seller', () => {
     expect(scorePair(buyer, deal({ placeKeys: ['sector 21'] }), NOW)).toBeNull();
     expect(scorePair(buyer, deal({ category: 'Apartment' }), NOW)).toBeNull();
     expect(scorePair(buyer, deal({ priceMinLakh: 500 }), NOW)).toBeNull();
+  });
+
+  it('never pairs a purchase with a rental', () => {
+    expect(scorePair(deal({ kind: 'want', purpose: 'rent' }), deal({}), NOW)).toBeNull();
+    expect(scorePair(deal({ kind: 'want', purpose: 'rent' }), deal({ purpose: 'rent' }), NOW)).not.toBeNull();
   });
 
   it('a seller a little over budget still counts; a buyer asking a different BHK does not', () => {
@@ -113,5 +119,11 @@ describe('dealers becoming Associates', () => {
     expect(associateValues({ ...dealer, name: '+91 98111 11111' }, production)!.full_name).toBe('WhatsApp 9811111111');
     expect(looksLikeAFirm('Ramesh')).toBe(false);
     expect(looksLikeAFirm('Guruji Kripa Realtors')).toBe(true);
+  });
+});
+
+describe('a dealer\'s deal lists', () => {
+  it('shows a place once, in the business\'s own spelling', () => {
+    expect(onceEach(['Sector 78', 'sector 78', 'Greenfields Colony'])).toEqual(['Sector 78', 'Greenfields Colony']);
   });
 });

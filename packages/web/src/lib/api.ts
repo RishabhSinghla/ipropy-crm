@@ -651,6 +651,29 @@ export interface MarketDealer {
   lastSeenAt: string | null;
 }
 
+export interface DealerDeal {
+  id: string;
+  body: string;
+  category: string | null;
+  bhk: number | null;
+  sizeSqYd: number | null;
+  priceMinLakh: number | null;
+  priceMaxLakh: number | null;
+  places: string[];
+  groups: string[];
+  seenCount: number;
+  postedAt: string | null;
+  urgency: number | null;
+}
+
+export interface DealerDeals {
+  forSale: DealerDeal[];
+  buyerRequirements: DealerDeal[];
+  forRent: DealerDeal[];
+  tenantRequirements: DealerDeal[];
+  truncated: boolean;
+}
+
 export interface AssociateOutcome {
   created: number;
   alreadyKnown: number;
@@ -1328,6 +1351,7 @@ export const api = {
     get<MarketIntroduction[]>(`/api/market/matches?crossGroupOnly=${query.crossGroupOnly}&minScore=${query.minScore}&includeWorked=${query.includeWorked}&limit=100`),
   setMarketIntroduction: (wantId: string, haveId: string, status: MarketIntroductionStatus, note?: string) =>
     put<{ ok: true }>(`/api/market/matches/${wantId}/${haveId}`, { status, note: note ?? null }),
+  dealerDeals: (module: string, id: string) => get<DealerDeals>(`/api/market/records/${module}/${id}/deals`),
   marketDealers: () => get<{ total: number; dealers: MarketDealer[] }>('/api/market/dealers?limit=200'),
   saveMarketDealers: () => post<AssociateOutcome>('/api/market/dealers/save', {}),
   marketMatches: (postId: string) =>

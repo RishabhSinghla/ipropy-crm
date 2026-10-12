@@ -32,6 +32,7 @@ interface WaitingPost {
   id: string;
   body: string;
   kind: PostReading['kind'];
+  purpose: PostReading['purpose'] | null;
   last_posted_at: Date | null;
   alerted_at: Date | null;
 }
@@ -43,12 +44,12 @@ async function readOne(post: WaitingPost): Promise<{ read: boolean; tell: string
     await db.query(`UPDATE ipy_market_post SET jev_attempts = jev_attempts + 1 WHERE id = $1`, [post.id]);
     return { read: false, tell: null };
   }
-  const merged = mergeReadings({ kind: post.kind } as PostReading, answer.reading);
+  const merged = mergeReadings({ kind: post.kind, purpose: post.purpose ?? 'sale' } as PostReading, answer.reading);
   await db.query(
     `UPDATE ipy_market_post
-        SET kind = $2, is_noise = $3, category = coalesce($4, category), poster_role = $5, urgency = $6, jev_checked_at = now()
+        SET kind = $2, is_noise = $3, category = coalesce($4, category), poster_role = $5, urgency = $6, purpose = $7, jev_checked_at = now()
       WHERE id = $1`,
-    [post.id, merged.kind, merged.isNoise, merged.category, merged.role, merged.urgency],
+    [post.id, merged.kind, merged.isNoise, merged.category, merged.role, merged.urgency, merged.purpose],
   );
   const ageDays = post.last_posted_at ? (Date.now() - post.last_posted_at.getTime()) / 86_400_000 : Infinity;
   const worthTelling = !post.alerted_at && !merged.isNoise && merged.kind !== 'unknown' && ageDays <= ALERT_WITHIN_DAYS;
@@ -58,7 +59,7 @@ async function readOne(post: WaitingPost): Promise<{ read: boolean; tell: string
 export async function readWaitingPosts(limit = PER_VISIT): Promise<{ read: number; failed: number; alerted: number }> {
   if (!jevIsAvailable()) return { read: 0, failed: 0, alerted: 0 };
   const waiting = await db.query<WaitingPost>(
-    `SELECT id, body, kind, last_posted_at, alerted_at
+    `SELECT id, body, kind, purpose, last_posted_at, alerted_at
        FROM ipy_market_post
       WHERE jev_checked_at IS NULL AND jev_attempts < $1
       ORDER BY last_posted_at DESC NULLS LAST
@@ -83,7 +84,7 @@ export async function readWaitingPosts(limit = PER_VISIT): Promise<{ read: numbe
 }
 
 /** Bump when `readPost` learns something new; every older row is then re-read once. */
-const READ_VERSION = 1;
+const READ_VERSION = 2;
 
 /**
  * Re-read stored posts with the word lists. No network, so it is cheap and runs
@@ -101,9 +102,11 @@ export async function reReadOldPosts(limit = 500): Promise<number> {
     const reading = readPost(post.body, localities);
     await db.query(
       `UPDATE ipy_market_post
-          SET places = $2, size_sqyd = $3, category = coalesce(category, $4), place_keys = $5, read_version = $6
+          SET places = $2, size_sqyd = $3, category = coalesce(category, $4), place_keys = $5, read_version = $6,
+              -- Jev's reading of sale or rent outranks the words, so a post it has already read keeps it.
+              purpose = CASE WHEN jev_checked_at IS NULL THEN $7 ELSE coalesce(purpose, $7) END
         WHERE id = $1`,
-      [post.id, reading.places, reading.sizeSqYd, reading.category, placeKeysOf(reading), READ_VERSION],
+      [post.id, reading.places, reading.sizeSqYd, reading.category, placeKeysOf(reading), READ_VERSION, reading.purpose],
     );
   }
   return old.rows.length;

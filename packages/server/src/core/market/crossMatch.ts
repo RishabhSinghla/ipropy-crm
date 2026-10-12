@@ -17,6 +17,7 @@ import { categoryFamily } from './readPost.js';
 export interface MarketDeal {
   id: string;
   kind: 'have' | 'want';
+  purpose: 'sale' | 'rent';
   placeKeys: string[];
   category: string | null;
   bhk: number | null;
@@ -41,6 +42,8 @@ const DAY_MS = 86_400_000;
 
 /** Null means the two cannot be a deal at all; otherwise how good a one, and why. */
 export function scorePair(want: MarketDeal, have: MarketDeal, now = new Date()): Pairing | null {
+  // Somebody buying is not introduced to a landlord, and a tenant is not introduced to a seller.
+  if (want.purpose !== have.purpose) return null;
   let score = 0;
   const reasons: string[] = [];
 
@@ -134,6 +137,7 @@ function rowToDeal(row: Record<string, unknown>): MarketDeal {
   return {
     id: row.id as string,
     kind: row.kind as 'have' | 'want',
+    purpose: (row.purpose as 'sale' | 'rent' | null) ?? 'sale',
     placeKeys: row.place_keys as string[],
     category: row.category as string | null,
     bhk: row.bhk as number | null,
@@ -183,7 +187,7 @@ export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<Cro
   const days = Math.min(Math.max(query.days ?? 90, 1), 365);
   const limit = Math.min(Math.max(query.limit ?? 100, 1), 500);
   const posts = await db.query<Record<string, unknown>>(
-    `SELECT id, kind, place_keys, category, bhk, size_sqyd, price_min_lakh, price_max_lakh,
+    `SELECT id, kind, purpose, place_keys, category, bhk, size_sqyd, price_min_lakh, price_max_lakh,
             poster_name, poster_phone, groups, coalesce(last_posted_at, created_at) AS posted_at, body
        FROM ipy_market_post
       WHERE NOT is_noise AND kind IN ('have', 'want') AND place_keys <> '{}'

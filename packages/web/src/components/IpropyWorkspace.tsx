@@ -12,6 +12,8 @@ import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { BuilderFloorTable, localityFilter, matchesForContact, unitsOfProject } from './BuilderFloorTable';
 import { MatchingTab } from './MatchingTab';
+import { DealerDealsTab, LIST_OF, dealsQueryKey } from './DealerDeals';
+import type { DealTabKey } from '../lib/splitViewLayout';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
@@ -608,6 +610,13 @@ export function IpropyWorkspace({
     enabled: Boolean(active?.id),
     staleTime: 60_000,
   });
+  // An Associate's four deal lists. One answer feeds the numbers on the tabs and the rows under them.
+  const { data: dealerDeals } = useQuery({
+    queryKey: dealsQueryKey(active?.id ?? ''),
+    queryFn: () => api.dealerDeals(module.name, active!.id),
+    enabled: Boolean(active?.id) && module.name === 'associates',
+    staleTime: 60_000,
+  });
   const menuCount = (key: MenuKey): string | null => {
     const shown = (count: number | undefined, cap: number): string | null => {
       if (!count) return null;
@@ -617,6 +626,7 @@ export function IpropyWorkspace({
     if (key === 'matching') return shown(matchingCount, 50);
     if (key === 'files') return shown(fileRows?.length, 1000);
     if (key === 'calls') return shown(callRows?.length, 50);
+    if (key in LIST_OF) return shown(dealerDeals?.[LIST_OF[key as DealTabKey]].length, 100);
     // The three stream entries count out of the same answer the tabs do, so a
     // badge and the list it labels cannot disagree and nothing is asked twice.
     const kind = activityKindOf(key);
@@ -1269,6 +1279,7 @@ export function IpropyWorkspace({
               emptyLine="No inventory carries this project's name yet. Set Project on a unit in Inventories and it appears here."
             />
           )}
+          {module.name === 'associates' && shownKey in LIST_OF && <DealerDealsTab module={module.name} recordId={active.id} tab={shownKey as DealTabKey} />}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownKey === 'calls' && <CallsTab recordId={active.id} />}
           {shownKey === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}

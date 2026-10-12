@@ -25,7 +25,21 @@
   a tab any more. A saved list that still names it simply drops it, the same
   way it drops anything else this build cannot draw.
 */
-export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls' | 'whatsapp';
+export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls' | 'whatsapp' | DealTabKey;
+
+/**
+ * An Associate is a dealer, and what a dealer posts in the WhatsApp groups is
+ * four different things. One tab each, so a rep reads "what do they have to
+ * sell" without sifting a single list.
+ */
+export type DealTabKey = 'deals_sale' | 'deals_buyer' | 'deals_rent' | 'deals_tenant';
+
+export const DEAL_TABS: Array<SplitTab & { key: DealTabKey }> = [
+  { key: 'deals_sale', label: 'For Sale' },
+  { key: 'deals_buyer', label: 'Buyer Requirements' },
+  { key: 'deals_rent', label: 'For Rent' },
+  { key: 'deals_tenant', label: 'Tenant Requirements' },
+];
 
 export interface SplitTab {
   key: SplitTabKey;
@@ -65,6 +79,8 @@ export function allSplitTabs(moduleName: string): SplitTab[] {
     matches this one; nothing points at a project (see migration 194).
   */
   if (moduleName === 'projects') tabs.unshift({ key: 'units', label: 'Units' });
+  // Only Associates: they are the people who post in the dealer groups.
+  if (moduleName === 'associates') tabs.push(...DEAL_TABS);
   tabs.push(
     { key: 'files', label: 'Files' },
     { key: 'calls', label: 'Calls' },

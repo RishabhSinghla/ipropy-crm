@@ -54,6 +54,14 @@ const QUESTIONS = {
     instructions: 'Which property category best describes this post?',
     criteria: Object.fromEntries(PROPERTY_CATEGORIES.map((c) => [c, `A post about a ${c.toLowerCase()}.`])),
   },
+  deal_type: {
+    type: 'choice',
+    instructions: 'Is this property deal about a sale or a rental?',
+    criteria: {
+      sale: 'Buying or selling a property outright (for sale, demand, requirement to purchase).',
+      rent: 'Renting or leasing a property (to let, for rent, kiraya, tenant wanted or a tenant looking).',
+    },
+  },
   author_role: {
     type: 'choice',
     instructions: 'Who is posting this message?',
@@ -75,6 +83,8 @@ export interface JevReading {
   urgency: number | null;
   category: string | null;
   role: string | null;
+  purpose: 'sale' | 'rent' | null;
+  purposeConfidence: number | null;
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -111,6 +121,7 @@ export function readJevAnswers(payload: unknown): JevReading | null {
   if (!kind.pick) return null;
   const role = chosen(answers.author_role).pick;
   const category = chosen(answers.category).pick;
+  const deal = chosen(answers.deal_type);
   return {
     kind: kind.pick === 'inventory' || kind.pick === 'lead' || kind.pick === 'noise' ? kind.pick : null,
     kindConfidence: kind.confidence,
@@ -118,6 +129,8 @@ export function readJevAnswers(payload: unknown): JevReading | null {
     urgency: number(answers.urgency, ['score', 'value', 'position']),
     category: category && PROPERTY_CATEGORIES.includes(category) ? category : null,
     role: role && ROLES.includes(role) ? role : null,
+    purpose: deal.pick === 'sale' || deal.pick === 'rent' ? deal.pick : null,
+    purposeConfidence: deal.confidence,
   };
 }
 
@@ -165,6 +178,7 @@ const TRUST_NOISE_AT = 0.8;
 
 export interface MergedReading {
   kind: PostReading['kind'];
+  purpose: PostReading['purpose'];
   isNoise: boolean;
   category: string | null;
   role: string | null;
@@ -183,6 +197,7 @@ export function mergeReadings(words: PostReading, jev: JevReading): MergedReadin
   if (sure && jev.kind === 'lead') kind = 'want';
   return {
     kind,
+    purpose: jev.purpose && (jev.purposeConfidence ?? 0) >= TRUST_KIND_AT ? jev.purpose : words.purpose,
     isNoise: jev.kind === 'noise' && (jev.kindConfidence ?? 0) >= TRUST_NOISE_AT,
     category: jev.category && jev.category !== 'Unknown' ? jev.category : null,
     role: jev.role,

@@ -29,7 +29,7 @@ describe('reading one post', () => {
 
   it('a seller with a price in crore', () => {
     expect(readPost('3 BHK available in Greenfield, ₹1.45 Cr, call 98110 12345', known)).toEqual({
-      kind: 'have', bhk: 3, priceMinLakh: 145, priceMaxLakh: 145, localities: ['Greenfields Colony'], places: [], sizeSqYd: null, category: 'Apartment', phone: '9811012345',
+      kind: 'have', purpose: 'sale', bhk: 3, priceMinLakh: 145, priceMaxLakh: 145, localities: ['Greenfields Colony'], places: [], sizeSqYd: null, category: 'Apartment', phone: '9811012345',
     });
   });
 

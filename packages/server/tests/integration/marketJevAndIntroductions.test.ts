@@ -23,6 +23,9 @@ import { signIn } from './fixtures.js';
 import { readWaitingPosts, reReadOldPosts } from '../../src/core/market/enrich.js';
 import { findCrossMatches, recordOutcome } from '../../src/core/market/crossMatch.js';
 import { dealerDirectory, saveDealersAsAssociates } from '../../src/core/market/dealers.js';
+import { dealsOfRecord } from '../../src/core/market/dealerDeals.js';
+import { recordService } from '../../src/core/entity/recordService.js';
+import { adminContext, leadInput } from './fixtures.js';
 
 let app: Express;
 let adminToken = '';
@@ -145,5 +148,31 @@ describe('a dealer group read by Jev and matched across groups', () => {
     const row = await db.queryOne<{ size_sqyd: number; place_keys: string[] }>(`SELECT size_sqyd, place_keys FROM ipy_market_post WHERE poster_phone = $1`, [sellerPhone]);
     expect(row?.size_sqyd).toBe(260);
     expect(row?.place_keys).toContain('sector 85');
+  });
+
+  it('a dealer\'s record shows what they posted in four lists, and only theirs', async () => {
+    const rentPhone = sellerPhone;
+    // The same dealer also has a flat to let, and a tenant wants one.
+    await upload(`Rentals ${marker}`, [
+      `${stamp}, 11:00 am - Bhoomi Associates: 2 BHK flat available on rent sector 85 ${marker} 25000 per month call ${rentPhone}`,
+      `${stamp}, 11:05 am - Bhoomi Associates: Tenant required 3 BHK builder floor sector 85 ${marker} call ${rentPhone}`,
+    ].join('\n'));
+    const ctx = await adminContext();
+    const lead = await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `Dealer ${marker}`, mobile: rentPhone }));
+    const stranger = await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `Nobody ${marker}` }));
+
+    const deals = await dealsOfRecord(ctx, 'leads', lead.id);
+    expect(deals.forSale.map((d) => d.body).join('|')).toContain('260 sq yd residential plot');
+    expect(deals.forRent.map((d) => d.body).join('|')).toContain('2 BHK flat available on rent');
+    expect(deals.tenantRequirements.map((d) => d.body).join('|')).toContain('Tenant required');
+    expect(deals.buyerRequirements).toHaveLength(0);
+    expect(deals.forSale[0]!.places).toContain('sector 85');
+
+    const none = await dealsOfRecord(ctx, 'leads', stranger.id);
+    expect([none.forSale, none.forRent, none.buyerRequirements, none.tenantRequirements].every((list) => list.length === 0)).toBe(true);
+
+    const http = await request(app).get(`/api/market/records/leads/${lead.id}/deals`).set('Authorization', `Bearer ${adminToken}`);
+    expect(http.status).toBe(200);
+    expect(http.body.forRent).toHaveLength(1);
   });
 });

@@ -61,8 +61,8 @@ export async function importGroupExport(groupName: string, text: string, userId:
     const result = await db.queryOne<{ id: string; inserted: boolean }>(
       `INSERT INTO ipy_market_post
          (fingerprint, body, kind, bhk, price_min_lakh, price_max_lakh, localities,
-          poster_name, poster_phone, groups, first_posted_at, last_posted_at, imported_by, places, size_sqyd, category, place_keys, read_version)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::text], $11::timestamptz, $11::timestamptz, $12, $13, $14, $15, $16, 1)
+          poster_name, poster_phone, groups, first_posted_at, last_posted_at, imported_by, places, size_sqyd, category, place_keys, purpose, read_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::text], $11::timestamptz, $11::timestamptz, $12, $13, $14, $15, $16, $17, 2)
        ON CONFLICT (fingerprint) DO UPDATE SET
          groups = CASE WHEN $10::text = ANY(ipy_market_post.groups) THEN ipy_market_post.groups
                        ELSE ipy_market_post.groups || $10::text END,
@@ -73,7 +73,7 @@ export async function importGroupExport(groupName: string, text: string, userId:
         fingerprintOf(message.body), message.body, reading.kind, reading.bhk,
         reading.priceMinLakh, reading.priceMaxLakh, reading.localities,
         message.sender, reading.phone, groupName, posted, userId, reading.places, reading.sizeSqYd,
-        reading.category, placeKeysOf(reading),
+        reading.category, placeKeysOf(reading), reading.purpose,
       ],
     );
     if (result?.inserted) {

@@ -18,7 +18,7 @@ describe('reading what Jev answers', () => {
   it('reads the live shape', () => {
     expect(readJevAnswers(REAL_ANSWER)).toEqual({
       kind: 'inventory', kindConfidence: 1, isPropertyPost: 0.98, urgency: 1.18,
-      category: 'Residential Plot', role: 'Seller',
+      category: 'Residential Plot', role: 'Seller', purpose: null, purposeConfidence: null,
     });
   });
 
@@ -42,7 +42,7 @@ describe('reading what Jev answers', () => {
 describe('Jev overriding the word lists', () => {
   const words = readPost('Need 3 BHK in Greenfields');
   const jev = (kind: 'inventory' | 'lead' | 'noise', kindConfidence: number) =>
-    ({ kind, kindConfidence, isPropertyPost: 1, urgency: 2, category: 'Apartment', role: 'Dealer' }) as const;
+    ({ kind, kindConfidence, isPropertyPost: 1, urgency: 2, category: 'Apartment', role: 'Dealer', purpose: null, purposeConfidence: null }) as const;
 
   it('corrects a post the word lists read the wrong way round', () => {
     const merged = mergeReadings({ ...words, kind: 'want' }, jev('inventory', 0.95));
@@ -79,5 +79,29 @@ describe('reading a plot post', () => {
   it('takes the middle of a size range but never reads a price range as a size', () => {
     expect(readPost('200-300 gaj plot sec 21').sizeSqYd).toBe(250);
     expect(readPost('flat 80-90 lac available').sizeSqYd).toBeNull();
+  });
+});
+
+describe('sale or rent', () => {
+  it('reads a rental, and a sale ad that quotes a tenant\'s rent as a sale', () => {
+    expect(readPost('2 BHK available on rent sector 21 25000 per month').purpose).toBe('rent');
+    expect(readPost('Tenant required for 3 BHK builder floor').purpose).toBe('rent');
+    expect(readPost('Shop to let in sector 15').purpose).toBe('rent');
+    expect(readPost('3 BHK for sale sector 21, tenant paying 30000 rent').purpose).toBe('sale');
+    expect(readPost('250 gaj plot sector 85').purpose).toBe('sale');
+  });
+
+  it('takes Jev\'s word on rent only when it is sure', () => {
+    const base = { kind: 'inventory', kindConfidence: 0.9, isPropertyPost: 1, urgency: 1, category: null, role: null } as const;
+    const words = readPost('3 BHK available sector 21');
+    expect(mergeReadings(words, { ...base, purpose: 'rent', purposeConfidence: 0.95 }).purpose).toBe('rent');
+    expect(mergeReadings(words, { ...base, purpose: 'rent', purposeConfidence: 0.5 }).purpose).toBe('sale');
+  });
+});
+
+describe('reading a phone number', () => {
+  it('never builds one out of the end of a longer number and the digits after it', () => {
+    expect(readPost('plot ref 1791809876543 25000 per month call 9703330888').phone).toBe('9703330888');
+    expect(readPost('call 97033 30888 or +91 97033-30888').phone).toBe('9703330888');
   });
 });

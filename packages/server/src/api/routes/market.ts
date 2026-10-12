@@ -16,6 +16,7 @@ import { assertCapability } from '../../core/permissions/index.js';
 import { importGroupExport, searchMarket } from '../../core/market/feed.js';
 import { matchDeal } from '../../core/market/matchDeal.js';
 import { DEAL_STATUSES, findCrossMatches, recordOutcome } from '../../core/market/crossMatch.js';
+import { dealsOfRecord } from '../../core/market/dealerDeals.js';
 import { dealerDirectory, saveDealersAsAssociates } from '../../core/market/dealers.js';
 import { chatTextFromZip, looksLikeAZip } from '../../core/market/unzipChat.js';
 import { BadRequestError } from '../../utils/errors.js';
@@ -97,4 +98,10 @@ marketRouter.get('/dealers', asyncHandler(async (req, res) => {
 marketRouter.post('/dealers/save', blockApiKey, asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'records.import');
   res.json(await saveDealersAsAssociates(await dealerDirectory()));
+}));
+
+/** The deals one dealer posted, as four lists for their record's tabs. Needs permission to open the record. */
+marketRouter.get('/records/:module/:id/deals', asyncHandler(async (req, res) => {
+  const id = z.string().uuid().parse(req.params.id);
+  res.json(await dealsOfRecord(getScope(req), z.string().min(1).max(60).parse(req.params.module), id));
 }));

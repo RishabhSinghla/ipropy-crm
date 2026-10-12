@@ -15,6 +15,8 @@ export interface ChatMessage {
 
 export interface PostReading {
   kind: 'have' | 'want' | 'unknown';
+  /** For sale / buying, or to let / renting. Posts say "sale" far more often than they say it aloud, so that is the default. */
+  purpose: 'sale' | 'rent';
   bhk: number | null;
   priceMinLakh: number | null;
   priceMaxLakh: number | null;
@@ -116,7 +118,8 @@ function priceOf(body: string): { min: number | null; max: number | null } {
 
 /** Indian mobiles only; the last ten digits are what every other match in this CRM uses. */
 function phoneOf(body: string): string | null {
-  const match = /(?:\+?91[\s-]?)?([6-9]\d{4}[\s-]?\d{5})\b/.exec(body);
+  // `(?<!\d)`: without it the tail of a longer number glues onto the digits after it ("…76543 25000" read as 7654325000).
+  const match = /(?<!\d)(?:\+?91[\s-]?)?([6-9]\d{4}[\s-]?\d{5})\b/.exec(body);
   return match ? match[1]!.replace(/\D/g, '') : null;
 }
 
@@ -183,10 +186,19 @@ export function placeKeysOf(reading: Pick<PostReading, 'places' | 'localities'>)
   return [...new Set([...reading.places, ...reading.localities].map((place) => place.toLowerCase()))];
 }
 
+const RENT_WORDS = /\b(rent|rental|rented out|lease|leased|to[\s-]?let|kiraya|kiraye|किराया|किराए|किरायेदार|tenant)\b/i;
+const SALE_WORDS = /\b(for sale|on sale|sale|resale|sell|selling|demand|बिकाऊ|डिमांड|बेचनी)\b/i;
+
+/** A post that says rent and never says sale is a rental; a sale ad quoting a tenant's rent still says sale. */
+function purposeOf(body: string): PostReading['purpose'] {
+  return RENT_WORDS.test(body) && !SALE_WORDS.test(body) ? 'rent' : 'sale';
+}
+
 export function readPost(body: string, knownLocalities: string[] = []): PostReading {
   const price = priceOf(body);
   return {
     kind: kindOf(body),
+    purpose: purposeOf(body),
     bhk: bhkOf(body),
     priceMinLakh: price.min,
     priceMaxLakh: price.max,
