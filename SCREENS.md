@@ -3031,3 +3031,65 @@ functioned module."*
   three, `2 / 3` moved between them, the Changes tab showed their history, none of
   them appeared on `/leads`, and setting one back to Contacted took it out.
 
+
+## 13 October 2026 — an Associate's deal tables became a working grid
+
+The owner, with seven requirements for the Associates tabs (*Availability*, *Requirement*,
+column filters, single-line rows, select, row actions, a form per row). What was built, and
+the three decisions that are easy to undo by accident.
+
+* **Two tabs, not four.** `deals_availability` (For Sale + For Rent) and `deals_requirement`
+  (Buyer + Tenant). The server still answers four lists (`bucketDeals`) and the screen adds
+  them (`dealsForTab`), so nothing was re-derived. **A layout or menu order saved with the old
+  keys is carried across**, not dropped (`LEGACY_DEAL_TAB`, used by `splitTabsFor` and
+  `arrangeRecordMenu`) — dropped, an admin who had arranged the tabs would have had neither
+  of the new ones until somebody ticked them. The merged tab takes the new name; "For Sale"
+  described half of it.
+* **A filter under every column heading**, Excel-style (`lib/dealGrid.ts`, pure and tested):
+  text for property, house number, locality and floor/portion; from–to for price (lakh) and
+  size; a dropdown for bedrooms, category, facing and For Sale / For Rent; a recency
+  dropdown for posted date. **A deal with no price is hidden once a price is asked for** —
+  showing it would claim it fits a range nobody knows it fits.
+* **Rows are one line**, truncated with an ellipsis and the full text on hover; the table is
+  `table-fixed` with a width per column. **The tick box and the action buttons are pinned**
+  (`sticky left-0` / `right-0`, each with its own background, or the columns sliding under
+  them show through) — eleven columns do not fit a middle pane, and buttons you must scroll
+  to find are buttons nobody presses. The posted column shows the **date only**.
+* **Row buttons**: Edit, View, Duplicate, Delete, Matching (with a count), Compare and a ⋯
+  menu. **Compare** takes the ticked rows plus the one pressed (two to four), tints the lines
+  that differ. **Matching's number is per post**, the same question the "Who fits this?"
+  link always asked (`matchDeal`), fetched once for the rows on screen and capped at 40 a
+  request. It shows a dash while loading and never a false zero.
+
+### The row's own form — and why it is its own table
+
+Every property has a form on the right, opened by clicking the row or Edit. Each box saves
+when you leave it; there is no Save button to forget. **Which boxes** is Admin → Layouts →
+Associates (`associateDealFormFields`), plus any the admin adds (`associateDealCustomFields`,
+stored under `extra`, so adding one needs no migration). Property Status, Lost Reason and
+Source read the same Admin → Dropdowns masters as Leads and Inventories. **Not on it, on
+purpose:** Mobile, Assigned To, Contact Type and Operating Location — they are the dealer's,
+and the form belongs to one of their properties.
+
+**The trap, and the whole reason for migration `210` (`ipy_associate_deal`):** a deal row is
+the parser's reading of a WhatsApp post, and **the parser deletes and re-inserts a post's
+listings every time the post is re-read** (`saveListings`) — new ids, same position. Typing
+onto a listing would lose the work on the next pass. So the first change to a row *adopts*
+it: the words are copied into the team's own row, which stands in for the listing from then
+on, matched by (post, position in the post). A **deleted** row is hidden, not erased, for the
+same reason — erased, it would come back on the next re-read. A **duplicate** has no
+position, so it replaces nothing. `tests/integration/associateDeals.test.ts` calls
+`saveListings` itself and then looks for what somebody typed.
+
+**Write permission is the Associate's:** whoever may edit the dealer may edit their deals,
+and a listing is adopted only if it really is one of that dealer's — otherwise anyone could
+pull any market listing onto any record they can edit. An API key cannot (`blockApiKey`).
+
+**What is not known:** if the parser ever reads a post into a different number of listings,
+a stored row keeps its own copy of the words and stays, and the re-read may add an extra
+unedited one beside it. Nothing is lost; somebody may delete the extra.
+
+**Admin → Layouts** has two blocks for Associates: the deal-table columns (now with House /
+Unit No. and For Sale / For Rent) and the deal-form fields. **A column list saved before
+13 October still lacks the two new columns** — a saved list is an admin's choice and is not
+rewritten; tick them in the designer.

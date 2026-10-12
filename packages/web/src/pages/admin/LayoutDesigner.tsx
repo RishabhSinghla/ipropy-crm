@@ -25,7 +25,7 @@ import {
 import type { RecordEnvelope } from '@ipropy/shared';
 import { assignmentField, byLabel, pipelineFieldOf } from '../../lib/fields';
 import { queueCardFields } from '../../lib/queueCard';
-import { ASSOCIATE_DEAL_COLUMNS, DEFAULT_ASSOCIATE_DEAL_COLUMNS } from '../../components/DealerDeals';
+import { customKeyFor, DEAL_COLUMNS, DEAL_FORM_FIELDS, DEFAULT_DEAL_COLUMNS, DEFAULT_DEAL_FORM_FIELDS, type CustomDealField } from '../../lib/dealGrid';
 import { allSplitTabs, CALL_LOG_ROW, heroFieldNames, OWNER_ROW, rightPaneRowNames, splitTabsFor, type SplitTab } from '../../lib/splitViewLayout';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
@@ -50,6 +50,8 @@ interface DesignerConfig {
   splitTabs?: SplitTab[];
   rightPane?: string[];
   associateDealColumns?: string[];
+  associateDealFormFields?: string[];
+  associateDealCustomFields?: CustomDealField[];
   capture?: CapturePanelConfig;
 }
 
@@ -106,6 +108,9 @@ export default function LayoutDesigner(): JSX.Element {
   const [splitTabs, setSplitTabs] = useState<SplitTab[] | undefined>();
   const [rightPane, setRightPane] = useState<string[] | undefined>();
   const [associateDealColumns, setAssociateDealColumns] = useState<string[] | undefined>();
+  const [associateDealFormFields, setAssociateDealFormFields] = useState<string[] | undefined>();
+  const [associateDealCustomFields, setAssociateDealCustomFields] = useState<CustomDealField[] | undefined>();
+  const [newDealField, setNewDealField] = useState('');
   const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -177,6 +182,8 @@ export default function LayoutDesigner(): JSX.Element {
       setHeroFields(layout.config.heroFields);
       setRightPane(layout.config.rightPane);
       setAssociateDealColumns(layout.config.associateDealColumns);
+      setAssociateDealFormFields(layout.config.associateDealFormFields);
+      setAssociateDealCustomFields(layout.config.associateDealCustomFields);
       setSplitTabs(layout.config.splitTabs ? splitTabsFor(moduleName, layout.config.splitTabs) : undefined);
       setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
@@ -365,7 +372,7 @@ export default function LayoutDesigner(): JSX.Element {
         own default improves, this module keeps the old one for ever.
       */
       if (layoutType === 'detail') {
-        for (const [key, chosen] of [['queueFields', queueFields], ['heroFields', heroFields], ['splitTabs', splitTabs], ['rightPane', rightPane], ['associateDealColumns', associateDealColumns]] as const) {
+        for (const [key, chosen] of [['queueFields', queueFields], ['heroFields', heroFields], ['splitTabs', splitTabs], ['rightPane', rightPane], ['associateDealColumns', associateDealColumns], ['associateDealFormFields', associateDealFormFields], ['associateDealCustomFields', associateDealCustomFields]] as const) {
           if (chosen === undefined) delete config[key];
           else config[key] = chosen;
         }
@@ -576,14 +583,14 @@ export default function LayoutDesigner(): JSX.Element {
                       <Zone
                         step={4}
                         title="Associate deal tables — columns"
-                        hint="Choose the fields shown in For Sale, Buyer Requirements, For Rent and Tenant Requirements. These settings affect Associates only."
+                        hint="Choose the columns shown in the Availability and Requirement tables. These settings affect Associates only."
                         onReset={associateDealColumns ? () => { setAssociateDealColumns(undefined); touch(); } : undefined}
                         testId="zone-associate-deal-columns"
                       >
-                        <p className="mb-2 text-xs text-muted">Selected fields appear left to right in every Associates deal table.</p>
+                        <p className="mb-2 text-xs text-muted">Ticked columns appear left to right in every Associates deal table, in the order you tick them.</p>
                         <div className="grid gap-1 sm:grid-cols-2">
-                          {ASSOCIATE_DEAL_COLUMNS.map((column) => {
-                            const selected = associateDealColumns ?? DEFAULT_ASSOCIATE_DEAL_COLUMNS;
+                          {DEAL_COLUMNS.map((column) => {
+                            const selected = associateDealColumns ?? DEFAULT_DEAL_COLUMNS;
                             return <label key={column.key} className="flex items-center gap-2 rounded-md border border-slate-200 px-2.5 py-2 text-xs dark:border-slate-700">
                               <input
                                 type="checkbox"
@@ -601,6 +608,71 @@ export default function LayoutDesigner(): JSX.Element {
                             </label>;
                           })}
                         </div>
+                      </Zone>
+                    )}
+
+                    {moduleName === 'associates' && (
+                      <Zone
+                        step={4}
+                        title="Associate deal form — fields"
+                        hint="The form that opens beside a property row. The dealer's own Mobile, Assigned To, Contact Type and Operating Location are never on it: they belong to the Associate, not to one property."
+                        onReset={associateDealFormFields || associateDealCustomFields ? () => { setAssociateDealFormFields(undefined); setAssociateDealCustomFields(undefined); touch(); } : undefined}
+                        testId="zone-associate-deal-form"
+                      >
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          {DEAL_FORM_FIELDS.map((field) => {
+                            const selected = associateDealFormFields ?? DEFAULT_DEAL_FORM_FIELDS;
+                            return <label key={field.key} className="flex items-center gap-2 rounded-md border border-slate-200 px-2.5 py-2 text-xs dark:border-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={selected.includes(field.key)}
+                                onChange={(event) => {
+                                  setAssociateDealFormFields(event.target.checked ? [...selected, field.key] : selected.filter((key) => key !== field.key));
+                                  touch();
+                                }}
+                                className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              />
+                              {field.label}
+                            </label>;
+                          })}
+                        </div>
+                        <p className="mb-1 mt-3 text-xs font-semibold">Your own fields</p>
+                        <ul className="space-y-1">
+                          {(associateDealCustomFields ?? []).map((field) => (
+                            <li key={field.key} className="flex items-center gap-2 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs dark:border-slate-700">
+                              <input
+                                aria-label={`Name of the field ${field.label}`}
+                                className="min-w-0 flex-1 bg-transparent outline-none"
+                                value={field.label}
+                                onChange={(event) => {
+                                  setAssociateDealCustomFields((associateDealCustomFields ?? []).map((item) => (item.key === field.key ? { ...item, label: event.target.value } : item)));
+                                  touch();
+                                }}
+                              />
+                              <button
+                                type="button"
+                                className="text-negative hover:underline"
+                                onClick={() => { setAssociateDealCustomFields((associateDealCustomFields ?? []).filter((item) => item.key !== field.key)); touch(); }}
+                              >Remove</button>
+                            </li>
+                          ))}
+                        </ul>
+                        <form
+                          className="mt-2 flex gap-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            const label = newDealField.trim();
+                            if (!label) return;
+                            const current = associateDealCustomFields ?? [];
+                            setAssociateDealCustomFields([...current, { key: customKeyFor(label, current.map((item) => item.key)), label }]);
+                            setNewDealField('');
+                            touch();
+                          }}
+                        >
+                          <input aria-label="Name for a new deal form field" className="input h-8 flex-1 text-xs" placeholder="e.g. Owner name" value={newDealField} onChange={(event) => setNewDealField(event.target.value)} />
+                          <button type="submit" className="btn-secondary h-8 px-3 text-xs">Add field</button>
+                        </form>
+                        <p className="mt-1 text-[11px] text-muted">A field you add is a text box on every property&apos;s form. Removing one hides it; what was typed is kept.</p>
                       </Zone>
                     )}
                   </div>

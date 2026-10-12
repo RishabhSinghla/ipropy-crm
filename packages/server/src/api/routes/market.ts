@@ -18,6 +18,7 @@ import { listImports, queueImports } from '../../core/market/imports.js';
 import { matchDeal } from '../../core/market/matchDeal.js';
 import { DEAL_STATUSES, findCrossMatches, recordOutcome } from '../../core/market/crossMatch.js';
 import { dealsOfRecord } from '../../core/market/dealerDeals.js';
+import { DEAL_PATCH, deleteDeal, duplicateDeal, matchCounts, MATCH_COUNT_LIMIT, updateDeal } from '../../core/market/associateDeals.js';
 import { dealerDirectory, saveDealersAsAssociates } from '../../core/market/dealers.js';
 import { chatTextFromZip, looksLikeAZip } from '../../core/market/unzipChat.js';
 import { NotFoundError, BadRequestError } from '../../utils/errors.js';
@@ -141,4 +142,34 @@ marketRouter.post('/dealers/save', blockApiKey, asyncHandler(async (req, res) =>
 marketRouter.get('/records/:module/:id/deals', asyncHandler(async (req, res) => {
   const id = z.string().uuid().parse(req.params.id);
   res.json(await dealsOfRecord(getScope(req), z.string().min(1).max(60).parse(req.params.module), id));
+}));
+
+const dealParams = (req: { params: Record<string, string> }): { module: string; id: string; ref: string } => ({
+  module: z.string().min(1).max(60).parse(req.params.module),
+  id: z.string().uuid().parse(req.params.id),
+  ref: z.string().min(1).max(80).parse(req.params.ref),
+});
+
+/** Fill in a row's form. The first change to a row the parser read makes it the team's own. */
+marketRouter.patch('/records/:module/:id/deals/:ref', blockApiKey, asyncHandler(async (req, res) => {
+  const { module, id, ref } = dealParams(req);
+  res.json({ id: await updateDeal(getScope(req), module, id, ref, DEAL_PATCH.parse(req.body)) });
+}));
+
+marketRouter.post('/records/:module/:id/deals/:ref/duplicate', blockApiKey, asyncHandler(async (req, res) => {
+  const { module, id, ref } = dealParams(req);
+  res.json({ id: await duplicateDeal(getScope(req), module, id, ref) });
+}));
+
+marketRouter.delete('/records/:module/:id/deals/:ref', blockApiKey, asyncHandler(async (req, res) => {
+  const { module, id, ref } = dealParams(req);
+  await deleteDeal(getScope(req), module, id, ref);
+  res.json({ ok: true });
+}));
+
+/** How many of our own records each post fits, for the Matching button on a row. */
+marketRouter.get('/deal-match-counts', asyncHandler(async (req, res) => {
+  const posts = z.string().max(2000).parse(req.query.posts ?? '').split(',').filter(Boolean);
+  const ids = z.array(z.string().uuid()).max(MATCH_COUNT_LIMIT).parse(posts);
+  res.json(await matchCounts(ids, getScope(req)));
 }));
