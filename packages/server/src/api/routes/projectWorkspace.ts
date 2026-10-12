@@ -130,7 +130,7 @@ projectWorkspaceRouter.put('/:id/profile', blockApiKey, asyncHandler(async (req,
   const saved = await transaction(async (tx) => {
     const previous = await tx.queryOne<Record<string, unknown>>(`SELECT * FROM ipy_project_profiles WHERE project_id=$1 FOR UPDATE`, [req.params.id]);
     const row = await tx.queryOne<Record<string, unknown>>(
-      `INSERT INTO ipy_project_profiles (${columns.join(',')}) VALUES (${placeholders.join(',')})
+      `INSERT INTO ipy_project_profiles (${columns.join(',')}) VALUES (${placeholders.join(',')},now())
        ON CONFLICT (project_id) DO UPDATE SET ${updates.join(',')} RETURNING *`, values,
     );
     const changes: Record<string, { from: unknown; to: unknown }> = {};
