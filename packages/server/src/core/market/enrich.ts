@@ -233,6 +233,9 @@ export async function marketWork(): Promise<void> {
   busy = true;
   try {
     const started = Date.now();
+    // The pass that needs no network goes first and goes to the end. Alternating it with the slow ones (an AI model
+    // answers in seconds) cleared a backlog of thousands at a few hundred a visit, and the page stayed empty meanwhile.
+    while (Date.now() - started < VISIT_BUDGET_MS && (await reReadOldPosts(500)) > 0) { /* until nothing is left to re-read */ }
     while (Date.now() - started < VISIT_BUDGET_MS) {
       const reread = await reReadOldPosts();
       const result = await readWaitingPosts();
