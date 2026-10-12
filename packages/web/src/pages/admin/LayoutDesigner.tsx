@@ -25,6 +25,7 @@ import {
 import type { RecordEnvelope } from '@ipropy/shared';
 import { assignmentField, byLabel, pipelineFieldOf } from '../../lib/fields';
 import { queueCardFields } from '../../lib/queueCard';
+import { ASSOCIATE_DEAL_COLUMNS, DEFAULT_ASSOCIATE_DEAL_COLUMNS } from '../../components/DealerDeals';
 import { allSplitTabs, CALL_LOG_ROW, heroFieldNames, OWNER_ROW, rightPaneRowNames, splitTabsFor, type SplitTab } from '../../lib/splitViewLayout';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
@@ -48,6 +49,7 @@ interface DesignerConfig {
   heroFields?: string[];
   splitTabs?: SplitTab[];
   rightPane?: string[];
+  associateDealColumns?: string[];
   capture?: CapturePanelConfig;
 }
 
@@ -103,6 +105,7 @@ export default function LayoutDesigner(): JSX.Element {
   const [heroFields, setHeroFields] = useState<string[] | undefined>();
   const [splitTabs, setSplitTabs] = useState<SplitTab[] | undefined>();
   const [rightPane, setRightPane] = useState<string[] | undefined>();
+  const [associateDealColumns, setAssociateDealColumns] = useState<string[] | undefined>();
   const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -173,6 +176,7 @@ export default function LayoutDesigner(): JSX.Element {
       setQueueFields(layout.config.queueFields);
       setHeroFields(layout.config.heroFields);
       setRightPane(layout.config.rightPane);
+      setAssociateDealColumns(layout.config.associateDealColumns);
       setSplitTabs(layout.config.splitTabs ? splitTabsFor(moduleName, layout.config.splitTabs) : undefined);
       setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
@@ -187,6 +191,7 @@ export default function LayoutDesigner(): JSX.Element {
       setQueueFields(undefined);
       setHeroFields(undefined);
       setSplitTabs(undefined);
+      setAssociateDealColumns(undefined);
       setCapturePanel(DEFAULT_CAPTURE_PANEL);
     }
     setDirty(false);
@@ -360,7 +365,7 @@ export default function LayoutDesigner(): JSX.Element {
         own default improves, this module keeps the old one for ever.
       */
       if (layoutType === 'detail') {
-        for (const [key, chosen] of [['queueFields', queueFields], ['heroFields', heroFields], ['splitTabs', splitTabs], ['rightPane', rightPane]] as const) {
+        for (const [key, chosen] of [['queueFields', queueFields], ['heroFields', heroFields], ['splitTabs', splitTabs], ['rightPane', rightPane], ['associateDealColumns', associateDealColumns]] as const) {
           if (chosen === undefined) delete config[key];
           else config[key] = chosen;
         }
@@ -566,6 +571,38 @@ export default function LayoutDesigner(): JSX.Element {
                         onChange={(next) => { setSplitTabs(next); touch(); }}
                       />
                     </Zone>
+
+                    {moduleName === 'associates' && (
+                      <Zone
+                        step={4}
+                        title="Associate deal tables — columns"
+                        hint="Choose the fields shown in For Sale, Buyer Requirements, For Rent and Tenant Requirements. These settings affect Associates only."
+                        onReset={associateDealColumns ? () => { setAssociateDealColumns(undefined); touch(); } : undefined}
+                        testId="zone-associate-deal-columns"
+                      >
+                        <p className="mb-2 text-xs text-muted">Selected fields appear left to right in every Associates deal table.</p>
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          {ASSOCIATE_DEAL_COLUMNS.map((column) => {
+                            const selected = associateDealColumns ?? DEFAULT_ASSOCIATE_DEAL_COLUMNS;
+                            return <label key={column.key} className="flex items-center gap-2 rounded-md border border-slate-200 px-2.5 py-2 text-xs dark:border-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={selected.includes(column.key)}
+                                onChange={(event) => {
+                                  const next = event.target.checked
+                                    ? [...selected, column.key]
+                                    : selected.filter((key) => key !== column.key);
+                                  setAssociateDealColumns(next.length ? next : []);
+                                  touch();
+                                }}
+                                className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              />
+                              {column.label}
+                            </label>;
+                          })}
+                        </div>
+                      </Zone>
+                    )}
                   </div>
                 </div>
 

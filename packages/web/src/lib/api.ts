@@ -671,6 +671,9 @@ export interface DealerDeal {
   summary: string;
   body: string;
   category: string | null;
+  project: string | null;
+  facing: string | null;
+  floor: string | null;
   bhk: number | null;
   sizeSqYd: number | null;
   priceMinLakh: number | null;
