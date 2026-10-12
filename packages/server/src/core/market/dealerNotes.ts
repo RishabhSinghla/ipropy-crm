@@ -65,8 +65,9 @@ export async function syncDealerNotes(limit = 300): Promise<number> {
        JOIN ipy_record r ON r.id = a.record_id AND r.is_deleted = false
       WHERE p.noted_at IS NULL AND NOT p.is_noise AND p.poster_phone IS NOT NULL
         AND EXISTS (SELECT 1 FROM ipy_market_listing l WHERE l.post_id = p.id)
-        -- A long message waits for the AI model's read so its note carries the right tabs; it stops waiting if there is none.
-        AND (NOT p.ai_pending OR NOT $1::boolean OR p.ai_attempts >= 2)
+        -- A long message waits for the AI model's read so its note carries the right tabs — but not for ever: after
+        -- half an hour, or if there is no model, it is written with the rules' tabs.
+        AND (NOT p.ai_pending OR NOT $1::boolean OR p.ai_attempts >= 2 OR p.listings_checked_at < now() - interval '30 minutes')
       ORDER BY at
       LIMIT $2`,
     [isAiAvailable(), limit],

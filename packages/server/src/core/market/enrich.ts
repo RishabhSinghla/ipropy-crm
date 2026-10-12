@@ -144,8 +144,10 @@ export async function reReadOldPosts(limit = 300): Promise<number> {
  * out what is not a listing at all (a dispute notice, a greeting). Without a model
  * connected nothing happens and the rules' split stands.
  */
-const AI_PER_VISIT = 24;
-const AI_AT_ONCE = 3;
+const AI_PER_VISIT = 12;
+const AI_AT_ONCE = 4;
+/** A model that has not answered in this long is not going to; the message waits for another try. */
+const AI_CALL_TIMEOUT_MS = 45_000;
 const AI_GIVE_UP_AFTER = 2;
 
 export async function refineWithAi(limit = AI_PER_VISIT): Promise<number> {
@@ -162,7 +164,10 @@ export async function refineWithAi(limit = AI_PER_VISIT): Promise<number> {
   for (let i = 0; i < waiting.rows.length; i += AI_AT_ONCE) {
     await Promise.all(waiting.rows.slice(i, i + AI_AT_ONCE).map(async (post) => {
      try {
-      const drafts = await extractListingsWithAi(post.body, localities);
+      const drafts = await Promise.race([
+        extractListingsWithAi(post.body, localities),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), AI_CALL_TIMEOUT_MS)),
+      ]);
       if (drafts === null) {
         // After the last try the rules' split stands, and the message stops waiting to be written into notes.
         await db.query(`UPDATE ipy_market_post SET ai_attempts = ai_attempts + 1, ai_pending = (ai_attempts + 1 < $2) WHERE id = $1`, [post.id, AI_GIVE_UP_AFTER]);
@@ -226,28 +231,53 @@ export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
  * time budget is spent, because a first upload is thousands of posts.
  */
 const VISIT_BUDGET_MS = 8 * 60_000;
+/** The AI model is the slow one and sometimes a failing one; it gets a slice of a visit, never the whole of it. */
+const AI_BUDGET_MS = 3 * 60_000;
 let busy = false;
 
+/** Repeat a stage while it still finds work, within a deadline. Returns how much it did in all. */
+async function whileThereIsWork(stage: () => Promise<number>, deadline: number, rounds = 1000): Promise<number> {
+  let total = 0;
+  for (let round = 0; round < rounds && Date.now() < deadline; round += 1) {
+    const done = await stage();
+    if (!done) break;
+    total += done;
+  }
+  return total;
+}
+
+/**
+ * Stages in the order of how much a person is waiting for them:
+ *   1. re-read what is stored (no network) — until nothing is left, because nothing else can show before it;
+ *   2. Jev's read of new messages;
+ *   3. the dealers' notes and Jev's check of each pairing — fast, and what the team looks at;
+ *   4. the AI model's read of the long broadcasts — slow, so last and capped.
+ * A slow stage used to sit in front of the others, and the notes and the checks never came.
+ */
 export async function marketWork(): Promise<void> {
   if (busy) return;
   busy = true;
   try {
     const started = Date.now();
-    // The pass that needs no network goes first and goes to the end. Alternating it with the slow ones (an AI model
-    // answers in seconds) cleared a backlog of thousands at a few hundred a visit, and the page stayed empty meanwhile.
-    while (Date.now() - started < VISIT_BUDGET_MS && (await reReadOldPosts(500)) > 0) { /* until nothing is left to re-read */ }
-    while (Date.now() - started < VISIT_BUDGET_MS) {
-      const reread = await reReadOldPosts();
+    const deadline = started + VISIT_BUDGET_MS;
+
+    await whileThereIsWork(() => reReadOldPosts(500), deadline);
+
+    const jev = await whileThereIsWork(async () => {
       const result = await readWaitingPosts();
-      if (result.read || result.failed) logger.info({ ...result }, 'market: Jev read a batch');
-      const refined = await refineWithAi();
-      if (refined) logger.info({ refined }, 'market: the AI model read long messages');
-      const verified = await verifyPairs();
-      if (verified) logger.info({ verified }, 'market: Jev checked pairings');
-      if (!reread && !result.read && !refined && !verified) break;
-    }
-    const noted = await syncDealerNotes();
+      return result.read;
+    }, deadline);
+    if (jev) logger.info({ jev }, 'market: Jev read messages');
+
+    const noted = await whileThereIsWork(() => syncDealerNotes(), deadline);
     if (noted) logger.info({ noted }, 'market: messages written into dealers\' notes');
+
+    const verified = await whileThereIsWork(() => verifyPairs(), deadline, 12);
+    if (verified) logger.info({ verified }, 'market: Jev checked pairings');
+
+    const refined = await whileThereIsWork(() => refineWithAi(), Math.min(deadline, Date.now() + AI_BUDGET_MS));
+    if (refined) logger.info({ refined }, 'market: the AI model read long messages');
+
     await sendCallSheet();
   } catch (err) {
     logger.warn({ err }, 'market: background work failed; it will be tried again');

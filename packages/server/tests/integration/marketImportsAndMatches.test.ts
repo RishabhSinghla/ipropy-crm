@@ -23,7 +23,7 @@ import { db } from '../../src/db/pool.js';
 import { signIn } from './fixtures.js';
 import { importGroupExport } from '../../src/core/market/feed.js';
 import { findCrossMatches, recordOutcome } from '../../src/core/market/crossMatch.js';
-import { verifyPairs } from '../../src/core/market/enrich.js';
+import { marketWork, verifyPairs } from '../../src/core/market/enrich.js';
 
 const ZIP = Buffer.from('UEsDBBQAAAAIAKKMTF0621G4jwAAAMsAAAAvAAAAV2hhdHNBcHAgQ2hhdCAtIFpJUE1BUksgQWxwaGEgRGVhbGVycy9fY2hhdC50eHRdzbsOgkAUhOGep5gHUDl7AA10aGNip5V2B1hxdbm4LhY+vSRGEu0mU/yf4lBRyMTLGdKMCNJgjpOukNv+IhnypxgrhdU4dw4PGUeE9XYH0+KgSz+eqcLL9I24G9SCsXEoxVqkK1IcxQmpQP0qyUc5SvtV9vo+GDeqnBBquaK3nZ/6PPWLoaq1R4zyH+HgDVBLAwQUAAAACACijExdYpOK1lgAAABeAAAAKwAAAFdoYXRzQXBwIENoYXQgd2l0aCBaSVBNQVJLIEJldGEgRGVhbGVycy50eHQNyDsOgCAQBcDeU7wDaFgWP8HSK9jYbggaFYUglafXbjKalSbFxH0NTSMR5EKDxd+YfJER/NcmB1KIBWvMeCR4zN6V39bg3dMl+YSBy3ASAuxAmk3bkak+UEsBAhQDFAAAAAgAooxMXTrbUbiPAAAAywAAAC8AAAAAAAAAAAAAAIABAAAAAFdoYXRzQXBwIENoYXQgLSBaSVBNQVJLIEFscGhhIERlYWxlcnMvX2NoYXQudHh0UEsBAhQDFAAAAAgAooxMXWKTitZYAAAAXgAAACsAAAAAAAAAAAAAAIAB3AAAAFdoYXRzQXBwIENoYXQgd2l0aCBaSVBNQVJLIEJldGEgRGVhbGVycy50eHRQSwUGAAAAAAIAAgC2AAAAfQEAAAAA', 'base64');
 
@@ -194,5 +194,19 @@ describe('opening a message in full', () => {
     expect(res.body.sightings[0].group).toBe('ITESTIMP Brokers');
     const missing = await request(app).get('/api/market/posts/00000000-0000-4000-8000-000000000000').set('Authorization', `Bearer ${adminToken}`);
     expect(missing.status).toBe(404);
+  });
+});
+
+describe('a visit of the background worker', () => {
+  it('gets to Jev\'s check of a new pairing — the slow AI stage is last and cannot hold it up', async () => {
+    const seller = phone(3);
+    const buyer = phone(4);
+    await importGroupExport('ITESTIMP Brokers', `${day}, 11:00 am - Broker Three: 400 gaj plot for sale Sector 78 ${marker} 6 cr call ${seller}`, adminId);
+    await importGroupExport('ITESTIMP Buyers', `${day}, 11:10 am - Buyer Four: Required 400 gaj plot Sector 78 ${marker} budget 7 cr call ${buyer}`, adminId);
+    const found = async () => (await findCrossMatches({ limit: 500 })).find((m) => m.want.posterPhone === buyer);
+    // An upload also starts a visit, so this one may find the worker busy; either way the pairing gets checked.
+    void marketWork();
+    for (let i = 0; i < 100 && (await found())?.jevFit == null; i += 1) await new Promise((resolve) => setTimeout(resolve, 150));
+    expect((await found())?.jevFit).toBeCloseTo(0.9, 1);
   });
 });
