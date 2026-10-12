@@ -1,0 +1,93 @@
+# Tell the lead's owner the moment a Facebook enquiry arrives.
+#
+# Today a new Facebook lead only pings a CRM screen that is already open, so
+# first calls average about 15 hours after the enquiry. This adds ONE workflow
+# rule: when a lead whose Lead Source is Facebook is created, notify its owner
+# (a push to their phone through notify()). Nothing else — it does not message
+# the customer, score, tag or create a task. The instant-response rule removed
+# on 17 September 2026 did all of those; only the owner's alert comes back, and
+# it comes back for Facebook leads only, so it cannot fire on every contact.
+#
+# Switch it off: Admin -> Workflows -> "New Facebook lead: call now".
+#
+# mode=check reads only. mode=apply adds the rule if it is not there already.
+name: Facebook call-now alert
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check (read only) or apply'
+        default: 'check'
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: What Lead Source says on Facebook leads, and the rules on contacts now
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT coalesce(to_jsonb(l)->>'lead_source', l.custom_fields->>'lead_source') AS lead_source, count(*) AS leads
+            FROM ipy_lead_inbox i
+            JOIN ipy_e_leads l ON l.record_id = i.record_id
+            WHERE i.source = 'facebook' AND i.status = 'processed'
+            GROUP BY 1 ORDER BY 2 DESC;"
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT w.name, w.trigger, w.is_active, w.sequence, w.conditions
+            FROM ipy_workflow w JOIN ipy_module m ON m.id = w.module_id
+            WHERE m.name = 'leads' ORDER BY w.sequence;"
+
+      - name: Add the alert
+        if: inputs.mode == 'apply'
+        run: |
+          psql "$PROD_DATABASE_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+          WITH src AS (
+            -- The value Lead Source actually holds on Facebook leads — read from
+            -- the leads themselves, never typed in, so it cannot drift from the
+            -- dropdown.
+            SELECT coalesce(to_jsonb(l)->>'lead_source', l.custom_fields->>'lead_source') AS v
+            FROM ipy_lead_inbox i JOIN ipy_e_leads l ON l.record_id = i.record_id
+            WHERE i.source = 'facebook' AND i.status = 'processed'
+              AND coalesce(to_jsonb(l)->>'lead_source', l.custom_fields->>'lead_source') IS NOT NULL
+            GROUP BY 1 ORDER BY count(*) DESC LIMIT 1
+          ), wf AS (
+            INSERT INTO ipy_workflow (module_id, name, description, trigger, conditions, execution_mode, is_active, sequence)
+            SELECT m.id,
+                   'New Facebook lead: call now',
+                   'Alerts the lead''s owner the moment a Facebook enquiry arrives. Alert only: it does not message the customer.',
+                   'on_create',
+                   jsonb_build_object('logic','AND','conditions', jsonb_build_array(
+                     jsonb_build_object('field','lead_source','operator','equals','value',(SELECT v FROM src)))),
+                   'always', true,
+                   coalesce((SELECT max(sequence) FROM ipy_workflow), 0) + 1
+            FROM ipy_module m
+            WHERE m.name = 'leads'
+              AND (SELECT v FROM src) IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM ipy_workflow WHERE name = 'New Facebook lead: call now')
+            RETURNING id
+          )
+          INSERT INTO ipy_workflow_task (workflow_id, type, name, sequence, config)
+          SELECT wf.id, 'notify_user', 'Alert the owner', 0,
+                 '{"to":"record_owner","title":"New Facebook lead: call now","body":"{{full_name}} just enquired. Call within 5 minutes."}'::jsonb
+          FROM wf;
+          SELECT w.name, w.is_active, w.conditions, t.type, t.config
+            FROM ipy_workflow w LEFT JOIN ipy_workflow_task t ON t.workflow_id = w.id
+           WHERE w.name = 'New Facebook lead: call now';
+          COMMIT;
+          SQL
