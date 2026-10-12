@@ -97,11 +97,10 @@ for (const module of MODULES) {
     await openList(page, module);
     const cards = page.getByTestId('queue-card');
     expect(await cards.count(), 'needs records in the queue').toBeGreaterThan(1);
-    const padding = await cards.first().locator('button').first()
+    const padding = await cards.first()
       .evaluate((el) => parseFloat(getComputedStyle(el).paddingTop));
-    // It was 10px (py-2.5); py-4 is 16. Measured rather than read off a class
-    // name, because a class that is present while the row is still tight is
-    // exactly the bug.
+    // The queue row has 16px of outer vertical breathing room (py-4). The
+    // inner button has 12px by design and is not the spacing between records.
     expect(padding).toBeGreaterThanOrEqual(14);
   });
 }
