@@ -1,0 +1,49 @@
+# Is the dealer-group feed healthy on production? Counts only, never a message or a number.
+#
+# 13 October 2026: the live Dealer groups page and every Associate's tabs were empty after a release,
+# and nothing in the app said why. The cause was a background pass failing at every visit; this reads
+# how far that pass has got, so "is it working" is a number instead of a guess.
+#
+# Read-only, workflow_dispatch only.
+name: Market state
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  state:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Count what the feed holds
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ]; then echo "No PROD_DATABASE_URL secret configured." >&2; exit 1; fi
+          q() { psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=0 -tAc "$1"; }
+          echo "=== last applied migrations ==="; q "SELECT name FROM ipy_migration ORDER BY name DESC LIMIT 4;"
+          echo "=== messages (posts) ==="; q "SELECT count(*) FROM ipy_market_post;"
+          echo "=== messages by how far they have been read (read_version; 3 = done) ==="
+          q "SELECT read_version, count(*) FROM ipy_market_post GROUP BY 1 ORDER BY 1;"
+          echo "=== messages hidden as noise ==="; q "SELECT count(*) FROM ipy_market_post WHERE is_noise;"
+          echo "=== properties (listings) by who read them ==="
+          q "SELECT source, count(*) FROM ipy_market_listing GROUP BY 1 ORDER BY 1;"
+          echo "=== properties by kind and purpose ==="
+          q "SELECT kind, purpose, count(*) FROM ipy_market_listing GROUP BY 1,2 ORDER BY 1,2;"
+          echo "=== long messages still waiting for the AI model / given up ==="
+          q "SELECT count(*) FILTER (WHERE ai_pending) AS waiting, count(*) FILTER (WHERE ai_attempts >= 2) AS gave_up FROM ipy_market_post;"
+          echo "=== messages Jev has read / not ==="
+          q "SELECT count(*) FILTER (WHERE jev_checked_at IS NOT NULL) AS read, count(*) FILTER (WHERE jev_checked_at IS NULL) AS unread FROM ipy_market_post;"
+          echo "=== pairings Jev has checked, and what it said ==="
+          q "SELECT count(*), count(*) FILTER (WHERE fit < 0.45) AS said_no FROM ipy_market_pair_check;"
+          echo "=== messages written into dealers' notes ==="
+          q "SELECT count(*) FROM ipy_comment WHERE market_post_id IS NOT NULL;"
+          echo "=== groups read, and to when ==="
+          q "SELECT name, read_up_to::date, messages_seen FROM ipy_market_group ORDER BY last_import_at DESC LIMIT 15;"
+          echo "=== the last dropped files ==="
+          q "SELECT group_name, status, messages, new_deals, listings, left(coalesce(error,''), 60) FROM ipy_market_import ORDER BY created_at DESC LIMIT 10;"
+          echo "=== Associates, and how many carry a phone a message was posted under ==="
+          q "SELECT count(*) FROM ipy_record WHERE module_name = 'associates' AND NOT is_deleted;"

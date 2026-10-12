@@ -133,10 +133,10 @@ const RATE_AFTER = /^[\s.,]*(?:\/-?|per|p\.?|pr)\s*(?:sq|gaj|yard|yd|sy|acre|ft|
 /** "25000 per month", "Rent 1.5 Lac Per Month", "30K pm". */
 const MONTHLY_AFTER = /^\s*(?:\/-?\s*)?(?:per\s*month|p\.?m\.?\b|pm\b|\/\s*month|monthly)/i;
 
+// Rounded, or 2.2 crore comes out as 220.00000000000003 lakh and shows up that way.
 const toLakh = (value: number, unit: string): number => {
-  if (/^c/i.test(unit)) return value * 100;
-  if (/^k/i.test(unit)) return value / 100;
-  return value;
+  const lakh = /^c/i.test(unit) ? value * 100 : /^k/i.test(unit) ? value / 100 : value;
+  return Math.round(lakh * 10_000) / 10_000;
 };
 
 export interface PriceReading {
@@ -177,16 +177,32 @@ export function pricesIn(text: string, purpose: 'sale' | 'rent' = 'sale'): Array
  * plot at nothing. A rate per yard is returned on its own so a listing with a size
  * can work the total out.
  */
+/**
+ * "@1.35/Per Sq.yd.", "1.22/Sq.yd.", "1.25L to 1.35L per Sq yard", "55k per gaj", "₹1,55,000/Sqyd".
+ * With no unit word, a small number is lakh a yard and a big one is rupees a yard.
+ */
+const RATE_PER_YARD = /(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:(cr|crore|lac|lacs|lakh|lakhs|l|k)\s*)?(?:(?:-|to|–)\s*(\d+(?:\.\d+)?)\s*(cr|crore|lac|lacs|lakh|lakhs|l|k)?\s*)?(?:\/-)?\s*(?:\/\s*(?:per\b\s*)?|\bper\b\s*|\bp\.?\s)(?:sq\.?\s*(?:yd|yds|yard|yards|yrd)|sqyd|gaj|yard|yd|sy\b)/i;
+
+function rateInLakh(value: number, unit: string | undefined): number {
+  if (unit) return toLakh(value, unit);
+  return Math.round((value >= 1000 ? value / 100_000 : value) * 10_000) / 10_000;
+}
+
+/**
+ * The price a post asks. Skips rates ("1.25 per sq yd", "7.5 cr per acre") — they
+ * are not what the property costs, and reading "1.25" as 1.25 lakh priced a ₹4 Cr
+ * plot at nothing. A rate per yard is returned on its own so a listing with a size
+ * can work the total out.
+ */
 export function priceOf(text: string, purpose: 'sale' | 'rent' = 'sale'): PriceReading {
   const body = text.replace(/(?<=\d),(?=\d{2,3}\b)/g, '');
+  const rate = RATE_PER_YARD.exec(body);
   let rateMin: number | null = null;
   let rateMax: number | null = null;
-  for (const match of body.matchAll(PRICE)) {
-    const after = body.slice((match.index ?? 0) + match[0].length);
-    if (!RATE_AFTER.test(after) || !/yd|yard|gaj|sy/i.test(after.slice(0, 14)) || rateMin !== null) continue;
-    const unit = match[4]!;
-    const first = toLakh(Number(match[1]), match[2] ?? unit);
-    const second = match[3] ? toLakh(Number(match[3]), unit) : first;
+  if (rate) {
+    const first = rateInLakh(Number(rate[1]), rate[2]);
+    // "1.25L to 1.35L": the second number may carry the unit for both.
+    const second = rate[3] ? rateInLakh(Number(rate[3]), rate[4] ?? rate[2]) : first;
     rateMin = Math.min(first, second);
     rateMax = Math.max(first, second);
   }
@@ -295,7 +311,8 @@ const SIZE_RANGE = new RegExp(String.raw`(\d{2,5})\s*(?:-|–|to)\s*(\d{2,5})\s*
 
 export function sizeOf(body: string): number | null {
   const range = SIZE_RANGE.exec(body);
-  const size = range ? Math.round((Number(range[1]) + Number(range[2])) / 2) : Number(SIZE_ONE.exec(body)?.[1]);
+  // Whole yards: "132.45 Sq. Yds." is 132, and size is a whole-number column.
+  const size = Math.round(range ? (Number(range[1]) + Number(range[2])) / 2 : Number(SIZE_ONE.exec(body)?.[1]));
   return size >= 20 && size <= 5000 ? size : null;
 }
 

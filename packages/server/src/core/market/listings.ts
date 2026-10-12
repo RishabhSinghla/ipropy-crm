@@ -127,12 +127,13 @@ export function listingLines(body: string, known: string[] = []): number {
 }
 
 /** "250 / 350 / 500 Sq. Yds" with "₹3.65 Cr / ₹4.75 Cr / ₹5.45 Cr": three properties on one line. */
-const SIZE_LIST = /(\d{2,4}(?:\s*[/,&]\s*\d{2,4})+)\s*(?:sq|gaj|yard|yd|sy)/i;
+const SIZE_LIST = /(?<![\d.])(\d{2,4}(?:\.\d+)?(?:\s*[/,&]\s*\d{2,4}(?:\.\d+)?)+)\s*(?:sq|gaj|yard|yd|sy)/i;
 
 function expandSizes(text: string, purpose: 'sale' | 'rent'): Array<{ size: number; min: number | null; max: number | null }> | null {
   const list = SIZE_LIST.exec(text);
   if (!list) return null;
-  const sizes = list[1]!.split(/[\s/,&]+/).map(Number).filter((n) => n >= 20 && n <= 5000);
+  // Whole yards: "132.45" is 132 — and never "45", which is what its tail looks like on its own.
+  const sizes = list[1]!.split(/[\s/,&]+/).map((part) => Math.round(Number(part))).filter((n) => n >= 20 && n <= 5000);
   if (sizes.length < 2) return null;
   const prices = pricesIn(text, purpose);
   // Sizes and prices of the same count pair up in order; otherwise the price is not known per size.
@@ -146,7 +147,12 @@ export function splitListings(rawBody: string, known: string[] = [], whole: Post
   if (looksLikeANotice(body)) return [];
   if (listingLines(body, known) < 2) {
     const one = singleListing(body, whole);
-    return one ? [one] : [];
+    if (!one) return [];
+    // One line can still be several properties: "Sizes: 132.45 & 137 Sq. Yds."
+    const several = expandSizes(body, one.purpose);
+    return several
+      ? several.map((item) => ({ ...one, sizeSqYd: item.size, priceMinLakh: item.min, priceMaxLakh: item.max, placeKeys: [...one.placeKeys] }))
+      : [one];
   }
 
   const drafts: ListingDraft[] = [];
@@ -258,6 +264,8 @@ interface AiListing {
 const number = (value: unknown, min: number, max: number): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : null;
 
+const whole = (value: number | null): number | null => (value === null ? null : Math.round(value));
+
 /** The answer is the model's, so every field is checked before it is trusted. Pure for its test. */
 export function draftsFromAi(answer: { is_property_post?: boolean; listings?: AiListing[] } | null, known: string[]): ListingDraft[] | null {
   if (!answer || !Array.isArray(answer.listings)) return null;
@@ -275,8 +283,8 @@ export function draftsFromAi(answer: { is_property_post?: boolean; listings?: Ai
       kind: item.kind,
       purpose: item.purpose === 'rent' ? 'rent' : 'sale',
       category: item.category && PROPERTY_CATEGORIES.includes(item.category) && item.category !== 'Unknown' ? item.category : null,
-      bhk: number(item.bhk, 1, 14),
-      sizeSqYd: number(item.size_sqyd, 20, 50_000),
+      bhk: whole(number(item.bhk, 1, 14)),
+      sizeSqYd: whole(number(item.size_sqyd, 20, 50_000)),
       priceMinLakh: min ?? max,
       priceMaxLakh: max ?? min,
       placeKeys: placeKeysOf({ places: sectorKeys, localities: locality, project }),
@@ -332,7 +340,7 @@ export async function saveListings(postId: string, drafts: ListingDraft[], sourc
          (post_id, ord, kind, purpose, category, bhk, size_sqyd, price_min_lakh, price_max_lakh,
           place_keys, project, facing, floor, summary, source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-      [postId, order, draft.kind, draft.purpose, draft.category, draft.bhk, draft.sizeSqYd, draft.priceMinLakh,
+      [postId, order, draft.kind, draft.purpose, draft.category, whole(draft.bhk), whole(draft.sizeSqYd), draft.priceMinLakh,
         draft.priceMaxLakh, draft.placeKeys, draft.project, draft.facing, draft.floor, draft.summary, source],
     );
   }

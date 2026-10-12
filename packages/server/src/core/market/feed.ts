@@ -35,6 +35,8 @@ export interface ImportOutcome {
   repeats: number;
   /** Messages older than where the last upload of this group ended: already read, so not read again. */
   skippedOld: number;
+  /** Messages the database refused; they are skipped and logged, never fatal. */
+  refused: number;
   /** Properties found in the new messages — a broker's list of twenty is twenty. */
   listings: number;
   /** People told that a fresh deal fits one of their records. */
@@ -72,19 +74,16 @@ export async function importGroupExport(rawGroupName: string, text: string, user
   const groupName = groupKey(rawGroupName);
   const localities = await knownLocalities();
   const messages = parseWhatsAppExport(text);
-  const outcome: ImportOutcome = { messages: messages.length, deals: 0, newDeals: 0, repeats: 0, skippedOld: 0, listings: 0, alerted: 0 };
+  const outcome: ImportOutcome = { messages: messages.length, deals: 0, newDeals: 0, repeats: 0, skippedOld: 0, refused: 0, listings: 0, alerted: 0 };
   const fresh: string[] = [];
 
   const mark = await db.queryOne<{ read_up_to: Date | null }>(`SELECT read_up_to FROM ipy_market_group WHERE name = $1`, [groupName]);
   const readUpTo = mark?.read_up_to ?? null;
   let newest: Date | null = readUpTo;
 
-  for (const message of messages) {
-    if (message.postedAt && (!newest || message.postedAt > newest)) newest = message.postedAt;
-    if (readUpTo && message.postedAt && message.postedAt < readUpTo) { outcome.skippedOld += 1; continue; }
-
+  const storeMessage = async (message: (typeof messages)[number]): Promise<void> => {
     const reading = readPost(message.body, localities);
-    if (!looksLikeADeal(message.body, reading)) continue;
+    if (!looksLikeADeal(message.body, reading)) return;
     outcome.deals += 1;
 
     const posted = message.postedAt?.toISOString() ?? null;
@@ -110,7 +109,7 @@ export async function importGroupExport(rawGroupName: string, text: string, user
         reading.phones, notice, READ_VERSION,
       ],
     );
-    if (!result) continue;
+    if (!result) return;
 
     // Counted once per sighting: reading the same line of the same export again changes nothing.
     const sighting = await db.queryOne<{ post_id: string }>(
@@ -123,14 +122,32 @@ export async function importGroupExport(rawGroupName: string, text: string, user
       outcome.newDeals += 1;
       if (!notice) {
         const found = splitListings(message.body, localities, reading);
-        outcome.listings += found.length;
-        await saveListings(result.id, found, 'rules', worthAnAiRead(message.body, localities));
+        try {
+          await saveListings(result.id, found, 'rules', worthAnAiRead(message.body, localities));
+          outcome.listings += found.length;
+        } catch (err) {
+          // The message is kept; the background re-read tries its listings again, and sets it aside if it fails again.
+          logger.error({ err, postId: result.id }, 'market: a message\'s listings could not be saved');
+          await db.query(`UPDATE ipy_market_post SET read_version = 0 WHERE id = $1`, [result.id]);
+        }
       }
       const ageDays = message.postedAt ? (Date.now() - message.postedAt.getTime()) / 86_400_000 : Infinity;
       if (!notice && ageDays <= ALERT_WITHIN_DAYS) fresh.push(result.id);
     } else if (sighting) {
       outcome.repeats += 1;
       await db.query(`UPDATE ipy_market_post SET seen_count = seen_count + 1 WHERE id = $1`, [result.id]);
+    }
+  };
+
+  for (const message of messages) {
+    if (message.postedAt && (!newest || message.postedAt > newest)) newest = message.postedAt;
+    if (readUpTo && message.postedAt && message.postedAt < readUpTo) { outcome.skippedOld += 1; continue; }
+    try {
+      await storeMessage(message);
+    } catch (err) {
+      // One message the database refuses must not throw away the other thousands in the export.
+      outcome.refused += 1;
+      logger.error({ err, group: groupName }, 'market: a message could not be stored; skipped');
     }
   }
 

@@ -123,3 +123,27 @@ describe('reading sectors', () => {
     expect(sectors('plot in Sector-21A Faridabad')).toEqual(['sector 21a']);
   });
 });
+
+describe('a size with a decimal point', () => {
+  it('is whole yards, because size is a whole-number column', () => {
+    expect(readPost('Size: 132.45 Sq. Yds.').sizeSqYd).toBe(132);
+    expect(readPost('250.5 Sq. Yds plot').sizeSqYd).toBe(251);
+    expect(Number.isInteger(readPost('143.52 Sq yard plot Sector 97').sizeSqYd)).toBe(true);
+  });
+});
+
+describe('a rate per yard', () => {
+  const rate = (text: string) => { const r = readPost(text); return [r.priceMinLakh, r.priceMaxLakh]; };
+  it('is lakh a yard with no unit word, times the size', () => {
+    expect(rate('TDI Coral Plot Sec-84A 154 Sq.yd. West Facing @1.35/Per Sq.yd.')[0]).toBeCloseTo(207.9, 1);
+    expect(rate('Plot 125 Sq.yd. North @1.24/Sq.yd.')[0]).toBeCloseTo(155, 1);
+  });
+  it('reads rupees a yard, thousands, and a range with the unit on the second number only', () => {
+    expect(rate('plot 200 gaj Rs. 1,55,000/Sqyd')[0]).toBeCloseTo(310, 1);
+    expect(rate('Palwal plot 125syd 55k per gaj')[0]).toBeCloseTo(68.75, 1);
+    expect(rate('Required 250-300 sq yard plot Budget 1.25 to 1.35L per Sq yard')).toEqual([343.75, 371.25]);
+  });
+  it('never takes a rate for what the property costs', () => {
+    expect(rate('plot 200 gaj demand 3.5 cr @1.7/Sq.yd.')).toEqual([350, 350]);
+  });
+});

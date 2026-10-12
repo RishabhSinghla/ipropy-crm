@@ -87,6 +87,14 @@ describe('one message, many properties', () => {
   });
 });
 
+describe('sizes with a decimal point', () => {
+  it('a list of sizes is whole yards each, and a decimal\'s tail is never a size of its own', () => {
+    const listings = splitListings('For sale\n📍 Honour Homes – Sector 89\n• Sizes: 132.45 & 137 Sq. Yds.\n💰 ₹2.2 Cr / ₹2.3 Cr', known);
+    expect(listings.map((l) => l.sizeSqYd)).toEqual([132, 137]);
+    expect(listings.map((l) => l.priceMinLakh)).toEqual([220, 230]);
+  });
+});
+
 describe('the AI model\'s answer is checked before it is trusted', () => {
   it('turns a valid answer into listings and drops anything malformed', () => {
     const drafts = draftsFromAi({

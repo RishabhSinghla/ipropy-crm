@@ -97,6 +97,26 @@ export async function readWaitingPosts(limit = PER_VISIT): Promise<{ read: numbe
  * whether or not Jev is connected: it is how posts imported before sectors,
  * sizes and categories were understood become matchable.
  */
+async function readOnePostAgain(post: { id: string; body: string; listings_source: string | null }, localities: string[]): Promise<void> {
+  const reading = readPost(post.body, localities);
+  const notice = looksLikeANotice(post.body);
+  await db.query(
+    `UPDATE ipy_market_post
+        SET places = $2, size_sqyd = $3, category = coalesce(category, $4), place_keys = $5, read_version = $6,
+            phones = $8, poster_phone = coalesce($9, poster_phone), is_noise = is_noise OR $10,
+            price_min_lakh = $11, price_max_lakh = $12,
+            -- Jev's reading of sale or rent outranks the words, so a post it has already read keeps it.
+            purpose = CASE WHEN jev_checked_at IS NULL THEN $7 ELSE coalesce(purpose, $7) END
+      WHERE id = $1`,
+    [post.id, reading.places, reading.sizeSqYd, reading.category, placeKeysOf(reading), READ_VERSION, reading.purpose,
+      reading.phones, reading.phone, notice, reading.priceMinLakh, reading.priceMaxLakh],
+  );
+  // An AI model's split is better than the rules' and is kept; the rules' split is simply redone.
+  if (post.listings_source === 'ai') return;
+  if (notice) await db.query(`DELETE FROM ipy_market_listing WHERE post_id = $1`, [post.id]);
+  else await saveListings(post.id, splitListings(post.body, localities, reading), 'rules', worthAnAiRead(post.body, localities));
+}
+
 export async function reReadOldPosts(limit = 300): Promise<number> {
   const old = await db.query<{ id: string; body: string; listings_source: string | null }>(
     `SELECT id, body, listings_source FROM ipy_market_post WHERE read_version < $1 ORDER BY last_posted_at DESC NULLS LAST LIMIT $2`,
@@ -105,23 +125,14 @@ export async function reReadOldPosts(limit = 300): Promise<number> {
   if (!old.rows.length) return 0;
   const localities = await knownLocalities();
   for (const post of old.rows) {
-    const reading = readPost(post.body, localities);
-    const notice = looksLikeANotice(post.body);
-    await db.query(
-      `UPDATE ipy_market_post
-          SET places = $2, size_sqyd = $3, category = coalesce(category, $4), place_keys = $5, read_version = $6,
-              phones = $8, poster_phone = coalesce($9, poster_phone), is_noise = is_noise OR $10,
-              price_min_lakh = $11, price_max_lakh = $12,
-              -- Jev's reading of sale or rent outranks the words, so a post it has already read keeps it.
-              purpose = CASE WHEN jev_checked_at IS NULL THEN $7 ELSE coalesce(purpose, $7) END
-        WHERE id = $1`,
-      [post.id, reading.places, reading.sizeSqYd, reading.category, placeKeysOf(reading), READ_VERSION, reading.purpose,
-        reading.phones, reading.phone, notice, reading.priceMinLakh, reading.priceMaxLakh],
-    );
-    // An AI model's split is better than the rules' and is kept; the rules' split is simply redone.
-    if (post.listings_source !== 'ai') {
-      if (notice) await db.query(`DELETE FROM ipy_market_listing WHERE post_id = $1`, [post.id]);
-      else await saveListings(post.id, splitListings(post.body, localities, reading), 'rules', worthAnAiRead(post.body, localities));
+    try {
+      await readOnePostAgain(post, localities);
+    } catch (err) {
+      // One message the database refuses must never stop the thousands after it: this pass takes the
+      // newest first, so a post that threw and stayed "unread" would be hit again at every visit and
+      // nothing behind it would ever be read — which is how the live page stayed empty for a day.
+      logger.error({ err, postId: post.id }, 'market: a stored message could not be read again; set aside');
+      await db.query(`UPDATE ipy_market_post SET read_version = $2 WHERE id = $1`, [post.id, READ_VERSION]);
     }
   }
   return old.rows.length;
@@ -150,6 +161,7 @@ export async function refineWithAi(limit = AI_PER_VISIT): Promise<number> {
   let done = 0;
   for (let i = 0; i < waiting.rows.length; i += AI_AT_ONCE) {
     await Promise.all(waiting.rows.slice(i, i + AI_AT_ONCE).map(async (post) => {
+     try {
       const drafts = await extractListingsWithAi(post.body, localities);
       if (drafts === null) {
         // After the last try the rules' split stands, and the message stops waiting to be written into notes.
@@ -163,6 +175,11 @@ export async function refineWithAi(limit = AI_PER_VISIT): Promise<number> {
         await saveListings(post.id, drafts, 'ai');
       }
       done += 1;
+     } catch (err) {
+      // The same rule as the re-read: a message the database refuses is counted against it and the rest go on.
+      logger.error({ err, postId: post.id }, 'market: the AI model\'s listings for a message could not be saved');
+      await db.query(`UPDATE ipy_market_post SET ai_attempts = ai_attempts + 1, ai_pending = (ai_attempts + 1 < $2) WHERE id = $1`, [post.id, AI_GIVE_UP_AFTER]);
+     }
     }));
   }
   return done;
