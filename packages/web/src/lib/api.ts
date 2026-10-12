@@ -608,6 +608,56 @@ export interface MarketPost {
   groups: string[];
   lastPostedAt: string | null;
   seenCount: number;
+  category: string | null;
+  posterRole: string | null;
+}
+
+export interface MarketDealSide {
+  id: string;
+  kind: 'have' | 'want';
+  category: string | null;
+  bhk: number | null;
+  sizeSqYd: number | null;
+  priceMinLakh: number | null;
+  priceMaxLakh: number | null;
+  posterName: string | null;
+  posterPhone: string | null;
+  groups: string[];
+  body: string;
+}
+
+export type MarketIntroductionStatus = 'new' | 'called' | 'meeting' | 'won' | 'lost' | 'dismissed';
+
+/** A buyer in one dealer group and a seller in another who fit each other. */
+export interface MarketIntroduction {
+  want: MarketDealSide;
+  have: MarketDealSide;
+  score: number;
+  reasons: string[];
+  crossGroup: boolean;
+  status: MarketIntroductionStatus;
+  note: string | null;
+}
+
+export interface MarketDealer {
+  phone: string;
+  name: string | null;
+  posts: number;
+  haves: number;
+  wants: number;
+  groups: string[];
+  localities: string[];
+  category: string | null;
+  lastSeenAt: string | null;
+}
+
+export interface AssociateOutcome {
+  created: number;
+  alreadyKnown: number;
+  noLocation: number;
+  refused: number;
+  firstRefusal: string | null;
+  noModule: boolean;
 }
 
 export const api = {
@@ -1274,6 +1324,12 @@ export const api = {
       '/api/market/import', { method: 'POST', body: form },
     );
   },
+  marketIntroductions: (query: { crossGroupOnly: boolean; minScore: number; includeWorked: boolean }) =>
+    get<MarketIntroduction[]>(`/api/market/matches?crossGroupOnly=${query.crossGroupOnly}&minScore=${query.minScore}&includeWorked=${query.includeWorked}&limit=100`),
+  setMarketIntroduction: (wantId: string, haveId: string, status: MarketIntroductionStatus, note?: string) =>
+    put<{ ok: true }>(`/api/market/matches/${wantId}/${haveId}`, { status, note: note ?? null }),
+  marketDealers: () => get<{ total: number; dealers: MarketDealer[] }>('/api/market/dealers?limit=200'),
+  saveMarketDealers: () => post<AssociateOutcome>('/api/market/dealers/save', {}),
   marketMatches: (postId: string) =>
     get<Array<{ recordId: string; module: 'leads' | 'properties'; label: string; ownerId: string | null }>>(`/api/market/posts/${postId}/matches`),
   marketPosts: (query: Record<string, string | number | undefined>) => {

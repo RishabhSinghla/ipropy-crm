@@ -91,12 +91,23 @@ async function tick(): Promise<void> {
       runSequences(),
       housekeeping(),
       runFacebookRecovery(),
+      runMarketWork(),
       archiveDueLostRecords().catch(err => logger.error({ err }, 'Lost record archive failed; will retry next tick')),
     ]);
   } catch (err) {
     logger.error({ err }, 'scheduler tick failed');
   } finally {
     running = false;
+  }
+}
+
+/** The dealer-group feed: Jev reading new deals and the morning call sheet. Dynamically imported like its neighbours. */
+async function runMarketWork(): Promise<void> {
+  try {
+    const { marketWork } = await import('../market/enrich.js');
+    await marketWork();
+  } catch (err) {
+    logger.error({ err }, 'market work failed');
   }
 }
 

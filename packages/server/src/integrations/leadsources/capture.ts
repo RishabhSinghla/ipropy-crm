@@ -27,7 +27,7 @@ const SYSTEM_USER: AuthUser = {
   theme: 'system', defaultDashboardId: null, lastLoginAt: null,
 };
 
-function systemContext(): ServiceContext {
+export function systemContext(): ServiceContext {
   return { user: SYSTEM_USER, subordinateIds: [], groupIds: [], system: true, source: 'lead_capture' };
 }
 

@@ -15,6 +15,8 @@ import { Phone, Upload, Users } from 'lucide-react';
 import { PeekLink } from '../components/PeekLink';
 import { api, type MarketPost } from '../lib/api';
 import { Badge, EmptyState, Spinner } from '../components/ui';
+import MarketDealers from '../components/MarketDealers';
+import MarketIntroductions from '../components/MarketIntroductions';
 import { toast } from '../lib/store';
 
 function priceText(post: MarketPost): string | null {
@@ -58,6 +60,7 @@ function DealCard({ post, focused }: { post: MarketPost; focused: boolean }): JS
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Badge color={post.kind === 'have' ? '#16a34a' : post.kind === 'want' ? '#2563eb' : '#64748b'}>{KIND_LABEL[post.kind]}</Badge>
         {post.bhk && <Badge>{post.bhk} BHK</Badge>}
+        {post.category && <Badge>{post.category}</Badge>}
         {price && <Badge>{price}</Badge>}
         {post.localities.map((name) => <Badge key={name}>{name}</Badge>)}
         <span className="ml-auto text-muted">{post.lastPostedAt ? relativeTime(post.lastPostedAt) : ''}</span>
@@ -116,13 +119,13 @@ function ImportBox(): JSX.Element {
       <div>
         <h2 className="text-sm font-semibold">Add a group</h2>
         <p className="text-xs text-muted">
-          In WhatsApp, open the group → ⋮ → More → Export chat → Without media, and choose the .txt file here.
+          In WhatsApp, open the group → ⋮ → More → Export chat → Without media, and choose the .txt or .zip file here.
           Uploading the same group again only adds what is new.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <input className="input max-w-xs" placeholder="Group name, e.g. Greenfields Dealers" value={group} onChange={(e) => setGroup(e.target.value)} />
-        <input type="file" accept=".txt,text/plain" className="text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Exported chat file" />
+        <input type="file" accept=".txt,.zip,text/plain,application/zip" className="text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Exported chat file" />
         <button type="button" className="btn-primary" disabled={busy || !group.trim() || !file} onClick={() => void send()}>
           {busy ? <Spinner /> : <Upload className="h-4 w-4" />} Read the deals
         </button>
@@ -131,7 +134,7 @@ function ImportBox(): JSX.Element {
   );
 }
 
-export default function MarketFeedPage(): JSX.Element {
+function DealsTab(): JSX.Element {
   // Alerts link here: ?deal=<id> opens that card with its matches showing, and
   // ?kind=&locality= (a new buyer's alert) opens the list already narrowed.
   const [params] = useSearchParams();
@@ -157,13 +160,8 @@ export default function MarketFeedPage(): JSX.Element {
   });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold">Dealer groups</h1>
-        <p className="text-sm text-muted">Deals posted in WhatsApp groups in the last 90 days. Ask about them in plain words at /ask too.</p>
-      </div>
-
-      <ImportBox />
+    <div className="space-y-4">
+      <p className="text-sm text-muted">Deals posted in WhatsApp groups in the last 90 days. Ask about them in plain words at /ask too.</p>
 
       <div className="flex flex-wrap gap-2">
         <select className="input w-auto" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Has or wants">
@@ -192,6 +190,52 @@ export default function MarketFeedPage(): JSX.Element {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+type Tab = 'calls' | 'deals' | 'dealers';
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'calls', label: 'Calls today' },
+  { id: 'deals', label: 'All deals' },
+  { id: 'dealers', label: 'Dealers' },
+];
+
+export default function MarketFeedPage(): JSX.Element {
+  const [params, setParams] = useSearchParams();
+  // An alert about one deal or one buyer opens the list it is about; otherwise the call sheet leads.
+  const wanted = params.get('tab');
+  const tab: Tab = wanted === 'calls' || wanted === 'deals' || wanted === 'dealers'
+    ? wanted
+    : params.get('deal') || params.get('kind') || params.get('locality') ? 'deals' : 'calls';
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
+      <div>
+        <h1 className="text-xl font-bold">Dealer groups</h1>
+        <p className="text-sm text-muted">What other dealers post in their WhatsApp groups, read by Jev and matched for you.</p>
+      </div>
+
+      <ImportBox />
+
+      <div role="tablist" className="flex gap-1 border-b border-[var(--border)]">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold ${tab === item.id ? 'border-brand-600 text-brand-700 dark:text-brand-300' : 'border-transparent text-muted hover:text-[var(--text)]'}`}
+            onClick={() => setParams({ tab: item.id })}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'calls' && <MarketIntroductions />}
+      {tab === 'deals' && <DealsTab />}
+      {tab === 'dealers' && <MarketDealers />}
     </div>
   );
 }

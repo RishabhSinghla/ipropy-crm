@@ -19,6 +19,12 @@ export interface PostReading {
   priceMinLakh: number | null;
   priceMaxLakh: number | null;
   localities: string[];
+  /** "sector 85", "block d" — a plot is matched on these, which no dropdown can list. */
+  places: string[];
+  /** Plot size in square yards (gaj), the unit this market quotes plots in. */
+  sizeSqYd: number | null;
+  /** One of the property categories Jev also answers in, or null when the words do not say. */
+  category: string | null;
   phone: string | null;
 }
 
@@ -129,6 +135,54 @@ function localitiesOf(body: string, known: string[]): string[] {
   });
 }
 
+const SECTOR = /\b(?:sec(?:tor)?\.?[-\s]?)(\d{1,3})\s*([a-z])?\b/gi;
+const BLOCK = /\bblock[-\s]?([a-z])\b/gi;
+const YARD_UNIT = String.raw`(?:sq\.?\s*(?:yd|yard|yards)|sqyd|gaj|गज|यार्ड)`;
+const SIZE_ONE = new RegExp(String.raw`(\d{2,5})\s*${YARD_UNIT}`, 'i');
+// A bare "80-90" is far more often a price than a size, so a range needs the unit after it.
+const SIZE_RANGE = new RegExp(String.raw`(\d{2,5})\s*(?:-|–|to)\s*(\d{2,5})\s*${YARD_UNIT}`, 'i');
+
+function placesOf(body: string): string[] {
+  const found = new Set<string>();
+  for (const m of body.matchAll(SECTOR)) found.add(`sector ${m[1]}${(m[2] ?? '').toLowerCase()}`);
+  for (const m of body.matchAll(BLOCK)) found.add(`block ${m[1]!.toUpperCase()}`);
+  return [...found];
+}
+
+function sizeOf(body: string): number | null {
+  const range = SIZE_RANGE.exec(body);
+  const size = range ? Math.round((Number(range[1]) + Number(range[2])) / 2) : Number(SIZE_ONE.exec(body)?.[1]);
+  return size >= 20 && size <= 5000 ? size : null;
+}
+
+/** First match wins, narrowest first: "3 BHK builder floor" is a builder floor, not an apartment. */
+const CATEGORY_WORDS: Array<[string, RegExp]> = [
+  ['Kothi/Villa', /\b(kothi|villa|bungalow)\b/i],
+  ['Builder Floor', /\b(builder\s*floor|bf|stilt)\b/i],
+  ['Office Space', /\b(office|it\s*space)\b/i],
+  ['Factory', /\b(factory|shed|godown|warehouse)\b/i],
+  ['Commercial Plot', /\b(shop|showroom|retail|commercial)\b/i],
+  ['Apartment', /\b(flat|apartment|\d\s?bhk)\b/i],
+  ['Residential Plot', new RegExp(String.raw`\bplot\b|${YARD_UNIT}`, 'i')],
+];
+
+function categoryOf(body: string): string | null {
+  return CATEGORY_WORDS.find(([, words]) => words.test(body))?.[0] ?? null;
+}
+
+/** What a post is about in the broad sense a buyer and seller must agree on. */
+export function categoryFamily(category: string | null): 'plot' | 'home' | 'commercial' | null {
+  if (category === 'Residential Plot') return 'plot';
+  if (category === 'Apartment' || category === 'Builder Floor' || category === 'Kothi/Villa') return 'home';
+  if (category === 'Commercial Plot' || category === 'Office Space' || category === 'Factory') return 'commercial';
+  return null;
+}
+
+/** Sectors, blocks and the business's own localities, lower-cased: the keys two posts are matched on. */
+export function placeKeysOf(reading: Pick<PostReading, 'places' | 'localities'>): string[] {
+  return [...new Set([...reading.places, ...reading.localities].map((place) => place.toLowerCase()))];
+}
+
 export function readPost(body: string, knownLocalities: string[] = []): PostReading {
   const price = priceOf(body);
   return {
@@ -137,6 +191,9 @@ export function readPost(body: string, knownLocalities: string[] = []): PostRead
     priceMinLakh: price.min,
     priceMaxLakh: price.max,
     localities: localitiesOf(body, knownLocalities),
+    places: placesOf(body),
+    sizeSqYd: sizeOf(body),
+    category: categoryOf(body),
     phone: phoneOf(body),
   };
 }
@@ -153,5 +210,5 @@ export function fingerprintOf(body: string): string {
 /** A chat line too short to be a deal: "ok", "👍", "call me". */
 export function looksLikeADeal(body: string, reading: PostReading): boolean {
   if (body.length < 15) return false;
-  return reading.bhk !== null || reading.priceMinLakh !== null || reading.kind !== 'unknown' || reading.localities.length > 0;
+  return reading.bhk !== null || reading.sizeSqYd !== null || reading.priceMinLakh !== null || reading.kind !== 'unknown' || reading.localities.length > 0;
 }

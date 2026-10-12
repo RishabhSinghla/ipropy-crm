@@ -242,8 +242,9 @@ number. Chatter ("ok", "👍") is skipped. Table `ipy_market_post` (migration `2
 * Times in an export carry no zone and are read as India time. The page shows 90 days;
   the chat looks back 30 unless asked.
 
-The other developer's Hermes + Jev pipeline can hand deals to the same table later; the
-upload is the door that works today.
+The standalone tool that did this outside the CRM (Hermes' `~/ipropy-whatsapp`: parse → classify →
+match → call sheet → Associates, run by cron) is **retired — everything it did is in the CRM now**,
+below. The upload is still the only door: the CRM reads exported files and never reads a phone.
 
 **Matching both ways** (`core/market/matchDeal.ts`). A dealer who *has* a property is matched
 to our open contacts by preferred locality, BHK and budget (15% grace); a dealer's client who
@@ -265,4 +266,51 @@ fits half the database, and alerting on it would teach the team to ignore alerts
   narrowed. Keyed on the record's shape, not a module name; runs after commit off the event
   bus and never throws. Registered in `index.ts` only, where records are created.
 
-Still to build: AI reading for posts the rules miss, and the website as a source for the chat.
+### Inside the CRM, end to end (12 October 2026, owner: "fully incorporated, no separate tool")
+
+An upload now runs the whole chain: **read → Jev → match across groups → call sheet → dealers into
+Associates.** Migration `206`.
+
+* **Jev reads each deal** (`core/market/jev.ts`, `enrich.ts`). TypeSafe's decision model over
+  OpenRouter, the **same OpenRouter key card as the AI features** — nothing new to configure.
+  The word lists run first and stay the fallback (rule 7): with no key, or Jev down, nothing
+  changes. Jev's verdict overrides them only when sure (≥0.7 on side, ≥0.8 to call a post
+  noise; noise is *hidden*, `is_noise`, never deleted). It adds category, the poster's role and
+  an urgency score. **Phone numbers are stripped from the text before it leaves** — the
+  question does not need them and they are not ours to hand on.
+* **It runs in the scheduler's visit, not on a clock of its own.** A 30-second timer would keep
+  Neon awake all night; `marketWork()` rides the 15-minute tick (and is nudged after an
+  upload), drains a backlog within an 8-minute budget, and gives a post up after 3 failed asks.
+  Jev costs about $0.38 per 10,000 posts; a post is read once (`jev_checked_at`).
+* **Alerts wait for Jev when it is connected**, because its verdict can flip a "want" into a
+  "have" and send the alert to the wrong people. `alerted_at` makes it once-only; the migration
+  marks everything already in the feed as alerted so reading the backlog rings nobody about March.
+* **Sector, block and plot size** (`readPost.ts`: `places`, `sizeSqYd`, `category`, `place_keys`).
+  A plot deal is matched on "Sector 85, 250 gaj", which no dropdown lists. `read_version` lets the
+  word lists be improved later: bump `READ_VERSION` in `enrich.ts` and every stored post is
+  re-read once, with no network call.
+* **Introductions across groups** (`core/market/crossMatch.ts`, "Calls today"). Every buyer's
+  post against every seller's, ported from the retired tool with its weights: same area 0.45,
+  same type 0.2, size within ±25% 0.25, budget 0.1 (15% grace), plus recency. Different areas,
+  different type (plot / home / commercial), a different BHK or an over-budget ask is **no match,
+  not a low one**. Default is only people in *different groups* — two dealers in one group can
+  already see each other. Pairings are **never stored**, worked out fresh, so a better rule
+  improves the whole feed; only what a person did is (`ipy_market_deal`: called, meeting, won,
+  lost, not for us).
+* **The morning call sheet** (`sendCallSheet`): once a day after 9:00 India time, the best ten to
+  the admins' bell, linking to `/market?tab=calls`. The day is claimed with one atomic upsert so
+  two containers waking together cannot both send it.
+* **Dealers become Associates** (`core/market/dealers.ts`), by the number in their posts, on
+  upload and from the Dealers tab. **Nothing from WhatsApp goes to Contacts or Inventory** — the
+  owner's rule. Every value is chosen from **the field's own dropdown** (`pick`): a dealer is a
+  "Broker" in a module that has no "Dealer", and a field with no fit is left out rather than
+  refused. A dealer whose posts name no location the field lists is **counted and skipped, never
+  guessed**; the first refusal reason is returned so a dead feature says so. Found by running it:
+  the first version wrote "Dealer" into a list that has none and every record was refused.
+* **iPhone exports are a `.zip`** and are read as such (`unzipChat.ts`).
+* **Still open:** the seed does not create the Associates module (see CLAUDE.md, migration
+  `175`), so a brand-new database has none and the dealer step reports `noModule`. And nothing
+  here has yet been run against production data — the first upload there is the real test.
+
+Still to build: the website as a source for the chat, and commission tracking (who was paid for
+which introduction — a business discipline more than code).

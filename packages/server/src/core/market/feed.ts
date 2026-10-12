@@ -8,8 +8,10 @@
 import { db } from '../../db/pool.js';
 import { notify } from '../notifications/index.js';
 import { logger } from '../../utils/logger.js';
-import { fingerprintOf, looksLikeADeal, parseWhatsAppExport, readPost } from './readPost.js';
+import { fingerprintOf, looksLikeADeal, parseWhatsAppExport, placeKeysOf, readPost } from './readPost.js';
 import { matchDeal, type DealMatch } from './matchDeal.js';
+import { jevIsAvailable } from './jev.js';
+import { dealerDirectory, saveDealersAsAssociates } from './dealers.js';
 
 /** The business's own locality names, from the `locality` dropdown an admin edits. */
 export async function knownLocalities(): Promise<string[]> {
@@ -59,8 +61,8 @@ export async function importGroupExport(groupName: string, text: string, userId:
     const result = await db.queryOne<{ id: string; inserted: boolean }>(
       `INSERT INTO ipy_market_post
          (fingerprint, body, kind, bhk, price_min_lakh, price_max_lakh, localities,
-          poster_name, poster_phone, groups, first_posted_at, last_posted_at, imported_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::text], $11::timestamptz, $11::timestamptz, $12)
+          poster_name, poster_phone, groups, first_posted_at, last_posted_at, imported_by, places, size_sqyd, category, place_keys, read_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::text], $11::timestamptz, $11::timestamptz, $12, $13, $14, $15, $16, 1)
        ON CONFLICT (fingerprint) DO UPDATE SET
          groups = CASE WHEN $10::text = ANY(ipy_market_post.groups) THEN ipy_market_post.groups
                        ELSE ipy_market_post.groups || $10::text END,
@@ -70,7 +72,8 @@ export async function importGroupExport(groupName: string, text: string, userId:
       [
         fingerprintOf(message.body), message.body, reading.kind, reading.bhk,
         reading.priceMinLakh, reading.priceMaxLakh, reading.localities,
-        message.sender, reading.phone, groupName, posted, userId,
+        message.sender, reading.phone, groupName, posted, userId, reading.places, reading.sizeSqYd,
+        reading.category, placeKeysOf(reading),
       ],
     );
     if (result?.inserted) {
@@ -82,7 +85,21 @@ export async function importGroupExport(groupName: string, text: string, userId:
     }
   }
 
-  outcome.alerted = await alertOwners(groupName, fresh);
+  // With Jev connected the background reader alerts once it has read each deal,
+  // because its verdict can turn a "want" into a "have" and send the alert to
+  // the wrong people. Without Jev there is nothing to wait for.
+  if (!jevIsAvailable()) outcome.alerted = await alertOwners(fresh);
+
+  // The people who posted become Associates, off the request: a big group is
+  // hundreds of records and the upload must not wait on them. Then Jev reads.
+  void (async () => {
+    const dealers = (await dealerDirectory()).filter((dealer) => dealer.groups.includes(groupName));
+    const saved = await saveDealersAsAssociates(dealers);
+    logger.info({ groupName, ...saved }, 'market: dealers added to Associates');
+  })()
+    .catch((err) => logger.warn({ err }, 'market: adding dealers to Associates failed'))
+    // Dynamic, because the background reader imports this file back for its alerts.
+    .finally(() => { void import('./enrich.js').then((m) => m.nudgeMarketWork()); });
   return outcome;
 }
 
@@ -91,7 +108,7 @@ export async function importGroupExport(groupName: string, text: string, userId:
  * notification per person per deal rather than per record, so a deal that fits
  * five of somebody's contacts is one line in their bell, not five.
  */
-async function alertOwners(groupName: string, postIds: string[]): Promise<number> {
+export async function alertOwners(postIds: string[]): Promise<number> {
   const told = new Set<string>();
   for (const postId of postIds) {
     let matches: DealMatch[] = [];
@@ -107,9 +124,11 @@ async function alertOwners(groupName: string, postIds: string[]): Promise<number
       if (!match.ownerId) continue;
       byOwner.set(match.ownerId, [...(byOwner.get(match.ownerId) ?? []), match]);
     }
-    const post = await db.queryOne<{ kind: string; poster_name: string | null }>(
-      `SELECT kind, poster_name FROM ipy_market_post WHERE id = $1`, [postId],
+    const post = await db.queryOne<{ kind: string; poster_name: string | null; group_name: string | null }>(
+      `SELECT kind, poster_name, groups[1] AS group_name FROM ipy_market_post WHERE id = $1`, [postId],
     );
+    await db.query(`UPDATE ipy_market_post SET alerted_at = now() WHERE id = $1`, [postId]);
+    const groupName = post?.group_name ?? 'a dealer group';
     for (const [ownerId, theirs] of byOwner) {
       const names = theirs.slice(0, 3).map((m) => m.label).join(', ') + (theirs.length > 3 ? ` and ${theirs.length - 3} more` : '');
       await notify({
@@ -155,10 +174,12 @@ export interface MarketPost {
   groups: string[];
   lastPostedAt: string | null;
   seenCount: number;
+  category: string | null;
+  posterRole: string | null;
 }
 
 export async function searchMarket(query: MarketQuery): Promise<{ total: number; posts: MarketPost[] }> {
-  const where: string[] = [`coalesce(last_posted_at, created_at) > now() - make_interval(days => $1::int)`];
+  const where: string[] = [`NOT is_noise`, `coalesce(last_posted_at, created_at) > now() - make_interval(days => $1::int)`];
   const params: unknown[] = [Math.min(Math.max(query.days ?? 30, 1), 365)];
   const add = (value: unknown): string => { params.push(value); return `$${params.length}`; };
 
@@ -177,7 +198,7 @@ export async function searchMarket(query: MarketQuery): Promise<{ total: number;
   const limit = add(Math.min(Math.max(query.limit ?? 20, 1), 100));
   const rows = await db.query<Record<string, unknown>>(
     `SELECT id, body, kind, bhk, price_min_lakh, price_max_lakh, localities, poster_name, poster_phone,
-            groups, last_posted_at, seen_count
+            groups, last_posted_at, seen_count, category, poster_role
        FROM ipy_market_post WHERE ${clause}
       ORDER BY last_posted_at DESC NULLS LAST LIMIT ${limit}`,
     params,
@@ -198,6 +219,8 @@ export async function searchMarket(query: MarketQuery): Promise<{ total: number;
       groups: row.groups as string[],
       lastPostedAt: row.last_posted_at ? new Date(row.last_posted_at as string).toISOString() : null,
       seenCount: row.seen_count as number,
+      category: row.category as string | null,
+      posterRole: row.poster_role as string | null,
     })),
   };
 }
