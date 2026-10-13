@@ -84,5 +84,10 @@ test('a list can be acted on from its own row, and the menu is not clipped', asy
 test('a built-in list cannot be deleted', async ({ page }) => {
   await openPicker(page);
   await page.getByRole('button', { name: /^Actions for All Leads$/ }).click();
-  await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
+  // Other menus elsewhere on the workspace may legitimately contain Delete;
+  // assert only against this list row's actions popover.
+  const actions = page.locator('.popover').filter({
+    has: page.getByRole('button', { name: 'Duplicate', exact: true }),
+  }).last();
+  await expect(actions.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
 });

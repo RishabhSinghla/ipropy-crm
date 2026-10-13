@@ -71,6 +71,8 @@ test('a filter’s icon takes its own colour once that filter is on', async ({ p
 test('Enter posts a comment, and Shift+Enter writes a new line', async ({ page }) => {
   await openList(page);
   await page.locator('[data-testid="queue-card"]').first().click();
+  // The note composer is folded until its handle is opened.
+  await page.getByTestId('note-dock-handle').click();
 
   const box = page.getByLabel('Add a note for the team').first();
   await expect(box).toBeVisible({ timeout: 20_000 });

@@ -1,10 +1,10 @@
 import { type JSX } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Sparkles } from 'lucide-react';
+import { Clock3, Sparkles } from 'lucide-react';
 import type { FieldMeta, FilterGroup, ListQuery } from '@ipropy/shared';
 import { api } from '../lib/api';
-import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
 import { Dropdown } from './ui';
 import { AgentPicker } from './AgentPicker';
@@ -144,6 +144,7 @@ export function FollowUpQueue({
                 'All Leads/Inventory, Followup, Tag Name (hot)' in the record
                 left pane"* (3 October 2026), reversing the icons-only row of
                 1 October. */}
+            <Clock3 aria-hidden="true" className={filterIcon('task', Boolean(active))} />
             <span>Task</span>
             {/* Something overdue stays red on the purple: it is the one count
                 in this row that is a warning rather than a size. */}

@@ -41,6 +41,8 @@ test("the chips are the admin's list, and one writes into the note", async ({ pa
     // The notes box sits at the foot of the timeline since 30 September 2026.
     const notes = page.getByTestId('note-dock');
     await expect(notes).toBeVisible({ timeout: 40_000 });
+    // The dock is intentionally collapsed until the user opens it.
+    await notes.getByTestId('note-dock-handle').click();
 
     const chip = notes.getByRole('button', { name: `+ ${phrase}` });
     await expect(chip, 'a phrase added in the dropdown is not offered on the record').toBeVisible();

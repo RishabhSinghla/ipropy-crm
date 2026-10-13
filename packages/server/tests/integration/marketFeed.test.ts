@@ -66,7 +66,9 @@ describe('the market feed', () => {
   it('finds a seller by BHK, budget and words, for anybody signed in', async () => {
     const res = await request(app)
       .get('/api/market/posts')
-      .query({ kind: 'have', bhk: 3, maxLakh: 150, text: marker, days: 365 })
+      // Keep this ingestion/search test independent of the test fixture's
+      // deliberately fixed 2025 message timestamps and the current date.
+      .query({ kind: 'have', bhk: 3, maxLakh: 150, text: marker, days: 730 })
       .set('Authorization', `Bearer ${repToken}`);
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
@@ -74,7 +76,7 @@ describe('the market feed', () => {
 
     const tooCheap = await request(app)
       .get('/api/market/posts')
-      .query({ kind: 'have', maxLakh: 100, text: marker, days: 365 })
+      .query({ kind: 'have', maxLakh: 100, text: marker, days: 730 })
       .set('Authorization', `Bearer ${repToken}`);
     expect(tooCheap.body.total).toBe(0);
   });
