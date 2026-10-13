@@ -490,3 +490,12 @@ doors only) and `why-the-crm-is-slow.yml` (read-only database check):
   also turns the lock off.
 * **Accepted risk:** the `uuid` advisory is not upgraded — unreachable here, and the upgrade
   risks breaking `exceljs`.
+
+## Finished one-off workflows were deleted (13 October 2026)
+
+Thirty click-to-run workflows that had done their one job — data fixes such as
+`area-units-to-sqyd`, the WhatsApp removals, and the "why is it …" investigations —
+were deleted, together with the old standalone `companion-android/` app (it had
+been folded into `packages/app` on 13 September). Older notes in these documents
+that name one of them describe something that happened once, not something to
+run again. Git history has every file if one is ever wanted back.

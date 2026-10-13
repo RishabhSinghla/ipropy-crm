@@ -76,7 +76,7 @@ A new APK is needed only when the **native** half moves — a plugin, a
 permission, the call-log engine, the icon — which is rare, and which
 *This phone's app* in Settings is what says.
 
-The standalone `companion-android/` call-sync app is folded in. Its engine came
+The standalone `companion-android/` call-sync app is folded in (and its folder was deleted on 13 October 2026; git history has it). Its engine came
 across unchanged except for one fix worth knowing: **all three call-log queries
 appended a row cap to the sort order**, which from Android 11 the call-log
 provider refuses outright (`Invalid token LIMIT`). Both callers catch and carry

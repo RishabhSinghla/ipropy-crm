@@ -6,7 +6,8 @@ the network, with the phone's own camera, location, notifications and call log
 wired in.
 
 One app, not two: the standalone call-logging companion (`companion-android/`)
-is folded in here, so a rep installs one thing.
+is folded in here, so a rep installs one thing. (Its old folder was deleted on
+13 October 2026; it is in git history if ever needed.)
 
 ---
 

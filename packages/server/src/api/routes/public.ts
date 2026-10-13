@@ -1172,7 +1172,7 @@ async function serveSharedPhoto(
 /**
  * Where the published APK and its details live inside the image.
  *
- * Written by `companion-android/scripts/publish-apk.sh` and committed, because
+ * Written by `packages/app/scripts/publish-apk.sh` and committed, because
  * the container has no Android SDK and Render has no artefact store. Three and
  * a half megabytes in git is the price of the CRM being able to hand a rep the
  * app without a second service, a login, or a monthly bill.

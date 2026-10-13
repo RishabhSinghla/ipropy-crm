@@ -32,9 +32,8 @@ export default tseslint.config(
       '**/test-results/**',
       '**/playwright-report/**',
       '.claude/**',
-      // The Android companion and the Python services are out-of-tree tools
-      // with their own conventions; this config is for the npm workspaces.
-      'companion-android/**',
+      // The Python services are out-of-tree tools with their own conventions;
+      // this config is for the npm workspaces.
       'media-service/**',
       'n8n/**',
       'wa-bridge/**',
