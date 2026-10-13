@@ -58,14 +58,18 @@ jobs:
             WHERE dims = 1024;
           SQL
 
-      - name: Check it and time the same search after
+      - name: Check it, and which settings make the planner use it
         run: |
-          psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -tA <<'SQL'
-          SELECT 'index valid: ' || i.indisvalid || ', size ' || pg_size_pretty(pg_relation_size(c.oid))
-            FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'idx_embedding_nearest_1024';
-          SET hnsw.ef_search = 400;
-          SELECT embedding::vector(1024)::text AS v FROM ipy_embedding WHERE dims = 1024 LIMIT 1 \gset
+          psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -tA -c "SELECT 'index valid: ' || i.indisvalid || ', size ' || pg_size_pretty(pg_relation_size(c.oid)) FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'idx_embedding_nearest_1024'"
+          for N in 100 150 200 250 300 400; do
+            echo "=== nearest $N"
+            psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -tA <<SQL | grep -E "Index Scan|Seq Scan on ipy_embedding|Execution Time" | sed -E 's/\(cost=[^)]*\)//' | cut -c1-110
+          BEGIN;
+          SET LOCAL hnsw.ef_search = $N;
+          SELECT embedding::vector(1024)::text AS v FROM ipy_embedding WHERE dims = 1024 LIMIT 1 \\gset
           EXPLAIN (ANALYZE, TIMING OFF, SUMMARY ON)
           SELECT e.id FROM ipy_embedding e WHERE e.dims = 1024
-          ORDER BY (e.embedding::vector(1024)) <=> :'v'::vector(1024) LIMIT 400;
+          ORDER BY (e.embedding::vector(1024)) <=> :'v'::vector(1024) LIMIT $N;
+          COMMIT;
           SQL
+          done
