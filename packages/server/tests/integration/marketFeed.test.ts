@@ -19,13 +19,17 @@ let app: Express;
 let adminToken = '';
 let repToken = '';
 const marker = `itestmkt${Date.now()}`;
+const today = new Date();
+const twoDigitYear = String(today.getFullYear()).slice(-2);
+const messageDate = `${today.getDate()}/${today.getMonth() + 1}/${today.getFullYear()}`;
+const forwardedDate = `${today.getDate()}/${today.getMonth() + 1}/${twoDigitYear}`;
 
 const groupA = [
-  `12/10/2025, 10:16 am - Ramesh Dealer: 3 BHK available in ${marker} Greenfields, 1.45 Cr, call 9811012345`,
-  '12/10/2025, 10:17 am - Sita Realty: ok',
-  `12/10/2025, 11:02 am - Sita Realty: Required 2 bhk ${marker} budget 70-80 lac`,
-].join('\n');
-const groupB = `[13/10/25, 9:00:00 AM] Mohan Associates: 3 bhk available in ${marker} greenfields,  1.45 cr, call 9811012345`;
+  `${messageDate}, 10:16 am - Ramesh Dealer: 3 BHK available in ${marker} Greenfields, 1.45 Cr, call 9811012345`,
+  `${messageDate}, 10:17 am - Sita Realty: ok`,
+  `${messageDate}, 11:02 am - Sita Realty: Required 2 bhk ${marker} budget 70-80 lac`,
+].join('\\n');
+const groupB = `[${forwardedDate}, 9:00:00 AM] Mohan Associates: 3 bhk available in ${marker} greenfields,  1.45 cr, call 9811012345`;
 
 beforeAll(async () => {
   await registry.warmup();
@@ -66,9 +70,8 @@ describe('the market feed', () => {
   it('finds a seller by BHK, budget and words, for anybody signed in', async () => {
     const res = await request(app)
       .get('/api/market/posts')
-      // Keep this ingestion/search test independent of the test fixture's
-      // deliberately fixed 2025 message timestamps and the current date.
-      .query({ kind: 'have', bhk: 3, maxLakh: 150, text: marker, days: 730 })
+      // Keep the fixture inside the API's supported 365-day search window.
+      .query({ kind: 'have', bhk: 3, maxLakh: 150, text: marker, days: 365 })
       .set('Authorization', `Bearer ${repToken}`);
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
@@ -76,7 +79,7 @@ describe('the market feed', () => {
 
     const tooCheap = await request(app)
       .get('/api/market/posts')
-      .query({ kind: 'have', maxLakh: 100, text: marker, days: 730 })
+      .query({ kind: 'have', maxLakh: 100, text: marker, days: 365 })
       .set('Authorization', `Bearer ${repToken}`);
     expect(tooCheap.body.total).toBe(0);
   });
