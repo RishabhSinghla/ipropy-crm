@@ -11,9 +11,9 @@
  * do not, so the same toolbar reads as two toolbars. The shape and both states
  * live here; each caller supplies its own icon, label and count.
  *
- * **29 September 2026:** these are pale controls with a darker brand stroke.
- * The active filter gains one tint step rather than turning into a solid block,
- * so the toolbar remains calm while still making its state obvious.
+ * Active filters use a soft brand tint and clear outline; inactive filters
+ * stay white with a quiet neutral edge, keeping selection visible without a
+ * heavy dark block.
  */
 import { cn } from './utils';
 
@@ -46,9 +46,8 @@ export function toolbarButton(on: boolean, extra?: string): string {
       browser, in dark mode, and this repo has paid for it once already.
     */
     on
-      ? 'border-brand-700 bg-brand-700 text-white shadow-sm hover:bg-brand-800 dark:border-brand-500 dark:bg-brand-600'
-      : 'border-brand-200 bg-brand-50 text-brand-800 hover:border-brand-300 hover:bg-brand-100'
-        + ' dark:border-brand-800 dark:bg-brand-950 dark:text-brand-200 dark:hover:bg-brand-900',
+      ? 'border-brand-300 bg-brand-100 text-brand-900 shadow-sm hover:border-brand-400 hover:bg-brand-200'
+      : 'border-slate-200 bg-white text-slate-600 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800',
     extra,
   );
 }
@@ -75,8 +74,8 @@ export function toolbarCount(on = false, warning = false): string {
     warning
       ? 'bg-red-600 text-white'
       : on
-        ? 'bg-brand-900 text-white dark:bg-brand-800'
-        : 'bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-100',
+        ? 'bg-white text-brand-900'
+        : 'bg-slate-100 text-slate-700',
   );
 }
 

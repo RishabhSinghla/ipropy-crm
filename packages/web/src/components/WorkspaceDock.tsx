@@ -203,7 +203,7 @@ function dockLook(on: boolean, tone?: string, iconOnly = false): string {
     */
     tone === 'whatsapp' && !on && 'text-[#0a7038] hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950',
     on
-      ? 'border border-brand-700 bg-brand-700 text-white shadow-xs [--dock-icon:white]'
+      ? 'border border-brand-200 bg-brand-50 text-brand-800 shadow-xs [--dock-icon:var(--brand-800)]'
       : 'text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800',
     !on && tone === 'leads' && '[--dock-icon:#2563eb] dark:[--dock-icon:#93c5fd]',
     !on && tone === 'inventory' && '[--dock-icon:#047857] dark:[--dock-icon:#6ee7b7]',

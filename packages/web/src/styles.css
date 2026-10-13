@@ -14,15 +14,10 @@
 @tailwind base;
 @tailwind components;
 
-/* Theme-dark toolbar, with a light search surface and readable action icons. */
-/* A toolbar icon keeps the colour `lib/toolbarIcon.ts` gives it — one hue
-   each, *"change the all icon colour separately"* (10 October 2026) — so only
-   the buttons that are not icons are painted white here. */
-[data-main-toolbar] > button:not(.toolbar-action),
-[data-main-toolbar] #global-quick-dashboard > button:not(.toolbar-action),
-[data-main-toolbar] #global-quick-filter > button:not(.toolbar-action),
-[data-main-toolbar] #global-list-options > button:not(.toolbar-action) { color: #fff; }
-[data-main-toolbar] .toolbar-action:hover { background: rgb(255 255 255 / 0.15); }
+/* Light, quiet global toolbar: white surface, slate text, restrained icons. */
+[data-main-toolbar] > button { color: #475569; }
+[data-main-toolbar] .toolbar-action { color: #475569; }
+[data-main-toolbar] .toolbar-action:hover { background: #f1f5f9; }
 [data-main-toolbar] input { color: #334155; }
 [data-main-toolbar] input::placeholder { color: #94a3b8; }
 /* Highlighted text must stay readable. The browser's own highlight is a pale
