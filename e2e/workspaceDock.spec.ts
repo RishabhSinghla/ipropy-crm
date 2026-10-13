@@ -29,7 +29,7 @@ test('choosing a module goes there, and its icon says so', async ({ page }) => {
   const href = await firstModule.getAttribute('href');
   await firstModule.click();
   await expect(page).toHaveURL(new RegExp(`${href}`));
-  await expect(firstModule).toHaveClass(/bg-brand-700/);
+  await expect(firstModule).toHaveClass(/bg-brand-50/);
 });
 
 test('no Tasks or Campaigns icon — Campaigns lives in WhatsApp (3 October 2026)', async ({ page }) => {

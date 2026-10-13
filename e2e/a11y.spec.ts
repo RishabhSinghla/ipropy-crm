@@ -251,11 +251,13 @@ test.describe('accessibility', () => {
  * theme is a server-side preference, so it must be put back at the end or it
  * leaks into every other spec.
  */
-test('has no colour-contrast violations in either theme', async ({ page }) => {
+test('has no colour-contrast violations', async ({ page }) => {
   test.slow(); // ten full page loads plus two axe passes each
   const failures: string[] = [];
 
-  for (const theme of ['light', 'dark'] as const) {
+  // Light only: dark mode was removed on 13 October 2026 (store.ts applyTheme
+  // forces light), and the toggle this test used to click no longer exists.
+  for (const theme of ['light'] as const) {
     await page.goto('/dashboard');
     // The switcher, not a module link: the header's links moved inside it and
     // are not on screen until it is opened.

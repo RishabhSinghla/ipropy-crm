@@ -417,14 +417,14 @@ function UserMenu(): JSX.Element {
         for two more lines.
       */
       trigger={
-        <button className="ml-1 flex items-center gap-2 rounded-lg p-1 hover:bg-white/10" data-testid="account-button">
+        <button className="ml-1 flex items-center gap-2 rounded-lg p-1 hover:bg-slate-100" data-testid="account-button">
           <Avatar name={user?.fullName ?? '?'} src={user?.avatarUrl} size={28} />
           <span className="hidden min-w-0 flex-col items-start leading-tight sm:flex">
-            <span className="max-w-[9rem] truncate text-xs font-semibold text-white">
+            <span className="max-w-[9rem] truncate text-xs font-semibold text-slate-800">
               {user?.fullName}
             </span>
             {user?.roleName && (
-              <span className="max-w-[9rem] truncate text-[10px] text-slate-200">{user.roleName}</span>
+              <span className="max-w-[9rem] truncate text-[10px] text-slate-600">{user.roleName}</span>
             )}
           </span>
         </button>

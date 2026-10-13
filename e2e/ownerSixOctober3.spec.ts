@@ -6,10 +6,31 @@
  * `record_tags` rather than as a field of that name.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { ADMIN_EMAIL, ADMIN_PASSWORD, unique } from './helpers';
 
 test.use({ viewport: { width: 1600, height: 900 } });
 
 const MODULES = ['leads', 'properties'] as const;
+
+// The quick filter's tag list starts with an "Unfilled" row that is not a tag,
+// and a fresh database has no tags at all, so the test makes its own.
+const tagName = unique('QuickTag');
+let token = '';
+let tagId = '';
+test.beforeAll(async ({ request }) => {
+  const login = await request.post('http://localhost:4000/api/auth/login', { data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
+  expect(login.ok()).toBeTruthy();
+  token = (await login.json()).token;
+  const tag = await request.post('http://localhost:4000/api/tags', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { name: tagName, color: '#dc2626', modules: [...MODULES] },
+  });
+  expect(tag.ok()).toBeTruthy();
+  tagId = (await tag.json()).id;
+});
+test.afterAll(async ({ request }) => {
+  if (tagId) await request.delete(`http://localhost:4000/api/tags/${tagId}`, { headers: { Authorization: `Bearer ${token}` } });
+});
 
 async function openList(page: Page, module: string): Promise<void> {
   await page.goto(`/${module}`);
@@ -75,10 +96,8 @@ for (const module of MODULES) {
       tag makes it match the *next* unticked one and the assertion can never
       pass. Take the name first, then watch that row.
     */
-    const choices = panel.getByTestId('quick-filter-tags').locator('button[aria-pressed]');
-    if (!(await choices.count())) test.skip(true, 'no tags on this module in this database');
-    const name = (await choices.first().innerText()).split('\n')[0]!.trim();
-    const row = choices.filter({ hasText: name }).first();
+    const row = panel.getByTestId('quick-filter-tags').locator('button[aria-pressed]').filter({ hasText: tagName }).first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
     await row.click();
     await expect(row).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => askedByTag, { timeout: 15_000 }).toBe(true);

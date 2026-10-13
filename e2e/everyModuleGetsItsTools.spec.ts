@@ -38,10 +38,11 @@ test('every module with a chase date offers its follow-up queue', async ({ page 
 
   for (const name of modules) {
     await page.goto(`/${name}`);
-    await expect(page.locator('text=/of [\\d,]+ records/').first()).toBeVisible({ timeout: 40_000 });
+    // An empty module shows no "of N records" line at all, so wait for the
+    // toolbar's own Task button, which is what this test is about.
     await expect(
       page.getByRole('button', { name: /^Task/ }),
       `${name} has a chase date and no Task button`,
-    ).toHaveCount(1);
+    ).toHaveCount(1, { timeout: 40_000 });
   }
 });

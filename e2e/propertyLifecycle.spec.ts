@@ -68,6 +68,9 @@ test('putting it on the website is a decision the rep makes on the record', asyn
     kind.
   */
   await page.goto(recordUrl);
+  // The details pane is folded on arrival (3 October 2026), and a folded pane
+  // is inert, so the switch inside it cannot be clicked until it is opened.
+  await openDetailsPane(page);
 
   // The accessible name describes the current state (on/off), so locate the
   // record-pane control by its stable component boundary rather than a stale
@@ -80,6 +83,7 @@ test('putting it on the website is a decision the rep makes on the record', asyn
   // rep experiences it: reload, and see the switch still on.
   await page.waitForTimeout(1200);
   await page.reload();
+  await openDetailsPane(page);
   await expect(toggle).toBeVisible({ timeout: 10_000 });
   await expect(toggle, 'the publish switch did not stick').toBeChecked();
 });

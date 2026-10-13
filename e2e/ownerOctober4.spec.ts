@@ -21,7 +21,7 @@ for (const module of ['leads', 'properties', 'associates']) {
     await page.getByTestId('workspace-dock-frame').hover();
     await page.getByTestId('workspace-dock').getByRole('link', { name: 'Favourites', exact: true }).click();
     await expect(page).toHaveURL(/favourite/);
-    await expect(page.getByTestId('workspace-dock').getByRole('link', { name: 'Favourites', exact: true })).toHaveClass(/bg-brand-700/);
+    await expect(page.getByTestId('workspace-dock').getByRole('link', { name: 'Favourites', exact: true })).toHaveClass(/bg-brand-50/);
   });
 }
 

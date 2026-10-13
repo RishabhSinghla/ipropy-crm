@@ -105,7 +105,9 @@ async function moduleRoutes(page: Page): Promise<string[]> {
  */
 function settled(page: Page, route: string) {
   void route;
-  return page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/);
+  // An empty module (Builder Floors on a fresh database) shows its empty state
+  // instead of a count, and that is a finished load too.
+  return page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$|^No matching records$/);
 }
 
 /**
