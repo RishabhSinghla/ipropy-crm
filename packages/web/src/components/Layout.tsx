@@ -1,4 +1,5 @@
-import { type JSX, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type JSX, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
@@ -869,8 +870,40 @@ function GlobalSearch(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [recent, setRecent] = useState<string[]>(() => readRecent());
   const [highlight, setHighlight] = useState(-1);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // The toolbar lives inside a clipped app frame. A normal absolute popover
+  // can be covered by mobile record headers (or clipped on short screens),
+  // even when its own z-index is high. Portal the transient panel to the body
+  // and anchor it to the search control in viewport coordinates instead.
+  useEffect(() => {
+    if (!open) return;
+    const positionPanel = () => {
+      const rect = ref.current?.getBoundingClientRect();
+      if (!rect) return;
+      const gutter = 8;
+      const left = Math.max(gutter, Math.min(rect.left, window.innerWidth - gutter - 160));
+      const width = Math.max(160, Math.min(rect.width, window.innerWidth - left - gutter));
+      const top = rect.bottom + 4;
+      setPanelStyle({
+        position: 'fixed',
+        top,
+        left,
+        width,
+        maxHeight: Math.max(120, Math.min(416, window.innerHeight - top - gutter)),
+        zIndex: 1000,
+      });
+    };
+    positionPanel();
+    window.addEventListener('resize', positionPanel);
+    window.addEventListener('scroll', positionPanel, true);
+    return () => {
+      window.removeEventListener('resize', positionPanel);
+      window.removeEventListener('scroll', positionPanel, true);
+    };
+  }, [open]);
 
   /*
     **4 October 2026, the owner, with a design of the panel he wants:** *"We need
@@ -1026,8 +1059,8 @@ function GlobalSearch(): JSX.Element {
       {/* The last five searches, with the box still empty — his *"last search
           also shown in below"*. Offered only where it would say something: an
           empty row of nothing is worse than no row. */}
-      {showRecent && (
-        <div className="popover absolute z-50 mt-1 w-full p-2" data-testid="search-recent">
+      {showRecent && panelStyle && typeof document !== 'undefined' && createPortal(
+        <div className="popover p-2" style={panelStyle} data-testid="search-recent">
           <p className="px-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted">Last search</p>
           <div className="flex flex-wrap gap-1.5">
             {recent.map((term) => (
@@ -1053,11 +1086,12 @@ function GlobalSearch(): JSX.Element {
               </span>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {open && query.trim().length >= 2 && (
-        <div className="popover absolute z-50 mt-1 max-h-[26rem] w-full overflow-y-auto" id="global-search-results" role="listbox">
+      {open && query.trim().length >= 2 && panelStyle && typeof document !== 'undefined' && createPortal(
+        <div className="popover overflow-y-auto" style={panelStyle} id="global-search-results" role="listbox">
           {loading && <div className="flex justify-center py-6"><Spinner className="text-slate-400" /></div>}
           {!loading && results.length === 0 && (
             <p className="px-3 py-6 text-center text-xs text-muted">No matches for “{query}”</p>
@@ -1067,7 +1101,7 @@ function GlobalSearch(): JSX.Element {
             <div key={group.module} data-search-module={group.module}>
               {/* The heading says where these came from, how many, and is the
                   way to the module's own list with the same words in its box. */}
-              <div className="flex items-center gap-2 bg-[var(--surface-muted)] px-3 py-1.5">
+              <div className="sticky top-0 z-10 flex items-center gap-2 bg-[var(--surface-muted)] px-3 py-1.5">
                 <span className="truncate text-[10px] font-bold uppercase tracking-wider text-muted">{group.label}</span>
                 <Badge className="shrink-0">{group.hits.length}</Badge>
                 <button
@@ -1126,7 +1160,8 @@ function GlobalSearch(): JSX.Element {
               <span className="ml-auto"><kbd className="font-sans">esc</kbd> to close</span>
             </p>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

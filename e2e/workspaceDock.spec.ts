@@ -103,10 +103,11 @@ test('the toolbar reads as names, counts and the owner’s own order', async ({ 
   const rows = await page.locator('[data-testid="workspace-dock"] a')
     .evaluateAll((els) => els.map((el) => (el as HTMLElement).innerText.split('\n')[0].trim()));
 
-  // Dashboard first, WhatsApp last — below the call log, which is the move.
+  // Dashboard first, WhatsApp below Calls, then the non-record destinations.
   expect(rows[0]).toBe('Dashboard');
-  expect(rows[rows.length - 1]).toBe('WhatsApp');
   expect(rows.indexOf('WhatsApp')).toBeGreaterThan(rows.indexOf('Calls'));
+  expect(rows.indexOf('Dealer groups')).toBeGreaterThan(rows.indexOf('WhatsApp'));
+  expect(rows.slice(-2)).toEqual(['Tools', 'Archive']);
 
   // Every row says what it is, rather than being an icon you learn.
   expect(rows.every((name) => name.length > 0), `a toolbar row has no name: ${rows.join(', ')}`).toBe(true);
