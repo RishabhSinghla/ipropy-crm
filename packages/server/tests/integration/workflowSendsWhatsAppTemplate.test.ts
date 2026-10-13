@@ -37,7 +37,12 @@ async function newLead(overrides: Record<string, unknown> = {}): Promise<{ id: s
   const input = leadInput({ status: 'New', ...overrides });
   const rec = await createRecord(ctx, 'leads', input);
   made.push(rec.id as string);
-  return { id: rec.id as string, mobile: String(input.mobile), name: String(input.full_name) };
+  // The sender deliberately refuses to guess a country for a ten-digit
+  // matching key. Store an explicit +91-form destination in this isolated
+  // test record, bypassing the UI's national-number input validation.
+  const dialableMobile = `91${String(input.mobile)}`;
+  await db.query(`UPDATE ipy_e_leads SET mobile = $2 WHERE record_id = $1`, [rec.id, dialableMobile]);
+  return { id: rec.id as string, mobile: dialableMobile, name: String(input.full_name) };
 }
 
 /** What the engine receives when a lead is created. */

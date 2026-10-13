@@ -223,7 +223,7 @@ function DealsTab(): JSX.Element {
     maxLakh: maxCr ? Number(maxCr) * 100 : undefined,
     locality: locality.trim() || undefined,
     text: text.trim() || undefined,
-    days: 90,
+    days: 45,
     limit: 100,
   };
   const { data, isLoading, error } = useQuery({
@@ -233,7 +233,7 @@ function DealsTab(): JSX.Element {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">Deals posted in WhatsApp groups in the last 90 days. Ask about them in plain words at /ask too.</p>
+      <p className="text-sm text-muted">Deals posted in WhatsApp groups in the last 45 days. Ask about them in plain words at /ask too.</p>
 
       <div className="flex flex-wrap gap-2">
         <select className="input w-auto" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Has or wants">

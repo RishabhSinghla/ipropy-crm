@@ -73,6 +73,14 @@ describe('scoring a requirement against an offer', () => {
     const stale = scorePair(buyer(bare({ postedAt: daysAgo(300) })), listing(bare({ postedAt: daysAgo(300) })), NOW)!.score;
     expect(stale).toBeLessThan(fresh);
   });
+
+  it('marks a pair recent only when both posts are within the 45-day window', () => {
+    const withinWindow = scorePair(buyer({ postedAt: daysAgo(45) }), listing({ postedAt: daysAgo(45) }), NOW)!;
+    const outsideWindow = scorePair(buyer({ postedAt: daysAgo(46) }), listing({ postedAt: daysAgo(46) }), NOW)!;
+
+    expect(withinWindow.reasons).toContain('recent (within 45 days)');
+    expect(outsideWindow.reasons).not.toContain('recent (within 45 days)');
+  });
 });
 
 describe('the best offer for each requirement', () => {
