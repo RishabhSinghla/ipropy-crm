@@ -58,7 +58,7 @@ describe('industry templates', () => {
       first one.
     */
     const modules = resolveTemplate('real-estate').modules.map((m) => m.name).sort();
-    expect(modules).toEqual(['builder_floors', 'leads', 'projects', 'properties']);
+    expect(modules).toEqual(['associates', 'builder_floors', 'leads', 'projects', 'properties']);
   });
 });
 

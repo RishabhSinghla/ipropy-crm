@@ -4,9 +4,9 @@
  * **8 October 2026, the owner:** *"make me a project module in the CRM wherein we
  * can input all details of all projects we got … DLF, BPTP, Omaxe etc."*
  *
- * What only a browser can prove: the module is in the navigation, a project
- * opens on its Units tab, and that tab finds the Inventories carrying the
- * project's name — typed differently, as a rep would type it.
+ * What only a browser can prove: the module is in the navigation and a rep can
+ * explicitly link an existing Inventory record from the project's dedicated
+ * Availability workspace.
  */
 import { expect, test } from '@playwright/test';
 
@@ -52,17 +52,25 @@ test('is in the navigation, not only at an address', async ({ page }) => {
   await expect(page.locator('a[href="/projects"]').first()).toBeAttached({ timeout: 30_000 });
 });
 
-test("opens a project on its Units tab, finding the units however the name was typed", async ({ page }) => {
-  const id = made.find((m) => m.module === 'projects')!.id;
-  await page.goto(`/projects?open=${id}`);
-  const row = page.getByTestId('queue-card').filter({ hasText: MARK }).first();
+test('opens a project and explicitly links an existing Inventory unit', async ({ page }) => {
+  await page.goto('/projects');
+  const row = page.getByRole('button').filter({ hasText: MARK }).first();
   await expect(row).toBeVisible({ timeout: 30_000 });
-  // The row's second line is the project's own facts, not a unit's.
   await expect(row).toContainText('BPTP');
   await expect(row).toContainText('Faridabad');
+  await row.click();
+  await expect(page.getByRole('heading', { name: 'Project Explorer' })).toBeVisible();
 
-  const table = page.getByTestId('builder-floor-table');
-  await expect(table).toBeVisible({ timeout: 20_000 });
-  await expect(table).toContainText(`${MARK} BPTP Terra`);
-  await expect(table.getByRole('row').filter({ hasText: `${MARK}-T2-704` })).toHaveCount(1);
+  // Project Explorer intentionally keeps its own workspace rather than the
+  // generic split-view queue. Units are linked explicitly from Availability;
+  // a matching project_name alone must not silently duplicate/link records.
+  await page.getByRole('button', { name: 'Availability', exact: true }).click();
+  const search = page.getByPlaceholder('Search Inventory by name, house number, locality…');
+  await search.fill(`${MARK}-T2-704`);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  const linkButton = page.getByRole('button', { name: 'Link unit' }).first();
+  await expect(linkButton).toBeVisible({ timeout: 20_000 });
+  await expect(linkButton.locator('..')).toContainText(`${MARK} Seller`);
+  await linkButton.click();
+  await expect(page.getByText(`${MARK} Seller`).last()).toBeVisible();
 });

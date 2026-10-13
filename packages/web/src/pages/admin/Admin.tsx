@@ -3,7 +3,7 @@ import ProfileStrengthAdmin from './ProfileStrengthAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, Blocks, Database, KeyRound, LayoutTemplate, Link2, MapPin,
+  Activity, Blocks, Building2, Database, KeyRound, LayoutTemplate, Link2, MapPin,
   ListTree, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal, Filter,
 } from 'lucide-react';
@@ -29,6 +29,7 @@ const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
 const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
+const ProjectMastersAdmin = lazy(() => import('./ProjectMastersAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -66,6 +67,7 @@ const SECTIONS = [
       { path: 'layouts', capability: 'admin.layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
       { path: 'quick-filters', capability: 'admin.layouts', label: 'Quick Filters', icon: Filter, element: <QuickFiltersAdmin /> },
       { path: 'picklists', capability: 'admin.picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
+      { path: 'project-masters', capability: 'admin.picklists', label: 'Project Masters', icon: Building2, element: <ProjectMastersAdmin /> },
       { path: 'tags', capability: 'admin.picklists', label: 'Tags', icon: Tag, element: <TagsAdmin /> },
     ],
   },

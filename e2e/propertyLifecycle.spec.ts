@@ -69,7 +69,10 @@ test('putting it on the website is a decision the rep makes on the record', asyn
   */
   await page.goto(recordUrl);
 
-  const toggle = page.getByRole('switch', { name: 'Show on Website' });
+  // The accessible name describes the current state (on/off), so locate the
+  // record-pane control by its stable component boundary rather than a stale
+  // fixed label.
+  const toggle = page.getByTestId('website-switch').getByRole('switch');
   await expect(toggle, 'there is no way to publish from the record').toBeVisible({ timeout: 15_000 });
   await toggle.click();
   // Instant save with optimistic UI. The API request fixture does not share

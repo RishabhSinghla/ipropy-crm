@@ -99,9 +99,7 @@ for (const module of MODULES) {
     expect(await cards.count(), 'needs records in the queue').toBeGreaterThan(1);
     const padding = await cards.first().locator('button').first()
       .evaluate((el) => parseFloat(getComputedStyle(el).paddingTop));
-    // It was 10px (py-2.5); py-4 is 16. Measured rather than read off a class
-    // name, because a class that is present while the row is still tight is
-    // exactly the bug.
+    // The clickable row itself provides 16px of breathing room between facts.
     expect(padding).toBeGreaterThanOrEqual(14);
   });
 }

@@ -64,7 +64,12 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 
       Chats has its own coverage in whatsappBusinessChats.spec.ts and the a11y sweep.
     */
-    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/portal', '/chats', '/whatsapp']);
+    const token = localStorage.getItem('ipropy.token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const moduleRows = fetch('/api/meta/modules', { headers })
+      .then((response) => response.json()) as Promise<{ name: string }[]>;
+    return moduleRows.then((rows) => {
+      const modulePaths = new Set(rows.map((row) => `/${row.name}`));
     // Visible links only: the same href appears in three navs — the module
     // switcher's menu, the mobile drawer and the bottom bar — and the hidden
     // ones cannot be clicked. The Site visit tab is drawer/bottom-bar-only at
@@ -73,8 +78,9 @@ async function moduleRoutes(page: Page): Promise<string[]> {
     return [...document.querySelectorAll<HTMLAnchorElement>('nav a[href], [data-testid="workspace-dock"] a[href]')]
       .filter((a) => a.offsetParent !== null)
       .map((a) => new URL(a.href).pathname)
-      .filter((p) => /^\/[a-z_]+$/.test(p) && !skip.has(p))
+      .filter((p) => modulePaths.has(p))
       .filter((p, i, all) => all.indexOf(p) === i);
+    });
   });
 
   // Guard against the selector silently matching nothing, which would let this
@@ -89,18 +95,6 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 }
 
 /**
- * Outreach and Site capture are in the sidebar sweep but are not record lists.
- *
- * Whether they are in the routes at all is a race: the sweep reads the nav as
- * soon as the first module link is visible, so a slower CI runner picks up the
- * tool links and a faster one does not. That is why this test could pass on one
- * commit and fail on the next without either touching the pages — and when it
- * did pick them up it always failed, because it waited for a record count on a
- * screen that has none.
- */
-const TOOL_ROUTES = new Set(['/capture']);
-
-/**
  * "Finished loading" is not the same signal on both kinds of page.
  *
  * A module list shows "Loading…" until its query resolves and then "<n> of <N> records",
@@ -110,9 +104,8 @@ const TOOL_ROUTES = new Set(['/capture']);
  * covering them nowhere.
  */
 function settled(page: Page, route: string) {
-  return TOOL_ROUTES.has(route)
-    ? page.getByRole('heading', { level: 1 })
-    : page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/);
+  void route;
+  return page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/);
 }
 
 /**

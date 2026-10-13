@@ -69,7 +69,7 @@ test('Reports is reachable from the navigation, not only by URL', async ({ page 
     "WhatsApp" link on it, and a locator that matches both fails on how the
     database happens to look rather than on anything about this navigation.
   */
-  await page.locator('a[href="/whatsapp"]').first().click();
+  await page.locator('a[href="/whatsapp"]:visible').first().click();
   await expect(page).toHaveURL(/\/whatsapp\//);
   await page.getByRole('link', { name: 'Reports' }).click();
   await expect(page).toHaveURL(/\/whatsapp\/reports$/);

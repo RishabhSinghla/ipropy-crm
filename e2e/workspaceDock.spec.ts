@@ -29,7 +29,7 @@ test('choosing a module goes there, and its icon says so', async ({ page }) => {
   const href = await firstModule.getAttribute('href');
   await firstModule.click();
   await expect(page).toHaveURL(new RegExp(`${href}`));
-  await expect(firstModule).toHaveClass(/bg-white/);
+  await expect(firstModule).toHaveClass(/bg-brand-700/);
 });
 
 test('no Tasks or Campaigns icon — Campaigns lives in WhatsApp (3 October 2026)', async ({ page }) => {
@@ -66,22 +66,22 @@ test('Ask AI is a circle that can be dragged, and a tap opens it', async ({ page
   Measured, not read off a class: the frame narrows, the icons stop being
   reachable, it comes back on a tap, and a reload remembers the choice.
 */
-test('the toolbar folds away and comes back, and remembers', async ({ page }) => {
+test('the toolbar starts folded and opens and closes on demand', async ({ page }) => {
   await page.goto('/leads');
   const frame = page.getByTestId('workspace-dock-frame');
   await expect(page.getByTestId('workspace-dock')).toBeVisible({ timeout: 30_000 });
-  const open = (await frame.boundingBox())!.width;
+  const foldedWidth = (await frame.boundingBox())!.width;
+  await expect(frame).toHaveAttribute('data-folded', 'true');
 
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await expect.poll(async () => (await frame.boundingBox())!.width).toBeLessThan(open - 20);
-  await expect(page.getByTestId('workspace-dock').getByRole('link', { name: 'Dashboard' })).not.toBeInViewport({ ratio: 1 }).catch(() => undefined);
-  await expect(frame).toHaveAttribute('data-folded', 'true');
+  await expect.poll(async () => (await frame.boundingBox())!.width).toBeGreaterThan(foldedWidth + 20);
+  await expect(frame).not.toHaveAttribute('data-folded', 'true');
 
   await page.reload();
   await expect(page.getByTestId('workspace-dock-folded')).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await expect.poll(async () => (await frame.boundingBox())!.width).toBeGreaterThan(open - 2);
+  await expect.poll(async () => (await frame.boundingBox())!.width).toBeGreaterThan(foldedWidth + 20);
   await page.getByTestId('workspace-dock').getByRole('link', { name: 'Dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 });
@@ -97,15 +97,17 @@ test('the toolbar folds away and comes back, and remembers', async ({ page }) =>
 test('the toolbar reads as names, counts and the owner’s own order', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto('/leads');
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const rows = await page.locator('[data-testid="workspace-dock"] a')
     .evaluateAll((els) => els.map((el) => (el as HTMLElement).innerText.split('\n')[0].trim()));
 
-  // Dashboard first, WhatsApp last — below the call log, which is the move.
+  // Dashboard first, WhatsApp below Calls, then the non-record destinations.
   expect(rows[0]).toBe('Dashboard');
-  expect(rows[rows.length - 1]).toBe('WhatsApp');
   expect(rows.indexOf('WhatsApp')).toBeGreaterThan(rows.indexOf('Calls'));
+  expect(rows.indexOf('Dealer groups')).toBeGreaterThan(rows.indexOf('WhatsApp'));
+  expect(rows.slice(-2)).toEqual(['Tools', 'Archive']);
 
   // Every row says what it is, rather than being an icon you learn.
   expect(rows.every((name) => name.length > 0), `a toolbar row has no name: ${rows.join(', ')}`).toBe(true);
@@ -133,11 +135,11 @@ test('the hamburger beside the company name folds the toolbar', async ({ page })
   await page.goto('/leads');
   const frame = page.locator('[data-testid="workspace-dock-frame"]');
   await expect(frame).toBeVisible({ timeout: 30_000 });
-  await expect(frame).not.toHaveAttribute('data-folded', 'true');
-
-  await page.getByTestId('app-menu-button').click();
   await expect(frame).toHaveAttribute('data-folded', 'true');
 
   await page.getByTestId('app-menu-button').click();
   await expect(frame).not.toHaveAttribute('data-folded', 'true');
+
+  await page.getByTestId('app-menu-button').click();
+  await expect(frame).toHaveAttribute('data-folded', 'true');
 });

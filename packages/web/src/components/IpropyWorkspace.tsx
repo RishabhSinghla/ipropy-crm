@@ -1610,7 +1610,7 @@ function QueueCard({
              the height of Left pane record Height from Auto adjust, even the
              Middle row blank or not."* So the rows are always drawn, an empty
              one as a blank line, and the card never grows or shrinks. */
-          'relative block h-[92px] w-full cursor-pointer overflow-hidden py-3 pl-[3.75rem] pr-3 text-left transition-colors',
+          'relative block h-[92px] w-full cursor-pointer overflow-hidden py-4 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for

@@ -33,6 +33,7 @@ import { miscRouter } from './api/routes/misc.js';
 import { marketRouter } from './api/routes/market.js';
 import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
+import { projectWorkspaceRouter } from './api/routes/projectWorkspace.js';
 
 /**
  * The policy on the app's own HTML.
@@ -316,6 +317,8 @@ export function createApp(): Express {
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/market', marketRouter);
+  // Project-specific data and dropdown masters, kept out of shared CRM masters.
+  app.use('/api/project-workspace', projectWorkspaceRouter);
   // Connected assistants. Mounted before miscRouter's catch-all /api paths.
   app.use('/api/mcp', mcpRouter);
   app.use('/api', miscRouter);

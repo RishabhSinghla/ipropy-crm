@@ -20,6 +20,10 @@ test('the icon still opens Chats while no business number is connected', async (
   // The record opens beside the queue, in the split view.
   await openFirstRecord(page);
   const detail = page;
+  // The details pane is intentionally folded by default; open it before
+  // interacting with field-level actions so the collapsed handle cannot cover
+  // their click targets.
+  await page.getByTestId('unfold-details').click();
 
   const icon = detail.getByRole('link', { name: 'WhatsApp this number' }).first();
   await expect(icon, 'the WhatsApp icon is missing from the record').toBeVisible({ timeout: 20_000 });

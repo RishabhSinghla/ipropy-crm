@@ -60,30 +60,16 @@ async function splitView(page: import('@playwright/test').Page): Promise<void> {
   proved in \`compactHero.spec.ts\` and \`splitViewHeaderKeys.spec.ts\`.
 */
 
-/**
- * The photo reaches the innermost ring.
- *
- * **28 September 2026:** *"There are three lines after avatar. Please increase
- * the avtar size till touch inner circle first line."* It stops one white
- * ring short of the dashes on purpose — grown flush it covers them and he is
- * left with two lines where he counted three — so this checks both halves:
- * the photo nearly fills that circle, and the circle is still drawn.
- */
-test('the photo fills the dashed ring without swallowing it', async ({ page }) => {
+/** Both places use the same compact avatar size in the current split view. */
+test('the record avatar is the same size in the queue and middle header', async ({ page }) => {
   await splitView(page);
-  const rings = recordPane(page).locator('svg[role="img"]').first();
-  await expect(rings).toBeVisible();
-
-  const size = await rings.evaluate((svg) => {
-    const width = (n: Element): number => n.getBoundingClientRect().width;
-    const dashed = [...svg.querySelectorAll('circle')].find((c) => c.getAttribute('stroke-dasharray') === '2 3');
-    const face = [...svg.parentElement!.children]
-      .find((c) => c !== svg && (c as HTMLElement).className?.toString().includes('z-10'));
-    return dashed && face ? { dashed: width(dashed), face: width(face) } : null;
-  });
-  expect(size, 'the rings or the photo are not where this spec expects them').not.toBeNull();
-  expect(size!.dashed, 'the dashed ring is gone').toBeGreaterThan(0);
-  // Inside it, and filling all but its own white hairline on each side.
-  expect(size!.face).toBeLessThan(size!.dashed);
-  expect(size!.face / size!.dashed, 'the photo no longer reaches the inner ring').toBeGreaterThan(0.9);
+  const queueAvatar = page.getByRole('button', { name: /^Photo of / }).first();
+  const headerAvatar = recordPane(page).getByTestId('split-hero-avatar').getByRole('button', { name: /^Photo of / });
+  await expect(queueAvatar).toBeVisible();
+  await expect(headerAvatar).toBeVisible();
+  const [queueBox, headerBox] = await Promise.all([queueAvatar.boundingBox(), headerAvatar.boundingBox()]);
+  expect(queueBox).not.toBeNull();
+  expect(headerBox).not.toBeNull();
+  expect(Math.abs(queueBox!.width - headerBox!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(queueBox!.height - headerBox!.height)).toBeLessThanOrEqual(1);
 });

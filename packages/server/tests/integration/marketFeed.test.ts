@@ -19,13 +19,19 @@ let app: Express;
 let adminToken = '';
 let repToken = '';
 const marker = `itestmkt${Date.now()}`;
+const groupAName = `Dealers A ${marker}`;
+const groupBName = `Dealers B ${marker}`;
+const today = new Date();
+const twoDigitYear = String(today.getFullYear()).slice(-2);
+const messageDate = `${today.getDate()}/${today.getMonth() + 1}/${today.getFullYear()}`;
+const forwardedDate = `${today.getDate()}/${today.getMonth() + 1}/${twoDigitYear}`;
 
 const groupA = [
-  `12/10/2025, 10:16 am - Ramesh Dealer: 3 BHK available in ${marker} Greenfields, 1.45 Cr, call 9811012345`,
-  '12/10/2025, 10:17 am - Sita Realty: ok',
-  `12/10/2025, 11:02 am - Sita Realty: Required 2 bhk ${marker} budget 70-80 lac`,
+  `${messageDate}, 10:16 am - Ramesh Dealer: 3 BHK available in ${marker} Greenfields, 1.45 Cr, call 9811012345`,
+  `${messageDate}, 10:17 am - Sita Realty: ok`,
+  `${messageDate}, 11:02 am - Sita Realty: Required 2 bhk ${marker} budget 70-80 lac`,
 ].join('\n');
-const groupB = `[13/10/25, 9:00:00 AM] Mohan Associates: 3 bhk available in ${marker} greenfields,  1.45 cr, call 9811012345`;
+const groupB = `[${forwardedDate}, 9:00:00 AM] Mohan Associates: 3 bhk available in ${marker} greenfields,  1.45 cr, call 9811012345`;
 
 beforeAll(async () => {
   await registry.warmup();
@@ -43,21 +49,21 @@ const upload = (token: string, group: string, text: string) => request(app)
 
 describe('the market feed', () => {
   it('stores each deal once, skips chatter, and merges a forward from another group', async () => {
-    const first = await upload(adminToken, 'Dealers A', groupA);
+    const first = await upload(adminToken, groupAName, groupA);
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({ messages: 3, deals: 2, newDeals: 2, repeats: 0 });
 
-    const forward = await upload(adminToken, 'Dealers B', groupB);
+    const forward = await upload(adminToken, groupBName, groupB);
     expect(forward.body).toMatchObject({ deals: 1, newDeals: 0, repeats: 1 });
 
     // The same export again is read from where the last one ended: the two older messages (a deal and a line of chatter) are skipped,
     // and the one at the mark is read but is not counted twice.
-    const again = await upload(adminToken, 'Dealers A', groupA);
+    const again = await upload(adminToken, groupAName, groupA);
     expect(again.body).toMatchObject({ newDeals: 0, repeats: 0, skippedOld: 2 });
 
     const held = await db.query(`SELECT groups FROM ipy_market_post WHERE body ILIKE $1 AND kind = 'have'`, [`%${marker}%`]);
     expect(held.rows).toHaveLength(1);
-    expect(held.rows[0].groups.sort()).toEqual(['Dealers A', 'Dealers B']);
+    expect(held.rows[0].groups.sort()).toEqual([groupAName, groupBName].sort());
     // Posted in two groups, so seen twice — however often either export is dropped again.
     const seen = await db.queryOne<{ seen_count: number }>(`SELECT seen_count FROM ipy_market_post WHERE body ILIKE $1 AND kind = 'have'`, [`%${marker}%`]);
     expect(seen?.seen_count).toBe(2);
@@ -66,6 +72,7 @@ describe('the market feed', () => {
   it('finds a seller by BHK, budget and words, for anybody signed in', async () => {
     const res = await request(app)
       .get('/api/market/posts')
+      // Keep the fixture inside the API's supported 365-day search window.
       .query({ kind: 'have', bhk: 3, maxLakh: 150, text: marker, days: 365 })
       .set('Authorization', `Bearer ${repToken}`);
     expect(res.status).toBe(200);
@@ -81,7 +88,7 @@ describe('the market feed', () => {
 
   it('putting a group in needs the import permission', async () => {
     const rep = await authUser(SEEDED.executiveA);
-    const res = await upload(repToken, 'Dealers A', groupA);
+    const res = await upload(repToken, groupAName, groupA);
     expect(res.status).toBe(await hasCapability(rep, 'records.import') ? 200 : 403);
   });
 });

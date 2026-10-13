@@ -66,7 +66,7 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
   await expect(page.getByTestId('planned-visit-date')).toBeVisible();
 });
 
-test('details open on hover and close from their top edge', async ({ page }) => {
+test('details open on hover and close from their top edge', async ({ page }, testInfo) => {
   await page.goto('/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
   await page.getByTestId('unfold-details').hover();
@@ -78,5 +78,5 @@ test('details open on hover and close from their top edge', async ({ page }) => 
   await expect(page.getByText('Quick & Live Filters', { exact: true })).toBeVisible();
   await page.getByTestId('quick-filter-overlay').getByRole('button', { name: /close/i }).click();
   await expect(page.getByText('Quick & Live Filters', { exact: true })).not.toBeVisible();
-  await page.screenshot({ path: '/private/tmp/ipropy-ui-hover-proof.png' });
+  await page.screenshot({ path: testInfo.outputPath('ipropy-ui-hover-proof.png') });
 });
