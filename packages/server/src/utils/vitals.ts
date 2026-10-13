@@ -14,6 +14,7 @@
  * Counters, no customer data. Reading resets the window, so each reading
  * describes the time since the one before it.
  */
+import { readdirSync, readFileSync } from 'node:fs';
 import { Session } from 'node:inspector';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { pool } from '../db/pool.js';
@@ -65,7 +66,47 @@ interface CpuProfile { nodes: ProfileNode[]; samples: number[]; timeDeltas: numb
 
 let profiling = false;
 let lastStartedAt = 0;
-let lastResult: { finishedAt: number; top: { where: string; ms: number }[] } | null = null;
+let lastResult: { finishedAt: number; top: { where: string; ms: number }[]; processes: BusyProcess[] } | null = null;
+
+interface BusyProcess { process: string; cpuPercentOfOneCpu: number }
+
+/*
+  The profile above only sees this Node process. Render reported the container
+  at 0.43 of its 0.5 CPU for hours while this process was 98% idle, so something
+  else in the container — a helper program it starts — is doing the work. Linux
+  keeps every process's CPU time in /proc, so the busiest ones can be named.
+  Names and numbers only, and an empty list on anything that is not Linux.
+*/
+const TICKS_PER_SECOND = 100;
+
+function cpuTicksByProcess(): Map<string, { name: string; ticks: number }> {
+  const found = new Map<string, { name: string; ticks: number }>();
+  try {
+    for (const pid of readdirSync('/proc')) {
+      if (!/^\d+$/.test(pid)) continue;
+      try {
+        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+        const close = stat.lastIndexOf(')');
+        const name = stat.slice(stat.indexOf('(') + 1, close);
+        const afterName = stat.slice(close + 2).split(' ');
+        // Fields 14 and 15 of the line are user and system time; here they sit at 11 and 12.
+        found.set(pid, { name, ticks: Number(afterName[11]) + Number(afterName[12]) });
+      } catch { /* the process ended while we looked */ }
+    }
+  } catch { /* no /proc here */ }
+  return found;
+}
+
+function busiestProcesses(before: Map<string, { name: string; ticks: number }>, seconds: number): BusyProcess[] {
+  const after = cpuTicksByProcess();
+  const busy: BusyProcess[] = [];
+  for (const [pid, now] of after) {
+    const used = now.ticks - (before.get(pid)?.ticks ?? now.ticks);
+    if (used <= 0) continue;
+    busy.push({ process: `${now.name} (${pid})`, cpuPercentOfOneCpu: Math.round((used / TICKS_PER_SECOND / seconds) * 100) });
+  }
+  return busy.sort((a, b) => b.cpuPercentOfOneCpu - a.cpuPercentOfOneCpu).slice(0, 6);
+}
 
 /** `/app/node_modules/pg/lib/client.js` -> `pg/lib/client.js`; our own code keeps its path. */
 function shortPlace(url: string): string {
@@ -90,16 +131,17 @@ function busiestFunctions(profile: CpuProfile): { where: string; ms: number }[] 
 }
 
 /** Start a sample if none is running and the last one is old enough; report what is known. */
-export function readCpuProfile(): { state: string; top?: { where: string; ms: number }[] } {
+export function readCpuProfile(): { state: string; top?: { where: string; ms: number }[]; processes?: BusyProcess[] } {
   const now = Date.now();
   if (lastResult && now - lastResult.finishedAt < PROFILE_KEEP_MS) {
-    return { state: 'ready', top: lastResult.top };
+    return { state: 'ready', top: lastResult.top, processes: lastResult.processes };
   }
   if (profiling) return { state: 'sampling' };
   if (now - lastStartedAt < PROFILE_COOLDOWN_MS) return { state: 'resting' };
 
   profiling = true;
   lastStartedAt = now;
+  const processesBefore = cpuTicksByProcess();
   const session = new Session();
   session.connect();
   session.post('Profiler.enable', () => {
@@ -107,7 +149,11 @@ export function readCpuProfile(): { state: string; top?: { where: string; ms: nu
       setTimeout(() => {
         session.post('Profiler.stop', (err, result) => {
           if (!err && result) {
-            lastResult = { finishedAt: Date.now(), top: busiestFunctions(result.profile as unknown as CpuProfile) };
+            lastResult = {
+              finishedAt: Date.now(),
+              top: busiestFunctions(result.profile as unknown as CpuProfile),
+              processes: busiestProcesses(processesBefore, PROFILE_SECONDS),
+            };
           }
           session.disconnect();
           profiling = false;
