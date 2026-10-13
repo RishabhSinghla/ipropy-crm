@@ -19,6 +19,8 @@ let app: Express;
 let adminToken = '';
 let repToken = '';
 const marker = `itestmkt${Date.now()}`;
+const groupAName = `Dealers A ${marker}`;
+const groupBName = `Dealers B ${marker}`;
 const today = new Date();
 const twoDigitYear = String(today.getFullYear()).slice(-2);
 const messageDate = `${today.getDate()}/${today.getMonth() + 1}/${today.getFullYear()}`;
@@ -47,21 +49,21 @@ const upload = (token: string, group: string, text: string) => request(app)
 
 describe('the market feed', () => {
   it('stores each deal once, skips chatter, and merges a forward from another group', async () => {
-    const first = await upload(adminToken, 'Dealers A', groupA);
+    const first = await upload(adminToken, groupAName, groupA);
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({ messages: 3, deals: 2, newDeals: 2, repeats: 0 });
 
-    const forward = await upload(adminToken, 'Dealers B', groupB);
+    const forward = await upload(adminToken, groupBName, groupB);
     expect(forward.body).toMatchObject({ deals: 1, newDeals: 0, repeats: 1 });
 
     // The same export again is read from where the last one ended: the two older messages (a deal and a line of chatter) are skipped,
     // and the one at the mark is read but is not counted twice.
-    const again = await upload(adminToken, 'Dealers A', groupA);
+    const again = await upload(adminToken, groupAName, groupA);
     expect(again.body).toMatchObject({ newDeals: 0, repeats: 0, skippedOld: 2 });
 
     const held = await db.query(`SELECT groups FROM ipy_market_post WHERE body ILIKE $1 AND kind = 'have'`, [`%${marker}%`]);
     expect(held.rows).toHaveLength(1);
-    expect(held.rows[0].groups.sort()).toEqual(['Dealers A', 'Dealers B']);
+    expect(held.rows[0].groups.sort()).toEqual([groupAName, groupBName].sort());
     // Posted in two groups, so seen twice — however often either export is dropped again.
     const seen = await db.queryOne<{ seen_count: number }>(`SELECT seen_count FROM ipy_market_post WHERE body ILIKE $1 AND kind = 'have'`, [`%${marker}%`]);
     expect(seen?.seen_count).toBe(2);
@@ -86,7 +88,7 @@ describe('the market feed', () => {
 
   it('putting a group in needs the import permission', async () => {
     const rep = await authUser(SEEDED.executiveA);
-    const res = await upload(repToken, 'Dealers A', groupA);
+    const res = await upload(repToken, groupAName, groupA);
     expect(res.status).toBe(await hasCapability(rep, 'records.import') ? 200 : 403);
   });
 });
