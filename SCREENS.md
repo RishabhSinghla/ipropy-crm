@@ -3071,7 +3071,7 @@ Source read the same Admin → Dropdowns masters as Leads and Inventories. **Not
 purpose:** Mobile, Assigned To, Contact Type and Operating Location — they are the dealer's,
 and the form belongs to one of their properties.
 
-**The trap, and the whole reason for migration `210` (`ipy_associate_deal`):** a deal row is
+**The trap, and the whole reason for migration `211` (`ipy_associate_deal`):** a deal row is
 the parser's reading of a WhatsApp post, and **the parser deletes and re-inserts a post's
 listings every time the post is re-read** (`saveListings`) — new ids, same position. Typing
 onto a listing would lose the work on the next pass. So the first change to a row *adopts*
