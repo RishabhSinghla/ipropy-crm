@@ -38,9 +38,11 @@ interface AppState {
   moduleByName: (name: string) => ModuleSummary | undefined;
 }
 
-function applyTheme(theme: 'light' | 'dark'): void {
-  document.documentElement.classList.toggle('dark', theme === 'dark');
-  localStorage.setItem('ipropy.theme', theme);
+function applyTheme(_theme: 'light' | 'dark'): void {
+  // Keep the CRM light even when an older profile or device preference asks
+  // for dark mode.
+  document.documentElement.classList.remove('dark');
+  localStorage.setItem('ipropy.theme', 'light');
 }
 
 /*
@@ -153,9 +155,7 @@ export function applyBrandColour(hex: string | null | undefined): void {
 }
 
 function initialTheme(): 'light' | 'dark' {
-  const stored = localStorage.getItem('ipropy.theme');
-  if (stored === 'dark' || stored === 'light') return stored;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return 'light';
 }
 
 /**
@@ -297,10 +297,8 @@ export const useApp = create<AppState>((set, get) => ({
       // Non-critical capability probes — never block the app shell on these.
       void api.aiStatus().then((s) => set({ aiAvailable: s.available, sttAvailable: s.speechToText === true })).catch(() => undefined);
 
-      if (user.theme === 'dark' || user.theme === 'light') {
-        set({ theme: user.theme });
-        applyTheme(user.theme);
-      }
+      set({ theme: 'light' });
+      applyTheme('light');
     } catch (err) {
       // "The server said no" and "I could not reach the server" are different
       // answers and were being treated as one. Walking into a lift, a basement
@@ -354,10 +352,10 @@ export const useApp = create<AppState>((set, get) => ({
     window.location.href = '/login';
   },
 
-  setTheme: (theme) => {
-    applyTheme(theme);
-    set({ theme });
-    void api.updateProfile({ theme }).catch(() => undefined);
+  setTheme: (_theme) => {
+    applyTheme('light');
+    set({ theme: 'light' });
+    void api.updateProfile({ theme: 'light' }).catch(() => undefined);
   },
 
   moduleByName: (name) => get().modules.find((m) => m.name === name),

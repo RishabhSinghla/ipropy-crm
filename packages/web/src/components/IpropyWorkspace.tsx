@@ -1874,7 +1874,7 @@ function DeskTab({ active = false, onClick, label, count, drag }: {
         drag && 'cursor-grab active:cursor-grabbing',
         drag?.dragging && 'opacity-40',
         active
-          ? 'rounded-full bg-brand-700 text-white shadow-xs dark:bg-brand-600'
+          ? 'rounded-full border border-brand-200 bg-brand-50 text-brand-800 shadow-xs'
           : 'rounded-full text-slate-500 hover:bg-[var(--surface-muted)] hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200',
       )}
     >
@@ -1888,7 +1888,7 @@ function DeskTab({ active = false, onClick, label, count, drag }: {
       {count && (
         <span className={cn(
           'rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums',
-          active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+          active ? 'bg-white text-brand-800' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
         )}>{count}</span>
       )}
     </button>

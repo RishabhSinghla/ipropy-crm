@@ -4,7 +4,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  AtSign, Bell, Cake, Check, Flame, Lock, LogOut, Menu, Moon, Search, Settings, Shield, Sparkles, Sun, Upload, X, MessagesSquare, MapPin, Plus, ChevronDown,
+  AtSign, Bell, Cake, Check, Flame, Lock, LogOut, Menu, Search, Settings, Shield, Sparkles, Upload, X, MessagesSquare, MapPin, Plus, ChevronDown,
 } from 'lucide-react';
 import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type AccessRequest, type ModuleSummary, type SearchHit } from '../lib/api';
@@ -49,7 +49,7 @@ export function ModuleIcon({ name, className }: { name: string; className?: stri
  * WhatsApp-style, because a thumb cannot reach the top of a tall screen.
  */
 export default function Layout(): JSX.Element {
-  const { user, modules, theme, setTheme, aiAvailable } = useApp();
+  const { user, modules, aiAvailable } = useApp();
   const [aiOpen, setAiOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   /*
@@ -112,7 +112,7 @@ export default function Layout(): JSX.Element {
             toolbar comes later in the page and painted over every menu that
             drops out of this bar — the "+ New" list was hidden under it
             (10 October 2026). */}
-        <header data-main-toolbar className="relative z-50 flex h-14 shrink-0 items-center gap-1.5 border-b border-brand-900 bg-brand-800 px-3 text-white sm:px-4">
+        <header data-main-toolbar className="relative z-50 flex h-14 shrink-0 items-center gap-1.5 border-b border-slate-200 bg-white px-3 text-slate-800 shadow-sm sm:px-4">
           {/*
             One hamburger, two jobs, and the job is whichever navigation this
             screen has — *"the toolbar also have hamburg function before ipropy
@@ -184,7 +184,7 @@ export default function Layout(): JSX.Element {
                 white on it clears AA; the brand's own #25D366 is 1.98:1.
               */
               isActive
-                ? 'border-[#0B8043] bg-[#0B8043] text-white shadow-sm'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm'
                 : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100 '
                   + 'dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
             )}
@@ -205,14 +205,6 @@ export default function Layout(): JSX.Element {
 
             <div className="flex shrink-0 items-center gap-1">
               <NotificationBell />
-
-              <button
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className={toolbarIcon('theme')}
-                title="Toggle theme"
-              >
-                {theme === 'dark' ? <Sun className={TOOLBAR_ICON_SIZE} /> : <Moon className={TOOLBAR_ICON_SIZE} />}
-              </button>
 
               <UserMenu />
             </div>
