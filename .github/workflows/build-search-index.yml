@@ -24,13 +24,15 @@ jobs:
           test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
           psql "$PROD_DATABASE_URL" -tAc "SELECT 'connected to ' || current_database() || ', ' || (SELECT count(*) FROM ipy_embedding WHERE dims = 1024) || ' vectors of 1024 numbers'"
 
-      - name: Time a search before
+      - name: Time a search before the index (skipped once it exists)
         run: |
+          # The search vector has to arrive as a plain value, as it does from the app,
+          # or the planner cannot use an index; \gset puts one into a psql variable.
           psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -tA <<'SQL'
+          SELECT embedding::vector(1024)::text AS v FROM ipy_embedding WHERE dims = 1024 LIMIT 1 \gset
           EXPLAIN (ANALYZE, TIMING OFF, SUMMARY ON)
-          WITH q AS (SELECT embedding::vector(1024) AS v FROM ipy_embedding WHERE dims = 1024 LIMIT 1)
-          SELECT e.id FROM ipy_embedding e, q WHERE e.dims = 1024
-          ORDER BY (e.embedding::vector(1024)) <=> q.v LIMIT 400;
+          SELECT e.id FROM ipy_embedding e WHERE e.dims = 1024
+          ORDER BY (e.embedding::vector(1024)) <=> :'v'::vector(1024) LIMIT 400;
           SQL
 
       - name: Remove a half-built index left by an earlier attempt
@@ -62,8 +64,8 @@ jobs:
           SELECT 'index valid: ' || i.indisvalid || ', size ' || pg_size_pretty(pg_relation_size(c.oid))
             FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'idx_embedding_nearest_1024';
           SET hnsw.ef_search = 400;
+          SELECT embedding::vector(1024)::text AS v FROM ipy_embedding WHERE dims = 1024 LIMIT 1 \gset
           EXPLAIN (ANALYZE, TIMING OFF, SUMMARY ON)
-          WITH q AS (SELECT embedding::vector(1024) AS v FROM ipy_embedding WHERE dims = 1024 LIMIT 1)
-          SELECT e.id FROM ipy_embedding e, q WHERE e.dims = 1024
-          ORDER BY (e.embedding::vector(1024)) <=> q.v LIMIT 400;
+          SELECT e.id FROM ipy_embedding e WHERE e.dims = 1024
+          ORDER BY (e.embedding::vector(1024)) <=> :'v'::vector(1024) LIMIT 400;
           SQL
