@@ -289,8 +289,13 @@ async function touch(rows: Candidate[]): Promise<void> {
 
 /** The embedding size that has an HNSW index (migration 212). */
 const INDEXED_DIMS = 1024;
-/** How many nearest vectors the index returns before permission narrows them. */
-const NEAREST_BEFORE_FILTERING = 400;
+/**
+ * How many nearest vectors the index returns before permission narrows them.
+ * Measured on production, 13 October 2026: at 200 and 250 the planner uses the
+ * index (7 to 18 ms); at 300 and above it decides a full scan is cheaper and a
+ * search takes 1,100 ms. So this stays well under that edge.
+ */
+const NEAREST_BEFORE_FILTERING = 200;
 /** Fewer survivors than this and the index path is not trusted for this person. */
 const ENOUGH_TO_TRUST_THE_INDEX = 20;
 
