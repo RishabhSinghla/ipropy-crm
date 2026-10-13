@@ -30,7 +30,7 @@ const groupA = [
   `${messageDate}, 10:16 am - Ramesh Dealer: 3 BHK available in ${marker} Greenfields, 1.45 Cr, call 9811012345`,
   `${messageDate}, 10:17 am - Sita Realty: ok`,
   `${messageDate}, 11:02 am - Sita Realty: Required 2 bhk ${marker} budget 70-80 lac`,
-].join('\\n');
+].join('\n');
 const groupB = `[${forwardedDate}, 9:00:00 AM] Mohan Associates: 3 bhk available in ${marker} greenfields,  1.45 cr, call 9811012345`;
 
 beforeAll(async () => {
