@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { db, transaction } from '../../db/pool.js';
+import { db, transaction, type Tx } from '../../db/pool.js';
 import { getSettings, getIntegrationConfig, warmup } from '../../core/settings/integrations.js';
 import { notifyMany } from '../../core/notifications/index.js';
 import { getModule } from '../../core/metadata/registry.js';
@@ -205,6 +205,25 @@ export function nudgeFacebookRecovery() {
   nudge.unref?.();
 }
 
+/*
+  When the next delivery is due, or `null` when there is nothing waiting at all.
+
+  The `null` is the whole point. This used to be a bare GREATEST(0, <seconds>),
+  and with no rows the seconds are NULL — but GREATEST ignores NULLs, so it
+  answered 0, "due right now". The caller took that as a reason to run again in
+  250 ms, and then again, for ever: two writes to a one-row table every pass,
+  about 2.7 a second around the clock, which kept the database from ever going to
+  sleep. Found on 13 October 2026 from the table's own update counter
+  (374,000 writes to one row).
+*/
+export async function secondsUntilNextDelivery(conn: Tx = db): Promise<number | null> {
+  const row = await conn.queryOne<{ seconds: number | null }>(`SELECT CASE WHEN COUNT(*) = 0 THEN NULL
+      ELSE GREATEST(0, EXTRACT(EPOCH FROM MIN(CASE WHEN status = 'processing' THEN lease_until ELSE next_attempt_at END) - now()))
+    END AS seconds
+    FROM ipy_facebook_delivery WHERE status IN ('pending', 'processing')`);
+  return row?.seconds == null ? null : Number(row.seconds);
+}
+
 export async function runFacebookRecovery() {
   if (running) return;
   running = true;
@@ -242,13 +261,11 @@ export async function runFacebookRecovery() {
     // Continue large batches and honour due retries without polling an idle DB.
     // The scheduler remains the restart/second-instance safety net.
     if (locked && enabled && config.scheduler.enabled) {
-      const next = await db.queryOne<{ seconds: number }>(`SELECT GREATEST(0, EXTRACT(EPOCH FROM MIN(
-        CASE WHEN status = 'processing' THEN lease_until ELSE next_attempt_at END) - now())) AS seconds
-        FROM ipy_facebook_delivery WHERE status IN ('pending', 'processing')`).catch(() => null);
-      if (next?.seconds != null) {
+      const seconds = await secondsUntilNextDelivery().catch(() => null);
+      if (seconds != null) {
         if (retryTimer) clearTimeout(retryTimer);
         retryTimer = setTimeout(() => { retryTimer = null; void runFacebookRecovery(); },
-          Math.max(250, Number(next.seconds) * 1000));
+          Math.max(250, seconds * 1000));
         retryTimer.unref?.();
       }
     }
