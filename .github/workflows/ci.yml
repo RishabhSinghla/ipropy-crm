@@ -111,9 +111,16 @@ jobs:
   # one to fail hiding the other.
   e2e:
     runs-on: ubuntu-latest
-    # The full desktop/mobile suite is serial against a shared database.
-    # Keep a bounded limit without cancelling it before the report is written.
-    timeout-minutes: 60
+    # The suite is serial against one database, so it cannot use several
+    # workers inside a job. It is split into three jobs instead, each with its
+    # own Postgres, which cut a 25-minute run to about a third of that.
+    # The shards must stay independent: a spec may not rely on data another
+    # spec created.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    timeout-minutes: 40
     services:
       postgres:
         image: pgvector/pgvector:pg18
@@ -161,11 +168,11 @@ jobs:
       - name: End-to-end tests
         # playwright.config.ts starts the API and web servers itself and waits
         # for both; reuseExistingServer is off when CI is set.
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}/3
       - name: Upload report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
