@@ -25,7 +25,22 @@ export interface SecretBox {
 }
 
 export function makeSecretBox(salt: string): SecretBox {
-  const deriveKey = (): Buffer => crypto.scryptSync(config.auth.jwtSecret, salt, 32);
+  /*
+    scrypt is slow on purpose — about 50 to 100 ms of CPU, and synchronous, so the
+    whole server stands still while it runs. It used to run on every encrypt and
+    every decrypt, and reading the stored integration settings decrypts dozens of
+    them. Measured on production on 13 October 2026: the event loop was blocked for
+    1.3 seconds at a time and the server sat at 40 to 97 percent CPU, which is why
+    every page felt slow. The key never changes while the secret is the same, so
+    it is worked out once and reused. It is remembered together with the secret it
+    came from, so changing JWT_SECRET (which the tests do) still gives the right key.
+  */
+  let derived: { secret: string; key: Buffer } | null = null;
+  const deriveKey = (): Buffer => {
+    const secret = config.auth.jwtSecret;
+    if (derived?.secret !== secret) derived = { secret, key: crypto.scryptSync(secret, salt, 32) };
+    return derived.key;
+  };
 
   return {
     encrypt(plain: string): string {

@@ -12,6 +12,7 @@
  * provider" while holding four provider keys it could not open, so the message
  * on screen and the reason in the log had nothing to do with each other.
  */
+import crypto from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeSecretBox } from '../src/core/secretbox.js';
 import { config } from '../src/config.js';
@@ -66,5 +67,28 @@ describe('a secret encrypted under a different key', () => {
     expect(box.decrypt('')).toBe('');
     expect(box.decrypt(null)).toBe('');
     expect(box.decrypt(undefined)).toBe('');
+  });
+});
+
+describe('the key is worked out once, not on every use', () => {
+  it('runs the slow derivation a single time however often it is used', () => {
+    const scrypt = vi.spyOn(crypto, 'scryptSync');
+    const box = makeSecretBox('cache-test-salt');
+    const sealed = box.encrypt('sk-live-something');
+    for (let i = 0; i < 100; i += 1) expect(box.decrypt(sealed)).toBe('sk-live-something');
+    expect(scrypt).toHaveBeenCalledTimes(1);
+  });
+
+  it('works out a new key when the secret changes', () => {
+    const box = makeSecretBox('cache-test-salt-2');
+    const sealed = box.encrypt('value');
+    const original = config.auth.jwtSecret;
+    config.auth.jwtSecret = 'a-different-secret';
+    try {
+      expect(box.decrypt(sealed)).toBe('');
+    } finally {
+      config.auth.jwtSecret = original;
+    }
+    expect(box.decrypt(sealed)).toBe('value');
   });
 });
