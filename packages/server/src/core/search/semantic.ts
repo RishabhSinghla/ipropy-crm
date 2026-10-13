@@ -24,7 +24,7 @@
 import { createHash } from 'node:crypto';
 import { embed, isMediaAiAvailable, rerank } from '../../ai/media.js';
 import { modelFor } from '../settings/aiModels.js';
-import { db, type Tx } from '../../db/pool.js';
+import { db, transaction, type Tx } from '../../db/pool.js';
 import { getRecord, type ServiceContext } from '../entity/recordService.js';
 import { recordScopeSql } from '../permissions/index.js';
 import { SqlParams } from '../query/builder.js';
@@ -287,6 +287,13 @@ async function touch(rows: Candidate[]): Promise<void> {
 // Reading
 // ---------------------------------------------------------------------------
 
+/** The embedding size that has an HNSW index (migration 212). */
+const INDEXED_DIMS = 1024;
+/** How many nearest vectors the index returns before permission narrows them. */
+const NEAREST_BEFORE_FILTERING = 400;
+/** Fewer survivors than this and the index path is not trusted for this person. */
+const ENOUGH_TO_TRUST_THE_INDEX = 20;
+
 /**
  * The records that actually answer a question, in the caller's own scope.
  *
@@ -308,7 +315,9 @@ export async function search(
 
   const params = new SqlParams();
   const vectorParam = params.add(`[${vector.join(',')}]`);
-  const dimsParam = params.add(vector.length);
+  // Inlined, not bound: it is a number we measured ourselves, and the index
+  // below only applies when the planner can see this exact value.
+  const dims = Math.trunc(vector.length);
 
   // Permission is per module, so the clause is built per module and OR'd. An
   // admin, or a module shared org-wide, contributes `TRUE` and the whole thing
@@ -323,23 +332,75 @@ export async function search(
     const moduleParam = params.add(moduleName);
     clauses.push(`(r.module_name = ${moduleParam}${fragment ? ` AND ${fragment}` : ''})`);
   }
-  const limitParam = params.add(opts.candidates ?? 60);
+  const wanted = opts.candidates ?? 60;
+  const limitParam = params.add(wanted);
+  const scope = clauses.join(' OR ');
 
-  const { rows } = await db.query<{
+  type Row = {
     kind: EmbeddingKind; source_id: string; record_id: string; module_name: string;
     content: string; label: string; score: number;
-  }>(
+  };
+
+  /*
+    The exact way: compare against every vector the asker may see. Always right,
+    and 4.6 seconds on production, because it reads all of them.
+  */
+  const exactly = () => db.query<Row>(
     `SELECT e.kind, e.source_id, e.record_id, r.module_name, e.content, r.label,
             1 - (e.embedding <=> ${vectorParam}::vector) AS score
        FROM ipy_embedding e
        JOIN ipy_record r ON r.id = e.record_id
-      WHERE e.dims = ${dimsParam}
+      WHERE e.dims = ${dims}
         AND r.is_deleted = false
-        AND (${clauses.join(' OR ')})
+        AND (${scope})
       ORDER BY e.embedding <=> ${vectorParam}::vector
       LIMIT ${limitParam}`,
     params.all(),
   );
+
+  /*
+    The fast way, for the one size that has an index: take the nearest few hundred
+    through the index first, then keep the ones this person may see. Permission is
+    still applied in SQL before anything leaves the database; only the order of the
+    two steps changed. The catch is a person who may see very little: their share of
+    those few hundred can be small, so when too few survive we fall back to the
+    exact way rather than hand them a thin answer.
+  */
+  const throughTheIndex = () => transaction(async (tx) => {
+    // Without this the index hands back only its default of 40 candidates.
+    await tx.query(`SET LOCAL hnsw.ef_search = ${NEAREST_BEFORE_FILTERING}`);
+    return tx.query<Row>(
+    `WITH nearest AS (
+       SELECT e.kind, e.source_id, e.record_id, e.content,
+              1 - ((e.embedding::vector(${INDEXED_DIMS})) <=> (${vectorParam}::vector(${INDEXED_DIMS}))) AS score
+         FROM ipy_embedding e
+        WHERE e.dims = ${INDEXED_DIMS}
+        ORDER BY (e.embedding::vector(${INDEXED_DIMS})) <=> (${vectorParam}::vector(${INDEXED_DIMS}))
+        LIMIT ${NEAREST_BEFORE_FILTERING}
+     )
+     SELECT n.kind, n.source_id, n.record_id, r.module_name, n.content, r.label, n.score
+       FROM nearest n
+       JOIN ipy_record r ON r.id = n.record_id
+      WHERE r.is_deleted = false
+        AND (${scope})
+      ORDER BY n.score DESC
+      LIMIT ${limitParam}`,
+    params.all(),
+    );
+  });
+
+  let rows: Row[];
+  if (dims === INDEXED_DIMS) {
+    try {
+      rows = (await throughTheIndex()).rows;
+    } catch (err) {
+      logger.warn({ err }, 'semantic search: the index path failed; using the exact one');
+      rows = [];
+    }
+    if (rows.length < Math.min(wanted, ENOUGH_TO_TRUST_THE_INDEX)) rows = (await exactly()).rows;
+  } else {
+    rows = (await exactly()).rows;
+  }
   if (!rows.length) return [];
 
   // Rerank, and carry on with the vector order if the reranker is unavailable.
