@@ -210,7 +210,7 @@ async function userFromApiKey(req: Request): Promise<AuthUser | null> {
     const user = await loadUser(row.user_id);
     if (!user) throw new UnauthorizedError('API key user no longer exists');
     if (!user.isActive) throw new UnauthorizedError('Account is deactivated');
-    await db.query(`UPDATE ipy_api_key SET last_used_at = now() WHERE id = $1`, [row.id]);
+    await db.query(`UPDATE ipy_api_key SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '10 minutes')`, [row.id]);
     return user;
   }
   throw new UnauthorizedError('Invalid API key');
@@ -333,7 +333,7 @@ export async function requireApiKey(req: Request, _res: Response, next: NextFunc
         if (!user) throw new UnauthorizedError('API key user no longer exists');
         req.user = user;
         req.scope = await buildScopeContext(user);
-        await db.query(`UPDATE ipy_api_key SET last_used_at = now() WHERE id = $1`, [row.id]);
+        await db.query(`UPDATE ipy_api_key SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '10 minutes')`, [row.id]);
         return next();
       }
     }

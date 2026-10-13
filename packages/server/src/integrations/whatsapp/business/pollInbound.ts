@@ -675,14 +675,41 @@ export function __resetPollWatermark(_at?: Date): void {
   race.
 */
 const POLL_EVERY_MS = 60_000;
+
+/*
+  Quieter at night, so the database can sleep.
+
+  Neon powers down after five minutes with no queries. A poll every minute,
+  all night, is a query every minute — so the database was billed for the hours
+  nobody is at a desk. From 11 pm to 6 am India time a visit happens every ten
+  minutes instead; by day it is still every minute, which is what the owner asked
+  for. A reply is never refused for it: the 24-hour window is far longer than ten
+  minutes.
+*/
+const NIGHT_POLL_EVERY_MS = 10 * 60_000;
+
+function indiaHour(now: number): number {
+  return new Date(now + 5.5 * 3_600_000).getUTCHours();
+}
+
+export function isTimeToPoll(now: number, lastPollAt: number): boolean {
+  const hour = indiaHour(now);
+  const isNight = hour >= 23 || hour < 6;
+  if (!isNight) return true;
+  // A few seconds of slack, because the interval that calls this drifts.
+  return now - lastPollAt >= NIGHT_POLL_EVERY_MS - 5_000;
+}
+
 let timer: NodeJS.Timeout | null = null;
 let visiting = false;
+let lastPollAt = 0;
 
 export function startWhatsAppPolling(): void {
   if (timer) return;
   timer = setInterval(() => {
-    if (visiting) return;
+    if (visiting || !isTimeToPoll(Date.now(), lastPollAt)) return;
     visiting = true;
+    lastPollAt = Date.now();
     void pollWhatsMarketingInbound()
       .catch((err) => logger.warn({ err }, 'WhatsApp inbound poll failed'))
       .finally(() => { visiting = false; });

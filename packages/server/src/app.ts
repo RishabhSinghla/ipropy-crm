@@ -6,13 +6,14 @@ import compression from 'compression';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { allowedOrigins, config } from './config.js';
 import { getServiceStatus } from './core/serviceStatus.js';
 import { logger } from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { verifyAccessToken } from './middleware/auth.js';
 import { checkConnection } from './db/pool.js';
+import { makeDatabaseHealth } from './core/databaseHealth.js';
 
 import { authRouter } from './api/routes/auth.js';
 import { passkeyRouter } from './api/routes/passkeys.js';
@@ -125,6 +126,8 @@ export function securityPolicy(isProd: boolean): string {
   ];
   return directives.join('; ');
 }
+
+const databaseIsReachable = makeDatabaseHealth(checkConnection);
 
 export function createApp(): Express {
   const app = express();
@@ -255,7 +258,8 @@ export function createApp(): Express {
 
   // --- health ---------------------------------------------------------------
   app.get('/api/health', async (req, res) => {
-    const dbOk = await checkConnection();
+    // `?fresh=1` forces a real database visit; the default reuses a recent answer.
+    const dbOk = await databaseIsReachable(req.query.fresh === '1');
     res.status(dbOk ? 200 : 503).json({
       status: dbOk ? 'ok' : 'degraded',
       database: dbOk ? 'connected' : 'unreachable',
@@ -345,7 +349,16 @@ export function createApp(): Express {
     */
     app.use(express.static(webDist, {
       setHeaders: (res, path) => {
-        if (path.endsWith('.html')) applyAppSecurityPolicy(res);
+        if (path.endsWith('.html')) {
+          applyAppSecurityPolicy(res);
+          // The page itself must be re-checked, so a new deploy is picked up.
+          res.setHeader('Cache-Control', 'no-cache');
+        } else if (path.includes(`${sep}assets${sep}`)) {
+          // Vite puts a hash of the contents in every file name under /assets,
+          // so a file never changes under the same name. Before this every load
+          // re-asked the server for each one (about 55,000 revalidations a day).
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
       },
     }));
     /*
