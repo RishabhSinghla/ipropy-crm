@@ -1769,17 +1769,6 @@ function QueueCard({
         </span>
       </button>
 
-      {moduleName === 'associates' && (
-        <span className="absolute right-2 top-2 z-[3] flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-white/95 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 dark:bg-slate-900/95">
-          <button type="button" aria-label={`Quick view ${row.label}`} title="Quick full record view" onClick={onSelect} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800"><Eye className="h-3.5 w-3.5" /></button>
-          <button type="button" aria-label={`Edit ${row.label}`} title="Open full record to edit" onClick={onFullView} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800"><Pencil className="h-3.5 w-3.5" /></button>
-          {onDuplicate && <button type="button" aria-label={`Duplicate ${row.label}`} title="Duplicate Associate (mobile left blank)" onClick={() => void onDuplicate()} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800"><Copy className="h-3.5 w-3.5" /></button>}
-          {phoneField && read(phoneField) && <CallButton to={read(phoneField)} recordId={row.id} module={moduleName} round />}
-          {phoneField && read(phoneField) && <WhatsAppButton to={read(phoneField)} round />}
-          <button type="button" aria-label={`Open matching for ${row.label}`} title="Open Associate property and requirement matches" onClick={onMatch} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-brand-700 dark:hover:bg-slate-800"><ArrowRightLeft className="h-3.5 w-3.5" /></button>
-        </span>
-      )}
-
       {/*
         The tick box, and nothing else, over the card's top-right corner.
 

@@ -763,7 +763,7 @@ function NotificationBell(): JSX.Element {
                   }}
                   className={cn(
                     'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors',
-                    notificationTone(n.kind, n.link),
+                    notificationTone(n.kind, n.link, n.is_read),
                   )}
                 >
                   <NotificationIcon kind={n.kind} link={n.link} />
@@ -929,7 +929,13 @@ function GlobalSearch(): JSX.Element {
       }
     };
     const onClick = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Element;
+      // The result and recent-search panels are drawn on the page itself, outside
+      // this box's own container, so a click on a result looked like a click
+      // outside: the panel closed on mouse-down and the click never landed. That
+      // broke opening any record from the search on 13 October 2026.
+      if (target.closest?.('#global-search-results, [data-testid="search-recent"]')) return;
+      if (ref.current && !ref.current.contains(target)) setOpen(false);
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onClick);

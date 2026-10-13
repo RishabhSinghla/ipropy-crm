@@ -1,5 +1,11 @@
 /** Semantic backgrounds; unread remains a separate dot/font state. */
-export function notificationTone(kind: string, link: string | null): string {
+/**
+ * A notification is coloured by what it is while it is unread, and plain white
+ * once it has been read — so the colour itself says "you have not looked at this".
+ * (The owner, 13 October 2026.)
+ */
+export function notificationTone(kind: string, link: string | null, isRead = false): string {
+  if (isRead) return 'bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800';
   if (link?.startsWith('/capture')) return 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950 dark:hover:bg-emerald-900';
   if (kind === 'ai') return 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950 dark:hover:bg-violet-900';
   if (kind === 'mention') return 'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950 dark:hover:bg-sky-900';

@@ -159,7 +159,8 @@ test('an Associate shows what the dealer posted in two tabs', async ({ page, req
   await expect(page.getByText(/Residential Plot · 200 yd/)).toBeVisible();
   await expect(page.getByText(/2 BHK flat available on rent/)).toBeVisible();
   // View opens the whole message the property came from.
-  await page.getByRole('row', { name: /150 yd/ }).getByTestId('deal-view').click();
+  await page.getByRole('row', { name: /150 yd/ }).getByTestId('deal-more').click();
+  await page.getByTestId('deal-view').click();
   await expect(page.getByRole('dialog').getByTestId('full-message')).toContainText(`150 gaj plot for sale ${place}`);
   await page.keyboard.press('Escape');
   await tabs.getByRole('button', { name: /^Requirement/ }).click();
@@ -193,7 +194,8 @@ test('the deal table filters by column, one line a row, and each row has its own
   await expect(table.getByTestId('deal-row')).toHaveCount(3);
 
   // The row's own form: fill a box, leave it, and it is still there after a reload.
-  await table.getByRole('row', { name: /150 yd/ }).getByTestId('deal-edit').click();
+  await table.getByRole('row', { name: /150 yd/ }).getByTestId('deal-more').click();
+  await page.getByTestId('deal-edit').click();
   const form = page.getByTestId('deal-form');
   await expect(form).toBeVisible();
   const houseNo = `B-${String(Date.now()).slice(-4)}`;
@@ -235,9 +237,11 @@ test('rows can be ticked, compared, duplicated and removed', async ({ page, requ
   const table = page.getByTestId('associate-deals-table');
   await expect(table.getByTestId('deal-row')).toHaveCount(3, { timeout: 20_000 });
 
-  // The Matching button is there on every row with its count.
-  await expect(table.getByTestId('deal-matching').first()).toBeVisible();
-  await expect(table.getByTestId('deal-match-count').first()).toHaveText(/^\d+$/, { timeout: 20_000 });
+  // Matching, with its count, is in each row's three-dot menu.
+  await table.getByTestId('deal-more').first().click();
+  await expect(page.getByTestId('deal-matching')).toBeVisible();
+  await expect(page.getByTestId('deal-match-count')).toHaveText(/^\d+$/, { timeout: 20_000 });
+  await page.keyboard.press('Escape');
 
   // Tick two and compare.
   await table.getByTestId('deal-select').nth(0).check();
@@ -249,11 +253,13 @@ test('rows can be ticked, compared, duplicated and removed', async ({ page, requ
 
   // Duplicate the first row: one more on the list.
   await table.getByTestId('deal-bulk-bar').getByRole('button', { name: 'Clear' }).click();
-  await table.getByTestId('deal-duplicate').first().click();
+  await table.getByTestId('deal-more').first().click();
+  await page.getByTestId('deal-duplicate').click();
   await expect(table.getByTestId('deal-row')).toHaveCount(4, { timeout: 15_000 });
 
   // Remove one: it leaves the list, and stays gone after a reload.
-  await table.getByTestId('deal-delete').first().click();
+  await table.getByTestId('deal-more').first().click();
+  await page.getByTestId('deal-delete').click();
   await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
   await expect(table.getByTestId('deal-row')).toHaveCount(3, { timeout: 15_000 });
   await page.reload();
@@ -295,7 +301,8 @@ test('Admin -> Layouts chooses the deal columns and the form fields, and a field
     await expect(table.getByRole('columnheader', { name: /^Facing/ })).toHaveCount(0);
     await expect(table.getByRole('columnheader', { name: /^House \/ Unit No\./ })).toBeVisible();
 
-    await table.getByTestId('deal-edit').first().click();
+    await table.getByTestId('deal-more').first().click();
+    await page.getByTestId('deal-edit').click();
     const rowForm = page.getByTestId('deal-form');
     await expect(rowForm.getByLabel('Lost Reason')).toHaveCount(0);
     await rowForm.getByLabel('Owner name').fill('Mr Sharma');
@@ -303,7 +310,8 @@ test('Admin -> Layouts chooses the deal columns and the form fields, and a field
     await expect(rowForm.getByTestId('deal-form-state')).toHaveText('Saved', { timeout: 15_000 });
     await page.reload();
     await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Availability/ }).click();
-    await table.getByTestId('deal-edit').first().click();
+    await table.getByTestId('deal-more').first().click();
+    await page.getByTestId('deal-edit').click();
     await expect(page.getByTestId('deal-form').getByLabel('Owner name')).toHaveValue('Mr Sharma', { timeout: 20_000 });
   } finally {
     // The layout is shared by everybody on this database: put it back however the test ended.

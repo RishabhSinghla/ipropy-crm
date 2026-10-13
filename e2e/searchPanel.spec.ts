@@ -53,7 +53,7 @@ test('↑↓ walk the answers and ↵ opens the highlighted one', async ({ page 
   const name = await selected.first().locator('span').first().textContent();
 
   await box.press('Enter');
-  await page.waitForURL(/\/(leads|properties)\/[0-9a-f-]{36}/);
+  await page.waitForURL(/\/(leads|properties|associates|projects|builder_floors)\/[0-9a-f-]{36}/);
   // The record that opened is the one that was highlighted, not whichever
   // happened to be first — ↵ opening a different row from the one on screen is
   // the whole reason the flat order is derived from the groups.
@@ -74,7 +74,7 @@ test('remembers the last search under an empty box, and the × forgets it', asyn
   // Remembered when it is acted on, never per keystroke.
   await box.press('ArrowDown');
   await box.press('Enter');
-  await page.waitForURL(/\/(leads|properties)\/[0-9a-f-]{36}/);
+  await page.waitForURL(/\/(leads|properties|associates|projects|builder_floors)\/[0-9a-f-]{36}/);
 
   await page.goto('/dashboard');
   await page.getByPlaceholder('Search everything…').click();
@@ -102,4 +102,27 @@ test('the company name sits inside the header with room above and below', async 
   const header = (await page.locator('header').first().boundingBox())!;
   expect(box.y).toBeGreaterThan(header.y);
   expect(box.y + box.height).toBeLessThan(header.y + header.height);
+});
+
+/*
+  Clicking a result with the mouse opens that record.
+
+  The result panel is drawn on the page itself, outside the search box's own
+  container. A "click outside closes it" rule that only looked at the box treated a
+  click on a result as outside, closed the panel on mouse-down, and the click never
+  landed — so the keyboard worked and the mouse did not. Every other test here uses
+  the keyboard, which is how that went unnoticed.
+*/
+test('a mouse click on a result opens that record', async ({ page }) => {
+  await page.goto('/dashboard');
+  const box = page.getByPlaceholder('Search everything…');
+  await box.click();
+  await box.fill(TERM);
+
+  const first = page.locator('#global-search-results a').first();
+  await expect(first).toBeVisible();
+  await first.click();
+
+  await expect(page).toHaveURL(/\/(leads|properties|associates|projects|builder_floors)\/[0-9a-f-]{36}/);
+  await expect(page.locator('#global-search-results')).toHaveCount(0);
 });

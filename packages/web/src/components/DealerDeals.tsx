@@ -38,7 +38,7 @@ const COPY: Record<'availability' | 'requirement', string> = {
 };
 
 const CHECK_COLUMN = 36;
-const ACTIONS_COLUMN = 300;
+const ACTIONS_COLUMN = 56;
 // The tick box and the buttons stay in view while the columns between them scroll. A pinned cell needs a background of its own, or the cells sliding under it show through.
 const PIN_LEFT = 'sticky left-0 z-10 bg-white dark:bg-slate-900';
 const PIN_RIGHT = 'sticky right-0 z-10 bg-white dark:bg-slate-900';
