@@ -451,8 +451,15 @@ export async function upsertViews(conn: Tx, moduleName: string, views: ViewDef[]
   for (const v of views) {
     const sequence = seq++;
     if (gone.has(v.name)) continue;
+    // Also a system view that already carries this name, whatever its seed_key.
+    // Migration 175 made "All Associates" without one, and the unique index on
+    // (module, system name) refused the seed's second copy — which stopped the
+    // container booting on production, where Associates already existed, on
+    // 13 October 2026. A name that would collide is, by definition, one that exists.
     const existing = await conn.queryOne<{ id: string }>(
-      `SELECT id FROM ipy_view WHERE module_id = $1 AND seed_key = $2`,
+      `SELECT id FROM ipy_view
+        WHERE module_id = $1
+          AND (seed_key = $2 OR (is_system = true AND overrides_view_id IS NULL AND name = $2))`,
       [mod.id, v.name],
     );
     // Create-only. A system view's name, columns, filter, sort and display mode
