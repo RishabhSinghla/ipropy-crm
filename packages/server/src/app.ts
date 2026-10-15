@@ -14,6 +14,7 @@ import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { verifyAccessToken } from './middleware/auth.js';
 import { checkConnection } from './db/pool.js';
 import { makeDatabaseHealth } from './core/databaseHealth.js';
+import { looksLikeAFile } from './utils/looksLikeAFile.js';
 
 import { authRouter } from './api/routes/auth.js';
 import { passkeyRouter } from './api/routes/passkeys.js';
@@ -376,6 +377,8 @@ export function createApp(): Express {
     */
     app.get('/*splat', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
+      // A file that does not exist is "not found", never the home page with a 200.
+      if (looksLikeAFile(req.path)) return next();
       applyAppSecurityPolicy(res);
       res.sendFile(resolve(webDist, 'index.html'));
     });

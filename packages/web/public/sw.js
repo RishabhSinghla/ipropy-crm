@@ -16,7 +16,10 @@
  *             cold start (or a lift with no signal) showing the browser's error
  *             page instead of the app.
  */
-const VERSION = 'ipropy-v2';
+// v3 (15 October 2026): v2 could keep a web page saved under a script's name,
+// which made the app fail to open until the browser was hard-refreshed. Changing
+// the version makes every browser drop the old caches when this worker activates.
+const VERSION = 'ipropy-v3';
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 
@@ -44,6 +47,10 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+function isAWebPage(response) {
+  return /text\/html/i.test(response.headers.get('content-type') || '');
+}
+
 self.addEventListener('fetch', (event) => {
   if (DEV) return;
   const { request } = event;
@@ -65,9 +72,12 @@ self.addEventListener('fetch', (event) => {
   if (/\.(js|css|woff2?|png|svg|ico|webmanifest)$/.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then((hit) => {
-        if (hit) return hit;
+        if (hit && !isAWebPage(hit)) return hit;
         return fetch(request).then((response) => {
-          if (response.ok) {
+          // Never keep a web page under a script's name: a missing file used to come
+          // back as the home page with a 200, and keeping that broke the app until
+          // the cache was cleared by hand.
+          if (response.ok && !isAWebPage(response)) {
             const copy = response.clone();
             void caches.open(ASSETS).then((cache) => cache.put(request, copy));
           }

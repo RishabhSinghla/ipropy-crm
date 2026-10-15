@@ -15,6 +15,7 @@
  */
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { isStaleAppError, recoverFromStaleApp } from '../lib/staleApp';
 
 interface Props {
   children: ReactNode;
@@ -24,12 +25,14 @@ interface Props {
 
 interface State {
   error: Error | null;
+  /** True while the app is clearing an old copy of itself and reloading. */
+  refreshing: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { error: null };
+  state: State = { error: null, refreshing: false };
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
   }
 
@@ -38,17 +41,23 @@ export class ErrorBoundary extends Component<Props, State> {
     // field or widget threw. Wired to console rather than a service because
     // no error reporter is configured yet; this is the single place to add one.
     console.error('[ErrorBoundary]', error, info.componentStack);
+    // An old or damaged copy of the app cleans itself and reloads, instead of
+    // asking somebody to hard-refresh. See lib/staleApp.ts.
+    if (isStaleAppError(error.message)) {
+      void recoverFromStaleApp(error.message).then((started) => { if (started) this.setState({ refreshing: true }); });
+    }
   }
 
   componentDidUpdate(prev: Props): void {
     if (this.state.error && prev.resetKey !== this.props.resetKey) {
-      this.setState({ error: null });
+      this.setState({ error: null, refreshing: false });
     }
   }
 
   render(): ReactNode {
-    const { error } = this.state;
+    const { error, refreshing } = this.state;
     if (!error) return this.props.children;
+    if (refreshing) return <p className="p-6 text-center text-sm text-muted">Updating to the latest version…</p>;
 
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6 text-center">

@@ -499,3 +499,22 @@ were deleted, together with the old standalone `companion-android/` app (it had
 been folded into `packages/app` on 13 September). Older notes in these documents
 that name one of them describe something that happened once, not something to
 run again. Git history has every file if one is ever wanted back.
+
+## "Failed to fetch dynamically imported module" on opening the CRM (15 October 2026)
+
+Opening `crm.ipropy.com` showed *"Something went wrong on this screen — Failed to fetch
+dynamically imported module …/assets/Layout-….js"*, cleared only by a hard refresh.
+Not a missing file: the live server had it. **A request for a file that did not exist
+(an old build's script name) was answered with the home page and a 200**, and the
+service worker (`packages/web/public/sw.js`), which saves any OK answer for a `.js`
+file and serves it first, kept that web page under the script's name. Every normal open
+then handed the browser a page instead of a script; a hard refresh skips the worker,
+which is why it "fixed" it.
+
+Three layers now: the server answers a missing file with a real 404 (`looksLikeAFile`
+in `utils/`, used by the single-page fallback in `app.ts`); the worker never saves or
+serves a `text/html` answer for a script (and its version is `ipropy-v3`, which makes
+every browser drop the old caches); and `lib/staleApp.ts` makes the app forget its saved
+copies and reload once (at most once a minute) if it ever meets this error again.
+**If the worker's caching rules change, bump `VERSION` in `sw.js`**, or browsers keep the
+old caches.
