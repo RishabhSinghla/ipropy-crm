@@ -79,17 +79,19 @@ function Introduction({ match, onOpen, onDone }: { match: MarketIntroduction; on
     onSuccess: onDone,
     onError: (err) => toast.error('Could not save that', (err as Error).message),
   });
-  const strong = match.score >= 0.7;
+  // Jev's read of whether the offer answers the requirement is the number to trust; the rules' score
+  // saturates at 100% for almost any pair of the right area, type and size.
+  const jev = match.jevFit;
+  const sure = jev !== null && jev >= 0.7;
   return (
     <li className="card space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Badge color={strong ? '#16a34a' : '#d97706'}>{strong ? 'Strong' : 'Possible'} · {Math.round(match.score * 100)}%</Badge>
-        {match.crossGroup && <Badge>Different groups</Badge>}
-        {match.jevFit !== null
-          ? <Badge color="#7c3aed">Jev agrees · {Math.round(match.jevFit * 100)}%</Badge>
+        {jev !== null
+          ? <Badge color={sure ? '#16a34a' : '#d97706'}>{sure ? 'Sure-shot' : 'Possible'} · Jev {Math.round(jev * 100)}%</Badge>
           : <Badge color="#64748b">Not checked by Jev yet</Badge>}
+        {match.crossGroup && <Badge>Different groups</Badge>}
         {match.status !== 'new' && <Badge color="#2563eb">{STATUS_LABEL[match.status]}</Badge>}
-        <span className="text-muted">{match.reasons.join(' · ')}</span>
+        <span className="text-muted">Rules fit {Math.round(match.score * 100)}% · {match.reasons.join(' · ')}</span>
       </div>
       <div className="flex flex-col gap-4 sm:flex-row">
         <Side title={match.want.purpose === 'rent' ? 'Tenant' : 'Buyer'} side={match.want} onOpen={onOpen} />
@@ -164,7 +166,7 @@ export default function MarketIntroductions(): JSX.Element {
         <EmptyState title="Nothing to ring about yet" body="Introductions appear once groups with both buyers and sellers are added. A property needs a sector or a named area to be matched." />
       ) : (
         <ul className="space-y-3">
-          {data.map((match) => (
+          {[...data].sort((a, b) => (b.jevFit ?? -1) - (a.jevFit ?? -1) || b.score - a.score).map((match) => (
             <Introduction key={match.id} match={match} onOpen={setMessage} onDone={() => void queryClient.invalidateQueries({ queryKey: ['market', 'introductions'] })} />
           ))}
         </ul>

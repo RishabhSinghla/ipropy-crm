@@ -297,7 +297,7 @@ Associates.** Migration `206`.
   already see each other. The same requirement or ad reposted is one introduction. Pairings are **never stored**, worked out fresh, so a better rule
   improves the whole feed; only what a person did is (`ipy_market_deal`: called, meeting, won,
   lost, not for us). **Refresh** on that tab (`POST /api/market/refresh`) starts the background
-  read and Jev's pair checks now rather than at the next 15-minute visit; **Sure-shot** shows only
+  read and Jev's pair checks now rather than at the next 15-minute visit; The card's main number is **Jev's agreement** (the rules' score saturates at 100%), and the list is ordered by it. **Sure-shot** shows only
   strong pairs that Jev has checked and rates at 0.7 or more (`minJevFit`).
 * **The morning call sheet** (`sendCallSheet`): once a day after 9:00 India time, the best ten to
   the admins' bell, linking to `/market?tab=calls`. The day is claimed with one atomic upsert so
