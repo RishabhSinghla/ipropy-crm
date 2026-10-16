@@ -1,0 +1,81 @@
+# Which questions does each Facebook form ask, and where did the answers land?
+#
+# 16 October 2026, the owner: "I have created a new Facebook form and I think
+# leads are not coming into my CRM correctly". Read-only. Prints the QUESTION
+# NAMES each form sent and how often, and — only for questions that are not
+# personal — the answers people gave (a budget band or a location is a choice,
+# not a person). Names, phones, emails and addresses are never printed.
+#
+# Run by hand: Actions -> Facebook form questions -> Run workflow.
+name: Facebook form questions
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Look at leads received on or after this date (YYYY-MM-DD, India time)'
+        default: '2026-10-01'
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+      SINCE: ${{ inputs.since }}
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Questions each form sent
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          [[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "since must be YYYY-MM-DD"; exit 1; }
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT coalesce(i.raw_payload->>'form_id','?') AS form_id,
+                   max(i.raw_payload->>'form_name')        AS form_name,
+                   f->>'name'                              AS question,
+                   count(*)                                AS answers,
+                   count(*) FILTER (WHERE coalesce(f->'values'->>0,'') = '') AS blank
+            FROM ipy_lead_inbox i,
+                 jsonb_array_elements(coalesce(i.raw_payload->'field_data','[]'::jsonb)) f
+            WHERE i.source = 'facebook'
+              AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+            GROUP BY 1, 3 ORDER BY 1, 4 DESC;"
+
+      - name: Answers to the non-personal questions
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT coalesce(i.raw_payload->>'form_id','?') AS form_id,
+                   f->>'name' AS question,
+                   left(f->'values'->>0, 60) AS answer,
+                   count(*) AS times
+            FROM ipy_lead_inbox i,
+                 jsonb_array_elements(coalesce(i.raw_payload->'field_data','[]'::jsonb)) f
+            WHERE i.source = 'facebook'
+              AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+              AND f->>'name' !~* '(name|email|phone|mobile|address|street|zip|post|birth|dob)'
+            GROUP BY 1, 2, 3 ORDER BY 1, 2, 4 DESC LIMIT 80;"
+
+      - name: What the CRM stored for the newest form (fields filled, never values)
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT i.status,
+                   (i.normalized->>'budgetMax') IS NOT NULL   AS had_budget,
+                   (i.normalized->>'projectName') IS NOT NULL AS had_project,
+                   (i.normalized->>'timeline') IS NOT NULL    AS had_timeline,
+                   (i.normalized->>'email') IS NOT NULL       AS had_email,
+                   count(*) AS leads
+            FROM ipy_lead_inbox i
+            WHERE i.source = 'facebook'
+              AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
+              AND i.raw_payload->>'form_id' = '2000497250884273'
+            GROUP BY 1,2,3,4,5 ORDER BY 6 DESC;"
