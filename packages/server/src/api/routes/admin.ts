@@ -1,7 +1,8 @@
 import { strongPassword } from '../../core/security/passwordPolicy.js';
 import { Router } from 'express';
 import { z } from 'zod';
-import { CAPABILITIES } from '@ipropy/shared';
+import { CAPABILITIES, toE164 } from '@ipropy/shared';
+import { config } from '../../config.js';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
@@ -1110,6 +1111,19 @@ adminRouter.post('/integrations/facebook_leads/retry', asyncHandler(async (req, 
   res.json({ ok: true });
 }));
 
+/** Rings the number an admin types with the AI agent: the real proof the card works. */
+adminRouter.post('/integrations/sarvam_voice/test-call', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.integrations');
+  const phone = toE164(z.object({ phone: z.string().min(8) }).parse(req.body).phone);
+  if (!phone) { res.status(400).json({ message: 'That is not a phone number.' }); return; }
+  const { placeAgentCall } = await import('../../integrations/voiceagent/sarvam.js');
+  const result = await placeAgentCall({
+    toNumber: phone, publicBaseUrl: config.appUrl.split(',')[0]!.trim(), userId: user.id,
+  });
+  res.status(result.ok ? 200 : 400).json(result);
+}));
+
 /** Lightweight, read-only connectivity check per provider. Never throws. */
 async function testIntegration(provider: string): Promise<{ ok: boolean; message: string }> {
   const s = getSettings();
@@ -1156,6 +1170,10 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         return s.leadSources.zapierWebhookKey
           ? { ok: true, message: 'Zapier webhook secret is set. Send a test lead from Zapier to verify capture.' }
           : { ok: false, message: 'Generate or enter a Zapier webhook secret first.' };
+      case 'sarvam_voice': {
+        const { testSarvamConnection } = await import('../../integrations/voiceagent/sarvam.js');
+        return testSarvamConnection();
+      }
       case 'google_rcs': {
         const { testGoogleRcs } = await import('../../integrations/rcs/google.js');
         return testGoogleRcs();

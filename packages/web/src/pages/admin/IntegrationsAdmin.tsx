@@ -2,7 +2,7 @@ import { Fragment, type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  ArrowRight, Bell, Check, CheckCircle2, ChevronDown, Copy, Download, ExternalLink, Globe, HardDrive, Loader2, Mail, MessageCircle, Mic, Plug, Settings2, Sparkles, Webhook, Wand2, XCircle,
+  ArrowRight, Bell, Check, CheckCircle2, ChevronDown, Copy, Download, ExternalLink, Globe, HardDrive, Loader2, Mail, MessageCircle, Mic, PhoneCall, Plug, Settings2, Sparkles, Webhook, Wand2, XCircle,
 } from 'lucide-react';
 import { api, type IntegrationSummary } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -186,6 +186,16 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'region', label: 'RBM Region', source: 'config', placeholder: 'us' },
     { key: 'serviceAccountJson', label: 'Google Service Account JSON', source: 'credentials', secret: true, placeholder: '{ "client_email": "…", "private_key": "…" }' },
   ],
+  sarvam_voice: [
+    { key: 'apiKey', label: 'Sarvam API key', source: 'credentials', secret: true },
+    { key: 'webhookSecret', label: 'Webhook secret', source: 'credentials', secret: true, placeholder: 'Use a long random value; Sarvam receives it in the callback URL' },
+    { key: 'orgId', label: 'Organisation ID', source: 'config' },
+    { key: 'workspaceId', label: 'Workspace ID', source: 'config' },
+    { key: 'appId', label: 'Agent (app) ID', source: 'config' },
+    { key: 'appVersion', label: 'Agent version', source: 'config', placeholder: '1' },
+    { key: 'connectionId', label: 'Telephony connection ID', source: 'config' },
+    { key: 'agentPhoneNumber', label: 'Sarvam agent phone number', source: 'config', placeholder: '+91…' },
+  ],
   s3: [
     { key: 'driver', label: 'Where files are saved — type "s3" to use the cloud, "local" for this server', source: 'config', placeholder: 'local' },
     { key: 'bucket', label: 'Bucket name', source: 'config', placeholder: 'ipropy-files' },
@@ -210,7 +220,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
-  'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'google_rcs',
+  'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'google_rcs', 'sarvam_voice',
   /*
     The WhatsApp providers. Leaving them out is what let the setup wizard
     finish on "Saved and switched on." — the branch for a provider with no
@@ -263,6 +273,10 @@ const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: 
   google_rcs: {
     text: 'Requires a launched Google RCS for Business agent. Test devices can receive messages before the agent is launched.',
     href: 'https://developers.google.com/business-communications/rcs-business-messaging/guides/overview', linkLabel: 'RCS setup guide',
+  },
+  sarvam_voice: {
+    text: 'Managed voice agent: copy the org, workspace, agent, and telephony connection IDs from Sarvam. Save and enable this card, then test the connection. The CRM sends its callback address automatically when it starts each outbound call.',
+    href: 'https://docs.sarvam.ai/voice-agents/api/instant-outbound/create', linkLabel: 'Sarvam outbound call guide',
   },
 };
 
@@ -695,6 +709,15 @@ const JOBS: JobDef[] = [
     providers: ['stt'],
     short: 'transcription',
     trouble: 'Speech to text is set up but failing, so recordings stay as audio.',
+  },
+  {
+    id: 'voice-agent',
+    title: 'AI voice agent',
+    blurb: 'Sarvam\'s AI rings customers, talks to them in their language and reports back here.',
+    icon: Mic,
+    providers: ['sarvam_voice'],
+    short: 'AI voice agent',
+    trouble: 'The AI voice agent is set up but failing its test, so it cannot ring anyone.',
   },
   {
     id: 'storage',
@@ -1151,6 +1174,8 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
   const [syncing, setSyncing] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testPhone, setTestPhone] = useState('');
+  const [callingTestPhone, setCallingTestPhone] = useState(false);
   const hasModelFields = fields.some((field) => field.model);
   const modelCatalogue = useQuery({
     queryKey: ['integration-models', summary.provider],
@@ -1208,6 +1233,19 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
       setTestResult({ ok: false, message: (err as Error).message });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const callTestPhone = async (): Promise<void> => {
+    setCallingTestPhone(true);
+    setTestResult(null);
+    try {
+      const result = await api.sarvamTestCall(testPhone);
+      setTestResult({ ok: true, message: `Sarvam accepted the test call (attempt ${result.attemptId}).` });
+    } catch (err) {
+      setTestResult({ ok: false, message: (err as Error).message });
+    } finally {
+      setCallingTestPhone(false);
     }
   };
 
@@ -1294,6 +1332,16 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
                 onChange={(e) => setField(f.key, e.target.value)}
                 placeholder={preview?.set ? `Saved (${preview.preview}) — leave blank to keep` : f.placeholder}
               />
+              {summary.provider === 'sarvam_voice' && f.key === 'webhookSecret' && (
+                <button
+                  type="button"
+                  className="mt-1 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
+                  onClick={() => {
+                    const bytes = crypto.getRandomValues(new Uint8Array(32));
+                    setField('webhookSecret', Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(''));
+                  }}
+                >Generate a secure secret</button>
+              )}
               {f.model && (
                 <>
                   <datalist id={listId}>
@@ -1326,6 +1374,28 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         </div>
       )}
       {summary.provider === 'facebook_leads' && <FacebookLeadMaster />}
+      {summary.provider === 'sarvam_voice' && (
+        <div className="flex flex-wrap items-end gap-2 px-4 pb-3">
+          <div className="min-w-56 flex-1">
+            <label className="label">Test call to</label>
+            <input
+              className="input"
+              type="tel"
+              value={testPhone}
+              onChange={(e) => setTestPhone(e.target.value)}
+              placeholder="+91 98765 43210"
+            />
+          </div>
+          <button
+            className="btn-secondary btn-sm"
+            disabled={callingTestPhone || !testPhone.trim()}
+            onClick={() => void callTestPhone()}
+          >
+            {callingTestPhone ? <Loader2 className="h-3 w-3 animate-spin" /> : <PhoneCall className="h-3 w-3" />}
+            Call my phone
+          </button>
+        </div>
+      )}
       {testResult && (
         <div className={cn(
           'mx-4 mb-3 flex items-start gap-1.5 rounded-lg border p-2.5 text-xs',

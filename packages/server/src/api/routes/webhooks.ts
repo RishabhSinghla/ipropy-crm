@@ -24,8 +24,30 @@ import { recordOpen } from '../../integrations/email/service.js';
 import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
 import { notifyMany } from '../../core/notifications/index.js';
+import {
+  parseSarvamResult, readSarvamSettings, recordSarvamResult, secretMatches,
+} from '../../integrations/voiceagent/sarvam.js';
 
 export const webhooksRouter = Router();
+
+// Sarvam Voice Agents: one POST per finished AI call. Sarvam signs nothing, so
+// the secret in the address is the lock (see integrations/voiceagent/sarvam.ts).
+webhooksRouter.post('/sarvam/:secret', asyncHandler(async (req, res) => {
+  const read = readSarvamSettings();
+  if ('missing' in read || !secretMatches(req.params.secret, read.settings.webhookSecret)) {
+    res.sendStatus(404);
+    return;
+  }
+  const result = parseSarvamResult(req.body);
+  if (!result) {
+    logger.warn({ body: req.body }, 'sarvam webhook in a shape we do not understand');
+    res.sendStatus(200); // answered, or Sarvam retries something we can never read
+    return;
+  }
+  const found = await recordSarvamResult(result);
+  if (!found) logger.warn({ attemptId: result.attemptId }, 'sarvam result for a call we never placed');
+  res.sendStatus(200);
+}));
 
 // ---------------------------------------------------------------------------
 // WhatsApp (Meta Cloud API)
