@@ -470,7 +470,7 @@ function FullRecordPage(): JSX.Element {
               </button>
 
               {phone && <WhatsAppButton to={phone} />}
-              {phone && <CallButton to={phone} />}
+              {phone && <CallButton to={phone} recordId={id!} module={moduleName!} />}
               {email && (
                 <button onClick={() => setCompose('email')} className="btn-secondary btn-sm" title="Email">
                   <Send className="h-3.5 w-3.5" />

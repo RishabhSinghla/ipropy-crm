@@ -9,10 +9,10 @@ import { localDay } from '../lib/followUpDates';
 import { ChoiceChip } from '../components/ChoiceChip';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery } from '@ipropy/shared';
+import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowLeftRight, ListFilter, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
-  Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Tag, Trash2, Upload, X,
+  Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Sparkles, Tag, Trash2, Upload, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -1040,6 +1040,15 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
         {/* Tag counts are the live list's, so they would mislead in the Archive. */}
         {!archive && <TagCards moduleName={meta.name} owner={agentPick || undefined} />}
+        {meta.fields.some((field) => field.uitype === 'phone' && field.isActive) && selected.size === 0 && !selectedAll && (
+          <SarvamBulkCallButton
+            module={moduleName}
+            fieldMap={fieldMap}
+            ids={[]}
+            allQuery={query}
+            allCount={data?.total ?? 0}
+          />
+        )}
         {/*
           **New moved to the main toolbar** — the owner, 10 October 2026:
           *"Move 'New' … from Left record pane to main Toolbar between Add +New
@@ -1289,6 +1298,15 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             </button>
           )}
           <div className="ml-auto flex gap-2">
+            {meta.fields.some((field) => field.uitype === 'phone' && field.isActive) && (
+              <SarvamBulkCallButton
+                module={moduleName}
+                fieldMap={fieldMap}
+                ids={[...selected]}
+                allQuery={selectedAll ? query : null}
+                allCount={data?.total ?? 0}
+              />
+            )}
             <button
               className="btn-primary btn-sm"
               disabled={selectedAll}
@@ -1732,6 +1750,182 @@ function ExportWizard({ open, onClose, module, fields, filter, selectedIds, allS
  * currency accepts "1.5 cr", and a per-field validation mistake is caught the
  * same way it would be one record at a time.
  */
+const SARVAM_BATCH_SIZE = 25;
+
+type SarvamQueueItem = { id: string; label: string; number: string };
+
+/** Confirmed, sequential Sarvam batches from explicit rows or the current filtered list. */
+function SarvamBulkCallButton({
+  module, fieldMap, ids, allQuery, allCount,
+}: {
+  module: string;
+  fieldMap: Map<string, FieldMeta>;
+  ids: string[];
+  allQuery: ListQuery | null;
+  allCount: number;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<SarvamQueueItem[]>([]);
+  const [missing, setMissing] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [calling, setCalling] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const [failed, setFailed] = useState(0);
+  const stopRef = useRef(false);
+  useEffect(() => () => { stopRef.current = true; }, []);
+  const phoneFields = useMemo(() => [...fieldMap.values()].filter((field) => field.isActive && field.uitype === 'phone'), [fieldMap]);
+  const phoneNames = useMemo(() => {
+    const preferred = ['mobile', 'mobile_phone', 'phone', 'phone_number', 'primary_phone'];
+    return [...phoneFields].sort((a, b) => {
+      const ai = preferred.indexOf(a.name.toLowerCase());
+      const bi = preferred.indexOf(b.name.toLowerCase());
+      return (ai < 0 ? preferred.length : ai) - (bi < 0 ? preferred.length : bi);
+    }).map((field) => field.name);
+  }, [phoneFields]);
+  const total = allQuery ? allCount : ids.length;
+  const batchNumber = Math.floor(offset / SARVAM_BATCH_SIZE) + 1;
+  const batchCount = Math.max(1, Math.ceil(total / SARVAM_BATCH_SIZE));
+
+  const loadBatch = async (nextOffset: number): Promise<void> => {
+    setLoading(true);
+    setOffset(nextOffset);
+    setItems([]);
+    setMissing(0);
+    setFailed(0);
+    setProgress(0);
+    setFinished(false);
+    try {
+      let records: RecordEnvelope[];
+      if (allQuery) {
+        const result = await api.list(module, {
+          ...allQuery,
+          page: Math.floor(nextOffset / SARVAM_BATCH_SIZE) + 1,
+          pageSize: SARVAM_BATCH_SIZE,
+          columns: [...new Set([...(allQuery.columns ?? []), ...phoneNames])],
+        });
+        records = result.rows;
+      } else {
+        records = await Promise.all(ids.slice(nextOffset, nextOffset + SARVAM_BATCH_SIZE).map((id) => api.record(module, id)));
+      }
+      const queue: SarvamQueueItem[] = [];
+      let skipped = 0;
+      for (const record of records) {
+        const number = phoneNames.map((name) => record.values[name]).find((value) => typeof value === 'string' && value.trim());
+        if (typeof number !== 'string') skipped += 1;
+        else queue.push({ id: record.id, label: record.label, number: number.trim() });
+      }
+      setItems(queue);
+      setMissing(skipped);
+    } catch (error) {
+      toast.error('Could not prepare the Sarvam call batch', (error as Error).message);
+      setOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const start = async (): Promise<void> => {
+    if (!items.length || calling) return;
+    stopRef.current = false;
+    setCalling(true);
+    setProgress(0);
+    setFailed(0);
+    let failureCount = 0;
+    let attempted = 0;
+    for (let index = 0; index < items.length; index += 1) {
+      if (stopRef.current) break;
+      const item = items[index]!;
+      attempted += 1;
+      try {
+        const { attemptId } = await api.sarvamCall({ to: item.number, recordId: item.id, module });
+        const terminal = new Set(['completed', 'busy', 'no_answer', 'failed', 'canceled']);
+        const deadline = Date.now() + 10 * 60 * 1000;
+        let status = 'queued';
+        while (!terminal.has(status) && Date.now() < deadline) {
+          await new Promise((resolve) => window.setTimeout(resolve, 4000));
+          status = (await api.sarvamCallStatus(attemptId)).status;
+        }
+        if (!terminal.has(status)) {
+          failureCount += 1;
+          setFailed(failureCount);
+          stopRef.current = true;
+          toast.error('Sarvam status could not be confirmed', 'The queue stopped to avoid overlapping calls. Check the Calls page before restarting.');
+        } else if (status !== 'completed') {
+          failureCount += 1;
+          setFailed(failureCount);
+        }
+      } catch (error) {
+        failureCount += 1;
+        setFailed(failureCount);
+        console.warn('Sarvam call could not be queued for a CRM record', error);
+        // The request may have reached Sarvam even if its response was lost.
+        // Stop rather than risk starting an overlapping call.
+        stopRef.current = true;
+      }
+      setProgress(index + 1);
+    }
+    setCalling(false);
+    setFinished(true);
+    if (!failureCount && !stopRef.current) toast.success(`Sarvam batch completed · ${items.length}`);
+    else toast.info(stopRef.current ? 'Sarvam batch stopped' : 'Sarvam batch finished', `${attempted} attempted, ${failureCount} failed.`);
+  };
+
+  const openBatch = (): void => {
+    setOpen(true);
+    void loadBatch(0);
+  };
+
+  return (
+    <>
+      <button type="button" className="btn-secondary btn-sm text-violet-700 dark:text-violet-300" onClick={openBatch}>
+        <Sparkles className="h-3.5 w-3.5" /> Sarvam AI call
+      </button>
+      <Modal
+        open={open}
+        onClose={() => { if (!calling && !loading) setOpen(false); }}
+        title={`Sarvam AI calls · batch ${batchNumber} of ${batchCount}`}
+        size="md"
+        footer={(
+          <>
+            <button className="btn-secondary" disabled={calling || loading} onClick={() => setOpen(false)}>Close</button>
+            {calling ? (
+              <button className="btn-danger" onClick={() => { stopRef.current = true; }}>Stop after current call</button>
+            ) : finished && offset + SARVAM_BATCH_SIZE < total ? (
+              <button className="btn-secondary" disabled={loading} onClick={() => void loadBatch(offset + SARVAM_BATCH_SIZE)}>Load next batch</button>
+            ) : !finished && (
+              <button className="btn-primary" disabled={loading || !items.length} onClick={() => void start()}>
+                <Sparkles className="h-4 w-4" /> Confirm and call {items.length}
+              </button>
+            )}
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          {loading ? <div className="flex items-center gap-2 text-sm text-slate-500"><Spinner /> Preparing this batch…</div> : (
+            <>
+              <p className="text-sm text-slate-700 dark:text-slate-200">
+                {allQuery
+                  ? `${total.toLocaleString('en-IN')} records match this view. This batch includes up to ${SARVAM_BATCH_SIZE} records.`
+                  : `${total} selected record${total === 1 ? '' : 's'}. This batch includes up to ${SARVAM_BATCH_SIZE}.`}
+                {' '}Calls begin only after you confirm. Each call is submitted one at a time.
+              </p>
+              {missing > 0 && <p className="text-xs text-amber-700">{missing} record{missing === 1 ? ' has' : 's have'} no phone number and will be skipped.</p>}
+              <div className="max-h-56 space-y-1 overflow-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+                {items.map((item) => <div key={item.id} className="truncate text-xs text-slate-600 dark:text-slate-300">{item.label} · •••• {item.number.slice(-4)}</div>)}
+                {!items.length && <p className="p-2 text-sm text-slate-500">No callable contacts in this batch.</p>}
+              </div>
+              {calling && <p className="text-sm font-medium text-violet-700">{progress < items.length ? `Calling ${items[progress]?.label ?? 'contact'} · ` : ''}Completed ${progress} of ${items.length}{failed ? ` · ${failed} unsuccessful` : ''}</p>}
+              {finished && <p className="text-sm">Batch finished: {progress} submitted, {failed} failed.</p>}
+            </>
+          )}
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 function BulkEditButton({
   module, fieldMap, ids, allQuery, allCount, onDone,
 }: {

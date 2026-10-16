@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { toE164 } from '@ipropy/shared';
+import { config } from '../../config.js';
 import { recordConsent } from '../../core/consent/index.js';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
@@ -139,6 +141,46 @@ telephonyRouter.post('/log', asyncHandler(async (req, res) => {
     notes: input.notes,
     intent: input.intent ?? null,
   }));
+}));
+
+/** Ask the configured Sarvam agent to call a customer from their CRM record. */
+telephonyRouter.post('/sarvam', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const input = z.object({
+    to: z.string().min(6),
+    recordId: z.string().uuid(),
+    module: z.string().min(1),
+  }).parse(req.body);
+  const number = toE164(input.to);
+  if (!number) throw new BadRequestError('That is not a valid phone number.');
+  await recordService.getRecord(getScope(req), input.module, input.recordId);
+  const { placeAgentCall } = await import('../../integrations/voiceagent/sarvam.js');
+  const result = await placeAgentCall({
+    toNumber: number,
+    publicBaseUrl: config.appUrl.split(',')[0]!.trim(),
+    recordId: input.recordId,
+    recordModule: input.module,
+    userId: user.id,
+  });
+  if (!result.ok) throw new BadRequestError(result.message);
+  res.status(202).json(result);
+}));
+
+/** Let a caller wait for its Sarvam attempt before starting the next queue item. */
+telephonyRouter.get('/sarvam/:attemptId', asyncHandler(async (req, res) => {
+  const attemptId = z.string().min(1).max(200).parse(req.params.attemptId);
+  const row = await db.queryOne<{ status: string; user_id: string | null }>(
+    `SELECT status, user_id FROM ipy_call
+      WHERE provider_call_id = $1 AND source = 'sarvam'`,
+    [attemptId],
+  );
+  if (!row) throw new NotFoundError('Sarvam call attempt not found.');
+  const user = getUser(req);
+  if (row.user_id !== user.id && !user.isAdmin && !(await hasCapability(user, 'telephony.listen_recordings'))) {
+    throw new ForbiddenError('You can only view your own Sarvam calls.');
+  }
+  res.json({ status: row.status });
 }));
 
 /**
