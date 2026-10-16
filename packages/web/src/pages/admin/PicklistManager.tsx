@@ -621,7 +621,7 @@ export default function PicklistManager(): JSX.Element {
                     Plain text
                   </label>
 
-                  <button
+                  {selected !== 'lost_reason' && <button
                     onClick={() => {
                       setOptions((prev) => prev.map((o, i) => ({
                         ...o, isDefault: i === index && !option.isDefault,
@@ -636,7 +636,7 @@ export default function PicklistManager(): JSX.Element {
                     aria-label={option.isDefault ? 'Default option' : 'Make default'}
                   >
                     <Star className={cn('h-3.5 w-3.5', option.isDefault && 'fill-current')} />
-                  </button>
+                  </button>}
                   <Toggle
                     checked={option.isActive}
                     onChange={(v) => update(index, { isActive: v })}

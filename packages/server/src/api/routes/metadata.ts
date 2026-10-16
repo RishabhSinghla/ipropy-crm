@@ -1870,7 +1870,8 @@ metadataRouter.put('/picklists/:name/values', asyncHandler(async (req, res) => {
 
     // At most one default, and it must be one of the options given. Sending no
     // default clears it rather than leaving a stale one behind.
-    const def = writable.find((v) => v.isDefault);
+    // A lost reason is never a default: it would mark every new record as lost for that reason.
+    const def = name === 'lost_reason' ? undefined : writable.find((v) => v.isDefault);
     await tx.query(
       `UPDATE ipy_picklist_value SET is_default = ($2::text IS NOT NULL AND value = $2)
         WHERE picklist_id = $1`,

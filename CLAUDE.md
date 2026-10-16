@@ -220,6 +220,12 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   value in the payload, and since the editor sends its whole list on every save, a list loaded
   before a deletion and saved after silently re-created the option and wiped the tombstone keeping
   it gone. Anything tombstoned and not named in `restore` is skipped and returned in `skipped`.
+* **A Lost Reason is never a default** (16 October 2026). Every new record takes its dropdown's starred
+  default, and somebody had starred "Disqualified" on `lost_reason`, so each Facebook lead, website
+  enquiry and hand-typed contact was born carrying it — 3,340 contacts that were not lost. The create
+  path now skips any field drawing on `lost_reason` (`isLostReasonField` in `@ipropy/shared`), the
+  dropdown save refuses a default on it, and the editor hides the star. **Records already carrying it
+  were not rewritten** — that is the owner's call, not a silent cleanup.
 * **A dropdown option is a string on every record that chose it, not a foreign key.** Renaming the
   *stored value* without rewriting those records orphans them: still stored, no longer offered,
   matched by no filter, invisible until somebody runs a report. `core/metadata/picklists.ts` is the

@@ -34,6 +34,17 @@ export function lostReasonFieldOf<F extends FieldLike>(fields: F[]): F | undefin
     && (field.config?.picklist === 'lost_reason' || field.name === 'lost_reason'));
 }
 
+/**
+ * A Lost Reason is true only once a record is lost, so it is never filled in for a new one.
+ *
+ * Somebody tapped the star beside "Disqualified" in Admin → Dropdowns, and from then on
+ * every new record — each Facebook lead included — was born carrying it. The server
+ * ignores a default on this field, and the editor does not offer the star.
+ */
+export function isLostReasonField(field: Pick<FieldLike, 'name' | 'config'>): boolean {
+  return field.config?.picklist === 'lost_reason' || field.name === 'lost_reason';
+}
+
 /** True for a stage that means the deal is gone: "Lost", "Lead Lost". */
 export function isLostStatus(value: unknown): boolean {
   return typeof value === 'string' && /\blost\b/i.test(value);

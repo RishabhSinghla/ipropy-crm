@@ -11,6 +11,7 @@ import {
   formatIndianPrice,
   formatPhoneWithCode,
   isFilterGroup,
+  isLostReasonField,
   type FieldMeta,
   type FilterCondition,
   type FilterGroup,
@@ -1263,6 +1264,7 @@ async function prepareValues(
   if (opts.isCreate) {
     for (const field of module.fields) {
       if (!field.isActive || field.name in out.values) continue;
+      if (isLostReasonField(field)) continue;
       if (field.config.newRecordDefault !== undefined) {
         out.values[field.name] = coerceValue(field, field.config.newRecordDefault);
       } else if (field.defaultValue !== null && field.defaultValue !== undefined) {
