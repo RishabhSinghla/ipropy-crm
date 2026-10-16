@@ -2,7 +2,7 @@ import {
   createContext, type JSX, type ReactNode, useContext, useEffect, useRef, useState,
 } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Phone } from 'lucide-react';
+import { Loader2, Phone, Sparkles } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -34,6 +34,7 @@ interface CallActions {
    * rather than inheriting the pane's answer.
    */
   startCall: (number: string, from?: 'phone' | 'desk', onRecordId?: string, onModule?: string) => Promise<void>;
+  startSarvamCall: (number: string, onRecordId?: string, onModule?: string) => Promise<void>;
 }
 
 const CallDispositionContext = createContext<CallActions | null>(null);
@@ -203,6 +204,33 @@ export function CallDispositionProvider({
     }
   };
 
+  const startSarvamCall = async (number: string, onRecordId?: string, onModule?: string): Promise<void> => {
+    if (placingRef.current) return;
+    if (live) {
+      toast.info('Finish the current call first', 'Save its outcome before starting a Sarvam AI call.');
+      return;
+    }
+    if (!userId) {
+      toast.error('Could not place the call', 'Your CRM session is still loading. Please try again.');
+      return;
+    }
+    const callOn = onRecordId || recordId;
+    const callModule = onModule || module;
+    if (!callOn || !callModule) {
+      toast.error('Could not place the call', 'Open a CRM record before calling with Sarvam.');
+      return;
+    }
+    placingRef.current = true;
+    try {
+      const result = await api.sarvamCall({ to: number, recordId: callOn, module: callModule });
+      toast.success('Sarvam is calling the customer', `Call attempt ${result.attemptId} is linked to this record.`);
+    } catch (err) {
+      toast.error('Could not start the Sarvam call', (err as Error).message);
+    } finally {
+      placingRef.current = false;
+    }
+  };
+
   /*
     Arriving from Save & Next: ring this person straight away, once, and take
     the flag off the address so a refresh does not re-dial somebody already
@@ -224,7 +252,7 @@ export function CallDispositionProvider({
   }, [pendingAutoDial, recordId, autoNumber, live]);
 
   return (
-    <CallDispositionContext.Provider value={{ startCall }}>
+    <CallDispositionContext.Provider value={{ startCall, startSarvamCall }}>
       {children}
     </CallDispositionContext.Provider>
   );
@@ -236,28 +264,50 @@ export function CallButton({ to, iconOnly = false, round = false, plain = false,
   /** The record this call is about, when it is not the one the pane has open. */
   recordId?: string; module?: string }): JSX.Element {
   const calls = useCallDisposition();
+  const [aiPending, setAiPending] = useState(false);
   return (
-    <button
-      type="button"
-      // `iconOnly` where the header is tight — the split view, above all. The
-      // word costs a third of the strip for a button everybody recognises by
-      // its shape, and the title still says what it does.
-      // `round` is the split view's own shape: a plain circle in the
-      // record's action strip, neutral at rest — four tinted circles in a
-      // line read as four warnings — and filling with its own colour under
-      // the cursor, so it says what it is exactly when that matters.
-      className={plain ? cn('inline-flex items-center justify-center p-1 text-slate-500 hover:text-brand-600', active && 'text-emerald-600') : round
-        ? cn('inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors', active
-          ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500'
-          : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-transparent hover:bg-blue-600 hover:text-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300')
-        : cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
-      title={`Call ${to}`}
-      aria-label={`Call ${to}`}
-      aria-pressed={round ? active : undefined}
-      onClick={() => void calls?.startCall(to, 'phone', recordId, module)}
-    >
-      {!textOnly && <Phone className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-blue-600'} />}
-      {textOnly ? 'Call' : !iconOnly && !round && <span className="hidden sm:inline">Call</span>}
-    </button>
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        // `iconOnly` where the header is tight — the split view, above all. The
+        // word costs a third of the strip for a button everybody recognises by
+        // its shape, and the title still says what it does.
+        // `round` is the split view's own shape: a plain circle in the
+        // record's action strip, neutral at rest — four tinted circles in a
+        // line read as four warnings — and filling with its own colour under
+        // the cursor, so it says what it is exactly when that matters.
+        className={plain ? cn('inline-flex items-center justify-center p-1 text-slate-500 hover:text-brand-600', active && 'text-emerald-600') : round
+          ? cn('inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors', active
+            ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500'
+            : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-transparent hover:bg-blue-600 hover:text-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300')
+          : cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
+        title={`Call ${to}`}
+        aria-label={`Call ${to}`}
+        aria-pressed={round ? active : undefined}
+        onClick={() => void calls?.startCall(to, 'phone', recordId, module)}
+      >
+        {!textOnly && <Phone className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-blue-600'} />}
+        {textOnly ? 'Call' : !iconOnly && !round && <span className="hidden sm:inline">Call</span>}
+      </button>
+      {calls && (
+        <button
+          type="button"
+          className={plain ? 'inline-flex items-center justify-center p-1 text-violet-600 hover:text-violet-800 dark:text-violet-300' : round
+            ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-600 hover:text-white dark:border-violet-900 dark:bg-violet-950 dark:text-violet-200'
+            : cn('btn-secondary btn-sm text-violet-700 dark:text-violet-300', iconOnly && 'h-9 w-9 justify-center px-0')}
+          title={`Have Sarvam AI call ${to}`}
+          aria-label={`Have Sarvam AI call ${to}`}
+          disabled={aiPending}
+          onClick={() => {
+            setAiPending(true);
+            void calls.startSarvamCall(to, recordId, module).finally(() => setAiPending(false));
+          }}
+        >
+          {aiPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {textOnly && <span className="ml-1">AI</span>}
+          {!iconOnly && !round && !textOnly && <span className="hidden sm:inline">AI call</span>}
+        </button>
+      )}
+    </span>
   );
 }

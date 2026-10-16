@@ -1080,7 +1080,7 @@ export function IpropyWorkspace({
                   pane"* (3 October 2026) — immediately after the `3 / 22,988`,
                   inside the same group, so the two cannot drift apart when the
                   header wraps on a phone. */}
-              {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly plain active={onCall} /></span>}
+              {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} /></span>}
               <button type="button" aria-label={active.starred ? 'Remove from starred' : 'Star this record'} title="Favourite" onClick={() => star.mutate(active)} className="p-1 text-slate-500 hover:text-amber-500"><Star className={cn('h-4 w-4', active.starred && 'fill-amber-500 text-amber-500')} /></button>
               {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
               {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
@@ -1240,6 +1240,7 @@ export function IpropyWorkspace({
           onStream={onTheStream}
           phone={phoneValue}
           recordId={active.id}
+          module={module.name}
         />
 
         {/*
@@ -2124,16 +2125,17 @@ function putTheCursorInTheNoteBox(recordId: string, framesLeft = 10, opened = fa
   if (framesLeft > 0) requestAnimationFrame(() => putTheCursorInTheNoteBox(recordId, framesLeft - 1, true));
 }
 
-function RecordMenuAction({ shown, onStream, phone, recordId }: {
+function RecordMenuAction({ shown, onStream, phone, recordId, module }: {
   shown: MenuKey;
   onStream: boolean;
   phone: string;
   recordId: string;
+  module: string;
 }): JSX.Element | null {
   if (shown === 'calls') {
     return phone ? (
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900" data-testid="record-menu-action">
-        <CallButton to={phone} textOnly />
+        <CallButton to={phone} textOnly recordId={recordId} module={module} />
       </div>
     ) : null;
   }

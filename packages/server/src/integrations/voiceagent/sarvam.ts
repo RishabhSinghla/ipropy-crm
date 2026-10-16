@@ -29,6 +29,7 @@ export interface SarvamSettings {
   connectionId: string;
   agentPhoneNumber: string;
   webhookSecret: string;
+  agentsByModule: Record<string, { label?: string; appId: string; appVersion: number; connectionId?: string; agentPhoneNumber?: string }>;
 }
 
 /** The card's values, or the name of the first one still missing. */
@@ -42,12 +43,26 @@ export function readSarvamSettings(): { settings: SarvamSettings } | { missing: 
     ['Webhook secret', secrets.webhookSecret],
     ['Organisation ID', config.orgId],
     ['Workspace ID', config.workspaceId],
-    ['Agent (app) ID', config.appId],
-    ['Connection ID', config.connectionId],
-    ['Agent phone number', config.agentPhoneNumber],
   ];
   for (const [label, value] of wanted) {
     if (!value?.trim()) return { missing: `${label} is empty on the Sarvam card.` };
+  }
+  let agentsByModule: SarvamSettings['agentsByModule'] = {};
+  try {
+    const parsed = JSON.parse(config.agentsByModule ?? '{}') as Record<string, unknown>;
+    for (const [moduleName, value] of Object.entries(parsed)) {
+      if (!value || typeof value !== 'object') continue;
+      const agent = value as Record<string, unknown>;
+      agentsByModule[moduleName] = {
+        label: typeof agent.label === 'string' ? agent.label : undefined,
+        appId: typeof agent.appId === 'string' ? agent.appId.trim() : '',
+        appVersion: Number(agent.appVersion) > 0 ? Number(agent.appVersion) : 1,
+        connectionId: typeof agent.connectionId === 'string' && agent.connectionId.trim() ? agent.connectionId.trim() : undefined,
+        agentPhoneNumber: typeof agent.agentPhoneNumber === 'string' && agent.agentPhoneNumber.trim() ? agent.agentPhoneNumber.trim() : undefined,
+      };
+    }
+  } catch {
+    return { missing: 'Module agent mapping is invalid JSON on the Sarvam card.' };
   }
   return {
     settings: {
@@ -55,10 +70,11 @@ export function readSarvamSettings(): { settings: SarvamSettings } | { missing: 
       webhookSecret: secrets.webhookSecret!.trim(),
       orgId: config.orgId!.trim(),
       workspaceId: config.workspaceId!.trim(),
-      appId: config.appId!.trim(),
+      appId: config.appId?.trim() ?? '',
       appVersion: Number(config.appVersion) > 0 ? Number(config.appVersion) : 1,
-      connectionId: config.connectionId!.trim(),
-      agentPhoneNumber: config.agentPhoneNumber!.trim(),
+      connectionId: config.connectionId?.trim() ?? '',
+      agentPhoneNumber: config.agentPhoneNumber?.trim() ?? '',
+      agentsByModule,
     },
   };
 }
@@ -118,14 +134,24 @@ export async function placeAgentCall(input: {
   const read = readSarvamSettings();
   if ('missing' in read) return { ok: false, message: read.missing };
   const { settings } = read;
+  const mapped = input.recordModule ? settings.agentsByModule[input.recordModule] : undefined;
+  if (input.recordModule && Object.keys(settings.agentsByModule).length && !mapped) {
+    return { ok: false, message: `No Sarvam agent is configured for the ${input.recordModule} module. Add one under Admin → Integrations → Sarvam.` };
+  }
+  const appId = mapped?.appId?.trim() || settings.appId;
+  const appVersion = mapped?.appVersion ?? settings.appVersion;
+  const connectionId = mapped?.connectionId?.trim() || settings.connectionId;
+  const agentPhoneNumber = mapped?.agentPhoneNumber?.trim() || settings.agentPhoneNumber;
+  if (!appId) return { ok: false, message: `No Sarvam agent is configured for the ${input.recordModule ?? 'default'} module.` };
+  if (!connectionId || !agentPhoneNumber) return { ok: false, message: 'Add a telephony connection ID and agent phone number to the Sarvam configuration.' };
 
   const body = {
     app_config: {
-      app_id: settings.appId,
-      app_version: settings.appVersion,
+      app_id: appId,
+      app_version: appVersion,
       connection_config: {
-        connection_id: settings.connectionId,
-        agent_phone_number: settings.agentPhoneNumber,
+        connection_id: connectionId,
+        agent_phone_number: agentPhoneNumber,
       },
     },
     user_config: { user_phone_number: input.toNumber },
@@ -155,7 +181,7 @@ export async function placeAgentCall(input: {
     `INSERT INTO ipy_call (direction, from_number, to_number, status, provider, provider_call_id,
                            source, record_id, record_module, user_id)
      VALUES ('outbound', $1, $2, 'queued', $3, $4, 'sarvam', $5, $6, $7)`,
-    [settings.agentPhoneNumber, input.toNumber, SARVAM_PROVIDER, answer.attempt_id,
+    [agentPhoneNumber, input.toNumber, SARVAM_PROVIDER, answer.attempt_id,
       input.recordId ?? null, input.recordModule ?? null, input.userId ?? null],
   );
   return { ok: true, attemptId: answer.attempt_id };

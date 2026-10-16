@@ -1213,6 +1213,8 @@ export const api = {
   testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),
   sarvamCall: (data: { to: string; recordId: string; module: string }) =>
     post<{ ok: true; attemptId: string }>('/api/telephony/sarvam', data),
+  sarvamCallStatus: (attemptId: string) =>
+    get<{ status: string }>(`/api/telephony/sarvam/${encodeURIComponent(attemptId)}`),
   sarvamTestCall: (phone: string) => post<{ ok: true; attemptId: string }>('/api/admin/integrations/sarvam_voice/test-call', { phone }),
   syncFacebookLeads: () => post<{ pageName: string; forms: { formName: string; fetched: number; created: number; duplicate: number; failed: number; errors: string[]; campaigns: string[] }[]; owners: { owner: string; count: number }[] }>('/api/admin/integrations/facebook_leads/sync', {}),
   facebookHealth: () => get<{
