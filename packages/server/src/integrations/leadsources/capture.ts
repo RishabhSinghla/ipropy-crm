@@ -16,6 +16,8 @@ import { notify } from '../../core/notifications/index.js';
 import { columnsOf, fieldText } from '../../core/entity/payloadColumns.js';
 import { AUTOMATION_USER_ID } from '../../core/auth/systemAccounts.js';
 import { getModule } from '../../core/metadata/registry.js';
+import { parseBudget } from './parseBudget.js';
+import { mapFacebookAnswers, type FacebookAnswer } from './facebookAnswers.js';
 
 const SYSTEM_USER: AuthUser = {
   id: '00000000-0000-0000-0000-000000000000',
@@ -195,6 +197,18 @@ async function captureOnce(
       description: normalized.message ?? null,
       ...(normalized.extra ?? {}),
     };
+    // File each Facebook answer in the field its question is asking about. Done
+    // here, once, so the webhook, the sync and the recovery job all get it. A
+    // mapping bug must cost the answer a place, never the lead.
+    if (source === 'facebook') {
+      try {
+        const leadsModule = await getModule('leads');
+        const answers = (raw as { field_data?: FacebookAnswer[] } | null)?.field_data;
+        Object.assign(values, mapFacebookAnswers(answers, leadsModule?.fields ?? [], values));
+      } catch (err) {
+        logger.warn({ err }, 'could not map the Facebook form answers; the lead is kept with them in its note');
+      }
+    }
     // Live CRM uses `source`; the original template uses `lead_source`.
     // Routing happens before recordService translates legacy field names.
     if (sourceField) values[sourceField.name] = facebookSource?.value ?? normalized.source;
@@ -446,8 +460,12 @@ export function normalizeFacebook(payload: {
       payload.form_name ? `Facebook form: ${payload.form_name} (${payload.form_id})` : undefined,
       payload.campaign_name || payload.campaign_id ? `Facebook campaign: ${payload.campaign_name ?? payload.campaign_id}` : undefined,
     ].filter(Boolean).join('\n'),
-    budgetMax: parseBudget(fields.get('budget') ?? fields.get('what_is_your_preferred_budget?')),
-    timeline: fields.get('when_are_you_planning_to_buy') ?? fields.get('timeline'),
+    // Any question that says "budget" — forms word it differently ("…budget?",
+    // "…budget_range?") — and repeat enquiries read this, not the field mapper.
+    budgetMax: parseBudget([...fields].find(([question]) => question.includes('budget'))?.[1]),
+    // No timeline here: it is a dropdown, and a raw answer that is not one of its
+    // options would fail validation and lose the lead. `mapFacebookAnswers` files
+    // it only when it matches an option.
     externalId: payload.leadgen_id ?? payload.id,
     // The ad platform's own campaign name (or its id) is the attribution — it
     // lands in `utm_campaign` on the lead, which is where reporting reads it.
@@ -521,29 +539,6 @@ export function normalizePortal(source: string, payload: Record<string, unknown>
     externalId: get('lead_id', 'leadId', 'id', 'enquiry_id'),
   };
 }
-
-function parseBudget(raw: string | undefined): number | undefined {
-  if (!raw) return undefined;
-  const cleaned = raw.replace(/_/g, ' ').replace(/[₹,\s]/gi, '').toLowerCase().replace(/(cr|crore|l|lac|lakh)\./g, '$1');
-  // Ranges like "50L-75L" — take the upper bound as the ceiling.
-  const range = cleaned.match(/([\d.]+)\s*(cr|crore|l|lac|lakh)?\s*[-–to]+\s*([\d.]+)\s*(cr|crore|l|lac|lakh)?/);
-  if (range) return toRupees(range[3], range[4] ?? range[2]);
-  const single = cleaned.match(/([\d.]+)\s*(cr|crore|l|lac|lakh|k)?/);
-  if (single) return toRupees(single[1], single[2]);
-  return undefined;
-}
-
-function toRupees(num: string, unit?: string): number | undefined {
-  const n = Number(num);
-  if (!Number.isFinite(n)) return undefined;
-  switch (unit) {
-    case 'cr': case 'crore': return n * 10_000_000;
-    case 'l': case 'lac': case 'lakh': return n * 100_000;
-    case 'k': return n * 1000;
-    default: return n > 10_000 ? n : n * 100_000; // bare small numbers read as lakhs
-  }
-}
-
 
 /**
  * How long two identical submissions count as the same one.

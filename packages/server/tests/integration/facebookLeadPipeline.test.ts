@@ -114,6 +114,30 @@ describe('a lead from a Facebook lead ad', () => {
     expect(inbox?.status).toBe('processed');
     expect(inbox?.error).toBeNull();
   });
+  it('files the budget and timeline of a form worded differently from the first one', async () => {
+    // The questions the 16 October 2026 form actually sends.
+    const payload = {
+      ...metaLead({ id: 'fbtest-newform', name: 'New Form Buyer', phone: '+919811577111', email: 'newform@example.com' }),
+      form_id: '2000497250884273',
+      field_data: [
+        { name: 'full_name', values: ['New Form Buyer'] },
+        { name: 'phone_number', values: ['+919811577111'] },
+        { name: 'email', values: ['newform@example.com'] },
+        { name: 'are_you_looking_to_buy_a_builder_floor_in_greenfields_colony,_faridabad?', values: ['yes,_only_in_greenfields_colony'] },
+        { name: 'what_is_your_preferred_budget_range?', values: ['₹1.7_cr_-_₹2_cr_·__(_200_sq._yds.)'] },
+        { name: 'when_do_you_plan_to_buy?', values: ['1_to_3_months'] },
+      ],
+    };
+    const result = await captureLead('facebook', payload, normalizeFacebook(payload), { externalId: payload.id });
+    expect(result.status).toBe('created');
+    if (result.recordId) made.push(result.recordId);
+    const lead = await db.queryOne<{ budget: number | null; possession_timeline: string | null }>(
+      `SELECT ipy_try_numeric(to_jsonb(l)->>'budget') AS budget, to_jsonb(l)->>'possession_timeline' AS possession_timeline
+         FROM ipy_e_leads l WHERE l.record_id = $1`, [result.recordId]);
+    expect(lead?.budget).toBe(20_000_000);
+    expect(lead?.possession_timeline).toBe('1-3 Months');
+  });
+
   it('becomes a lead with the name and number intact', async () => {
     const payload = metaLead({
       id: 'fbtest-1', name: 'Aftab Siddiqui', phone: '+919811577101', email: 'aftab@example.com',

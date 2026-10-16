@@ -267,6 +267,23 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   the public form answers 200 with its success message regardless, and the only trace was
   `ipy_lead_inbox.status = 'failed'`. `splitPhone` in `@ipropy/shared` is the inverse of
   `toInternational` and is what any new source must use.
+* **A Facebook form's answers find their own field** (16 October 2026, owner: *"when we
+  create a form you map all field and all leads accordingly automatically"*). Facebook
+  names each answer after the question's wording, so a list of exact names broke the day a
+  new form said `what_is_your_preferred_budget_range?` and `when_do_you_plan_to_buy?` —
+  both landed in the note and left Budget and Possession Timeline empty.
+  `integrations/leadsources/facebookAnswers.ts` reads what a question *asks* (budget,
+  when, which area…) or a field whose whole label the question names, and files the answer
+  only if it is valid for that field: a dropdown answer must match one of its options
+  (`1 to 3 months` → `1-3 Months`, `just looking` → `Just Exploring`), anything that fits
+  nothing stays in the enquiry note, and a mapping problem never refuses the lead. It runs
+  once, inside `captureOnce`, so the webhook, the sync and the recovery job all get it.
+  `normalizeFacebook` no longer writes a raw `timeline` for the same reason: an answer
+  that is not one of the dropdown's options would fail validation and lose the lead. A
+  CRM field is found by its **name** for the six common questions (`budget`,
+  `possession_timeline`, `preferred_locations`, `configuration`, `purpose`,
+  `interested_project`), so renaming one of those needs `COMMON_QUESTIONS` told.
+  `.github/workflows/facebook-form-questions.yml` lists the questions each form sends.
 * **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
   published); the property somebody wants to send is usually this morning's draft. Every share-link
   failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come
