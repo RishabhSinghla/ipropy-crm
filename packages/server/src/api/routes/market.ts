@@ -14,6 +14,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { assertCapability } from '../../core/permissions/index.js';
 import { getPostDetail, importGroupExport, afterImport, searchMarket } from '../../core/market/feed.js';
+import { nudgeMarketWork } from '../../core/market/enrich.js';
 import { listImports, queueImports } from '../../core/market/imports.js';
 import { matchDeal } from '../../core/market/matchDeal.js';
 import { DEAL_STATUSES, findCrossMatches, recordOutcome } from '../../core/market/crossMatch.js';
@@ -107,6 +108,7 @@ marketRouter.get('/matches', asyncHandler(async (req, res) => {
     minScore: z.coerce.number().min(0).max(1).optional(),
     crossGroupOnly: z.enum(['true', 'false']).optional(),
     includeWorked: z.enum(['true', 'false']).optional(),
+    minJevFit: z.coerce.number().min(0).max(1).optional(),
     limit: z.coerce.number().int().min(1).max(500).optional(),
   }).parse(req.query);
   res.json(await findCrossMatches({
@@ -114,6 +116,15 @@ marketRouter.get('/matches', asyncHandler(async (req, res) => {
     crossGroupOnly: query.crossGroupOnly !== 'false',
     includeWorked: query.includeWorked === 'true',
   }));
+}));
+
+/**
+ * The Refresh button: have Jev read anything waiting and check the new pairings now,
+ * instead of at the next 15-minute visit. Answers at once; the work runs behind it.
+ */
+marketRouter.post('/refresh', blockApiKey, asyncHandler(async (_req, res) => {
+  nudgeMarketWork();
+  res.json({ started: true });
 }));
 
 /** What happened when somebody acted on a pairing: called, meeting, won, lost, not for us. */

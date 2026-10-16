@@ -1421,8 +1421,9 @@ export const api = {
   },
   marketImports: () => get<{ imports: MarketImportRow[] }>('/api/market/imports'),
   marketPostDetail: (id: string) => get<MarketPostDetail>(`/api/market/posts/${id}`),
-  marketIntroductions: (query: { crossGroupOnly: boolean; minScore: number; includeWorked: boolean }) =>
-    get<MarketIntroduction[]>(`/api/market/matches?crossGroupOnly=${query.crossGroupOnly}&minScore=${query.minScore}&includeWorked=${query.includeWorked}&limit=100`),
+  marketIntroductions: (query: { crossGroupOnly: boolean; minScore: number; includeWorked: boolean; sureShot?: boolean }) =>
+    get<MarketIntroduction[]>(`/api/market/matches?crossGroupOnly=${query.crossGroupOnly}&minScore=${query.minScore}&includeWorked=${query.includeWorked}${query.sureShot ? '&minJevFit=0.7' : ''}&limit=100`),
+  refreshMarket: () => post<{ started: true }>('/api/market/refresh', {}),
   setMarketIntroduction: (wantId: string, haveId: string, status: MarketIntroductionStatus, note?: string) =>
     put<{ ok: true }>(`/api/market/matches/${wantId}/${haveId}`, { status, note: note ?? null }),
   dealerDeals: (module: string, id: string) => get<DealerDeals>(`/api/market/records/${module}/${id}/deals`),

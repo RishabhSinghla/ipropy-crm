@@ -118,7 +118,22 @@ export default function MarketIntroductions(): JSX.Element {
   const [minScore, setMinScore] = useState(0.5);
   const [includeWorked, setIncludeWorked] = useState(false);
   const [message, setMessage] = useState<MessageToShow | null>(null);
-  const query = { crossGroupOnly, minScore, includeWorked };
+  const sureShot = minScore >= 0.8;
+  const query = { crossGroupOnly, minScore: sureShot ? 0.7 : minScore, includeWorked, sureShot };
+  const [refreshing, setRefreshing] = useState(false);
+  // Jev checks the new pairings in the background; give it a moment, then look again.
+  const refresh = async (): Promise<void> => {
+    setRefreshing(true);
+    try {
+      await api.refreshMarket();
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+      await queryClient.invalidateQueries({ queryKey: ['market', 'introductions'] });
+    } catch (err) {
+      toast.error('Could not refresh', (err as Error).message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const { data, isLoading, error } = useQuery({ queryKey: ['market', 'introductions', query], queryFn: () => api.marketIntroductions(query) });
 
   return (
@@ -137,7 +152,11 @@ export default function MarketIntroductions(): JSX.Element {
         <select className="input w-auto" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} aria-label="How good a fit">
           <option value={0.5}>Possible and strong</option>
           <option value={0.7}>Strong only</option>
+          <option value={0.8}>Sure-shot (strong, and Jev agrees)</option>
         </select>
+        <button type="button" className="btn-secondary" disabled={refreshing} onClick={() => void refresh()}>
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
       </div>
       {isLoading && <div className="flex justify-center py-10"><Spinner /></div>}
       {error && <p className="text-sm text-negative">Could not load the introductions: {(error as Error).message}</p>}

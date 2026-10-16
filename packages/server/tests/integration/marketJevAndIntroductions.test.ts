@@ -128,6 +128,20 @@ describe('a dealer group read by Jev and matched across groups', () => {
     expect(await find()).toBeUndefined();
   });
 
+  it('sure-shot shows only pairs Jev has checked and rates high, and Refresh answers at once', async () => {
+    const find = async (minJevFit?: number) => (await findCrossMatches({ limit: 500, includeWorked: true, minJevFit })).find((m) => m.have.posterPhone === sellerPhone);
+    const match = (await find())!;
+    await db.query(`DELETE FROM ipy_market_pair_check WHERE want_listing_id = $1 AND have_listing_id = $2`, [match.want.id, match.have.id]);
+    expect(await find(0.7)).toBeUndefined();
+    await db.query(`INSERT INTO ipy_market_pair_check (want_listing_id, have_listing_id, fit) VALUES ($1, $2, 0.6)`, [match.want.id, match.have.id]);
+    expect(await find(0.7)).toBeUndefined();
+    await db.query(`UPDATE ipy_market_pair_check SET fit = 0.9 WHERE want_listing_id = $1 AND have_listing_id = $2`, [match.want.id, match.have.id]);
+    expect(await find(0.7)).toBeDefined();
+    const refresh = await request(app).post('/api/market/refresh').set('Authorization', `Bearer ${adminToken}`);
+    expect(refresh.status).toBe(200);
+    expect(refresh.body).toEqual({ started: true });
+  });
+
   it('the HTTP routes answer, and refuse a status that does not exist', async () => {
     const list = await request(app).get('/api/market/matches?includeWorked=true&limit=500').set('Authorization', `Bearer ${adminToken}`);
     expect(list.status).toBe(200);

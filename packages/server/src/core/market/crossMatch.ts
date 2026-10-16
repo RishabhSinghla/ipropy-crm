@@ -192,6 +192,8 @@ export interface CrossMatchQuery {
   includeWorked?: boolean;
   /** Pairings Jev has not looked at yet are shown, marked as such, unless this is true. */
   onlyVerified?: boolean;
+  /** "Sure-shot": Jev has looked and rates the fit at least this high. Implies verified. */
+  minJevFit?: number;
   limit?: number;
 }
 
@@ -330,7 +332,8 @@ export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<Cro
     if (!query.includeWorked && (status === 'won' || status === 'lost' || status === 'dismissed')) continue;
     const jevFit = fit.get(id) ?? null;
     if (jevFit !== null && jevFit < JEV_FIT_FLOOR) continue;
-    if (query.onlyVerified && jevFit === null) continue;
+    if ((query.onlyVerified || query.minJevFit !== undefined) && jevFit === null) continue;
+    if (query.minJevFit !== undefined && jevFit! < query.minJevFit) continue;
     matches.push({ ...pairing, id, status, note: done?.note ?? null, jevFit });
     if (matches.length >= limit) break;
   }
