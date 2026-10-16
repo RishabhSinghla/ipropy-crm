@@ -128,8 +128,9 @@ export function scorePair(want: MarketListing, have: MarketListing, now = new Da
   if (want.bhk && have.bhk) { score += 0.1; agreed += 1; reasons.push(`${have.bhk} BHK`); }
 
   if (want.sizeSqYd && have.sizeSqYd) {
-    // A buyer asking 250 will look at 200–300; at four times the size he is looking for something else.
-    const tolerance = Math.max(30, Math.round(want.sizeSqYd * 0.25));
+    // Plots come in 100, 150, 200, 250, 300 and each is a different purchase: 250 will look at 225–275,
+    // and 300 is only a stretch. The first live read called 250 against 303 a perfect fit.
+    const tolerance = Math.max(15, Math.round(want.sizeSqYd * 0.1));
     const gap = Math.abs(want.sizeSqYd - have.sizeSqYd);
     if (gap <= tolerance) {
       score += 0.25;
@@ -284,7 +285,27 @@ export function bestPerRequirement(
     }
     if (top) best.push(top);
   }
-  return best.sort((a, b) => b.score - a.score);
+  return withoutRepeats(best.sort((a, b) => b.score - a.score));
+}
+
+/** The same words from the same person, lower-cased and stripped, so a repost reads as the same thing. */
+function sameWords(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 80);
+}
+
+/**
+ * A dealer who posts the same requirement twice, or a seller whose ad is reposted, is one
+ * introduction, not two. Best first, so the strongest copy is the one that stays.
+ */
+function withoutRepeats<T extends { want: MarketListing; have: MarketListing }>(ranked: T[]): T[] {
+  const seen = new Set<string>();
+  return ranked.filter(({ want, have }) => {
+    const side = (l: MarketListing): string => `${l.posterPhone ?? l.posterName ?? ''}|${sameWords(l.summary)}`;
+    const key = `${side(want)}>${side(have)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 const LISTING_COLUMNS = `l.id, l.post_id, l.kind, l.purpose, l.category, l.bhk, l.size_sqyd, l.price_min_lakh, l.price_max_lakh,

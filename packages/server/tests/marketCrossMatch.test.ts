@@ -45,7 +45,21 @@ describe('scoring a requirement against an offer', () => {
 
   it('a size four times the one asked for is another property, however well the sector fits', () => {
     expect(scorePair(buyer({ sizeSqYd: 160 }), listing({ sizeSqYd: 1050 }), NOW)).toBeNull();
-    expect(scorePair(buyer({ sizeSqYd: 250 }), listing({ sizeSqYd: 330 }), NOW)).not.toBeNull();
+    expect(scorePair(buyer({ sizeSqYd: 250 }), listing({ sizeSqYd: 330 }), NOW)).toBeNull();
+  });
+
+  it('250 yd fits 275, but 303 is another plot and 300 is only a stretch that never reaches the sheet', () => {
+    expect(scorePair(buyer({ sizeSqYd: 250 }), listing({ sizeSqYd: 275 }), NOW)!.score).toBeGreaterThanOrEqual(0.9);
+    expect(scorePair(buyer({ sizeSqYd: 250 }), listing({ sizeSqYd: 303 }), NOW)).toBeNull();
+    expect(scorePair(buyer({ sizeSqYd: 250, priceMaxLakh: null }), listing({ sizeSqYd: 300, priceMinLakh: null }), NOW)!.score).toBeLessThan(0.5);
+  });
+
+  it('the same requirement posted twice, against the same seller, is one introduction', () => {
+    const seller = listing({ summary: 'F47 size 250 sqyrd sec 88' });
+    const first = buyer({ posterPhone: '9811111111', summary: 'Amolik sco sec 88 250 sqyd', id: 'a1' });
+    const repost = buyer({ posterPhone: '9811111111', summary: 'Amolik SCO sec 88 250 sqyd!', id: 'a2', postId: 'pa2' });
+    const found = bestPerRequirement([first, repost, seller], { crossGroupOnly: false }, NOW);
+    expect(found).toHaveLength(1);
   });
 
   it('somebody wanting a kothi is not offered a flat', () => {
