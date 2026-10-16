@@ -3546,3 +3546,15 @@ hand-built whose filter JSON names `unread`, in `ipy_view`, `ipy_dashboard_widge
 **`ipy_module_seen` is still there**, with everybody's watermarks. Nothing reads it, and no
 migration in this repo destroys a table: a rebuild later starts from data. `ipy_recent_view`
 stays in active use — it is what "recently viewed" reads, which is a different feature.
+
+---
+
+## Adspirer Brand Context (ads)
+
+Set 16 October 2026. Read before touching ads for this business.
+
+* **Business:** iPropy sells builder floors in **Greenfields Colony, Faridabad** (20+ years). Buyers only: budget ₹1.70–4 Cr. Not Delhi, not Noida, not renters, not brokers.
+* **Meta:** ad account `145100537618169`, Page `1367969589733037`. Only the ad set "Deepak Video Ad" (campaign "October Campaign") should run. It must stay Greenfield colony, 17 km (the housing minimum), ages 25–65, Delhi excluded. "28 Sep. Leads" and "New Leads ad set" are Delhi-centred and stay paused. Someone on the team re-enabled one and widened another on 12–16 Oct, so **re-read targeting before trusting a status**.
+* **Leads:** Facebook leads arrive at `/api/webhooks/leads/facebook`; the strict form asks a budget question that `parseBudget` reads (upper bound of a range). `.github/workflows/facebook-lead-reconcile.yml` compares Meta's count with the CRM's.
+* **Google Ads:** not connected yet. Needs the Google Ads account email and a sign-in to the Adspirer plugin by the owner. Build campaigns **paused** first.
+* **Rules:** never promise ROI; never upload the contact list to Meta without the owner's yes; the owner alone does the India "securities and investments" declaration and creates the Meta dataset.
