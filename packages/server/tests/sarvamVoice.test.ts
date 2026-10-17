@@ -54,6 +54,14 @@ describe('Sarvam visit slot mapping', () => {
     vi.useRealTimers();
   });
 
+  it('converts a weekday visit slot to the next matching India date', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-17T12:00:00.000Z'));
+    expect(sarvamVisitSlotValue('Sunday at 10:30 AM', 'datetime')).toBe('2026-10-18T10:30:00+05:30');
+    expect(sarvamVisitSlotValue('Sunday at 10:30 AM', 'date')).toBe('2026-10-18');
+    vi.useRealTimers();
+  });
+
   it('accepts explicit ISO values and leaves ambiguous phrases unmapped', () => {
     expect(sarvamVisitSlotValue('2026-10-18T19:00:00+05:30', 'datetime')).toBe('2026-10-18T13:30:00.000Z');
     expect(sarvamVisitSlotValue('in the evening', 'datetime')).toBeNull();

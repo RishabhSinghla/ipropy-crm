@@ -314,13 +314,28 @@ export function sarvamVisitSlotValue(raw: string, uitype: string): string | null
   if (/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text) && Number.isFinite(parsed.getTime())) {
     return uitype === 'date' ? text.slice(0, 10) : parsed.toISOString();
   }
-  const match = text.match(/^(today|tomorrow)(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  const match = text.match(/^(today|tomorrow|sunday|monday|tuesday|wednesday|thursday|friday|saturday)(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
   if (!match) return null;
   const nowParts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(new Date());
-  const part = (type: Intl.DateTimeFormatPartTypes): number => Number(nowParts.find((item) => item.type === type)?.value);
-  const day = new Date(Date.UTC(part('year'), part('month') - 1, part('day') + (match[1].toLowerCase() === 'tomorrow' ? 1 : 0)));
+  const part = (type: Intl.DateTimeFormatPartTypes): string => nowParts.find((item) => item.type === type)?.value ?? '';
+  const year = Number(part('year'));
+  const month = Number(part('month'));
+  const dateOfMonth = Number(part('day'));
+  const phrase = match[1].toLowerCase();
+  let dayOffset = phrase === 'tomorrow' ? 1 : 0;
+  const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const requestedWeekday = weekdays.indexOf(phrase);
+  if (requestedWeekday >= 0) {
+    const today = new Date(Date.UTC(year, month - 1, dateOfMonth));
+    dayOffset = (requestedWeekday - today.getUTCDay() + 7) % 7;
+    const requestedHour = Number(match[2]) % 12 + (match[4].toLowerCase() === 'pm' ? 12 : 0);
+    const requestedMinute = Number(match[3] ?? '00');
+    if (dayOffset === 0 && (requestedHour < Number(part('hour'))
+      || (requestedHour === Number(part('hour')) && requestedMinute <= Number(part('minute'))))) dayOffset = 7;
+  }
+  const day = new Date(Date.UTC(year, month - 1, dateOfMonth + dayOffset));
   let hour = Number(match[2]) % 12;
   if (match[4].toLowerCase() === 'pm') hour += 12;
   const date = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, '0')}-${String(day.getUTCDate()).padStart(2, '0')}`;
@@ -443,14 +458,24 @@ async function syncSarvamFeedbackToRecord(input: {
   }
 
   const marker = `[AI call ${input.attemptId}]`;
+  const feedback = Object.entries(input.variables)
+    .filter(([key]) => !['crm_context', 'crm_module', 'crm_record_id'].includes(key.toLowerCase()))
+    .map(([key, value]) => {
+      const valueText = typeof value === 'string' ? value.trim() : JSON.stringify(value);
+      return valueText ? `${key.replace(/_/g, ' ')}: ${valueText}` : null;
+    })
+    .filter((line): line is string => Boolean(line));
+  const commentBody = ['Sarvam AI call feedback', ...feedback].join('\n').slice(0, 10_000);
+  await db.query(
+    `INSERT INTO ipy_comment (record_id, user_id, body, source_external_id)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (source_external_id) DO NOTHING`,
+    [input.recordId, ctx.user.id, commentBody, `sarvam_ai_call:${input.attemptId}`],
+  );
+  await recordService.touchActivity(input.recordId);
+
   const existingNotes = typeof record.values.description === 'string' ? record.values.description.trim() : '';
   if (!existingNotes.includes(marker) && fields.has('description')) {
-    const feedback = Object.entries(input.variables)
-      .map(([key, value]) => {
-        const valueText = typeof value === 'string' ? value.trim() : JSON.stringify(value);
-        return valueText ? `${key}: ${valueText}` : null;
-      })
-      .filter((line): line is string => Boolean(line));
     patch.description = [existingNotes, marker, ...feedback].filter(Boolean).join('\n');
   }
 
