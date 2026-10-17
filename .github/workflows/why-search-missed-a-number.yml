@@ -1,0 +1,77 @@
+# Why did searching a phone number answer "Not shared with you"?
+#
+# 17 October 2026, the owner, signed in as an administrator, searched a mobile
+# number and got a locked row instead of the contact. Read-only: counts, flags
+# and lengths only. It never prints a name, an email or a number — the number
+# searched is passed in, matched, and not echoed back.
+#
+# Run by hand: Actions -> Why search missed a number -> Run workflow.
+name: Why search missed a number
+
+on:
+  workflow_dispatch:
+    inputs:
+      number:
+        description: 'The 10-digit mobile that was searched'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+      NUMBER: ${{ inputs.number }}
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: The records that hold this number, and why the search could not see them
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          # The number goes into the SQL text, so nothing but digits may get in.
+          [[ "$NUMBER" =~ ^[0-9]{8,15}$ ]] || { echo "number must be digits only"; exit 1; }
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT m.name AS module,
+                   r.is_deleted,
+                   r.archived_at IS NOT NULL                          AS archived,
+                   r.lost_archive_due_at IS NOT NULL                  AS archive_pending,
+                   r.owner_id IS NOT NULL                             AS has_owner,
+                   length(r.search_text)                              AS search_text_length,
+                   r.search_text ILIKE '%$NUMBER%'                    AS number_in_search_text,
+                   r.updated_at::date                                 AS last_touched
+              FROM ipy_record r JOIN ipy_module m ON m.id = r.module_id
+             WHERE r.id IN (
+                 SELECT record_id FROM ipy_e_leads e
+                  WHERE right(regexp_replace(coalesce(to_jsonb(e)->>'mobile',''), '\D','','g'), 10) = right('$NUMBER', 10)
+                 UNION
+                 SELECT record_id FROM ipy_e_properties e
+                  WHERE right(regexp_replace(coalesce(to_jsonb(e)->>'mobile',''), '\D','','g'), 10) = right('$NUMBER', 10))
+             ORDER BY r.updated_at DESC LIMIT 10;"
+
+      - name: How many contacts with a mobile cannot be found by it
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            WITH x AS (
+              SELECT 'leads' AS module, r.archived_at, r.search_text,
+                     right(regexp_replace(coalesce(to_jsonb(e)->>'mobile',''), '\D','','g'), 10) AS d
+                FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id WHERE NOT r.is_deleted
+              UNION ALL
+              SELECT 'properties', r.archived_at, r.search_text,
+                     right(regexp_replace(coalesce(to_jsonb(e)->>'mobile',''), '\D','','g'), 10)
+                FROM ipy_e_properties e JOIN ipy_record r ON r.id = e.record_id WHERE NOT r.is_deleted)
+            SELECT module,
+                   count(*) FILTER (WHERE length(d) = 10)                                         AS with_a_mobile,
+                   count(*) FILTER (WHERE length(d) = 10 AND archived_at IS NULL
+                                      AND search_text NOT ILIKE '%' || d || '%')                  AS live_but_unsearchable,
+                   count(*) FILTER (WHERE length(d) = 10 AND archived_at IS NOT NULL)             AS archived_with_a_mobile,
+                   count(*) FILTER (WHERE length(search_text) >= 3990)                            AS search_text_cut_off
+              FROM x GROUP BY module ORDER BY module;"
