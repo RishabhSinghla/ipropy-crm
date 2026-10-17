@@ -79,3 +79,13 @@ jobs:
               AND i.received_at >= ('$SINCE'::timestamp AT TIME ZONE 'Asia/Kolkata')
               AND i.raw_payload->>'form_id' = '2000497250884273'
             GROUP BY 1,2,3,4,5 ORDER BY 6 DESC;"
+
+      - name: The dropdowns a timeline or purpose answer has to match
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT f.name AS field, f.config->>'picklist' AS dropdown, f.is_active,
+                   (SELECT string_agg(v.value, ' | ' ORDER BY v.sequence)
+                      FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                     WHERE p.name = f.config->>'picklist' AND v.is_active) AS options
+              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+             WHERE m.name = 'leads' AND f.name IN ('possession_timeline','purpose','budget','preferred_locations','configuration');"
