@@ -1044,6 +1044,15 @@ adminRouter.get('/integrations', asyncHandler(async (req, res) => {
   res.json(await listIntegrations());
 }));
 
+adminRouter.get('/integrations/sarvam_voice/context-hook', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const { readSarvamSettings, sarvamWebhookUrl } = await import('../../integrations/voiceagent/sarvam.js');
+  const read = readSarvamSettings();
+  if ('missing' in read) throw new BadRequestError(read.missing);
+  const baseUrl = config.appUrl.split(',')[0]!.trim();
+  res.json({ url: `${sarvamWebhookUrl(baseUrl, read.settings.webhookSecret)}/context` });
+}));
+
 /** Live provider catalogue for the model pickers; secrets never leave here. */
 adminRouter.get('/integrations/:provider/models', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');

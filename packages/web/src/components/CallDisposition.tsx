@@ -207,7 +207,7 @@ export function CallDispositionProvider({
   const startSarvamCall = async (number: string, onRecordId?: string, onModule?: string): Promise<void> => {
     if (placingRef.current) return;
     if (live) {
-      toast.info('Finish the current call first', 'Save its outcome before starting a Sarvam AI call.');
+      toast.info('Finish the current call first', 'Save its outcome before starting an AI call.');
       return;
     }
     if (!userId) {
@@ -217,15 +217,15 @@ export function CallDispositionProvider({
     const callOn = onRecordId || recordId;
     const callModule = onModule || module;
     if (!callOn || !callModule) {
-      toast.error('Could not place the call', 'Open a CRM record before calling with Sarvam.');
+      toast.error('Could not place the call', 'Open a CRM record before starting an AI call.');
       return;
     }
     placingRef.current = true;
     try {
       const result = await api.sarvamCall({ to: number, recordId: callOn, module: callModule });
-      toast.success('Sarvam is calling the customer', `Call attempt ${result.attemptId} is linked to this record.`);
+      toast.success('AI is calling the customer', `Call attempt ${result.attemptId} is linked to this record.`);
     } catch (err) {
-      toast.error('Could not start the Sarvam call', (err as Error).message);
+      toast.error('Could not start the AI call', (err as Error).message);
     } finally {
       placingRef.current = false;
     }
@@ -295,8 +295,8 @@ export function CallButton({ to, iconOnly = false, round = false, plain = false,
           className={plain ? 'inline-flex items-center justify-center p-1 text-violet-600 hover:text-violet-800 dark:text-violet-300' : round
             ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-600 hover:text-white dark:border-violet-900 dark:bg-violet-950 dark:text-violet-200'
             : cn('btn-secondary btn-sm text-violet-700 dark:text-violet-300', iconOnly && 'h-9 w-9 justify-center px-0')}
-          title={`Have Sarvam AI call ${to}`}
-          aria-label={`Have Sarvam AI call ${to}`}
+          title={`AI call ${to}`}
+          aria-label={`AI call ${to}`}
           disabled={aiPending}
           onClick={() => {
             setAiPending(true);

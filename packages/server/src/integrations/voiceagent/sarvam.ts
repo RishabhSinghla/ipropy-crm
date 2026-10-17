@@ -56,7 +56,7 @@ export function readSarvamSettings(): { settings: SarvamSettings } | { missing: 
       agentsByModule[moduleName] = {
         label: typeof agent.label === 'string' ? agent.label : undefined,
         appId: typeof agent.appId === 'string' ? agent.appId.trim() : '',
-        appVersion: Number(agent.appVersion) > 0 ? Number(agent.appVersion) : 1,
+        appVersion: Number.isInteger(Number(agent.appVersion)) && Number(agent.appVersion) > 0 ? Number(agent.appVersion) : 1,
         connectionId: typeof agent.connectionId === 'string' && agent.connectionId.trim() ? agent.connectionId.trim() : undefined,
         agentPhoneNumber: typeof agent.agentPhoneNumber === 'string' && agent.agentPhoneNumber.trim() ? agent.agentPhoneNumber.trim() : undefined,
       };
@@ -71,7 +71,7 @@ export function readSarvamSettings(): { settings: SarvamSettings } | { missing: 
       orgId: config.orgId!.trim(),
       workspaceId: config.workspaceId!.trim(),
       appId: config.appId?.trim() ?? '',
-      appVersion: Number(config.appVersion) > 0 ? Number(config.appVersion) : 1,
+      appVersion: Number.isInteger(Number(config.appVersion)) && Number(config.appVersion) > 0 ? Number(config.appVersion) : 1,
       connectionId: config.connectionId?.trim() ?? '',
       agentPhoneNumber: config.agentPhoneNumber?.trim() ?? '',
       agentsByModule,
@@ -111,6 +111,64 @@ export async function testSarvamConnection(): Promise<{ ok: boolean; message: st
 /** The address Sarvam posts the finished call to. */
 export function sarvamWebhookUrl(publicBaseUrl: string, webhookSecret: string): string {
   return `${publicBaseUrl.replace(/\/+$/, '')}/api/webhooks/sarvam/${encodeURIComponent(webhookSecret)}`;
+}
+
+/**
+ * Resolve the CRM record for a just-started outbound call. Sarvam calls this
+ * from an agent on-start HTTP tool with the destination phone number. The
+ * pending call row is the link between that number and the exact CRM record
+ * the rep selected, so duplicate phone numbers in different modules are not
+ * guessed across the database.
+ */
+export async function sarvamCallContext(phoneNumber: string, appId?: string, appVersion?: number): Promise<Record<string, unknown> | null> {
+  const digits = phoneNumber.replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return null;
+
+  const pending = await db.query<{ record_id: string; record_module: string }>(
+    `SELECT record_id, record_module
+       FROM ipy_call
+      WHERE provider = $1
+        AND direction = 'outbound'
+        AND status = 'queued'
+        AND record_id IS NOT NULL
+        AND record_module IS NOT NULL
+        AND created_at > now() - interval '10 minutes'
+        AND right(regexp_replace(to_number, '\\D', '', 'g'), 10) = $2
+      ORDER BY created_at DESC
+      LIMIT 20`,
+    [SARVAM_PROVIDER, digits],
+  );
+  const read = readSarvamSettings();
+  if ('missing' in read) return null;
+  const matchingCalls = pending.rows.filter((candidate) => {
+    const mapped = read.settings.agentsByModule[candidate.record_module];
+    if (appId && (mapped?.appId?.trim() || read.settings.appId) !== appId) return false;
+    if (appVersion && (mapped?.appVersion ?? read.settings.appVersion) !== appVersion) return false;
+    return true;
+  });
+  // A phone can be shared by several CRM records. Never guess which record
+  // the agent should receive when more than one matching call is in flight.
+  const candidateRecords = new Set(matchingCalls.map((candidate) => `${candidate.record_module}:${candidate.record_id}`));
+  if (candidateRecords.size > 1) return null;
+  const call = matchingCalls[0];
+  if (!call) return null;
+
+  const [{ recordService }, { systemContext }] = await Promise.all([
+    import('../../core/entity/recordService.js'),
+    import('../../core/workflow/tasks.js'),
+  ]);
+  const record = await recordService.getRecord(
+    await systemContext(null), call.record_module, call.record_id, { withDisplay: false },
+  );
+  const values = record.values ?? {};
+  const userName = String(values.full_name ?? values.name ?? record.label ?? '').trim();
+  return {
+    user_name: userName,
+    crm_context: JSON.stringify({ module: call.record_module, recordId: call.record_id, fields: values }),
+    crm_module: call.record_module,
+    crm_record_id: call.record_id,
+    lead_phone: phoneNumber,
+  };
 }
 
 /** Constant-time, so the secret cannot be guessed one character at a time. */
@@ -193,6 +251,7 @@ export interface SarvamResult {
   durationSeconds: number;
   failureReason: string | null;
   transcript: string | null;
+  finalAgentVariables: Record<string, unknown> | null;
 }
 
 const STATUSES = new Set(['connected', 'no_answer', 'busy', 'failed']);
@@ -209,13 +268,137 @@ export function parseSarvamResult(body: unknown): SarvamResult | null {
     if (typeof turn.en_text !== 'string') return [];
     return [`${turn.role === 'agent' ? 'AI agent' : 'Customer'}: ${turn.en_text}`];
   });
+  const finalVariables = b.final_agent_variables;
   return {
     attemptId: b.attempt_id,
     status: b.status as SarvamResult['status'],
     durationSeconds: typeof b.duration === 'number' ? Math.round(b.duration) : 0,
     failureReason: typeof b.failure_reason === 'string' ? b.failure_reason : null,
     transcript: lines.length ? lines.join('\n') : null,
+    finalAgentVariables: finalVariables && typeof finalVariables === 'object' && !Array.isArray(finalVariables)
+      ? finalVariables as Record<string, unknown>
+      : null,
   };
+}
+
+function plainObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function normalizedOption(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function scalar(value: unknown): string | number | boolean | null {
+  if (typeof value === 'string') return value.trim() || null;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  return null;
+}
+
+/**
+ * Save every extracted value in the record's notes and requirement JSON, then
+ * copy values into compatible CRM fields when the module has one. Unknown
+ * values stay visible in the feedback block instead of being discarded.
+ */
+async function syncSarvamFeedbackToRecord(input: {
+  recordId: string;
+  moduleName: string;
+  attemptId: string;
+  variables: Record<string, unknown>;
+}): Promise<void> {
+  const [{ recordService }, { systemContext }, { registry }, { parseBudget }] = await Promise.all([
+    import('../../core/entity/recordService.js'),
+    import('../../core/workflow/tasks.js'),
+    import('../../core/metadata/registry.js'),
+    import('../leadsources/parseBudget.js'),
+  ]);
+  const ctx = await systemContext(null);
+  const module = await registry.requireModule(input.moduleName);
+  const record = await recordService.getRecord(ctx, module.name, input.recordId, { withDisplay: false });
+  const fields = new Map(module.fields.filter((field) => field.isActive).map((field) => [field.name, field]));
+  const patch: Record<string, unknown> = {};
+
+  const aliases: Record<string, string> = {
+    budget_range: 'budget',
+    bhk_preference: 'configuration',
+    preferred_area: 'preferred_locations',
+    purchase_timeline: 'possession_timeline',
+    purchase_intent: 'purpose',
+  };
+  for (const [key, raw] of Object.entries(input.variables)) {
+    const sourceValues = Array.isArray(raw)
+      ? raw.map(scalar).filter((value): value is string | number | boolean => value !== null)
+      : [];
+    const candidate = scalar(raw) ?? (sourceValues.length ? sourceValues.join(', ') : null);
+    if (candidate === null) continue;
+    const fieldName = aliases[key] ?? key;
+    const field = fields.get(fieldName);
+    if (!field || field.isReadonly || field.displayType === 'readonly' || fieldName === 'description' || fieldName === 'requirement') continue;
+
+    if (field.uitype === 'picklist' || field.uitype === 'multipicklist') {
+      const picklistValues = sourceValues.length ? sourceValues : [candidate];
+      const matched = picklistValues.flatMap((value) => {
+        const needle = normalizedOption(String(value));
+        const option = field.options?.find((entry) => normalizedOption(entry.value) === needle || normalizedOption(entry.label) === needle);
+        return option ? [option.value] : [];
+      });
+      if (!matched.length) continue;
+      patch[fieldName] = field.uitype === 'multipicklist' ? matched : matched[0];
+      continue;
+    }
+
+    if (field.uitype === 'boolean') {
+      const value = typeof raw === 'boolean' ? raw : /^(true|yes|1)$/i.test(String(raw));
+      // A model saying false must not erase an existing do-not-call choice.
+      if (fieldName === 'do_not_call' && !value) continue;
+      patch[fieldName] = value;
+      continue;
+    }
+
+    if (fieldName === 'budget' && typeof candidate === 'string') {
+      const amount = parseBudget(candidate);
+      if (amount !== undefined) patch[fieldName] = amount;
+      continue;
+    }
+
+    if (field.uitype === 'integer' || field.uitype === 'decimal' || field.uitype === 'currency') {
+      const amount = typeof candidate === 'number' ? candidate : Number(String(candidate).replace(/[^\d.-]/g, ''));
+      if (Number.isFinite(amount)) patch[fieldName] = amount;
+      continue;
+    }
+
+    if (field.uitype === 'textarea' || field.uitype === 'string' || field.uitype === 'phone' || field.uitype === 'richtext') {
+      patch[fieldName] = candidate;
+    }
+  }
+
+  const existingRequirement = plainObject(record.values.requirement) ?? {};
+  if (fields.has('requirement')) {
+    patch.requirement = {
+      ...existingRequirement,
+      sarvam_ai_call: {
+        attempt_id: input.attemptId,
+        captured_at: new Date().toISOString(),
+        variables: input.variables,
+      },
+    };
+  }
+
+  const marker = `[AI call ${input.attemptId}]`;
+  const existingNotes = typeof record.values.description === 'string' ? record.values.description.trim() : '';
+  if (!existingNotes.includes(marker) && fields.has('description')) {
+    const feedback = Object.entries(input.variables)
+      .map(([key, value]) => {
+        const valueText = typeof value === 'string' ? value.trim() : JSON.stringify(value);
+        return valueText ? `${key}: ${valueText}` : null;
+      })
+      .filter((line): line is string => Boolean(line));
+    patch.description = [existingNotes, marker, ...feedback].filter(Boolean).join('\n');
+  }
+
+  if (Object.keys(patch).length) {
+    await recordService.updateRecord(ctx, module.name, input.recordId, patch, { skipWorkflow: true });
+  }
 }
 
 /** Writes a finished call onto the row placeAgentCall made. */
@@ -231,5 +414,24 @@ export async function recordSarvamResult(result: SarvamResult): Promise<boolean>
     [result.attemptId, callStatus, result.durationSeconds, result.transcript,
       result.failureReason, SARVAM_PROVIDER],
   );
-  return (row.rowCount ?? 0) > 0;
+  if (!(row.rowCount ?? 0)) return false;
+
+  const linked = await db.queryOne<{ record_id: string | null; record_module: string | null }>(
+    `SELECT record_id, record_module FROM ipy_call
+      WHERE provider = $1 AND provider_call_id = $2`,
+    [SARVAM_PROVIDER, result.attemptId],
+  );
+  if (linked?.record_id && linked.record_module && result.finalAgentVariables) {
+    try {
+      await syncSarvamFeedbackToRecord({
+        recordId: linked.record_id,
+        moduleName: linked.record_module,
+        attemptId: result.attemptId,
+        variables: result.finalAgentVariables,
+      });
+    } catch (err) {
+      logger.error({ attemptId: result.attemptId, err }, 'sarvam call feedback could not be synced to its CRM record');
+    }
+  }
+  return true;
 }

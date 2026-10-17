@@ -1216,6 +1216,7 @@ export const api = {
   sarvamCallStatus: (attemptId: string) =>
     get<{ status: string }>(`/api/telephony/sarvam/${encodeURIComponent(attemptId)}`),
   sarvamTestCall: (phone: string) => post<{ ok: true; attemptId: string }>('/api/admin/integrations/sarvam_voice/test-call', { phone }),
+  sarvamContextHook: () => get<{ url: string }>('/api/admin/integrations/sarvam_voice/context-hook'),
   syncFacebookLeads: () => post<{ pageName: string; forms: { formName: string; fetched: number; created: number; duplicate: number; failed: number; errors: string[]; campaigns: string[] }[]; owners: { owner: string; count: number }[] }>('/api/admin/integrations/facebook_leads/sync', {}),
   facebookHealth: () => get<{
     last_checked_at: string | null; last_reconciled_at: string | null;

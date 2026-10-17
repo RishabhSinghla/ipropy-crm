@@ -25,10 +25,37 @@ import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
 import { notifyMany } from '../../core/notifications/index.js';
 import {
-  parseSarvamResult, readSarvamSettings, recordSarvamResult, secretMatches,
+  parseSarvamResult, readSarvamSettings, recordSarvamResult, sarvamCallContext, secretMatches,
 } from '../../integrations/voiceagent/sarvam.js';
 
 export const webhooksRouter = Router();
+
+// Sarvam Voice Agents: load the record selected in the CRM before the agent
+// speaks. Configure the agent's on-start HTTP tool to POST its destination
+// phone number and app_id here; the response maps `user_name` and `crm_context`
+// into the agent's input variables.
+webhooksRouter.post('/sarvam/:secret/context', asyncHandler(async (req, res) => {
+  const read = readSarvamSettings();
+  if ('missing' in read || !secretMatches(req.params.secret, read.settings.webhookSecret)) {
+    res.sendStatus(404);
+    return;
+  }
+  const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
+  const phone = [body.user_phone_number, body.phone_number, body.phone, body.user_identifier, body.lead_phone]
+    .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  if (!phone) {
+    res.status(400).json({ error: 'Sarvam must include the outbound user phone number.' });
+    return;
+  }
+  const appId = typeof body.app_id === 'string' ? body.app_id : undefined;
+  const appVersion = Number.isInteger(Number(body.app_version)) ? Number(body.app_version) : undefined;
+  const context = await sarvamCallContext(phone, appId, appVersion);
+  if (!context) {
+    res.status(404).json({ error: 'No matching pending CRM call was found.' });
+    return;
+  }
+  res.json(context);
+}));
 
 // Sarvam Voice Agents: one POST per finished AI call. Sarvam signs nothing, so
 // the secret in the address is the lock (see integrations/voiceagent/sarvam.ts).
