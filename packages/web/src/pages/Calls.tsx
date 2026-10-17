@@ -35,6 +35,14 @@ const ANSWERED = [
   { key: 'no', label: 'Not answered' },
 ] as const;
 
+const SOURCES = [
+  { key: '', label: 'Every source' },
+  { key: 'sarvam', label: 'Sarvam AI' },
+  { key: 'device', label: 'Android phone' },
+  { key: 'manual', label: 'Manual log' },
+  { key: 'api', label: 'API' },
+] as const;
+
 /** A date as YYYY-MM-DD on this computer's own calendar, not UTC's. */
 function localDay(date: Date): string {
   const pad = (n: number): string => String(n).padStart(2, '0');
@@ -101,6 +109,8 @@ interface CallRow {
   from_number: string;
   to_number: string;
   duration_seconds: number;
+  status: string;
+  provider: string;
   disposition: string | null;
   notes: string | null;
   recording_url: string | null;
@@ -118,6 +128,7 @@ export default function Calls(): JSX.Element {
   const dispositions = useCallDispositionOptions();
   const [direction, setDirection] = useState('');
   const [answered, setAnswered] = useState('');
+  const [source, setSource] = useState('');
   const [disposition, setDisposition] = useState('');
   const [range, setRange] = useState('');
   // Whose calls: '' is everybody the viewer may see.
@@ -130,15 +141,21 @@ export default function Calls(): JSX.Element {
   const filters = useMemo(() => ({
     ...(direction ? { direction } : {}),
     ...(answered ? { answered } : {}),
+    ...(source ? { source } : {}),
     ...(disposition ? { disposition } : {}),
     ...rangeDates(range),
     ...(agent ? { userId: agent } : {}),
-  }), [direction, answered, disposition, range, agent]);
+  }), [direction, answered, source, disposition, range, agent]);
   const params = useMemo(() => ({ limit: 100, ...filters }), [filters]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['calls', params],
     queryFn: () => api.callsWithTotal(params),
+    refetchInterval: (query) => {
+      const rows = query.state.data?.calls as unknown as CallRow[] | undefined;
+      return rows?.some((call) => call.provider === 'sarvam_voice'
+        && ['queued', 'ringing', 'in_progress'].includes(call.status)) ? 4000 : false;
+    },
   });
   /*
     Each chart leaves its own filter out, so choosing "Outgoing" does not turn
@@ -182,6 +199,7 @@ export default function Calls(): JSX.Element {
       <div className="card flex flex-wrap items-end gap-2 p-3">
         <Picker label="Direction" value={direction} onChange={setDirection} options={DIRECTIONS} />
         <Picker label="Picked up" value={answered} onChange={setAnswered} options={ANSWERED} />
+        <Picker label="Source" value={source} onChange={setSource} options={SOURCES} />
         <label>
           <span className="label">Outcome</span>
           <select className="input w-auto" value={disposition} onChange={(e) => setDisposition(e.target.value)}>
@@ -266,6 +284,25 @@ export default function Calls(): JSX.Element {
                   {call.disposition ? ` · ${call.disposition}` : ''}
                   {call.notes ? ` · ${call.notes}` : ''}
                 </p>
+                {call.provider === 'sarvam_voice' && (
+                  <span
+                    className={cn(
+                      'mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      ['queued', 'ringing', 'in_progress'].includes(call.status)
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
+                        : call.status === 'completed'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+                    )}
+                    title={['queued', 'ringing', 'in_progress'].includes(call.status)
+                      ? 'Sarvam accepted the request. The CRM receives the final outcome after Sarvam ends the call.'
+                      : `Sarvam reported: ${call.status.replace(/_/g, ' ')}`}
+                  >
+                    {call.status === 'queued' ? 'Waiting for Sarvam result'
+                      : call.status === 'completed' ? 'Completed'
+                        : call.status.replace(/_/g, ' ')}
+                  </span>
+                )}
               </div>
 
               {call.agent_name && (

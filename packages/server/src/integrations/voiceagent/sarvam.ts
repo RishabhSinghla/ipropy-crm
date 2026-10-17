@@ -16,9 +16,12 @@ import crypto from 'node:crypto';
 import { db } from '../../db/pool.js';
 import { getIntegrationConfig, getIntegrationCredentials } from '../../core/settings/integrations.js';
 import { logger } from '../../utils/logger.js';
+import { activeValues } from '../../core/metadata/picklists.js';
 
 export const SARVAM_PROVIDER = 'sarvam_voice';
 const SARVAM_HOST = 'https://apps.sarvam.ai';
+const SARVAM_ACTOR_ID = '00000000-0000-0000-0000-000000000001';
+const SARVAM_ACTOR_EMAIL = 'sarvam-ai@ipropy.local';
 
 export interface SarvamSettings {
   apiKey: string;
@@ -174,8 +177,10 @@ export async function sarvamCallContext(phoneNumber: string, appId?: string, app
   );
   const values = record.values ?? {};
   const userName = String(values.full_name ?? values.name ?? record.label ?? '').trim();
+  const firstName = sarvamFirstName(userName);
   return {
     user_name: userName,
+    first_name: firstName,
     crm_context: JSON.stringify({ module: call.record_module, recordId: call.record_id, fields: values }),
     crm_module: call.record_module,
     crm_record_id: call.record_id,
@@ -307,6 +312,61 @@ function scalar(value: unknown): string | number | boolean | null {
   return null;
 }
 
+/** Match AI wording to the CRM's current editable disposition options. */
+export function sarvamDispositionValue(raw: unknown, options: string[]): string | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const normalized = normalizedOption(raw);
+  const aliases: Record<string, string> = {
+    noanswer: 'notreachable',
+    notpicked: 'notreachable',
+    notpickedup: 'notreachable',
+    callback: 'callbacklater',
+    callmeback: 'callbacklater',
+    visitfixed: 'sitevisitscheduled',
+    purchasedelsewhere: 'alreadypurchased',
+  };
+  const wanted = aliases[normalized] ?? normalized;
+  return options.find((option) => normalizedOption(option) === wanted) ?? null;
+}
+
+/** An inactive CRM service identity for AI-authored updates and notes. */
+async function sarvamSystemContext() {
+  const { systemContext } = await import('../../core/workflow/tasks.js');
+  const ctx = await systemContext(null);
+  await db.query(
+    `INSERT INTO ipy_user (id, email, first_name, last_name, is_admin, is_active, accepts_leads, password_hash)
+     VALUES ($1, $2, 'Sarvam', 'AI', false, false, false, NULL)
+     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, first_name = EXCLUDED.first_name,
+       last_name = EXCLUDED.last_name, is_admin = false, is_active = false, accepts_leads = false,
+       password_hash = NULL, updated_at = now()`,
+    [SARVAM_ACTOR_ID, SARVAM_ACTOR_EMAIL],
+  );
+  ctx.user = {
+    ...ctx.user,
+    id: SARVAM_ACTOR_ID,
+    email: SARVAM_ACTOR_EMAIL,
+    firstName: 'Sarvam',
+    lastName: 'AI',
+    fullName: 'Sarvam AI',
+    isAdmin: false,
+    isActive: false,
+  };
+  ctx.source = 'sarvam_ai';
+  return ctx;
+}
+
+function fieldOption(field: { options?: { value: string; label?: string }[] }, raw: unknown): string | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const needle = normalizedOption(raw);
+  return field.options?.find((option) => normalizedOption(option.value) === needle
+    || normalizedOption(option.label ?? '') === needle
+    || (needle === 'lost' && normalizedOption(option.value).includes('lost')))?.value ?? null;
+}
+
+export function sarvamFirstName(fullName: unknown): string {
+  return typeof fullName === 'string' ? fullName.trim().split(/\s+/).filter(Boolean)[0] ?? '' : '';
+}
+
 /** Convert clear English visit slots to a CRM date in the business timezone. */
 export function sarvamVisitSlotValue(raw: string, uitype: string): string | null {
   const text = raw.trim();
@@ -353,18 +413,25 @@ async function syncSarvamFeedbackToRecord(input: {
   moduleName: string;
   attemptId: string;
   variables: Record<string, unknown>;
+  callStatus: SarvamResult['status'];
 }): Promise<void> {
-  const [{ recordService }, { systemContext }, { registry }, { parseBudget }] = await Promise.all([
+  const [{ recordService }, { registry }, { parseBudget }] = await Promise.all([
     import('../../core/entity/recordService.js'),
-    import('../../core/workflow/tasks.js'),
     import('../../core/metadata/registry.js'),
     import('../leadsources/parseBudget.js'),
   ]);
-  const ctx = await systemContext(null);
+  const ctx = await sarvamSystemContext();
   const module = await registry.requireModule(input.moduleName);
   const record = await recordService.getRecord(ctx, module.name, input.recordId, { withDisplay: false });
   const fields = new Map(module.fields.filter((field) => field.isActive).map((field) => [field.name, field]));
   const patch: Record<string, unknown> = {};
+  const visitSlot = scalar(input.variables.site_visit_slot);
+  let confirmedVisitAt: string | null = null;
+  const followUpSlot = scalar(input.variables.follow_up_at
+    ?? input.variables.callback_at ?? input.variables.next_follow_up_at
+    ?? input.variables.next_followup_at ?? input.variables.follow_up_datetime);
+  let confirmedFollowUpAt: string | null = null;
+  if (typeof followUpSlot === 'string') confirmedFollowUpAt = sarvamVisitSlotValue(followUpSlot, 'datetime');
 
   const aliases: Record<string, string> = {
     user_name: 'full_name',
@@ -384,6 +451,8 @@ async function syncSarvamFeedbackToRecord(input: {
     ? configuredFieldMap.settings.agentsByModule[input.moduleName]?.fieldMap ?? {}
     : {};
   for (const [key, raw] of Object.entries(input.variables)) {
+    if (['call_disposition', 'disposition', 'lead_status', 'crm_status', 'lost_reason',
+      'follow_up_at', 'callback_at', 'next_follow_up_at', 'next_followup_at', 'follow_up_datetime'].includes(key.toLowerCase())) continue;
     const sourceValues = Array.isArray(raw)
       ? raw.map(scalar).filter((value): value is string | number | boolean => value !== null)
       : [];
@@ -430,7 +499,10 @@ async function syncSarvamFeedbackToRecord(input: {
     if ((fieldName === 'visit_planned_date' || key === 'site_visit_slot')
       && (field.uitype === 'date' || field.uitype === 'datetime') && typeof candidate === 'string') {
       const value = sarvamVisitSlotValue(candidate, field.uitype);
-      if (value) patch[fieldName] = value;
+      if (value) {
+        patch[fieldName] = value;
+        confirmedVisitAt = value;
+      }
       continue;
     }
 
@@ -443,6 +515,47 @@ async function syncSarvamFeedbackToRecord(input: {
     if (field.uitype === 'textarea' || field.uitype === 'string' || field.uitype === 'phone' || field.uitype === 'richtext') {
       patch[fieldName] = candidate;
     }
+  }
+
+  // Status, disposition and loss reason are separate facts. Only update a
+  // stage from a dedicated Sarvam output variable; never infer Lost from a
+  // conversational phrase without a valid reason in this module's dropdown.
+  const statusField = module.fields.find((field) => field.isActive
+    && (field.columnName === 'status' || field.name === 'status'));
+  const lossField = module.fields.find((field) => field.isActive
+    && field.displayType !== 'hidden'
+    && (field.config?.picklist === 'lost_reason' || field.name === 'lost_reason'));
+  const requestedStatus = scalar(input.variables.lead_status ?? input.variables.crm_status);
+  const requestedLostReason = scalar(input.variables.lost_reason);
+  const matchedStatus = statusField ? fieldOption(statusField, requestedStatus) : null;
+  const matchedLostReason = lossField ? fieldOption(lossField, requestedLostReason) : null;
+  const isLostRequest = typeof matchedStatus === 'string' && /\blost\b/i.test(matchedStatus);
+  const recordAlreadyLost = statusField && /\blost\b/i.test(String(record.values[statusField.name] ?? ''));
+  if (statusField && ((matchedStatus && isLostRequest) || recordAlreadyLost) && matchedLostReason) {
+    patch[lossField!.name] = matchedLostReason;
+    if (matchedStatus && isLostRequest) patch[statusField.name] = matchedStatus;
+  } else if (statusField && matchedStatus && isLostRequest) {
+    const existingReason = typeof record.values[lossField?.name ?? ''] === 'string'
+      ? String(record.values[lossField?.name ?? '']).trim() : '';
+    if (lossField && (matchedLostReason || fieldOption(lossField, existingReason))) {
+      patch[lossField.name] = matchedLostReason ?? fieldOption(lossField, existingReason);
+      patch[statusField.name] = matchedStatus;
+    }
+  } else if (statusField && matchedStatus) {
+    patch[statusField.name] = matchedStatus;
+  } else if (statusField && input.moduleName === 'leads'
+    && input.callStatus === 'connected'
+    && ['new', 'attemptedcontact'].includes(normalizedOption(String(record.values[statusField.name] ?? '')))) {
+    // A real conversation moves a brand-new lead to Contacted, but never
+    // downgrades a qualified or later-stage lead.
+    const contacted = fieldOption(statusField, 'Contacted');
+    if (contacted) patch[statusField.name] = contacted;
+  }
+  if (!matchedStatus && requestedStatus) {
+    logger.warn({ recordId: input.recordId, requestedStatus }, 'Sarvam returned a lead status missing from this CRM module');
+  }
+  if ((isLostRequest || recordAlreadyLost) && !matchedLostReason && !fieldOption(lossField ?? {}, typeof record.values[lossField?.name ?? ''] === 'string' ? record.values[lossField?.name ?? ''] : '')) {
+    logger.warn({ recordId: input.recordId }, 'Sarvam marked a record lost without a valid CRM lost reason; status was left unchanged');
   }
 
   const existingRequirement = plainObject(record.values.requirement) ?? {};
@@ -482,6 +595,35 @@ async function syncSarvamFeedbackToRecord(input: {
   if (Object.keys(patch).length) {
     await recordService.updateRecord(ctx, module.name, input.recordId, patch, { skipWorkflow: true });
   }
+  if (confirmedVisitAt && visitSlot) {
+    const visitDate = new Date(confirmedVisitAt);
+    if (Number.isFinite(visitDate.getTime())) {
+      const { scheduleFollowUp } = await import('../../core/workflow/followUp.js');
+      await scheduleFollowUp({
+        recordId: input.recordId,
+        module: module.name,
+        on: visitDate,
+        reason: 'Site visit confirmed by Sarvam AI',
+        notes: typeof visitSlot === 'string' ? visitSlot : null,
+        ownerId: record.ownerId ?? null,
+        authorId: ctx.user.id,
+      });
+    }
+  } else if (confirmedFollowUpAt && followUpSlot) {
+    const followUpDate = new Date(confirmedFollowUpAt);
+    if (Number.isFinite(followUpDate.getTime())) {
+      const { scheduleFollowUp } = await import('../../core/workflow/followUp.js');
+      await scheduleFollowUp({
+        recordId: input.recordId,
+        module: module.name,
+        on: followUpDate,
+        reason: 'Call-back scheduled by Sarvam AI',
+        notes: typeof followUpSlot === 'string' ? followUpSlot : null,
+        ownerId: record.ownerId ?? null,
+        authorId: ctx.user.id,
+      });
+    }
+  }
 }
 
 /** Writes a finished call onto the row placeAgentCall made. */
@@ -489,13 +631,21 @@ export async function recordSarvamResult(result: SarvamResult): Promise<boolean>
   // Sarvam calls an answered conversation `connected`; the CRM's call deck uses
   // `completed` for that terminal state.
   const callStatus = result.status === 'connected' ? 'completed' : result.status;
+  const dispositionOptions = await activeValues('call_disposition');
+  const suppliedDisposition = result.finalAgentVariables?.call_disposition
+    ?? result.finalAgentVariables?.disposition;
+  const disposition = sarvamDispositionValue(suppliedDisposition, dispositionOptions)
+    ?? (result.status === 'busy' ? sarvamDispositionValue('Busy', dispositionOptions)
+      : result.status === 'no_answer' ? sarvamDispositionValue('Not Reachable', dispositionOptions) : null);
   const row = await db.query(
     `UPDATE ipy_call
         SET status = $2, duration_seconds = $3, transcript = $4,
-            notes = COALESCE($5, notes), ended_at = now()
-      WHERE provider = $6 AND provider_call_id = $1`,
+            notes = COALESCE($5, notes), ended_at = now(),
+            disposition = COALESCE($7, disposition),
+            disposition_at = CASE WHEN $7 IS NULL THEN disposition_at ELSE now() END
+      WHERE provider = $6 AND provider_call_id = $1 AND status = 'queued'`,
     [result.attemptId, callStatus, result.durationSeconds, result.transcript,
-      result.failureReason, SARVAM_PROVIDER],
+      result.failureReason, SARVAM_PROVIDER, disposition],
   );
   if (!(row.rowCount ?? 0)) return false;
 
@@ -511,9 +661,18 @@ export async function recordSarvamResult(result: SarvamResult): Promise<boolean>
         moduleName: linked.record_module,
         attemptId: result.attemptId,
         variables: result.finalAgentVariables,
+        callStatus: result.status,
       });
     } catch (err) {
       logger.error({ attemptId: result.attemptId, err }, 'sarvam call feedback could not be synced to its CRM record');
+      // Let Sarvam retry the callback; the feedback comment itself is
+      // idempotent by attempt ID, so an already-written note is not duplicated.
+      await db.query(
+        `UPDATE ipy_call SET status = 'queued', ended_at = NULL
+          WHERE provider = $1 AND provider_call_id = $2`,
+        [SARVAM_PROVIDER, result.attemptId],
+      );
+      throw err;
     }
   }
   return true;

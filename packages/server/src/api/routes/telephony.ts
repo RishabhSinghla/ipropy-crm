@@ -194,7 +194,7 @@ const callFilterSchema = z.object({
   recordId: z.string().uuid().optional(),
   userId: z.string().uuid().optional(),
   direction: z.enum(['inbound', 'outbound', 'missed', 'rejected', 'blocked', 'unknown']).optional(),
-  source: z.enum(['api', 'device', 'manual']).optional(),
+  source: z.enum(['api', 'device', 'manual', 'sarvam']).optional(),
   hasRecording: z.coerce.boolean().optional(),
   disposition: z.string().max(60).optional(),
   /*
@@ -249,7 +249,7 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
   params.push(limit, offset);
 
   const rows = await db.query(
-    `SELECT c.id, c.direction, c.from_number, c.to_number, c.status, c.duration_seconds,
+    `SELECT c.id, c.direction, c.from_number, c.to_number, c.status, c.provider, c.duration_seconds,
             c.recording_url, c.disposition, c.notes, c.intent, c.ai_summary, c.ai_sentiment,
             c.ai_next_actions, c.ai_objections, c.ai_score, c.ai_talk_ratio,
             c.started_at, c.ended_at, c.source, c.device_id, c.user_id,
