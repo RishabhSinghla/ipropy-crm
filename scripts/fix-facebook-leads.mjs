@@ -66,17 +66,24 @@ const lostStages = (stageField.options ?? [])
 console.log(`stages that count as Lost:   ${lostStages.join(', ') || '(none found)'}`);
 if (!lostStages.length) throw new Error('could not tell which stage is Lost; refusing to guess');
 
-const disqualified = await db.query(
+// Only a contact Facebook itself created (inbox status "processed") can have been
+// born Disqualified by the bug. A lead merged into a contact that already existed
+// ("duplicate") never went through that default, so its reason is somebody's
+// history and is left alone.
+const bornDisqualified = (status) => db.query(
   `SELECT DISTINCT r.id
      FROM ipy_lead_inbox i
      JOIN ipy_record r ON r.id = i.record_id AND NOT r.is_deleted
      JOIN ipy_e_leads l ON l.record_id = r.id
-    WHERE i.source = 'facebook'
+    WHERE i.source = 'facebook' AND i.status = $4
       AND coalesce(to_jsonb(l)->>$1, l.custom_fields->>$1) = 'Disqualified'
       AND coalesce(to_jsonb(l)->>$2, l.custom_fields->>$2, '') <> ALL($3::text[])`,
-  [reasonField.name, stageField.name, lostStages],
+  [reasonField.name, stageField.name, lostStages, status],
 );
-console.log(`"Disqualified" but not Lost: ${disqualified.rows.length} Facebook contacts`);
+const disqualified = await bornDisqualified('processed');
+const leftAlone = await bornDisqualified('duplicate');
+console.log(`"Disqualified" but not Lost: ${disqualified.rows.length} contacts Facebook created`);
+console.log(`left alone:                  ${leftAlone.rows.length} older contacts a lead was merged into`);
 
 // ---------------------------------------------------------------------------
 // 2. The new form's answers
