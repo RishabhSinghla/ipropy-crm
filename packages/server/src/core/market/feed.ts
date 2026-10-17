@@ -16,7 +16,7 @@ import { dealerDirectory, saveDealersAsAssociates } from './dealers.js';
 import { label as placeLabel } from './crossMatch.js';
 
 /** Bump when `readPost` or the listing splitter learns something new; every stored post is then read again, once. */
-export const READ_VERSION = 3;
+export const READ_VERSION = 4;
 
 /** The business's own locality names, from the `locality` dropdown an admin edits. */
 export async function knownLocalities(): Promise<string[]> {

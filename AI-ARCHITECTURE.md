@@ -294,7 +294,7 @@ Associates.** Migration `206`.
   same type 0.2, size within ±10% (at least 15 yd) 0.25, budget 0.1 (15% grace), plus recency. Different areas,
   different type (plot / home / commercial), a different BHK or an over-budget ask is **no match,
   not a low one**. Default is only people in *different groups* — two dealers in one group can
-  already see each other. The same requirement or ad reposted is one introduction. Pairings are **never stored**, worked out fresh, so a better rule
+  already see each other. The same requirement or ad reposted is one introduction. A locality is found only as a whole word (`namesWord`): as bare text, "NIT" matched inside "unit", "Nitesh" and "community" and put the NIT area on about 1,500 listings, Greenfield flats included. Pairings are **never stored**, worked out fresh, so a better rule
   improves the whole feed; only what a person did is (`ipy_market_deal`: called, meeting, won,
   lost, not for us). **Refresh** on that tab (`POST /api/market/refresh`) starts the background
   read and Jev's pair checks now rather than at the next 15-minute visit; The card's main number is **Jev's agreement** (the rules' score saturates at 100%), and the list is ordered by it. **Sure-shot** shows only

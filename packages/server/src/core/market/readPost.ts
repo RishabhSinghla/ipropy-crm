@@ -241,8 +241,18 @@ export function localitiesOf(body: string, known: string[]): string[] {
     const word = name.trim().toLowerCase();
     // "Greenfields Colony" should match a post saying "greenfield".
     const stem = word.replace(/\s+(colony|sector|city|enclave|extension|nagar)$/i, '').replace(/s$/, '');
-    return word.length > 2 && (lower.includes(word) || (stem.length > 3 && lower.includes(stem)));
+    return word.length > 2 && (namesWord(lower, word) || (stem.length > 3 && namesWord(lower, stem)));
   });
+}
+
+/**
+ * Whole words only. A name found inside another word sent the NIT area of Faridabad onto every
+ * post that said "single unit", "Nitesh" or "community": 1,183 listings carried it as their only
+ * place, and Greenfield flats were paired with NIT ones. A plural ("greenfields") still counts.
+ */
+function namesWord(lowerBody: string, lowerName: string): boolean {
+  const escaped = lowerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}s?(?![\\p{L}\\p{N}])`, 'u').test(lowerBody);
 }
 
 /** Names that say nothing about where: everything here is in Faridabad. Matching on them paired strangers. */

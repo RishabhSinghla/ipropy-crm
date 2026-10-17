@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fingerprintOf, looksLikeADeal, parseWhatsAppExport, readPost } from '../src/core/market/readPost.js';
+import { fingerprintOf, localitiesOf, looksLikeADeal, parseWhatsAppExport, readPost } from '../src/core/market/readPost.js';
 
 describe('reading a WhatsApp group export', () => {
   it('reads the Android shape, joining a long post that spans lines', () => {
@@ -21,6 +21,22 @@ describe('reading a WhatsApp group export', () => {
     const messages = parseWhatsAppExport('[12/10/25, 4:05:30 PM] Sita Realty: Need 2 BHK under 80 lac');
     expect(messages[0]!.sender).toBe('Sita Realty');
     expect(messages[0]!.postedAt?.toISOString()).toBe('2025-10-12T10:35:00.000Z');
+  });
+});
+
+describe('naming a locality', () => {
+  const known = ['NIT', 'Greenfields Colony', 'Sector 21'];
+
+  it('finds NIT only as a word, never inside "unit", "Nitesh" or "community"', () => {
+    expect(localitiesOf('3 BHK single unit, double unit, Nitesh 98100 12345, nice community', known)).toEqual([]);
+    expect(localitiesOf('Plot in NIT 1 for sale', known)).toEqual(['NIT']);
+    expect(localitiesOf('flat in nit.', known)).toEqual(['NIT']);
+  });
+
+  it('still reads greenfield, greenfields and the full name', () => {
+    expect(localitiesOf('3 bhk greenfield', known)).toEqual(['Greenfields Colony']);
+    expect(localitiesOf('Greenfields, B block', known)).toEqual(['Greenfields Colony']);
+    expect(localitiesOf('Greenfields Colony', known)).toEqual(['Greenfields Colony']);
   });
 });
 
