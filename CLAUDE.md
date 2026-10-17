@@ -291,6 +291,10 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   `possession_timeline`, `preferred_locations`, `configuration`, `purpose`,
   `interested_project`), so renaming one of those needs `COMMON_QUESTIONS` told.
   `.github/workflows/facebook-form-questions.yml` lists the questions each form sends.
+  `.github/workflows/fix-facebook-leads.yml` (look first, `apply` to write) repaired the
+  leads that arrived before it: it files a form's answers into **empty** fields only and
+  clears a "Disqualified" reason from Facebook contacts that are not Lost — through the
+  CRM's own save code, so each change is audited.
 * **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
   published); the property somebody wants to send is usually this morning's draft. Every share-link
   failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come

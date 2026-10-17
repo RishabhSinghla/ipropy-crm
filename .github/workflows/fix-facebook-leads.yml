@@ -1,0 +1,65 @@
+# Repair Facebook leads that were written wrongly before 16 October 2026.
+#
+# The owner, 16 October 2026: "fix the 3 new form leads and the 18
+# disqualified". Two repairs, both through the CRM's own save code
+# (scripts/fix-facebook-leads.mjs), so each change is audited like any edit:
+#
+#   * a Facebook contact born "Disqualified" while its stage is not Lost
+#     has the reason cleared — a Lost record is never touched;
+#   * the new form's budget and timeline are filed into EMPTY fields only.
+#
+# THIS ONE WRITES. Looking is the default and always runs first; writing needs
+# the word `apply` typed in. The log carries counts and field values such as a
+# budget band, never a name, a number or a record id.
+name: Fix Facebook leads
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type apply to write. Anything else only shows what would change."
+        default: "look"
+      form:
+        description: "The Facebook form whose answers to file (blank = the new form)."
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Only has to satisfy the startup check that refuses to boot with a short
+      # one; nothing here signs anybody in.
+      JWT_SECRET: fix-facebook-leads-secret-long-enough-to-pass-the-startup-checks
+      FORM: ${{ inputs.form }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The server's own compiled code, not a copy of it.
+      - name: Build the server
+        run: npm run build:deps && npm run build -w @ipropy/server
+
+      # Always, whatever the input says: reading what would change, immediately
+      # above the thing that changes it, is what makes the log worth keeping.
+      - name: What would change
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -n "$FORM" ]; then node scripts/fix-facebook-leads.mjs --form "$FORM"; else node scripts/fix-facebook-leads.mjs; fi
+
+      - name: Make the changes
+        if: ${{ inputs.apply == 'apply' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -n "$FORM" ]; then node scripts/fix-facebook-leads.mjs --apply --form "$FORM"; else node scripts/fix-facebook-leads.mjs --apply; fi
