@@ -29,7 +29,14 @@ export interface SarvamSettings {
   connectionId: string;
   agentPhoneNumber: string;
   webhookSecret: string;
-  agentsByModule: Record<string, { label?: string; appId: string; appVersion: number; connectionId?: string; agentPhoneNumber?: string }>;
+  agentsByModule: Record<string, {
+    label?: string;
+    appId: string;
+    appVersion: number;
+    connectionId?: string;
+    agentPhoneNumber?: string;
+    fieldMap?: Record<string, string>;
+  }>;
 }
 
 /** The card's values, or the name of the first one still missing. */
@@ -59,6 +66,11 @@ export function readSarvamSettings(): { settings: SarvamSettings } | { missing: 
         appVersion: Number.isInteger(Number(agent.appVersion)) && Number(agent.appVersion) > 0 ? Number(agent.appVersion) : 1,
         connectionId: typeof agent.connectionId === 'string' && agent.connectionId.trim() ? agent.connectionId.trim() : undefined,
         agentPhoneNumber: typeof agent.agentPhoneNumber === 'string' && agent.agentPhoneNumber.trim() ? agent.agentPhoneNumber.trim() : undefined,
+        fieldMap: agent.fieldMap && typeof agent.fieldMap === 'object' && !Array.isArray(agent.fieldMap)
+          ? Object.fromEntries(Object.entries(agent.fieldMap as Record<string, unknown>)
+            .filter(([source, target]) => source.trim() && typeof target === 'string' && target.trim())
+            .map(([source, target]) => [source.trim(), (target as string).trim()]))
+          : undefined,
       };
     }
   } catch {
@@ -295,6 +307,27 @@ function scalar(value: unknown): string | number | boolean | null {
   return null;
 }
 
+/** Convert clear English visit slots to a CRM date in the business timezone. */
+export function sarvamVisitSlotValue(raw: string, uitype: string): string | null {
+  const text = raw.trim();
+  const parsed = new Date(text);
+  if (/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text) && Number.isFinite(parsed.getTime())) {
+    return uitype === 'date' ? text.slice(0, 10) : parsed.toISOString();
+  }
+  const match = text.match(/^(today|tomorrow)(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (!match) return null;
+  const nowParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes): number => Number(nowParts.find((item) => item.type === type)?.value);
+  const day = new Date(Date.UTC(part('year'), part('month') - 1, part('day') + (match[1].toLowerCase() === 'tomorrow' ? 1 : 0)));
+  let hour = Number(match[2]) % 12;
+  if (match[4].toLowerCase() === 'pm') hour += 12;
+  const date = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, '0')}-${String(day.getUTCDate()).padStart(2, '0')}`;
+  const time = `${String(hour).padStart(2, '0')}:${match[3] ?? '00'}:00`;
+  return uitype === 'date' ? date : `${date}T${time}+05:30`;
+}
+
 /**
  * Save every extracted value in the record's notes and requirement JSON, then
  * copy values into compatible CRM fields when the module has one. Unknown
@@ -319,26 +352,44 @@ async function syncSarvamFeedbackToRecord(input: {
   const patch: Record<string, unknown> = {};
 
   const aliases: Record<string, string> = {
+    user_name: 'full_name',
+    lead_name: 'full_name',
+    call_summary: 'description',
     budget_range: 'budget',
     bhk_preference: 'configuration',
     preferred_area: 'preferred_locations',
+    floor_preference: 'floor',
+    demand_unit: 'price_unit',
     purchase_timeline: 'possession_timeline',
     purchase_intent: 'purpose',
+    site_visit_slot: 'visit_planned_date',
   };
+  const configuredFieldMap = readSarvamSettings();
+  const moduleFieldMap = !('missing' in configuredFieldMap)
+    ? configuredFieldMap.settings.agentsByModule[input.moduleName]?.fieldMap ?? {}
+    : {};
   for (const [key, raw] of Object.entries(input.variables)) {
     const sourceValues = Array.isArray(raw)
       ? raw.map(scalar).filter((value): value is string | number | boolean => value !== null)
       : [];
     const candidate = scalar(raw) ?? (sourceValues.length ? sourceValues.join(', ') : null);
     if (candidate === null) continue;
-    const fieldName = aliases[key] ?? key;
+    const fieldName = moduleFieldMap[key] ?? aliases[key] ?? key;
     const field = fields.get(fieldName);
     if (!field || field.isReadonly || field.displayType === 'readonly' || fieldName === 'description' || fieldName === 'requirement') continue;
 
     if (field.uitype === 'picklist' || field.uitype === 'multipicklist') {
       const picklistValues = sourceValues.length ? sourceValues : [candidate];
       const matched = picklistValues.flatMap((value) => {
-        const needle = normalizedOption(String(value));
+        const original = String(value);
+        const normalized = normalizedOption(original);
+        const aliases: Record<string, string> = {
+          invest: 'investment',
+          'self use': 'buy',
+          'self-use': 'buy',
+          'home loan': 'home loan',
+        };
+        const needle = normalizedOption(aliases[original.trim().toLowerCase()] ?? original);
         const option = field.options?.find((entry) => normalizedOption(entry.value) === needle || normalizedOption(entry.label) === needle);
         return option ? [option.value] : [];
       });
@@ -358,6 +409,13 @@ async function syncSarvamFeedbackToRecord(input: {
     if (fieldName === 'budget' && typeof candidate === 'string') {
       const amount = parseBudget(candidate);
       if (amount !== undefined) patch[fieldName] = amount;
+      continue;
+    }
+
+    if ((fieldName === 'visit_planned_date' || key === 'site_visit_slot')
+      && (field.uitype === 'date' || field.uitype === 'datetime') && typeof candidate === 'string') {
+      const value = sarvamVisitSlotValue(candidate, field.uitype);
+      if (value) patch[fieldName] = value;
       continue;
     }
 

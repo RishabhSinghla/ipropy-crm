@@ -3,8 +3,8 @@
  * Sarvam signs nothing, so the secret in the URL is the only thing keeping a
  * stranger from writing fake calls into the timeline.
  */
-import { describe, expect, it } from 'vitest';
-import { parseSarvamResult, sarvamWebhookUrl, secretMatches } from '../src/integrations/voiceagent/sarvam.js';
+import { describe, expect, it, vi } from 'vitest';
+import { parseSarvamResult, sarvamVisitSlotValue, sarvamWebhookUrl, secretMatches } from '../src/integrations/voiceagent/sarvam.js';
 
 describe('Sarvam call result', () => {
   it('reads a connected call with its transcript', () => {
@@ -42,5 +42,20 @@ describe('Sarvam webhook address', () => {
     expect(secretMatches('abc', 'abc')).toBe(true);
     expect(secretMatches('abd', 'abc')).toBe(false);
     expect(secretMatches('ab', 'abc')).toBe(false);
+  });
+});
+
+describe('Sarvam visit slot mapping', () => {
+  it('converts an explicit tomorrow time to an India CRM datetime', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-17T12:00:00.000Z'));
+    expect(sarvamVisitSlotValue('Tomorrow at 7 PM', 'datetime')).toBe('2026-10-18T19:00:00+05:30');
+    expect(sarvamVisitSlotValue('Tomorrow at 7 PM', 'date')).toBe('2026-10-18');
+    vi.useRealTimers();
+  });
+
+  it('accepts explicit ISO values and leaves ambiguous phrases unmapped', () => {
+    expect(sarvamVisitSlotValue('2026-10-18T19:00:00+05:30', 'datetime')).toBe('2026-10-18T13:30:00.000Z');
+    expect(sarvamVisitSlotValue('in the evening', 'datetime')).toBeNull();
   });
 });

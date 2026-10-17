@@ -42,11 +42,12 @@ type SarvamAgentModule = {
   connectionId: string;
   agentPhoneNumber: string;
   agentUrl: string;
+  fieldMapText: string;
 };
 
 const DEFAULT_SARVAM_AGENTS: SarvamAgentModule[] = [
-  { module: 'leads', label: 'Buyer', appId: 'Conversatio-8f6aa4cd-427c', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: 'https://indus.sarvam.ai/samvaad/build/update-agent/Conversatio-8f6aa4cd-427c' },
-  { module: 'properties', label: 'Seller', appId: 'For-Seller-a03e2ca1-9f8c', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: 'https://indus.sarvam.ai/samvaad/build/update-agent/For-Seller-a03e2ca1-8f9c' },
+  { module: 'leads', label: 'Buyer', appId: 'Conversatio-8f6aa4cd-427c', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: 'https://indus.sarvam.ai/samvaad/build/update-agent/Conversatio-8f6aa4cd-427c', fieldMapText: '' },
+  { module: 'properties', label: 'Seller', appId: 'For-Seller-a03e2ca1-8f9c', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: 'https://indus.sarvam.ai/samvaad/build/update-agent/For-Seller-a03e2ca1-8f9c', fieldMapText: '' },
 ];
 
 function readSarvamAgentRows(config: Record<string, string>): SarvamAgentModule[] {
@@ -60,6 +61,9 @@ function readSarvamAgentRows(config: Record<string, string>): SarvamAgentModule[
       connectionId: typeof value.connectionId === 'string' ? value.connectionId : '',
       agentPhoneNumber: typeof value.agentPhoneNumber === 'string' ? value.agentPhoneNumber : '',
       agentUrl: typeof value.agentUrl === 'string' ? value.agentUrl : '',
+      fieldMapText: value.fieldMap && typeof value.fieldMap === 'object' && !Array.isArray(value.fieldMap)
+        ? JSON.stringify(value.fieldMap, null, 2)
+        : '',
     }));
     return rows.length ? rows : DEFAULT_SARVAM_AGENTS;
   } catch {
@@ -1234,7 +1238,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         else if (v) credentialsPatch[f.key] = v; // blank credential = leave unchanged
       }
       if (summary.provider === 'sarvam_voice') {
-        const mapping: Record<string, Omit<SarvamAgentModule, 'module'>> = {};
+        const mapping: Record<string, Omit<SarvamAgentModule, 'module' | 'fieldMapText'> & { fieldMap: Record<string, string> }> = {};
         for (const row of sarvamAgents) {
           const module = row.module.trim();
           if (!module) continue;
@@ -1244,6 +1248,21 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
             setSaving(false);
             return;
           }
+          let fieldMap: Record<string, string> = {};
+          if (row.fieldMapText.trim()) {
+            try {
+              const parsed = JSON.parse(row.fieldMapText) as unknown;
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+                || Object.entries(parsed).some(([source, target]) => !source.trim() || typeof target !== 'string' || !target.trim())) {
+                throw new Error('Use an object of Sarvam variable names to CRM field keys.');
+              }
+              fieldMap = parsed as Record<string, string>;
+            } catch (error) {
+              toast.error('Invalid Sarvam field mapping', `${row.label || module}: ${(error as Error).message}`);
+              setSaving(false);
+              return;
+            }
+          }
           mapping[module] = {
             label: row.label.trim() || module,
             appId: row.appId.trim(),
@@ -1251,6 +1270,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
             connectionId: row.connectionId.trim(),
             agentPhoneNumber: row.agentPhoneNumber.trim(),
             agentUrl: row.agentUrl.trim(),
+            fieldMap,
           };
         }
         configPatch.agentsByModule = JSON.stringify(mapping);
@@ -1450,7 +1470,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
             <button
               type="button"
               className="btn-secondary btn-sm shrink-0"
-              onClick={() => setSarvamAgents((rows) => [...rows, { module: '', label: '', appId: '', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: '' }])}
+              onClick={() => setSarvamAgents((rows) => [...rows, { module: '', label: '', appId: '', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: '', fieldMapText: '' }])}
             >Add module</button>
           </div>
           <div className="mt-3 space-y-3">
@@ -1501,6 +1521,16 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
                       placeholder="https://indus.sarvam.ai/..."
                       onChange={(event) => setSarvamAgents((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, agentUrl: event.target.value } : row))}
                     />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="label">Custom CRM field mapping (optional)</label>
+                    <textarea
+                      className="input min-h-20 font-mono text-xs"
+                      value={agent.fieldMapText}
+                      placeholder={'{\n  "site_visit_slot": "visit_planned_date",\n  "seller_price": "demand"\n}'}
+                      onChange={(event) => setSarvamAgents((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, fieldMapText: event.target.value } : row))}
+                    />
+                    <p className="mt-1 text-2xs text-muted">Map a Sarvam output variable name to a CRM field key. Leave blank to use the built-in Buyer / Seller mappings. Values are still checked against each CRM field’s type and picklist choices.</p>
                   </div>
                 </div>
               </div>
