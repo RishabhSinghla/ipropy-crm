@@ -226,6 +226,10 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   path now skips any field drawing on `lost_reason` (`isLostReasonField` in `@ipropy/shared`), the
   dropdown save refuses a default on it, and the editor hides the star. **Records already carrying it
   were not rewritten** — that is the owner's call, not a silent cleanup.
+  **17 October 2026:** the owner also did not want facts nobody gave on a new record, so the stars on
+  Facing, Category, Portion, Bedrooms, Locality and Possession were switched off in the database. Still
+  starred on purpose: the statuses, Contact Type = Buyer, Property Status, Floor Availability. Lead Source =
+  Facebook is starred too and is the same kind of claim; it is waiting on the owner's yes.
 * **A dropdown option is a string on every record that chose it, not a foreign key.** Renaming the
   *stored value* without rewriting those records orphans them: still stored, no longer offered,
   matched by no filter, invisible until somebody runs a report. `core/metadata/picklists.ts` is the
