@@ -1210,6 +1210,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [testPhone, setTestPhone] = useState('');
   const [callingTestPhone, setCallingTestPhone] = useState(false);
+  const [copyingSarvamContextUrl, setCopyingSarvamContextUrl] = useState(false);
   const hasModelFields = fields.some((field) => field.model);
   const modelCatalogue = useQuery({
     queryKey: ['integration-models', summary.provider],
@@ -1237,10 +1238,16 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         for (const row of sarvamAgents) {
           const module = row.module.trim();
           if (!module) continue;
+          const appVersion = Number(row.appVersion || '1');
+          if (!Number.isInteger(appVersion) || appVersion < 1) {
+            toast.error('Invalid Sarvam agent version', `${row.label || module}: enter a committed version number (1 or higher).`);
+            setSaving(false);
+            return;
+          }
           mapping[module] = {
             label: row.label.trim() || module,
             appId: row.appId.trim(),
-            appVersion: row.appVersion.trim() || '1',
+            appVersion: String(appVersion),
             connectionId: row.connectionId.trim(),
             agentPhoneNumber: row.agentPhoneNumber.trim(),
             agentUrl: row.agentUrl.trim(),
@@ -1296,6 +1303,19 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
       setTestResult({ ok: false, message: (err as Error).message });
     } finally {
       setCallingTestPhone(false);
+    }
+  };
+
+  const copySarvamContextUrl = async (): Promise<void> => {
+    setCopyingSarvamContextUrl(true);
+    try {
+      const { url } = await api.sarvamContextHook();
+      await copyText(url);
+      toast.success('CRM context URL copied', 'Paste it into each Sarvam agent’s on-start API hook.');
+    } catch (err) {
+      toast.error('Could not prepare the CRM context URL', (err as Error).message);
+    } finally {
+      setCopyingSarvamContextUrl(false);
     }
   };
 
@@ -1375,7 +1395,10 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
             <div key={f.key} className={fields.length === 1 ? 'sm:col-span-2' : ''}>
               <label className="label">{f.label}</label>
               <input
-                type={f.secret ? 'password' : 'text'}
+                type={f.secret ? 'password' : f.key === 'appVersion' ? 'number' : 'text'}
+                min={f.key === 'appVersion' ? 1 : undefined}
+                step={f.key === 'appVersion' ? 1 : undefined}
+                inputMode={f.key === 'appVersion' ? 'numeric' : undefined}
                 className="input"
                 list={f.model ? listId : undefined}
                 value={values[f.key] ?? ''}
@@ -1443,7 +1466,6 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
                     ['module', 'CRM module key', 'leads'],
                     ['label', 'Agent name', 'Buyer'],
                     ['appId', 'Sarvam app / agent ID', 'Copy the app ID from Sarvam'],
-                    ['appVersion', 'Version', '1'],
                     ['connectionId', 'Telephony connection ID', 'Use shared value above if blank'],
                     ['agentPhoneNumber', 'Agent phone number', 'Use shared value above if blank'],
                   ] as const).map(([key, label, placeholder]) => (
@@ -1457,6 +1479,20 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
                       />
                     </div>
                   ))}
+                  <div>
+                    <label className="label">Sarvam agent version</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min={1}
+                      step={1}
+                      inputMode="numeric"
+                      value={agent.appVersion}
+                      placeholder="1"
+                      onChange={(event) => setSarvamAgents((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, appVersion: event.target.value } : row))}
+                    />
+                    <p className="mt-1 text-2xs text-muted">Enter a committed version from this agent in Sarvam. Calls from this module use that exact version.</p>
+                  </div>
                   <div className="sm:col-span-3">
                     <label className="label">Sarvam agent page</label>
                     <input
@@ -1480,6 +1516,18 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         </div>
       )}
       {summary.provider === 'facebook_leads' && <FacebookLeadMaster />}
+      {summary.provider === 'sarvam_voice' && (
+        <div className="mx-4 mb-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs dark:border-slate-700 dark:bg-slate-800/30">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 font-medium">Connect CRM fields to the agent</p>
+            <button type="button" className="btn-secondary btn-sm" disabled={copyingSarvamContextUrl} onClick={() => void copySarvamContextUrl()}>
+              {copyingSarvamContextUrl ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
+              Copy CRM context URL
+            </button>
+          </div>
+          <p className="mt-1 text-muted">In each Sarvam agent, add an <strong>on-start</strong> API hook using this URL. Map <code>user_name</code>, <code>crm_context</code>, <code>crm_module</code>, <code>crm_record_id</code>, and <code>lead_phone</code> as input variables. The call’s captured output values return through the end callback and are written to the matching CRM record.</p>
+        </div>
+      )}
       {summary.provider === 'sarvam_voice' && (
         <div className="flex flex-wrap items-end gap-2 px-4 pb-3">
           <div className="min-w-56 flex-1">

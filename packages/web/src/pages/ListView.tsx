@@ -1819,7 +1819,7 @@ function SarvamBulkCallButton({
       setItems(queue);
       setMissing(skipped);
     } catch (error) {
-      toast.error('Could not prepare the Sarvam call batch', (error as Error).message);
+      toast.error('Could not prepare the AI call batch', (error as Error).message);
       setOpen(false);
     } finally {
       setLoading(false);
@@ -1851,7 +1851,7 @@ function SarvamBulkCallButton({
           failureCount += 1;
           setFailed(failureCount);
           stopRef.current = true;
-          toast.error('Sarvam status could not be confirmed', 'The queue stopped to avoid overlapping calls. Check the Calls page before restarting.');
+          toast.error('AI call status could not be confirmed', 'The queue stopped to avoid overlapping calls. Check the Calls page before restarting.');
         } else if (status !== 'completed') {
           failureCount += 1;
           setFailed(failureCount);
@@ -1859,7 +1859,7 @@ function SarvamBulkCallButton({
       } catch (error) {
         failureCount += 1;
         setFailed(failureCount);
-        console.warn('Sarvam call could not be queued for a CRM record', error);
+        console.warn('AI call could not be queued for a CRM record', error);
         // The request may have reached Sarvam even if its response was lost.
         // Stop rather than risk starting an overlapping call.
         stopRef.current = true;
@@ -1868,8 +1868,8 @@ function SarvamBulkCallButton({
     }
     setCalling(false);
     setFinished(true);
-    if (!failureCount && !stopRef.current) toast.success(`Sarvam batch completed · ${items.length}`);
-    else toast.info(stopRef.current ? 'Sarvam batch stopped' : 'Sarvam batch finished', `${attempted} attempted, ${failureCount} failed.`);
+    if (!failureCount && !stopRef.current) toast.success(`AI call batch completed · ${items.length}`);
+    else toast.info(stopRef.current ? 'AI call batch stopped' : 'AI call batch finished', `${attempted} attempted, ${failureCount} failed.`);
   };
 
   const openBatch = (): void => {
@@ -1880,12 +1880,12 @@ function SarvamBulkCallButton({
   return (
     <>
       <button type="button" className="btn-secondary btn-sm text-violet-700 dark:text-violet-300" onClick={openBatch}>
-        <Sparkles className="h-3.5 w-3.5" /> Sarvam AI call
+        <Sparkles className="h-3.5 w-3.5" /> AI call
       </button>
       <Modal
         open={open}
         onClose={() => { if (!calling && !loading) setOpen(false); }}
-        title={`Sarvam AI calls · batch ${batchNumber} of ${batchCount}`}
+        title={`AI calls · batch ${batchNumber} of ${batchCount}`}
         size="md"
         footer={(
           <>
