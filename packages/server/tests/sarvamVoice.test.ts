@@ -4,7 +4,10 @@
  * stranger from writing fake calls into the timeline.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { parseSarvamResult, sarvamVisitSlotValue, sarvamWebhookUrl, secretMatches } from '../src/integrations/voiceagent/sarvam.js';
+import {
+  parseSarvamResult, sarvamDispositionValue, sarvamFirstName,
+  sarvamVisitSlotValue, sarvamWebhookUrl, secretMatches,
+} from '../src/integrations/voiceagent/sarvam.js';
 
 describe('Sarvam call result', () => {
   it('reads a connected call with its transcript', () => {
@@ -65,5 +68,21 @@ describe('Sarvam visit slot mapping', () => {
   it('accepts explicit ISO values and leaves ambiguous phrases unmapped', () => {
     expect(sarvamVisitSlotValue('2026-10-18T19:00:00+05:30', 'datetime')).toBe('2026-10-18T13:30:00.000Z');
     expect(sarvamVisitSlotValue('in the evening', 'datetime')).toBeNull();
+  });
+});
+
+describe('Sarvam CRM identity and outcomes', () => {
+  it('derives a first-name greeting without changing the full CRM name', () => {
+    expect(sarvamFirstName('  Rishabh Singhla  ')).toBe('Rishabh');
+    expect(sarvamFirstName('')).toBe('');
+  });
+
+  it('maps call wording only to an option the CRM currently offers', () => {
+    const options = ['Interested', 'Not Interested', 'Call Back Later', 'Site Visit Scheduled', 'Already Purchased', 'Busy', 'Not Reachable'];
+    expect(sarvamDispositionValue('not interested', options)).toBe('Not Interested');
+    expect(sarvamDispositionValue('no answer', options)).toBe('Not Reachable');
+    expect(sarvamDispositionValue('call me back', options)).toBe('Call Back Later');
+    expect(sarvamDispositionValue('Already Purchased', options)).toBe('Already Purchased');
+    expect(sarvamDispositionValue('made up outcome', options)).toBeNull();
   });
 });
