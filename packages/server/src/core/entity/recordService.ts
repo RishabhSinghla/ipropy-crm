@@ -1967,7 +1967,11 @@ async function assignedNumberLookup(
          FROM ipy_record r
          JOIN ${quoteIdent(module.tableName)} e ON e.record_id = r.id
          LEFT JOIN ipy_user u ON u.id = r.owner_id
-        WHERE r.module_id = $1 AND r.is_deleted = false AND (${clauses.join(' OR ')})
+        WHERE r.module_id = $1 AND r.is_deleted = false
+          -- An archived (Lost) record has left search by the owner's own rule. Without
+          -- this line it came back here as a locked "not shared with you" row, even to
+          -- an administrator, for a contact the lists no longer show.
+          AND r.archived_at IS NULL AND (${clauses.join(' OR ')})
         ORDER BY r.updated_at DESC
         LIMIT 1`,
       params,

@@ -183,7 +183,10 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   **An archived record is hidden by `archived_at IS NULL`**, written into `prepareList`,
   group counts, `recordCounts`, dashboard widgets, global search and the public listings —
   so **any new query that lists or counts records must add the same clause**, or archived
-  records reappear there. `getRecord` deliberately does not filter: the Archive
+  records reappear there. (17 October 2026: the phone-number fallback in search,
+  `assignedNumberLookup`, was written before the archive and forgot it — an administrator
+  searching an archived contact's number was shown a locked "not shared with you" row.
+  `anArchivedNumberIsNotAStrangersRecord.test.ts` pins it.) `getRecord` deliberately does not filter: the Archive
   (`/archive/:module`, the last icon in the left toolbar) is **the module's own split view**
   — `ListView` with `archive`, so the same queue, record, timeline, details, calls and
   WhatsApp, showing archived records only (owner, 10 October 2026: *"treated archived
