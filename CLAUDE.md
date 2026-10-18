@@ -19,6 +19,7 @@ before you work in that area** — each carries traps that have already cost a d
 | Lists, the split view, tags | [`SCREENS.md`](SCREENS.md) |
 | A deploy, or something misbehaving on production | [`OPERATIONS.md`](OPERATIONS.md) |
 | Anything a person clicks, before calling it done | the `prove-it` skill |
+| A new feature built checks first (approve, lock, build) | the `build-feature` skill and `.claude/loop/program.md` |
 | The AI stack, before adding any framework | [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md) |
 | Full architecture, state and roadmap | [`PROJECT_HANDOVER.md`](PROJECT_HANDOVER.md) |
 | Production is on fire | [`RUNBOOK.md`](RUNBOOK.md) |

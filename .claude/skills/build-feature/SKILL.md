@@ -38,6 +38,8 @@ After the yes: `git mv` each draft folder to the sibling `locked/<feature>/` fol
 (same depth, so imports still work), then
 `git commit -m "Lock checks for <feature>"`. Note the commit hash — it is the lock commit.
 From here the `locked/` folders are refused to Edit and Write by `.claude/settings.json`.
+If the move itself is refused by that rule, ask Rishabh to allow that one `git mv` — never
+work around it by writing the files there another way.
 
 ## 4 · Build
 
