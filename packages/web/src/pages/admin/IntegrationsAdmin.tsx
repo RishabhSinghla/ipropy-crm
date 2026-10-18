@@ -1200,13 +1200,18 @@ function AttentionStrip({ items, onAction }: {
   );
 }
 
-function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element {
+export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element {
   const queryClient = useQueryClient();
   const fields = PROVIDER_FIELDS[summary.provider] ?? [];
   const hint = PROVIDER_HINTS[summary.provider];
   const [values, setValues] = useState<Record<string, string>>(
     Object.fromEntries(fields.map((f) => [f.key, f.source === 'config' ? (summary.config[f.key] ?? '') : ''])),
   );
+  const [sarvamPolicy, setSarvamPolicy] = useState<Record<string, string>>(() => Object.fromEntries(
+    ['batchSize', 'callStart', 'callEnd', 'callingHoursEnabled', 'inboundDeploymentId', 'inboundModule', 'syncInboundVersion']
+      .filter((key) => summary.config[key] !== undefined).map((key) => [key, summary.config[key]!]),
+  ));
+  const [sarvamResult, setSarvamResult] = useState('');
   const [sarvamAgents, setSarvamAgents] = useState<SarvamAgentModule[]>(() => readSarvamAgentRows(summary.config));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -1230,6 +1235,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
   const save = async (): Promise<void> => {
     setSaving(true);
     setTestResult(null);
+    setSarvamResult('');
     try {
       const configPatch: Record<string, string> = {};
       const credentialsPatch: Record<string, string> = {};
@@ -1239,6 +1245,11 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         else if (v) credentialsPatch[f.key] = v; // blank credential = leave unchanged
       }
       if (summary.provider === 'sarvam_voice') {
+        if (sarvamPolicy.syncInboundVersion === 'true' && !sarvamPolicy.inboundDeploymentId?.trim()) {
+          throw new Error('Add the existing inbound deployment ID from Sarvam.');
+        }
+        Object.assign(configPatch, sarvamPolicy);
+        if (configPatch.inboundDeploymentId) configPatch.inboundDeploymentId = configPatch.inboundDeploymentId.trim();
         const mapping: Record<string, Omit<SarvamAgentModule, 'module' | 'fieldMapText'> & { fieldMap: Record<string, string> }> = {};
         for (const row of sarvamAgents) {
           const module = row.module.trim();
@@ -1290,6 +1301,21 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         return next;
       });
       await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      if (summary.provider === 'sarvam_voice') {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['sarvam-policy'] }),
+          queryClient.invalidateQueries({ queryKey: ['sarvam-control'] }),
+        ]);
+        setSarvamResult('Calling rules saved.');
+        if (sarvamPolicy.syncInboundVersion === 'true') {
+          try {
+            const inbound = await api.syncSarvamInbound();
+            setSarvamResult(`Calling rules saved. Inbound deployment verified: v${inbound.version} · ${inbound.status}. Future CRM version changes sync automatically.`);
+          } catch (error) {
+            setSarvamResult(`Calling rules saved. Inbound sync needs attention: ${(error as Error).message}`);
+          }
+        }
+      }
       if (hasModelFields) {
         await queryClient.invalidateQueries({ queryKey: ['integration-models', summary.provider] });
       }
@@ -1461,7 +1487,8 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         })}
       </div>
 
-      {summary.provider === 'sarvam_voice' && <SarvamOperations config={summary.config} />}
+      {summary.provider === 'sarvam_voice' && <SarvamOperations config={sarvamPolicy} busy={saving} result={sarvamResult}
+        onChange={(next) => { setSarvamPolicy(next); setSarvamResult(''); }} onSave={() => void save()} />}
       {summary.provider === 'sarvam_voice' && (
         <div className="mx-4 mb-4 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
           <div className="mb-1 flex items-center justify-between gap-3">
