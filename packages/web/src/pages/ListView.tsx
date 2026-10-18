@@ -1769,12 +1769,8 @@ function SarvamBulkCallButton({
   const [items, setItems] = useState<SarvamQueueItem[]>([]);
   const [missing, setMissing] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [progress, setProgress] = useState(0);
   const [calling, setCalling] = useState(false);
   const [finished, setFinished] = useState(false);
-  const [failed, setFailed] = useState(0);
-  const stopRef = useRef(false);
-  useEffect(() => () => { stopRef.current = true; }, []);
   const phoneFields = useMemo(() => [...fieldMap.values()].filter((field) => field.isActive && field.uitype === 'phone'), [fieldMap]);
   const phoneNames = useMemo(() => {
     const preferred = ['mobile', 'mobile_phone', 'phone', 'phone_number', 'primary_phone'];
@@ -1793,8 +1789,6 @@ function SarvamBulkCallButton({
     setOffset(nextOffset);
     setItems([]);
     setMissing(0);
-    setFailed(0);
-    setProgress(0);
     setFinished(false);
     try {
       let records: RecordEnvelope[];
@@ -1828,59 +1822,32 @@ function SarvamBulkCallButton({
 
   const start = async (): Promise<void> => {
     if (!items.length || calling) return;
-    stopRef.current = false;
     setCalling(true);
-    setProgress(0);
-    setFailed(0);
-    let failureCount = 0;
-    let attempted = 0;
-    for (let index = 0; index < items.length; index += 1) {
-      if (stopRef.current) break;
-      const item = items[index]!;
-      attempted += 1;
-      try {
-        const { attemptId } = await api.sarvamCall({ to: item.number, recordId: item.id, module });
-        const terminal = new Set(['completed', 'busy', 'no_answer', 'failed', 'canceled']);
-        const deadline = Date.now() + 10 * 60 * 1000;
-        let status = 'queued';
-        while (!terminal.has(status) && Date.now() < deadline) {
-          await new Promise((resolve) => window.setTimeout(resolve, 4000));
-          status = (await api.sarvamCallStatus(attemptId)).status;
-        }
-        if (!terminal.has(status)) {
-          failureCount += 1;
-          setFailed(failureCount);
-          stopRef.current = true;
-          toast.error('AI call status could not be confirmed', 'The queue stopped to avoid overlapping calls. Check the Calls page before restarting.');
-        } else if (status !== 'completed') {
-          failureCount += 1;
-          setFailed(failureCount);
-        }
-      } catch (error) {
-        failureCount += 1;
-        setFailed(failureCount);
-        console.warn('AI call could not be queued for a CRM record', error);
-        // The request may have reached Sarvam even if its response was lost.
-        // Stop rather than risk starting an overlapping call.
-        stopRef.current = true;
-      }
-      setProgress(index + 1);
+    try {
+      const queue = await api.createSarvamQueue(module, items.map((item) => item.id));
+      // Explicit confirmation above authorizes starting exactly this previewed batch.
+      await api.sarvamQueueAction(queue.id, 'resume');
+      setOpen(false);
+      window.dispatchEvent(new CustomEvent('sarvam-control-open', { detail: queue.id }));
+      setFinished(true);
+      toast.success(`AI call queue started · ${queue.count} contacts`);
+    } catch (error) {
+      toast.error('Could not start the saved AI queue', (error as Error).message);
+      window.dispatchEvent(new Event('sarvam-control-open'));
+    } finally {
+      setCalling(false);
     }
-    setCalling(false);
-    setFinished(true);
-    if (!failureCount && !stopRef.current) toast.success(`AI call batch completed · ${items.length}`);
-    else toast.info(stopRef.current ? 'AI call batch stopped' : 'AI call batch finished', `${attempted} attempted, ${failureCount} failed.`);
   };
 
   const openBatch = (): void => {
     setOpen(true);
-    void loadBatch(0);
+    void loadBatch(finished && offset + SARVAM_BATCH_SIZE < total ? offset + SARVAM_BATCH_SIZE : 0);
   };
 
   return (
     <>
       <button type="button" className="btn-secondary btn-sm text-violet-700 dark:text-violet-300" onClick={openBatch}>
-        <Sparkles className="h-3.5 w-3.5" /> AI call
+        <Sparkles className="h-3.5 w-3.5" /> {finished && offset + SARVAM_BATCH_SIZE < total ? 'AI call · next batch' : 'AI call'}
       </button>
       <Modal
         open={open}
@@ -1891,7 +1858,7 @@ function SarvamBulkCallButton({
           <>
             <button className="btn-secondary" disabled={calling || loading} onClick={() => setOpen(false)}>Close</button>
             {calling ? (
-              <button className="btn-danger" onClick={() => { stopRef.current = true; }}>Stop after current call</button>
+              <button className="btn-secondary" disabled>Saving queue…</button>
             ) : finished && offset + SARVAM_BATCH_SIZE < total ? (
               <button className="btn-secondary" disabled={loading} onClick={() => void loadBatch(offset + SARVAM_BATCH_SIZE)}>Load next batch</button>
             ) : !finished && (
@@ -1916,8 +1883,8 @@ function SarvamBulkCallButton({
                 {items.map((item) => <div key={item.id} className="truncate text-xs text-slate-600 dark:text-slate-300">{item.label} · •••• {item.number.slice(-4)}</div>)}
                 {!items.length && <p className="p-2 text-sm text-slate-500">No callable contacts in this batch.</p>}
               </div>
-              {calling && <p className="text-sm font-medium text-violet-700">{progress < items.length ? `Calling ${items[progress]?.label ?? 'contact'} · ` : ''}Completed ${progress} of ${items.length}{failed ? ` · ${failed} unsuccessful` : ''}</p>}
-              {finished && <p className="text-sm">Batch finished: {progress} submitted, {failed} failed.</p>}
+              {calling && <p className="text-sm text-violet-700">Saving your queue…</p>}
+              {finished && <p className="text-sm">Queue saved. Use AI calls to view progress and stop further calls.</p>}
             </>
           )}
         </div>

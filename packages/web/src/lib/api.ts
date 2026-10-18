@@ -1213,6 +1213,10 @@ export const api = {
   testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),
   sarvamCall: (data: { to: string; recordId: string; module: string }) =>
     post<{ ok: true; attemptId: string }>('/api/telephony/sarvam', data),
+  sarvamControl: () => get<SarvamControl>('/api/telephony/sarvam-control'),
+  createSarvamQueue: (module: string, ids: string[]) => post<{ id: string; count: number }>('/api/telephony/sarvam-queues', { module, ids }),
+  sarvamQueueAction: (id: string, action: 'pause' | 'resume' | 'retry') => post<{ ok: true }>(`/api/telephony/sarvam-queues/${id}/${action}`, {}),
+  resolveSarvamItem: (id: string) => post<{ ok: true }>(`/api/telephony/sarvam-queue-items/${id}/resolve`, { confirmedEnded: true }),
   sarvamCallStatus: (attemptId: string) =>
     get<{ status: string }>(`/api/telephony/sarvam/${encodeURIComponent(attemptId)}`),
   sarvamTestCall: (phone: string) => post<{ ok: true; attemptId: string }>('/api/admin/integrations/sarvam_voice/test-call', { phone }),
@@ -1779,4 +1783,11 @@ export interface LiveCallState {
   updatedSecondsAgo: number | null;
   canControlCall: boolean;
   canEndCall: boolean;
+}
+
+export interface SarvamControl {
+  totals: { attempted: number; completed: number; unsuccessful: number; awaiting_result: number; today: number };
+  batches: { id: string; module: string; user_id: string; status: string; message: string | null; created_at: string }[];
+  items: { id: string; batch_id: string; record_id: string; label: string; phone: string; status: string; attempt_id: string | null; error: string | null; updated_at: string }[];
+  calls: { id: string; record_id: string | null; record_module: string | null; label: string | null; phone: string; status: string; started_at: string; duration_seconds: number; notes: string | null }[];
 }

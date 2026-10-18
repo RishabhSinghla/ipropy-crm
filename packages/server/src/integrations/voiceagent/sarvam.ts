@@ -1,3 +1,4 @@
+import { isOptedOut } from '../../core/consent/index.js';
 /**
  * Sarvam Voice Agents — the AI that rings a customer and talks to them.
  *
@@ -205,10 +206,11 @@ export async function placeAgentCall(input: {
   recordId?: string | null;
   recordModule?: string | null;
   userId?: string | null;
-}): Promise<{ ok: true; attemptId: string } | { ok: false; message: string }> {
+}): Promise<{ ok: true; attemptId: string } | { ok: false; message: string; uncertain?: boolean }> {
   const read = readSarvamSettings();
   if ('missing' in read) return { ok: false, message: read.missing };
   const { settings } = read;
+  if (await isOptedOut(input.toNumber, 'call')) return { ok: false, message: 'This number has requested no further calls.' };
   const mapped = input.recordModule ? settings.agentsByModule[input.recordModule] : undefined;
   if (input.recordModule && Object.keys(settings.agentsByModule).length && !mapped) {
     return { ok: false, message: `No Sarvam agent is configured for the ${input.recordModule} module. Add one under Admin → Integrations → Sarvam.` };
@@ -242,15 +244,15 @@ export async function placeAgentCall(input: {
       signal: AbortSignal.timeout(20_000),
     });
   } catch (err) {
-    return { ok: false, message: `Could not reach Sarvam: ${err instanceof Error ? err.message : String(err)}` };
+    return { ok: false, uncertain: true, message: `Could not reach Sarvam: ${err instanceof Error ? err.message : String(err)}` };
   }
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 300);
     logger.warn({ status: res.status, detail }, 'sarvam refused an outbound call');
-    return { ok: false, message: `Sarvam refused the call (${res.status}): ${detail}` };
+    return { ok: false, uncertain: res.status >= 500, message: `Sarvam refused the call (${res.status}): ${detail}` };
   }
   const answer = await res.json() as { attempt_id?: string };
-  if (!answer.attempt_id) return { ok: false, message: 'Sarvam accepted the call but returned no attempt id.' };
+  if (!answer.attempt_id) return { ok: false, uncertain: true, message: 'Sarvam accepted the call but returned no attempt id.' };
 
   await db.query(
     `INSERT INTO ipy_call (direction, from_number, to_number, status, provider, provider_call_id,
