@@ -1,8 +1,8 @@
 import { type JSX, useEffect, useState } from 'react';
 import { byLabel } from '../../lib/fields';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link2, Plus, Save, Trash2 } from 'lucide-react';
-import { api, type MatchingFieldPair } from '../../lib/api';
+import { AlertTriangle, Link2, Plus, Save, Trash2 } from 'lucide-react';
+import { api, ApiError, type MatchingFieldPair } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { Select, Skeleton, Spinner } from '../../components/ui';
 
@@ -26,7 +26,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const { data, isLoading } = useQuery({ queryKey: ['matching-config'], queryFn: () => api.matchingConfig() });
+  const { data, isLoading, error } = useQuery({ queryKey: ['matching-config'], queryFn: () => api.matchingConfig() });
 
   useEffect(() => {
     if (!data) return;
@@ -67,6 +67,35 @@ export default function MatchingSetupAdmin(): JSX.Element {
 
   const propertyUitype = (id: string | undefined): string | undefined =>
     data?.propertyFields.find((f) => f.id === id)?.uitype;
+
+  /*
+    A failed request is not a loading one. The skeleton below is guarded with
+    `isLoading || !data`; on an error `isLoading` is false and `data` stays
+    undefined, so without this the page held its skeleton for ever and said
+    nothing. Same card and wording as WhatsAppAdmin.
+  */
+  if (error) {
+    return (
+      <div className="p-4 sm:p-6">
+        <div className="card border-rose-300 p-4 dark:border-rose-900">
+          <p className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
+            This page could not load
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            The CRM could not read its matching setup. Matching itself is unaffected — it keeps
+            using the last saved rules; it is only this screen.
+          </p>
+          <p className="mt-2 break-words rounded bg-slate-100 p-2 text-2xs dark:bg-slate-800">
+            {error instanceof Error ? error.message : 'No reason was given.'}
+            {/* A body of { error: '…' } with no `message` lands in ApiError.code,
+                and is the only reason given — show it rather than drop it. */}
+            {error instanceof ApiError && error.code !== 'error' ? ` — ${error.code}` : null}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6">
