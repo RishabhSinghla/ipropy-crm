@@ -1,3 +1,4 @@
+import { SarvamControl } from './SarvamControl';
 import { type CSSProperties, type JSX, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -220,6 +221,7 @@ export default function Layout(): JSX.Element {
         />
 
         <LiveCallDeck />
+        <SarvamControl />
 
         {/* Today's follow-ups, popping up one after another with a buzzer. */}
         <TaskBuzzer />

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { toE164 } from '@ipropy/shared';
 import { config } from '../../config.js';
-import { recordConsent } from '../../core/consent/index.js';
+import { isOptedOut, recordConsent } from '../../core/consent/index.js';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
@@ -165,6 +165,91 @@ telephonyRouter.post('/sarvam', asyncHandler(async (req, res) => {
   });
   if (!result.ok) throw new BadRequestError(result.message);
   res.status(202).json(result);
+}));
+
+/** Saved queues survive navigation and refresh; only their owner or an admin controls them. */
+telephonyRouter.get('/sarvam-control', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const owner = user.isAdmin ? '' : 'AND user_id = $1';
+  const params = user.isAdmin ? [] : [user.id];
+  const batches = await db.query(`SELECT * FROM ipy_sarvam_batch WHERE true ${owner} ORDER BY created_at DESC LIMIT 50`, params);
+  const items = await db.query(`SELECT q.* FROM ipy_sarvam_queue q JOIN ipy_sarvam_batch b ON b.id = q.batch_id
+    WHERE b.id IN (SELECT id FROM ipy_sarvam_batch WHERE true ${owner} ORDER BY created_at DESC LIMIT 50)
+    ORDER BY q.position`, params);
+  const totals = await db.queryOne(`SELECT count(*)::int AS attempted,
+    count(*) FILTER (WHERE status = 'completed')::int AS completed,
+    count(*) FILTER (WHERE status IN ('busy','no_answer','failed','canceled'))::int AS unsuccessful,
+    count(*) FILTER (WHERE status = 'queued')::int AS awaiting_result,
+    count(*) FILTER (WHERE (started_at AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date)::int AS today
+    FROM ipy_call WHERE source = 'sarvam' ${owner}`, params);
+  const calls = await db.query(`SELECT c.id, c.record_id, c.record_module, r.label, c.to_number AS phone, c.status,
+    c.started_at, c.duration_seconds, c.notes FROM ipy_call c LEFT JOIN ipy_record r ON r.id = c.record_id AND NOT r.is_deleted
+    WHERE c.source = 'sarvam' ${user.isAdmin ? '' : 'AND c.user_id = $1'} ORDER BY c.started_at DESC LIMIT 100`, params);
+  res.json({ batches: batches.rows, items: items.rows, totals, calls: calls.rows });
+}));
+
+telephonyRouter.post('/sarvam-queues', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const input = z.object({ module: z.string().min(1), ids: z.array(z.string().uuid()).min(1).max(25) }).parse(req.body);
+  const { registry } = await import('../../core/metadata/registry.js');
+  const module = await registry.requireModule(input.module);
+  const preferred = ['mobile','mobile_phone','phone','phone_number','primary_phone'];
+  const phoneFields = module.fields.filter((f) => f.isActive && f.uitype === 'phone').sort((a,b) =>
+    (preferred.includes(a.name) ? preferred.indexOf(a.name) : 99) - (preferred.includes(b.name) ? preferred.indexOf(b.name) : 99));
+  const records: { id: string; label: string; phone: string }[] = [];
+  for (const id of new Set(input.ids)) {
+    const record = await recordService.getRecord(getScope(req), module.name, id);
+    if (record.values.do_not_call === true) continue;
+    const phone = phoneFields.map((f) => toE164(String(record.values[f.name] ?? ''))).find(Boolean);
+    if (phone && !(await isOptedOut(phone, 'call'))) records.push({ id, label: record.label, phone });
+  }
+  if (!records.length) throw new BadRequestError('No callable contacts. Check phone numbers and do-not-call preferences.');
+  const batch = await transaction(async (tx) => {
+    const row = await tx.queryOne<{ id: string }>(`INSERT INTO ipy_sarvam_batch(user_id,module) VALUES ($1,$2) RETURNING id`, [user.id,module.name]);
+    for (const [position, record] of records.entries()) await tx.query(
+      `INSERT INTO ipy_sarvam_queue(batch_id,record_id,label,phone,position) VALUES ($1,$2,$3,$4,$5)`,
+      [row!.id,record.id,record.label ?? record.phone,record.phone,position]);
+    return row;
+  });
+  res.status(201).json({ id: batch!.id, count: records.length });
+}));
+
+telephonyRouter.post('/sarvam-queues/:id/:action', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const id = z.string().uuid().parse(req.params.id);
+  const action = z.enum(['resume','pause','retry']).parse(req.params.action);
+  await transaction(async (tx) => {
+    // Serialize owner controls and the worker's claim before acknowledging a stop.
+    const batch = await tx.queryOne<{ user_id: string }>('SELECT user_id FROM ipy_sarvam_batch WHERE id = $1 FOR UPDATE', [id]);
+    if (!batch) throw new NotFoundError('AI call queue not found.');
+    if (batch.user_id !== user.id && !user.isAdmin) throw new ForbiddenError('You can only control your own queues.');
+    if (action === 'resume') {
+      const unknown = await tx.queryOne(`SELECT id FROM ipy_sarvam_queue WHERE batch_id = $1 AND status = 'unknown' LIMIT 1`, [id]);
+      if (unknown) throw new BadRequestError('Verify the unknown call in Sarvam before resuming.');
+      const running = await tx.queryOne(`SELECT id FROM ipy_sarvam_batch WHERE user_id = $1 AND status = 'running' AND id <> $2`, [batch.user_id,id]);
+      if (running) throw new BadRequestError('Pause the other running queue first.');
+    }
+    if (action === 'retry') {
+      await tx.query(`UPDATE ipy_sarvam_queue SET status = 'pending', attempt_id = NULL, error = NULL, updated_at = now()
+        WHERE batch_id = $1 AND status IN ('busy','no_answer','failed')`, [id]);
+    }
+    await tx.query(`UPDATE ipy_sarvam_batch SET status = $2, message = NULL WHERE id = $1`, [id,action === 'resume' ? 'running' : 'paused']);
+  });
+  res.json({ ok: true });
+}));
+
+telephonyRouter.post('/sarvam-queue-items/:id/resolve', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const id = z.string().uuid().parse(req.params.id);
+  z.object({ confirmedEnded: z.literal(true) }).parse(req.body);
+  const row = await db.queryOne<{ user_id: string }>(`SELECT b.user_id FROM ipy_sarvam_queue q JOIN ipy_sarvam_batch b ON b.id=q.batch_id WHERE q.id=$1`,[id]);
+  if (!row) throw new NotFoundError('Queue item not found.');
+  if (row.user_id !== user.id && !user.isAdmin) throw new ForbiddenError('You can only control your own queues.');
+  await db.query(`UPDATE ipy_sarvam_queue SET status='failed', error='Operator verified the call ended in Sarvam; eligible for retry.', updated_at=now() WHERE id=$1 AND status='unknown'`, [id]);
+  res.json({ ok: true });
 }));
 
 /** Let a caller wait for its Sarvam attempt before starting the next queue item. */
