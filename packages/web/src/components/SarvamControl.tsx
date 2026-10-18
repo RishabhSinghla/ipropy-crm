@@ -39,6 +39,8 @@ export function SarvamControl(): JSX.Element {
   const items = (data?.items ?? []).filter((item) => item.batch_id === batch?.id);
   const active = (data?.items ?? []).filter((i) => ['submitting', 'waiting', 'unknown'].includes(i.status));
   const running = batches.filter((b) => b.status === 'running');
+  const awaiting = Math.max(data?.totals?.awaiting_result ?? 0, active.length);
+  const pendingCalls = (data?.calls ?? []).filter((call) => call.status === 'queued');
   const remaining = items.filter((i) => i.status === 'pending').length;
   const done = items.filter((i) => i.status === 'completed').length;
   const failed = items.filter((i) => RETRY.has(i.status)).length;
@@ -64,8 +66,8 @@ export function SarvamControl(): JSX.Element {
   return <>
     <button type="button" onClick={() => setOpen(true)} aria-label="Open Sarvam AI call control"
       className="fixed bottom-20 left-3 z-40 flex items-center gap-2 rounded-full border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-800 shadow-lg dark:border-violet-700 dark:bg-slate-900 dark:text-violet-200 md:bottom-4">
-      <Activity className={`h-4 w-4 ${active.length || running.length ? 'animate-pulse' : ''}`} />
-      AI calls {active.length ? `· ${active.length} awaiting result` : running.length ? '· dialing' : ''}
+      <Activity className={`h-4 w-4 ${awaiting || running.length ? 'animate-pulse' : ''}`} />
+      AI calls {awaiting ? `· ${awaiting} awaiting result` : running.length ? '· dialing' : ''}
     </button>
     <Modal open={open} onClose={() => setOpen(false)} title="Sarvam AI call control" size="lg" footer={<button className="btn-secondary" onClick={() => setOpen(false)}>Minimise · queue stays saved</button>}>
       <div className="space-y-4">
@@ -78,6 +80,7 @@ export function SarvamControl(): JSX.Element {
           {[[data?.totals?.attempted ?? 0,'Total attempts'],[data?.totals?.today ?? 0,'Today'],[data?.totals?.completed ?? 0,'Answered'],[data?.totals?.unsuccessful ?? 0,'Unsuccessful']].map(([value,label]) =>
             <div className="rounded-xl bg-slate-100 p-3 dark:bg-slate-800" key={label}><div className="text-xl font-bold">{value}</div><div className="text-xs text-muted">{label}</div></div>)}
         </div>
+        {pendingCalls.length > 0 && <div className="rounded-lg border border-violet-200 p-3 text-sm dark:border-violet-800"><p className="font-semibold">{awaiting} calls awaiting a confirmed result</p>{pendingCalls.slice(0, 3).map((call) => <p key={call.id} className="mt-1 text-xs text-muted">{call.label ?? call.phone} · {Date.now() - new Date(call.started_at).getTime() > 15 * 60_000 ? 'Result overdue · check Sarvam' : 'Dial accepted · waiting for outcome'}</p>)}</div>}
         <div className="flex gap-2"><button className={tab === 'queue' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => setTab('queue')}>Saved queues</button><button className={tab === 'history' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => setTab('history')}>Call history</button></div>
         {tab === 'queue' ? <>
           <label className="block text-xs text-muted">Queue<select className="input mt-1 w-full" value={batch?.id ?? ''} onChange={(e) => { setSelected(e.target.value); setFilter('all'); }}>
