@@ -1044,6 +1044,12 @@ adminRouter.get('/integrations', asyncHandler(async (req, res) => {
   res.json(await listIntegrations());
 }));
 
+adminRouter.post('/integrations/sarvam_voice/sync-inbound', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const { syncSarvamInbound } = await import('../../integrations/voiceagent/inbound.js');
+  res.json(await syncSarvamInbound());
+}));
+
 adminRouter.get('/integrations/sarvam_voice/context-hook', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
   const { readSarvamSettings, sarvamWebhookUrl } = await import('../../integrations/voiceagent/sarvam.js');
@@ -1081,6 +1087,10 @@ adminRouter.put('/integrations/:provider', asyncHandler(async (req, res) => {
   const existing = await getIntegrationSummary(req.params.provider);
   if (!existing) throw new NotFoundError(`Unknown integration provider '${req.params.provider}'`);
 
+  if (req.params.provider === 'sarvam_voice' && input.config) {
+    const { sarvamPolicySchema } = await import('../../integrations/voiceagent/policy.js');
+    sarvamPolicySchema.parse({ ...existing.config, ...input.config });
+  }
   await saveIntegration(req.params.provider, input);
   if (req.params.provider === 'facebook_leads') {
     await db.query('UPDATE ipy_facebook_health SET last_checked_at = NULL WHERE id = true');

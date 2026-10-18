@@ -17,18 +17,19 @@ const labels: Record<string, string> = {
 export function SarvamControl(): JSX.Element {
   const { user } = useApp();
   const cache = useQueryClient();
+  const [batchPage, setBatchPage] = useState(0);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState('');
   const [tab, setTab] = useState<'queue' | 'history'>('queue');
   const [filter, setFilter] = useState('all');
   const [busy, setBusy] = useState(false);
-  const query = useQuery({ queryKey: ['sarvam-control'], queryFn: api.sarvamControl,
+  const query = useQuery({ queryKey: ['sarvam-control', batchPage], queryFn: () => api.sarvamControl(batchPage),
     refetchInterval: open ? 3000 : 10000, refetchIntervalInBackground: true });
   const data = query.data;
   useEffect(() => {
     const show = (event: Event): void => {
       const id = (event as CustomEvent<string>).detail;
-      if (id) setSelected(id);
+      if (id) { setBatchPage(0); setSelected(id); }
       setTab('queue'); setOpen(true); void cache.invalidateQueries({ queryKey: ['sarvam-control'] });
     };
     window.addEventListener('sarvam-control-open', show);
@@ -57,7 +58,7 @@ export function SarvamControl(): JSX.Element {
     setBusy(true);
     try {
       const result = await api.createSarvamQueue(module, [recordId]);
-      setSelected(result.id); setTab('queue'); await refresh();
+      setBatchPage(0); setSelected(result.id); setTab('queue'); await refresh();
       toast.info('Retry prepared', 'Review the contact and press Start / resume to call.');
     } catch (error) { toast.error('Could not prepare retry', (error as Error).message); }
     finally { setBusy(false); }
@@ -67,7 +68,7 @@ export function SarvamControl(): JSX.Element {
     <button type="button" onClick={() => setOpen(true)} aria-label="Open Sarvam AI call control"
       className="fixed bottom-20 left-3 z-40 flex items-center gap-2 rounded-full border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-800 shadow-lg dark:border-violet-700 dark:bg-slate-900 dark:text-violet-200 md:bottom-4">
       <Activity className={`h-4 w-4 ${awaiting || running.length ? 'animate-pulse' : ''}`} />
-      AI calls {awaiting ? `· ${awaiting} awaiting result` : running.length ? '· dialing' : ''}
+      AI calls {awaiting ? `· ${awaiting} awaiting result` : running.length ? data?.policy && !data.policy.callingAllowed ? '· scheduled' : '· dialing' : ''}
     </button>
     <Modal open={open} onClose={() => setOpen(false)} title="Sarvam AI call control" size="lg" footer={<button className="btn-secondary" onClick={() => setOpen(false)}>Minimise · queue stays saved</button>}>
       <div className="space-y-4">
@@ -76,6 +77,7 @@ export function SarvamControl(): JSX.Element {
           <span>{user?.isAdmin ? 'Team calls' : 'Your calls'} · India time</span>
         </div>
         {query.isError && <p role="alert" className="text-sm text-red-600">{(query.error as Error).message} <button onClick={() => void refresh()} className="underline">Reconnect</button></p>}
+        {data?.policy && <p className="text-xs text-muted">Outbound window: {data.policy.enabled ? `${data.policy.start}–${data.policy.end} India time` : 'unrestricted'} · Batch limit: {data.policy.batchSize}. Inbound callbacks are independent of this window.</p>}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[[data?.totals?.attempted ?? 0,'Total attempts'],[data?.totals?.today ?? 0,'Today'],[data?.totals?.completed ?? 0,'Answered'],[data?.totals?.unsuccessful ?? 0,'Unsuccessful']].map(([value,label]) =>
             <div className="rounded-xl bg-slate-100 p-3 dark:bg-slate-800" key={label}><div className="text-xl font-bold">{value}</div><div className="text-xs text-muted">{label}</div></div>)}
@@ -85,11 +87,12 @@ export function SarvamControl(): JSX.Element {
         {tab === 'queue' ? <>
           <label className="block text-xs text-muted">Queue<select className="input mt-1 w-full" value={batch?.id ?? ''} onChange={(e) => { setSelected(e.target.value); setFilter('all'); }}>
             {!batches.length && <option>No saved queues</option>}
-            {batches.map((b) => <option key={b.id} value={b.id}>{b.module} · {b.status} · {new Date(b.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</option>)}
+            {batches.map((b) => <option key={b.id} value={b.id}>Batch {b.id.slice(0,8)} · {b.module} · {b.attempt_count} attempts · {b.status} · {new Date(b.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</option>)}
           </select></label>
+          <div className="flex items-center gap-2 text-xs text-muted"><button className="btn-secondary btn-sm" disabled={!batchPage} onClick={() => { setBatchPage((p) => p-1); setSelected(''); }}>Newer batches</button><span>{data?.batchTotal ?? 0} saved batches · page {batchPage+1}</span><button className="btn-secondary btn-sm" disabled={(batchPage+1)*50 >= (data?.batchTotal ?? 0)} onClick={() => { setBatchPage((p) => p+1); setSelected(''); }}>Older batches</button></div>
           {batch ? <>
             <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 dark:border-violet-800 dark:bg-violet-950">
-              <p className="flex items-center gap-2 font-semibold"><Sparkles className={`h-4 w-4 ${batch.status === 'running' ? 'animate-pulse' : ''}`} />{batch.status === 'running' ? 'AI queue running' : batch.status === 'done' ? 'Queue finished' : 'Queue paused'}</p>
+              <p className="flex items-center gap-2 font-semibold"><Sparkles className={`h-4 w-4 ${batch.status === 'running' ? 'animate-pulse' : ''}`} />{batch.status === 'running' ? data?.policy && !data.policy.callingAllowed ? 'Waiting for calling hours' : 'AI queue running' : batch.status === 'done' ? 'Queue finished' : 'Queue paused'}</p>
               <p className="mt-1 text-sm">{items.length} contacts · {done} answered · {failed} unsuccessful · {remaining} remaining</p>
               <div className="mt-2 h-2 overflow-hidden rounded bg-violet-200"><div className="h-full bg-violet-600 transition-all" style={{ width: `${items.length ? (items.filter((i) => !['pending','waiting','submitting','unknown'].includes(i.status)).length / items.length) * 100 : 0}%` }} /></div>
               {batch.message && <p role="status" className="mt-2 text-sm text-amber-800 dark:text-amber-200">{batch.message}</p>}
@@ -119,7 +122,7 @@ export function SarvamControl(): JSX.Element {
           <p className="text-xs text-muted">Latest 100 attempts. Totals above include all CRM Sarvam attempts. <Link className="underline" to="/calls" onClick={() => setOpen(false)}>Open all calls and date filters</Link></p>
           <div className="max-h-96 space-y-2 overflow-auto">{data?.calls.map((call) => <div key={call.id} className="rounded-lg border p-3 text-sm dark:border-slate-700">
             <div className="flex justify-between gap-2"><span className="font-medium">{call.label ?? call.phone}</span><span>{labels[call.status] ?? call.status}</span></div>
-            <p className="text-xs text-muted">{new Date(call.started_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} · {call.duration_seconds}s</p>
+            <p className="text-xs text-muted">{call.direction === 'inbound' ? 'Incoming callback · ' : ''}{call.batch_id ? `Batch ${call.batch_id.slice(0,8)} · ` : 'Earlier / individual call · '}{new Date(call.started_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} · {call.duration_seconds}s</p>
             {call.notes && <p className="mt-1 text-xs">{call.notes}</p>}
             {RETRY.has(call.status) && call.record_id && call.record_module && <button className="mt-2 text-xs text-brand-600 underline" disabled={busy} onClick={() => void retryCall(call.record_id!, call.record_module!)}>Prepare retry</button>}
           </div>)}</div>

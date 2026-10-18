@@ -21,12 +21,12 @@ test('the archive opens as a split view per module, apart from the live list', a
   const tabs = page.getByRole('navigation', { name: 'Archived modules' });
   await expect(tabs.getByRole('link', { name: 'Leads' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByText('Change the status away from Lost to bring a record back to its module.')).toBeVisible();
-  // The same list screen as the module itself: its record count line is there.
-  await expect(page.getByText(/records$/).first()).toBeVisible({ timeout: 30_000 });
+  // The module list has either a numeric count or its explicit empty state.
+  await expect(page.getByText(/^\d[\d,]*(?:–\d[\d,]*)? of \d[\d,]* records$/).or(page.getByRole('heading', { name: 'No matching records', exact: true })).first()).toBeVisible({ timeout: 30_000 });
   // A live record is never in the archive.
   await expect(page.getByTestId('queue-card').filter({ hasText: live })).toHaveCount(0);
 
   await tabs.getByRole('link', { name: 'Inventories' }).click();
   await expect(page).toHaveURL(/\/archive\/properties/);
-  await expect(page.getByText(/records$/).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^\d[\d,]*(?:–\d[\d,]*)? of \d[\d,]* records$/).or(page.getByRole('heading', { name: 'No matching records', exact: true })).first()).toBeVisible({ timeout: 30_000 });
 });

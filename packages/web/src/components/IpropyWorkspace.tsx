@@ -1,3 +1,4 @@
+import type { ListQuery } from '@ipropy/shared';
 import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SummaryText } from './SummaryText';
 import { populatedQueueGroups, queueGroupField, queueGroupFilter } from '../lib/queueGroups';
@@ -194,7 +195,7 @@ export function IpropyWorkspace({
   /** The list's own ordering, so the queue's menu drives the same query the table does. */
   sortBy?: string; sortDir?: 'asc' | 'desc';
   /** The active list's filters, so record navigation follows the queue in view. */
-  neighbourContext?: { view?: string; search?: string; filter?: string; archive?: string };
+  neighbourContext?: { aiCalls?: ListQuery['aiCalls']; view?: string; search?: string; filter?: string; archive?: string };
   /** Snapshot of the effective queue, including unsaved quick-filter choices. */
   callQueueUrl: string;
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
@@ -312,10 +313,11 @@ export function IpropyWorkspace({
   const groupField = queueGroupField(module);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const groupScope = useMemo(() => ({
+    aiCalls: neighbourContext?.aiCalls,
     view: neighbourContext?.view,
     search: neighbourContext?.search,
     filter: neighbourContext?.filter ? JSON.parse(neighbourContext.filter) : undefined,
-  }), [neighbourContext?.view, neighbourContext?.search, neighbourContext?.filter]);
+  }), [neighbourContext?.aiCalls, neighbourContext?.view, neighbourContext?.search, neighbourContext?.filter]);
   const { data: linkedGroupRecord } = useQuery({
     queryKey: ['record', module.name, openId],
     queryFn: () => api.record(module.name, openId!),
@@ -1714,6 +1716,11 @@ function QueueCard({
             </span>
           )}
         </span>
+
+        {row.aiCalls && <span className="mt-1 block text-[10px] font-medium text-violet-700 dark:text-violet-300"
+          title={`Last AI call: ${new Date(row.aiCalls.lastAt).toLocaleString('en-IN')} · ${row.aiCalls.lastStatus} · ${row.aiCalls.answered} answered`}>
+          AI called · {row.aiCalls.attempts} {row.aiCalls.attempts === 1 ? 'attempt' : 'attempts'} · {row.aiCalls.lastStatus === 'completed' ? 'answered' : row.aiCalls.lastStatus.replaceAll('_',' ')}
+        </span>}
 
         {/* 2. Which unit, cut short with "…" rather than wrapped. A blank line
             when there is nothing to say, so every card is the same height. */}

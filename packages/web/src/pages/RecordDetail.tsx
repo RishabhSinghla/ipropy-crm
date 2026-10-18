@@ -179,8 +179,9 @@ function FullRecordPage(): JSX.Element {
   }, [detailParams]);
 
   const { data: remote } = useQuery({
-    queryKey: ['neighbours', moduleName, id, listQuery?.get('view'), listQuery?.get('sort'), listQuery?.get('dir'), listQuery?.get('q'), listQuery?.get('filter')],
+    queryKey: ['neighbours', moduleName, id, listQuery?.get('aiCalls'), listQuery?.get('view'), listQuery?.get('sort'), listQuery?.get('dir'), listQuery?.get('q'), listQuery?.get('filter')],
     queryFn: () => api.neighbours(moduleName!, id!, {
+      aiCalls: listQuery?.get('aiCalls') ?? undefined,
       view: listQuery?.get('view') ?? undefined,
       sort: listQuery?.get('sort') ?? undefined,
       dir: listQuery?.get('dir') ?? undefined,

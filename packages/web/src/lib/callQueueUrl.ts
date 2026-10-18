@@ -5,6 +5,7 @@ import type { ListQuery } from '@ipropy/shared';
 export function callQueueUrl(module: string, query: ListQuery, base = ''): string {
   const params = new URLSearchParams();
   if (query.view) params.set('view', query.view);
+  if (query.aiCalls) params.set('aiCalls', query.aiCalls);
   if (query.search) params.set('q', query.search);
   if (query.filter) params.set('filter', JSON.stringify(query.filter));
   if (query.sortBy) params.set('sort', query.sortBy);

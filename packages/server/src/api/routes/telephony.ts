@@ -1,3 +1,4 @@
+import { publicSarvamPolicy, readSarvamPolicy } from '../../integrations/voiceagent/policy.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { toE164 } from '@ipropy/shared';
@@ -167,31 +168,36 @@ telephonyRouter.post('/sarvam', asyncHandler(async (req, res) => {
   res.status(202).json(result);
 }));
 
+telephonyRouter.get('/sarvam-policy', asyncHandler(async (_req, res) => { res.json(publicSarvamPolicy()); }));
+
 /** Saved queues survive navigation and refresh; only their owner or an admin controls them. */
 telephonyRouter.get('/sarvam-control', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const owner = user.isAdmin ? '' : 'AND user_id = $1';
   const params = user.isAdmin ? [] : [user.id];
-  const batches = await db.query(`SELECT * FROM ipy_sarvam_batch WHERE true ${owner} ORDER BY created_at DESC LIMIT 50`, params);
-  const items = await db.query(`SELECT q.* FROM ipy_sarvam_queue q JOIN ipy_sarvam_batch b ON b.id = q.batch_id
-    WHERE b.id IN (SELECT id FROM ipy_sarvam_batch WHERE true ${owner} ORDER BY created_at DESC LIMIT 50)
-    ORDER BY q.position`, params);
+  const page = z.coerce.number().int().min(0).default(0).parse(req.query.batchPage);
+  const batches = await db.query(`SELECT b.*, (SELECT count(*)::int FROM ipy_call c WHERE c.sarvam_batch_id=b.id) AS attempt_count
+    FROM ipy_sarvam_batch b WHERE true ${owner} ORDER BY created_at DESC LIMIT 50 OFFSET $${params.length+1}`, [...params,page*50]);
+  const batchTotal = await db.queryOne<{ count: number }>(`SELECT count(*)::int AS count FROM ipy_sarvam_batch WHERE true ${owner}`,params);
+  const items = await db.query(`SELECT q.* FROM ipy_sarvam_queue q WHERE q.batch_id=ANY($1::uuid[]) ORDER BY q.position`,[batches.rows.map((b) => b.id)]);
   const totals = await db.queryOne(`SELECT count(*)::int AS attempted,
     count(*) FILTER (WHERE status = 'completed')::int AS completed,
     count(*) FILTER (WHERE status IN ('busy','no_answer','failed','canceled'))::int AS unsuccessful,
     count(*) FILTER (WHERE status = 'queued')::int AS awaiting_result,
     count(*) FILTER (WHERE (started_at AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date)::int AS today
     FROM ipy_call WHERE source = 'sarvam' ${owner}`, params);
-  const calls = await db.query(`SELECT c.id, c.record_id, c.record_module, r.label, c.to_number AS phone, c.status,
+  const calls = await db.query(`SELECT c.id, c.record_id, c.record_module, r.label, CASE WHEN c.direction='inbound' THEN c.from_number ELSE c.to_number END AS phone, c.status, c.direction, c.sarvam_batch_id AS batch_id,
     c.started_at, c.duration_seconds, c.notes FROM ipy_call c LEFT JOIN ipy_record r ON r.id = c.record_id AND NOT r.is_deleted
     WHERE c.source = 'sarvam' ${user.isAdmin ? '' : 'AND c.user_id = $1'} ORDER BY c.started_at DESC LIMIT 100`, params);
-  res.json({ batches: batches.rows, items: items.rows, totals, calls: calls.rows });
+  res.json({ batches: batches.rows, items: items.rows, totals, calls: calls.rows, batchTotal: batchTotal?.count ?? 0, batchPage: page, policy: publicSarvamPolicy() });
 }));
 
 telephonyRouter.post('/sarvam-queues', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'telephony.call');
-  const input = z.object({ module: z.string().min(1), ids: z.array(z.string().uuid()).min(1).max(25) }).parse(req.body);
+  const input = z.object({ module: z.string().min(1), ids: z.array(z.string().uuid()).min(1).max(200) }).parse(req.body);
+  const policy = readSarvamPolicy();
+  if (input.ids.length > policy.batchSize) throw new BadRequestError(`The admin batch limit is ${policy.batchSize} contacts.`);
   const { registry } = await import('../../core/metadata/registry.js');
   const module = await registry.requireModule(input.module);
   const preferred = ['mobile','mobile_phone','phone','phone_number','primary_phone'];

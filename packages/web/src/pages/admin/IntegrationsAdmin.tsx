@@ -1,3 +1,4 @@
+import { SarvamOperations } from '../../components/SarvamOperations';
 import { Fragment, type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
@@ -1460,6 +1461,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         })}
       </div>
 
+      {summary.provider === 'sarvam_voice' && <SarvamOperations config={summary.config} />}
       {summary.provider === 'sarvam_voice' && (
         <div className="mx-4 mb-4 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
           <div className="mb-1 flex items-center justify-between gap-3">
