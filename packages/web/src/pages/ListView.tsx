@@ -1825,15 +1825,14 @@ function SarvamBulkCallButton({
     setCalling(true);
     try {
       const queue = await api.createSarvamQueue(module, items.map((item) => item.id));
-      // Explicit confirmation above authorizes starting exactly this previewed batch.
-      await api.sarvamQueueAction(queue.id, 'resume');
       setOpen(false);
-      window.dispatchEvent(new CustomEvent('sarvam-control-open', { detail: queue.id }));
       setFinished(true);
+      window.dispatchEvent(new CustomEvent('sarvam-control-open', { detail: queue.id }));
+      // The saved queue stays reviewable even if another running batch prevents resume.
+      await api.sarvamQueueAction(queue.id, 'resume');
       toast.success(`AI call queue started · ${queue.count} contacts`);
     } catch (error) {
       toast.error('Could not start the saved AI queue', (error as Error).message);
-      window.dispatchEvent(new Event('sarvam-control-open'));
     } finally {
       setCalling(false);
     }

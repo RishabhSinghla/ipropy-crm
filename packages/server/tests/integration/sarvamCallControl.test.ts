@@ -45,7 +45,7 @@ describe('saved Sarvam call control', () => {
     const id = await create();
     await tickSarvamQueue(); expect(dial).not.toHaveBeenCalled();
     expect((await post(`sarvam-queues/${id}/resume`)).status).toBe(200);
-    await tickSarvamQueue(); await tickSarvamQueue(); expect(dial).toHaveBeenCalledTimes(1);
+    await Promise.all([tickSarvamQueue(), tickSarvamQueue()]); expect(dial).toHaveBeenCalledTimes(1);
     expect((await post(`sarvam-queues/${id}/pause`)).status).toBe(200);
     await db.query(`UPDATE ipy_call SET status='completed' WHERE provider_call_id=$1`, [`queue-test-${stamp}-${seq}`]);
     await tickSarvamQueue(); expect(dial).toHaveBeenCalledTimes(1);
@@ -79,7 +79,16 @@ describe('saved Sarvam call control', () => {
     const stop = await request(app).post(`/api/telephony/sarvam-queues/${id}/pause`).set('Authorization', `Bearer ${agent}`).send({});
     expect(stop.status).toBe(403);
   });
-  it('rechecks do-not-call before dispatch', async () => {
+  it('pauses a missing callback and accepts a late confirmed result without automatically resuming', async () => {
+    const id = await create(); await post(`sarvam-queues/${id}/resume`); await tickSarvamQueue();
+    await db.query(`UPDATE ipy_sarvam_queue SET updated_at=now()-interval '16 minutes' WHERE batch_id=$1 AND status='waiting'`, [id]);
+    await tickSarvamQueue(); expect(dial).toHaveBeenCalledTimes(1);
+    expect((await db.queryOne<{ status: string }>('SELECT status FROM ipy_sarvam_batch WHERE id=$1',[id]))?.status).toBe('paused');
+    await db.query(`UPDATE ipy_call SET status='completed' WHERE provider_call_id=$1`, [`queue-test-${stamp}-${seq}`]);
+    await tickSarvamQueue(); expect(dial).toHaveBeenCalledTimes(1);
+    expect((await db.queryOne<{ status: string }>('SELECT status FROM ipy_sarvam_queue WHERE batch_id=$1 AND position=0',[id]))?.status).toBe('completed');
+  });
+  it('rechecks do-not-call before dispatch' , async () => {
     const id = await create(); await post(`sarvam-queues/${id}/resume`);
     const queued = await db.queryOne<{ phone: string }>('SELECT phone FROM ipy_sarvam_queue WHERE batch_id=$1 AND position=0',[id]);
     await recordConsent({ handle: queued!.phone, channel: 'call', action: 'opt_out' });
