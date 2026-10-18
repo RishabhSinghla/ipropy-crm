@@ -1,5 +1,5 @@
 import { recordConsent } from '../../src/core/consent/index.js';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
@@ -28,14 +28,17 @@ beforeAll(async () => {
   const ctx = await adminContext();
   for (let i=0; i<2; i++) ids.push((await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `Sarvam queue ${stamp} ${i}` }))).id);
 });
+afterEach(() => { vi.useRealTimers(); });
 beforeEach(async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-18T06:00:00Z'));
   await db.query('DELETE FROM ipy_sarvam_queue');
   await db.query('DELETE FROM ipy_sarvam_batch');
   dial.mockReset();
-  dial.mockImplementation(async (input: { recordId: string; recordModule: string; userId: string; toNumber: string }) => {
+  dial.mockImplementation(async (input: { recordId: string; recordModule: string; userId: string; toNumber: string; batchId: string }) => {
     const attemptId = `queue-test-${stamp}-${++seq}`;
-    await db.query(`INSERT INTO ipy_call(direction,from_number,to_number,status,provider,provider_call_id,source,record_id,record_module,user_id)
-      VALUES ('outbound','+919999999999',$1,'queued','sarvam_voice',$2,'sarvam',$3,$4,$5)`, [input.toNumber,attemptId,input.recordId,input.recordModule,input.userId]);
+    await db.query(`INSERT INTO ipy_call(direction,from_number,to_number,status,provider,provider_call_id,source,record_id,record_module,user_id,sarvam_batch_id)
+      VALUES ('outbound','+919999999999',$1,'queued','sarvam_voice',$2,'sarvam',$3,$4,$5,$6)`, [input.toNumber,attemptId,input.recordId,input.recordModule,input.userId,input.batchId]);
     return { ok: true, attemptId };
   });
 });
@@ -53,6 +56,8 @@ describe('saved Sarvam call control', () => {
     expect(saved.body.items.filter((i: { status: string }) => i.status === 'pending')).toHaveLength(1);
     expect(saved.body.items.filter((i: { status: string }) => i.status === 'completed')).toHaveLength(1);
     expect(saved.body.totals.attempted).toBeGreaterThan(0);
+    expect(saved.body.batches[0].attempt_count).toBe(1);
+    expect(saved.body.calls.find((c: { batch_id: string }) => c.batch_id === id)).toBeTruthy();
     await post(`sarvam-queues/${id}/resume`); await tickSarvamQueue(); expect(dial).toHaveBeenCalledTimes(2);
   });
   it('never automatically redials an ambiguous provider response, including after another tick', async () => {
@@ -88,7 +93,15 @@ describe('saved Sarvam call control', () => {
     await tickSarvamQueue(); expect(dial).toHaveBeenCalledTimes(1);
     expect((await db.queryOne<{ status: string }>('SELECT status FROM ipy_sarvam_queue WHERE batch_id=$1 AND position=0',[id]))?.status).toBe('completed');
   });
-  it('rechecks do-not-call before dispatch' , async () => {
+  it('keeps the remaining queue saved outside calling hours and resumes in the next window', async () => {
+    const id = await create(); await post(`sarvam-queues/${id}/resume`);
+    vi.setSystemTime(new Date('2026-10-18T15:00:00Z'));
+    await tickSarvamQueue(); expect(dial).not.toHaveBeenCalled();
+    expect((await db.queryOne<{ status: string }>('SELECT status FROM ipy_sarvam_batch WHERE id=$1',[id]))?.status).toBe('running');
+    vi.setSystemTime(new Date('2026-10-19T04:30:00Z'));
+    await tickSarvamQueue(); expect(dial).toHaveBeenCalledTimes(1);
+  });
+  it('rechecks do-not-call before dispatch'  , async () => {
     const id = await create(); await post(`sarvam-queues/${id}/resume`);
     const queued = await db.queryOne<{ phone: string }>('SELECT phone FROM ipy_sarvam_queue WHERE batch_id=$1 AND position=0',[id]);
     await recordConsent({ handle: queued!.phone, channel: 'call', action: 'opt_out' });

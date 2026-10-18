@@ -1,3 +1,4 @@
+import { readSarvamPolicy, sarvamCallingAllowed } from './policy.js';
 import { isOptedOut } from '../../core/consent/index.js';
 /**
  * Sarvam Voice Agents — the AI that rings a customer and talks to them.
@@ -167,7 +168,10 @@ export async function sarvamCallContext(phoneNumber: string, appId?: string, app
   const candidateRecords = new Set(matchingCalls.map((candidate) => `${candidate.record_module}:${candidate.record_id}`));
   if (candidateRecords.size > 1) return null;
   const call = matchingCalls[0];
-  if (!call) return null;
+  if (!call) {
+    const { inboundCallerContext } = await import('./inbound.js');
+    return inboundCallerContext(phoneNumber, appId);
+  }
 
   const [{ recordService }, { systemContext }] = await Promise.all([
     import('../../core/entity/recordService.js'),
@@ -206,7 +210,11 @@ export async function placeAgentCall(input: {
   recordId?: string | null;
   recordModule?: string | null;
   userId?: string | null;
-}): Promise<{ ok: true; attemptId: string } | { ok: false; message: string; uncertain?: boolean }> {
+  batchId?: string;
+}): Promise<{ ok: true; attemptId: string } | { ok: false; message: string; uncertain?: boolean; outsideWindow?: boolean }> {
+  const policy = readSarvamPolicy();
+  if (!sarvamCallingAllowed(policy)) return { ok: false, outsideWindow: true,
+    message: `Outbound AI calls are allowed only ${policy.callStart}–${policy.callEnd} India time.` };
   const read = readSarvamSettings();
   if ('missing' in read) return { ok: false, message: read.missing };
   const { settings } = read;
@@ -256,10 +264,10 @@ export async function placeAgentCall(input: {
 
   await db.query(
     `INSERT INTO ipy_call (direction, from_number, to_number, status, provider, provider_call_id,
-                           source, record_id, record_module, user_id)
-     VALUES ('outbound', $1, $2, 'queued', $3, $4, 'sarvam', $5, $6, $7)`,
+                           source, record_id, record_module, user_id, sarvam_batch_id)
+     VALUES ('outbound', $1, $2, 'queued', $3, $4, 'sarvam', $5, $6, $7, $8)`,
     [agentPhoneNumber, input.toNumber, SARVAM_PROVIDER, answer.attempt_id,
-      input.recordId ?? null, input.recordModule ?? null, input.userId ?? null],
+      input.recordId ?? null, input.recordModule ?? null, input.userId ?? null, input.batchId ?? null],
   );
   return { ok: true, attemptId: answer.attempt_id };
 }

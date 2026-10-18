@@ -57,6 +57,7 @@ const filterSchema: z.ZodType<FilterGroup> = z.lazy(() =>
 );
 
 const listSchema = z.object({
+  aiCalls: z.enum(['called','not_called','unsuccessful']).optional(),
   view: z.string().optional(),
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().max(500).optional(),
@@ -848,6 +849,7 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
   // Throws if this person cannot open the record, before anything is counted.
   await recordService.getRecord(scope, moduleName, id);
   const placed = await recordService.locateInList(scope, moduleName, {
+    ...(listInput.aiCalls ? { aiCalls: listInput.aiCalls } : {}),
     ...(viewId ? { view: viewId } : {}),
     ...(listInput.search ? { search: listInput.search } : {}),
     ...(listInput.filter ? { filter: listInput.filter } : {}),

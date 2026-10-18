@@ -1,3 +1,4 @@
+import { recordInboundSarvamCall } from '../../integrations/voiceagent/inbound.js';
 /**
  * Public webhook endpoints.
  *
@@ -44,17 +45,24 @@ webhooksRouter.post('/sarvam/:secret/context', asyncHandler(async (req, res) => 
   const phone = [body.user_phone_number, body.phone_number, body.phone, body.user_identifier, body.lead_phone]
     .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
   if (!phone) {
-    res.status(400).json({ error: 'Sarvam must include the outbound user phone number.' });
+    res.status(400).json({ error: 'Sarvam must include the caller or outbound user phone number.' });
     return;
   }
   const appId = typeof body.app_id === 'string' ? body.app_id : undefined;
   const appVersion = Number.isInteger(Number(body.app_version)) ? Number(body.app_version) : undefined;
   const context = await sarvamCallContext(phone, appId, appVersion);
   if (!context) {
-    res.status(404).json({ error: 'No matching pending CRM call was found.' });
+    res.status(404).json({ error: 'No CRM context is available for this agent.' });
     return;
   }
   res.json(context);
+}));
+
+webhooksRouter.post('/sarvam/:secret/inbound', asyncHandler(async (req, res) => {
+  const read = readSarvamSettings();
+  if ('missing' in read || !secretMatches(req.params.secret, read.settings.webhookSecret)) { res.sendStatus(404); return; }
+  await recordInboundSarvamCall(req.body);
+  res.sendStatus(200);
 }));
 
 // Sarvam Voice Agents: one POST per finished AI call. Sarvam signs nothing, so
