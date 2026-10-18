@@ -41,7 +41,7 @@
       "Bash(graft-dev:*)",
       "Bash(node dist/cli.js:*)"
     ],
-    "//deny": "Refused outright rather than asked about, because each one destroys something a session cannot put back and the right answer is a person doing it deliberately. db:reset and db:restore replace the local database; db:pull-prod overwrites local with a copy of production and is fine on purpose but never mid-task; the git entries throw away uncommitted work or rewrite the remote.",
+    "//deny": "Refused outright rather than asked about, because each one destroys something a session cannot put back and the right answer is a person doing it deliberately. db:reset and db:restore replace the local database; db:pull-prod overwrites local with a copy of production and is fine on purpose but never mid-task; the git entries throw away uncommitted work or rewrite the remote. The locked/ entries keep the feature loop honest: checks Rishabh approved (build-feature skill) cannot be edited by the agent building against them.",
     "deny": [
       "Bash(git push --force*)",
       "Bash(git push -f *)",
@@ -51,7 +51,15 @@
       "Bash(docker volume rm*)",
       "Bash(npm run db:reset*)",
       "Bash(npm run db:restore*)",
-      "Bash(npm run db:pull-prod*)"
+      "Bash(npm run db:pull-prod*)",
+      "Edit(/packages/server/tests/locked/**)",
+      "Edit(/packages/server/tests/integration/locked/**)",
+      "Edit(/packages/web/tests/locked/**)",
+      "Edit(/e2e/locked/**)",
+      "Write(/packages/server/tests/locked/**)",
+      "Write(/packages/server/tests/integration/locked/**)",
+      "Write(/packages/web/tests/locked/**)",
+      "Write(/e2e/locked/**)"
     ]
   },
   "statusLine": {
