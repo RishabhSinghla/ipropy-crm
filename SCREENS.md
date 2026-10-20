@@ -3123,3 +3123,36 @@ from today to 2028.
   and "Newest first". Each side shows "Posted N days ago".
 * **The order is applied before the limit of 100**, not after: cutting first would have kept whichever
   hundred pairs were found first.
+
+## 20 October 2026, evening — the call sheet: pages, colours, put-away-for-good, and a matcher that learns
+
+**The owner:** pagination with the count beside the filters; the answer buttons coloured when chosen and
+uncoloured when pressed again; "Not for us" and "Not a real match" gone from the whole system for good, the
+second one teaching the system; and *"super duper precise and lightning fast"*.
+
+* **Pages and the count.** `GET /api/market/matches` takes `page` and `pageSize` (25, at most 100) and answers
+  the same bare list, with the total in `X-Total-Count` (the repo's rule: a response shape with readers is a
+  contract). The count sits in the filter card; a pager shows above and below the list.
+* **Answers stay and take a colour.** Called, Meeting fixed, Won and Lost keep the pairing exactly where it is;
+  the chosen button is filled (blue, amber, green, red) with a tick and `aria-pressed`, and pressing it again
+  writes `new` — the answer is taken back. The status shown is the one the server accepted, changed at once and
+  put back if the save is refused. **A "Show finished ones" box is gone** — worked pairings are simply there, and a
+  Status filter (not worked yet / called / meeting / won / lost) replaces it.
+* **Two answers are for good.** `dismissed` and `bad_match` are never on the sheet again, even when finished
+  work is asked for (`findCrossMatches` used to bring "not for us" back). The card leaves a line with **Undo** for
+  that visit only. **Skipped means the next best:** `bestPerRequirement` now skips a put-away pairing *while
+  choosing*, so the buyer is shown their next seller instead of vanishing from the sheet — it used to pick the one
+  best seller and filter afterwards, so one "no" hid the buyer completely.
+* **What "learns" means here, honestly.** It is not a model being retrained. Each "not a real match" changes three
+  numbers the next sheet is built from (`Lessons` in `crossMatch.ts`): the **listing** (marked wrong before: must
+  fit better to be offered again — this existed), the **kind of pairing** (every pairing now carries a
+  `signature`, the facts that agreed, e.g. `area:sector+type:same+size:fits`; once such a kind has been marked wrong
+  three times and more often than it has worked out, every pairing of that kind loses score), and the **dealer**
+  (three wrong listings and theirs lose a little). Jev is shown up to three recent rejected pairings beside the
+  pairing it is rating (`examplesText`). One mistake never rewrites the rules: each lesson needs three.
+* **Speed.** The call sheet took ~5.5 seconds on every request, however small the page: the whole feed was paired
+  again for each page, filter and click. The worked-out sheet is now **kept** (10 minutes, or until a drop, an outcome or
+  a verdict changes it) and a stale one is **served while a fresh one is built behind it**; an outcome is written into
+  the kept sheet at once. Background jobs (`findCrossMatches`) always build fresh: they decide what to ask Jev and who to
+  alert, and must never act on a stale sheet. `Server-Timing: sheet;dur=…` on the response says what a request cost.
+  Pinned by `marketCallSheetPaging.test.ts`.

@@ -8,6 +8,7 @@
 import { db } from '../../db/pool.js';
 import { notify } from '../notifications/index.js';
 import { logger } from '../../utils/logger.js';
+import { invalidateMarketMatches } from './crossMatch.js';
 import { fingerprintOf, looksLikeADeal, looksLikeANotice, parseWhatsAppExport, placeKeysOf, readPost, tidyBody } from './readPost.js';
 import { saveListings, splitListings, worthAnAiRead } from './listings.js';
 import { matchDeal, type DealMatch } from './matchDeal.js';
@@ -178,6 +179,8 @@ export async function importGroupExport(rawGroupName: string, text: string, user
 
 /** The people who posted become Associates and their messages go into their notes; then Jev reads. */
 export async function afterImport(groupName: string): Promise<void> {
+  // New deals are in: the kept call sheet is stale and is rebuilt behind the one being shown.
+  invalidateMarketMatches();
   try {
     const dealers = (await dealerDirectory()).filter((dealer) => dealer.groups.includes(groupKey(groupName)));
     const saved = await saveDealersAsAssociates(dealers);

@@ -15,6 +15,7 @@
  * so a better rule tomorrow improves the whole feed without a rebuild.
  */
 import { db } from '../../db/pool.js';
+import { logger } from '../../utils/logger.js';
 import { BROAD_AREAS, categoryFamily, isProjectKey, tidyBody } from './readPost.js';
 
 export interface MarketListing {
@@ -42,6 +43,8 @@ export interface MarketListing {
 export interface Pairing {
   score: number;
   reasons: string[];
+  /** Which facts agreed, as a stable word ("area:sector+size:fits+type:same"), so the system can learn which kinds of pairing turn out wrong. */
+  signature: string;
 }
 
 /** A seller quoting a little over what the buyer named will usually come down. */
@@ -62,22 +65,22 @@ function sectorParts(key: string): { base: string; pocket: string } | null {
  * market; a pocket of the same sector is close but not the same; a developer or a wide
  * area is real but weak. A bare city never reaches here — it is not a place key at all.
  */
-export function areaScore(wanted: string[], offered: string[]): { score: number; why: string } | null {
-  let best: { score: number; why: string } | null = null;
-  const take = (score: number, why: string): void => { if (!best || score > best.score) best = { score, why }; };
+export function areaScore(wanted: string[], offered: string[]): { score: number; why: string; code: string } | null {
+  let best: { score: number; why: string; code: string } | null = null;
+  const take = (score: number, why: string, code: string): void => { if (!best || score > best.score) best = { score, why, code }; };
   for (const a of wanted) {
     for (const b of offered) {
       if (a === b) {
         // A named sector or block is exact; a colony the business lists is nearly so; a developer or a wide area is weak.
         const strength = BROAD_AREAS.has(a) ? 0.2 : a.includes(':') ? 0.4 : sectorParts(a) ? 0.45 : isProjectKey(a) ? 0.25 : 0.42;
-        take(strength, `same area: ${label(a)}`);
+        take(strength, `same area: ${label(a)}`, BROAD_AREAS.has(a) ? 'broad' : a.includes(':') ? 'block' : sectorParts(a) ? 'sector' : isProjectKey(a) ? 'project' : 'place');
         continue;
       }
       const x = sectorParts(a);
       const y = sectorParts(b);
       if (x && y && x.base === y.base) {
         // "Sector 21" and "Sector 21C": the buyer did not narrow it, so any pocket will do.
-        take(x.pocket === '' || y.pocket === '' ? 0.4 : 0.15, `same sector: ${label(a)} / ${label(b)}`);
+        take(x.pocket === '' || y.pocket === '' ? 0.4 : 0.15, `same sector: ${label(a)} / ${label(b)}`, x.pocket === '' || y.pocket === '' ? 'sector-any-pocket' : 'sector-other-pocket');
       }
     }
   }
@@ -112,20 +115,23 @@ export function scorePair(want: MarketListing, have: MarketListing, now = new Da
   // Somebody buying is not introduced to a landlord, and a tenant is not introduced to a seller.
   if (want.purpose !== have.purpose) return null;
   const reasons: string[] = [];
+  const features: string[] = [];
 
   const area = areaScore(want.placeKeys, have.placeKeys);
   if (!area) return null;
   let score = area.score;
   reasons.push(area.why);
+  features.push(`area:${area.code}`);
 
   const type = typeFit(want, have);
   if (!type.ok) return null;
   score += type.bonus;
   if (type.why) reasons.push(type.why);
+  features.push(type.bonus >= 0.2 ? 'type:same' : type.bonus > 0 ? 'type:close' : 'type:unknown');
 
   if (want.bhk && have.bhk && want.bhk !== have.bhk) return null;
   let agreed = 0;
-  if (want.bhk && have.bhk) { score += 0.1; agreed += 1; reasons.push(`${have.bhk} BHK`); }
+  if (want.bhk && have.bhk) { score += 0.1; agreed += 1; reasons.push(`${have.bhk} BHK`); features.push('bhk'); }
 
   if (want.sizeSqYd && have.sizeSqYd) {
     // Plots come in 100, 150, 200, 250, 300 and each is a different purchase: 250 will look at 225–275,
@@ -136,9 +142,11 @@ export function scorePair(want: MarketListing, have: MarketListing, now = new Da
       score += 0.25;
       agreed += 1;
       reasons.push(`size fits: wants ${want.sizeSqYd} yd, has ${have.sizeSqYd} yd`);
+      features.push('size:fits');
     } else if (gap <= tolerance * 2) {
       score += 0.03;
       reasons.push(`size is off: wants ${want.sizeSqYd} yd, has ${have.sizeSqYd} yd`);
+      features.push('size:off');
     } else {
       return null;
     }
@@ -149,6 +157,7 @@ export function scorePair(want: MarketListing, have: MarketListing, now = new Da
     score += 0.1;
     agreed += 1;
     reasons.push('within budget');
+    features.push('budget');
   }
 
   if (want.posterPhone) score += 0.03;
@@ -166,7 +175,7 @@ export function scorePair(want: MarketListing, have: MarketListing, now = new Da
   }
   // An area and a type alone fit half the feed; one agreeing detail is what makes it a lead.
   if (agreed === 0) score = Math.min(score, 0.49);
-  return { score: Math.round(Math.min(Math.max(score, 0), 1) * 100) / 100, reasons };
+  return { score: Math.round(Math.min(Math.max(score, 0), 1) * 100) / 100, reasons, signature: features.join('+') };
 }
 
 export interface CrossMatch {
@@ -205,6 +214,8 @@ export interface CrossMatchQuery {
   bhk?: number;
   purpose?: 'sale' | 'rent';
   sort?: MatchSort;
+  /** Show only pairings in this state: "new" is the ones nobody has worked yet. */
+  status?: 'new' | 'called' | 'meeting' | 'won' | 'lost';
 }
 
 /** `best` is the default: strongest fits first, but a fresh pair outranks a stale one. */
@@ -294,12 +305,58 @@ function rowToListing(row: Record<string, unknown>): MarketListing {
 }
 
 /**
+ * What the team has taught the matcher. Every "not a real match" is a lesson at three levels, so one click
+ * improves the whole sheet and not only that card:
+ *  - the **listing** (marked wrong before: vague or mistaken, so it must fit excellently to be offered again);
+ *  - the **kind of pairing** (the same facts agreeing — "same sector only, no size" — that keeps turning out wrong);
+ *  - the **dealer** (their listings keep being wrong).
+ * Pairings somebody put away, or that Jev rates a non-fit, are `hidden`: skipped, so the next best one surfaces.
+ */
+export interface Lessons {
+  wrong: Map<string, number>;
+  hidden: Set<string>;
+  signatures: Map<string, { bad: number; good: number }>;
+  posters: Map<string, number>;
+}
+export const NO_LESSONS: Lessons = { wrong: new Map(), hidden: new Set(), signatures: new Map(), posters: new Map() };
+
+/** Enough evidence before it counts: one mistake must not rewrite the rules. */
+const SIGNATURE_MIN_WRONG = 3;
+const POSTER_MIN_WRONG = 3;
+
+/** Pure. How much a pairing's score drops for what the team has marked wrong before, and the words that say why. */
+export function lessonPenalty(signature: string, want: MarketListing, have: MarketListing, lessons: Lessons): { penalty: number; notes: string[] } {
+  let penalty = 0;
+  const notes: string[] = [];
+  const wrong = Math.min((lessons.wrong.get(have.id) ?? 0) + (lessons.wrong.get(want.id) ?? 0), 3);
+  if (wrong) {
+    penalty += 0.12 * wrong;
+    notes.push(`marked wrong ${wrong} time${wrong === 1 ? '' : 's'} before`);
+  }
+  const seen = lessons.signatures.get(signature);
+  if (seen && seen.bad >= SIGNATURE_MIN_WRONG) {
+    const share = seen.bad / (seen.bad + seen.good);
+    if (share >= 0.5) {
+      penalty += 0.25 * share * Math.min(1, seen.bad / 10);
+      notes.push(`this kind of pairing was marked wrong ${seen.bad} of ${seen.bad + seen.good} times`);
+    }
+  }
+  const dealer = (want.posterPhone ? lessons.posters.get(want.posterPhone) ?? 0 : 0) + (have.posterPhone ? lessons.posters.get(have.posterPhone) ?? 0 : 0);
+  if (dealer >= POSTER_MIN_WRONG) {
+    penalty += 0.08 * Math.min(1, dealer / 6);
+    notes.push('a dealer whose listings were often marked wrong');
+  }
+  return { penalty, notes };
+}
+
+/**
  * Pure: the best seller for each buyer's requirement. Kept apart from the loader so
  * the ranking rules are pinned by a test that needs no database.
  */
 export function bestPerRequirement(
-  listings: MarketListing[], query: CrossMatchQuery, now = new Date(), wrongBefore: Map<string, number> = new Map(),
+  listings: MarketListing[], query: CrossMatchQuery, now = new Date(), taught: Map<string, number> | Lessons = new Map(),
 ): Array<Pick<CrossMatch, 'want' | 'have' | 'score' | 'reasons' | 'crossGroup'>> {
+  const lessons: Lessons = taught instanceof Map ? { ...NO_LESSONS, wrong: taught } : taught;
   const minScore = query.minScore ?? 0.5;
   const crossGroupOnly = query.crossGroupOnly ?? true;
   const offersByPlace = new Map<string, MarketListing[]>();
@@ -323,16 +380,16 @@ export function bestPerRequirement(
     let top: (typeof best)[number] | null = null;
     for (const have of candidates) {
       if (samePerson(want, have)) continue;
+      // A pairing somebody put away, or Jev says does not fit, is skipped here so the buyer's next best seller is found.
+      if (lessons.hidden.has(`${want.id}:${have.id}`)) continue;
       const crossGroup = !sharesAGroup(want.groups, have.groups);
       if (crossGroupOnly && !crossGroup) continue;
       const pairing = scorePair(want, have, now);
       if (!pairing) continue;
-      // What people have said was wrong before counts against it: a listing marked "not a real match" for
-      // two buyers is vague or mistaken, and it should have to be an excellent fit to be offered a third.
-      const wrong = Math.min((wrongBefore.get(have.id) ?? 0) + (wrongBefore.get(want.id) ?? 0), 3);
-      if (wrong) {
-        pairing.score = Math.round(Math.max(pairing.score - 0.12 * wrong, 0) * 100) / 100;
-        pairing.reasons.push(`marked wrong ${wrong} time${wrong === 1 ? '' : 's'} before`);
+      const lesson = lessonPenalty(pairing.signature, want, have, lessons);
+      if (lesson.penalty) {
+        pairing.score = Math.round(Math.max(pairing.score - lesson.penalty, 0) * 100) / 100;
+        pairing.reasons.push(...lesson.notes);
       }
       if (pairing.score < minScore) continue;
       if (!top || pairing.score > top.score) top = { want, have, crossGroup, ...pairing };
@@ -379,57 +436,171 @@ export async function loadListings(days: number): Promise<MarketListing[]> {
   return rows.rows.map(rowToListing);
 }
 
-export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<CrossMatch[]> {
-  const days = Math.min(Math.max(query.days ?? MAX_DEAL_AGE_DAYS, 1), MAX_DEAL_AGE_DAYS);
-  const limit = Math.min(Math.max(query.limit ?? 100, 1), 500);
-  const learned = await db.query<{ listing: string; n: number }>(
-    `SELECT l AS listing, count(*)::int AS n FROM (
-       SELECT have_listing_id AS l FROM ipy_market_deal WHERE status = 'bad_match' AND have_listing_id IS NOT NULL
-       UNION ALL SELECT want_listing_id FROM ipy_market_deal WHERE status = 'bad_match' AND want_listing_id IS NOT NULL
-     ) wrong GROUP BY l`,
-  );
-  const listings = (await loadListings(days)).filter((listing) => listingPasses(listing, query));
-  const ranked = bestPerRequirement(listings, query, new Date(), new Map(learned.rows.map((row) => [row.listing, row.n])));
+// ---------------------------------------------------------------------------
+// The sheet: worked out once, served many times
+// ---------------------------------------------------------------------------
 
-  const worked = await db.query<{ want_listing_id: string; have_listing_id: string; status: CrossMatch['status']; note: string | null }>(
-    `SELECT want_listing_id, have_listing_id, status, note FROM ipy_market_deal WHERE want_listing_id IS NOT NULL`,
-  );
-  const outcome = new Map(worked.rows.map((row) => [`${row.want_listing_id}:${row.have_listing_id}`, row]));
-  const checks = await db.query<{ want_listing_id: string; have_listing_id: string; fit: string }>(
-    `SELECT want_listing_id, have_listing_id, fit FROM ipy_market_pair_check`,
-  );
-  const fit = new Map(checks.rows.map((row) => [`${row.want_listing_id}:${row.have_listing_id}`, Number(row.fit)]));
+/**
+ * Working out every pairing in the feed takes seconds, and the screen asks again for every page,
+ * filter and click. So the worked-out sheet is kept: for ten minutes, or until something changes it
+ * (a drop, an outcome, Jev's verdict), and when it is stale it is **served as it is while a fresh one
+ * is built behind it** — nobody waits for the sum, they wait for the network.
+ * Statuses are written into the kept sheet at once, so a click shows immediately.
+ */
+const SHEET_TTL_MS = 10 * 60_000;
+const MAX_SHEETS = 12;
+interface Sheet { version: number; at: number; ranked: CrossMatch[] }
+const sheets = new Map<string, Sheet>();
+const building = new Map<string, Promise<Sheet>>();
+let version = 0;
+
+/** Something the sheet is made from has changed: the next look rebuilds it (the old one is shown meanwhile). */
+export function invalidateMarketMatches(): void {
+  version += 1;
+}
+
+/** Only what changes WHICH pairings exist; sorting, paging and status are applied to the kept sheet. */
+function sheetKey(query: CrossMatchQuery): string {
+  const { minScore, crossGroupOnly, onlyVerified, minJevFit, category, sizeMinSqYd, sizeMaxSqYd, area, bhk, purpose, days } = query;
+  return JSON.stringify([days ?? MAX_DEAL_AGE_DAYS, minScore ?? 0.5, crossGroupOnly ?? true, onlyVerified ?? false, minJevFit ?? null,
+    category ?? null, sizeMinSqYd ?? null, sizeMaxSqYd ?? null, area?.trim().toLowerCase() ?? null, bhk ?? null, purpose ?? null]);
+}
+
+const pairKey = (wantId: string, haveId: string): string => `${wantId}:${haveId}`;
+
+/** What people have decided and what Jev has said, as the matcher's lessons. */
+export async function loadLessons(now = new Date()): Promise<Lessons> {
+  const [deals, checks] = await Promise.all([
+    db.query<{ want_listing_id: string; have_listing_id: string; status: string }>(
+      `SELECT want_listing_id, have_listing_id, status FROM ipy_market_deal WHERE want_listing_id IS NOT NULL AND have_listing_id IS NOT NULL AND status <> 'new'`),
+    db.query<{ want_listing_id: string; have_listing_id: string }>(
+      `SELECT want_listing_id, have_listing_id FROM ipy_market_pair_check WHERE fit < $1`, [JEV_FIT_FLOOR]),
+  ]);
+  const lessons: Lessons = { wrong: new Map(), hidden: new Set(), signatures: new Map(), posters: new Map() };
+  for (const row of checks.rows) lessons.hidden.add(pairKey(row.want_listing_id, row.have_listing_id));
+  const judged = deals.rows.filter((row) => ['bad_match', 'dismissed', 'called', 'meeting', 'won'].includes(row.status));
+  for (const row of judged) if (row.status === 'bad_match' || row.status === 'dismissed') lessons.hidden.add(pairKey(row.want_listing_id, row.have_listing_id));
+  const wrongPairs = judged.filter((row) => row.status === 'bad_match');
+  for (const row of wrongPairs) {
+    for (const id of [row.want_listing_id, row.have_listing_id]) lessons.wrong.set(id, (lessons.wrong.get(id) ?? 0) + 1);
+  }
+  // The kind of pairing each decision was about: found by scoring the two listings again.
+  const ids = [...new Set(judged.filter((row) => row.status !== 'dismissed').flatMap((row) => [row.want_listing_id, row.have_listing_id]))];
+  if (ids.length) {
+    const rows = await db.query<Record<string, unknown>>(
+      `SELECT ${LISTING_COLUMNS} FROM ipy_market_listing l JOIN ipy_market_post p ON p.id = l.post_id WHERE l.id = ANY($1::uuid[])`, [ids]);
+    const byId = new Map(rows.rows.map((row) => [row.id as string, rowToListing(row)]));
+    for (const row of judged) {
+      if (row.status === 'dismissed') continue;
+      const want = byId.get(row.want_listing_id);
+      const have = byId.get(row.have_listing_id);
+      const pairing = want && have ? scorePair(want, have, now) : null;
+      if (!pairing || !want || !have) continue;
+      const seen = lessons.signatures.get(pairing.signature) ?? { bad: 0, good: 0 };
+      if (row.status === 'bad_match') {
+        seen.bad += 1;
+        for (const phone of new Set([want.posterPhone, have.posterPhone])) if (phone) lessons.posters.set(phone, (lessons.posters.get(phone) ?? 0) + 1);
+      } else {
+        seen.good += 1;
+      }
+      lessons.signatures.set(pairing.signature, seen);
+    }
+  }
+  return lessons;
+}
+
+async function buildSheet(query: CrossMatchQuery): Promise<Sheet> {
+  const days = Math.min(Math.max(query.days ?? MAX_DEAL_AGE_DAYS, 1), MAX_DEAL_AGE_DAYS);
+  const built = version;
+  const [loaded, lessons, worked, checks] = await Promise.all([
+    loadListings(days),
+    loadLessons(),
+    db.query<{ want_listing_id: string; have_listing_id: string; status: CrossMatch['status']; note: string | null }>(
+      `SELECT want_listing_id, have_listing_id, status, note FROM ipy_market_deal WHERE want_listing_id IS NOT NULL`),
+    db.query<{ want_listing_id: string; have_listing_id: string; fit: string }>(`SELECT want_listing_id, have_listing_id, fit FROM ipy_market_pair_check`),
+  ]);
+  const ranked = bestPerRequirement(loaded.filter((listing) => listingPasses(listing, query)), query, new Date(), lessons);
+  const outcome = new Map(worked.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), row]));
+  const fit = new Map(checks.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), Number(row.fit)]));
 
   const matches: CrossMatch[] = [];
   for (const pairing of ranked) {
-    const id = `${pairing.want.id}:${pairing.have.id}`;
+    const id = pairKey(pairing.want.id, pairing.have.id);
     const done = outcome.get(id);
     const status = done?.status ?? 'new';
-    // "Not a real match" is never shown again; the others come back only when finished work is asked for.
-    if (status === 'bad_match') continue;
-    if (!query.includeWorked && (status === 'won' || status === 'lost' || status === 'dismissed')) continue;
+    // Put away for good: "not a real match" teaches the matcher, "not for us" is the team's own no. Neither comes back.
+    if (status === 'bad_match' || status === 'dismissed') continue;
     const jevFit = fit.get(id) ?? null;
     if (jevFit !== null && jevFit < JEV_FIT_FLOOR) continue;
     if ((query.onlyVerified || query.minJevFit !== undefined) && jevFit === null) continue;
     if (query.minJevFit !== undefined && jevFit! < query.minJevFit) continue;
     matches.push({ ...pairing, id, status, note: done?.note ?? null, jevFit });
   }
-  // Order first, then cut: the limit must keep the best of all of them, not the first hundred found.
-  const shown = sortMatches(matches, query.sort).slice(0, limit);
-  matches.length = 0;
-  matches.push(...shown);
+  return { version: built, at: Date.now(), ranked: matches };
+}
 
-  // The whole messages, for the pairings that are being shown and nothing else.
-  const postIds = [...new Set(matches.flatMap((m) => [m.want.postId, m.have.postId]))];
+/** The kept sheet, however old; a rebuild is started behind it when it is stale. Waits only when there is nothing kept. */
+async function sheetFor(query: CrossMatchQuery, fresh = false): Promise<CrossMatch[]> {
+  const key = sheetKey(query);
+  const refresh = (): Promise<Sheet> => {
+    const running = building.get(key);
+    if (running) return running;
+    const started = buildSheet(query)
+      .then((sheet) => {
+        sheets.delete(key);
+        sheets.set(key, sheet);
+        while (sheets.size > MAX_SHEETS) sheets.delete(sheets.keys().next().value as string);
+        return sheet;
+      })
+      .finally(() => building.delete(key));
+    building.set(key, started);
+    return started;
+  };
+  const kept = sheets.get(key);
+  // The screen takes what is kept; the background jobs, which decide what to ask Jev and what to alert, never act on a stale sheet.
+  if (!kept || fresh) return (await refresh()).ranked;
+  if (kept.version !== version || Date.now() - kept.at > SHEET_TTL_MS) refresh().catch((err) => logger.warn({ err }, 'market: rebuilding the call sheet failed'));
+  return kept.ranked;
+}
+
+/** Write an outcome into every kept sheet at once, so the screen answers the click without a rebuild. */
+function noteOutcome(wantId: string, haveId: string, status: CrossMatch['status'], note: string | null): void {
+  const id = pairKey(wantId, haveId);
+  for (const sheet of sheets.values()) {
+    const at = sheet.ranked.findIndex((match) => match.id === id);
+    if (at === -1) continue;
+    if (status === 'bad_match' || status === 'dismissed') sheet.ranked.splice(at, 1);
+    else sheet.ranked[at] = { ...sheet.ranked[at]!, status, note };
+  }
+}
+
+export interface MatchPage { total: number; matches: CrossMatch[] }
+
+/** One page of the sheet, in the order asked, with the whole messages for the pairings on it and nothing else. */
+export async function findCrossMatchPage(query: CrossMatchQuery, page = 1, pageSize = 25, fresh = false): Promise<MatchPage> {
+  let all = await sheetFor(query, fresh);
+  if (query.includeWorked === false) all = all.filter((match) => match.status !== 'won' && match.status !== 'lost');
+  if (query.status) all = all.filter((match) => match.status === query.status);
+  const ordered = sortMatches(all, query.sort);
+  const size = Math.min(Math.max(pageSize, 1), 100);
+  const from = (Math.max(page, 1) - 1) * size;
+  const shown = ordered.slice(from, from + size).map((match) => ({ ...match }));
+
+  const postIds = [...new Set(shown.flatMap((m) => [m.want.postId, m.have.postId]))];
   if (postIds.length) {
     const bodies = await db.query<{ id: string; body: string }>(`SELECT id, body FROM ipy_market_post WHERE id = ANY($1::uuid[])`, [postIds]);
     const byId = new Map(bodies.rows.map((row) => [row.id, tidyBody(row.body)]));
-    for (const match of matches) {
+    for (const match of shown) {
       match.want = { ...match.want, body: byId.get(match.want.postId) ?? '' };
       match.have = { ...match.have, body: byId.get(match.have.postId) ?? '' };
     }
   }
-  return matches;
+  return { total: ordered.length, matches: shown };
+}
+
+/** The first `limit` of a freshly worked-out sheet, for the background jobs that verify pairings and write the alert. */
+export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<CrossMatch[]> {
+  return (await findCrossMatchPage(query, 1, Math.min(Math.max(query.limit ?? 100, 1), 500), true)).matches;
 }
 
 export const DEAL_STATUSES = ['new', 'called', 'meeting', 'won', 'lost', 'dismissed', 'bad_match'] as const;
@@ -445,4 +616,7 @@ export async function recordOutcome(
      DO UPDATE SET status = EXCLUDED.status, note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now()`,
     [wantListingId, haveListingId, status, note, userId],
   );
+  noteOutcome(wantListingId, haveListingId, status, note);
+  // The rest of the system learns from it: the matcher's lessons are rebuilt behind the kept sheet.
+  invalidateMarketMatches();
 }

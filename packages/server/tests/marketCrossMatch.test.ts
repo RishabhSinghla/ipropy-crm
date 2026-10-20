@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaScore, bestPerRequirement, listingPasses, samePerson, scorePair, sortMatches, type MarketListing } from '../src/core/market/crossMatch.js';
+import { areaScore, bestPerRequirement, lessonPenalty, listingPasses, NO_LESSONS, samePerson, scorePair, sortMatches, type Lessons, type MarketListing } from '../src/core/market/crossMatch.js';
 import { onceEach } from '../src/core/market/dealerDeals.js';
 import { associateValues, looksLikeAFirm, usableName, type FieldInfo } from '../src/core/market/dealers.js';
 
@@ -231,6 +231,46 @@ describe('narrowing and ordering the call sheet', () => {
     const oldButSure = pair({ postedAt: daysAgo(40) }, { postedAt: daysAgo(40) }, 0.7, 0.95);
     const newButMaybe = pair({ postedAt: daysAgo(1) }, { postedAt: daysAgo(1) }, 0.7, 0.5);
     expect(sortMatches([newButMaybe, oldButSure], 'match', NOW)[0]).toBe(oldButSure);
+  });
+});
+
+describe('what the matcher learns from "not a real match"', () => {
+  const lessons = (over: Partial<Lessons>): Lessons => ({ ...NO_LESSONS, wrong: new Map(), hidden: new Set(), signatures: new Map(), posters: new Map(), ...over });
+
+  it('a pairing put away is skipped, so the buyer is shown their next best seller instead', () => {
+    const wants = buyer({ groups: ['A'] });
+    const best = listing({ groups: ['B'] });
+    const next = listing({ groups: ['B'], sizeSqYd: 240 });
+    expect(bestPerRequirement([wants, best, next], {}, NOW)[0]!.have).toBe(best);
+    const after = bestPerRequirement([wants, best, next], {}, NOW, lessons({ hidden: new Set([`${wants.id}:${best.id}`]) }));
+    expect(after).toHaveLength(1);
+    expect(after[0]!.have).toBe(next);
+  });
+
+  it('a kind of pairing that keeps being marked wrong costs every pairing of that kind, once there is enough evidence', () => {
+    const want = buyer({ groups: ['A'] });
+    const have = listing({ groups: ['B'] });
+    const signature = scorePair(want, have, NOW)!.signature;
+    expect(lessonPenalty(signature, want, have, lessons({ signatures: new Map([[signature, { bad: 2, good: 0 }]]) })).penalty).toBe(0);
+    const learned = lessonPenalty(signature, want, have, lessons({ signatures: new Map([[signature, { bad: 6, good: 1 }]]) }));
+    expect(learned.penalty).toBeGreaterThan(0.1);
+    expect(learned.notes.join(' ')).toContain('marked wrong 6 of 7');
+    // ...but not when the same kind of pairing has mostly worked out.
+    expect(lessonPenalty(signature, want, have, lessons({ signatures: new Map([[signature, { bad: 3, good: 9 }]]) })).penalty).toBe(0);
+  });
+
+  it('a dealer whose listings keep being wrong has to fit better to be offered', () => {
+    const want = buyer({ groups: ['A'] });
+    const have = listing({ groups: ['B'], posterPhone: '9811111111' });
+    const taught = lessonPenalty('x', want, have, lessons({ posters: new Map([['9811111111', 4]]) }));
+    expect(taught.penalty).toBeGreaterThan(0);
+    expect(taught.notes[0]).toContain('dealer');
+    expect(lessonPenalty('x', want, have, lessons({ posters: new Map([['9811111111', 1]]) })).penalty).toBe(0);
+  });
+
+  it('names the facts that agreed, so a pairing can be recognised as a kind', () => {
+    const pairing = scorePair(buyer(), listing({}), NOW)!;
+    expect(pairing.signature).toBe('area:sector+type:same+size:fits+budget');
   });
 });
 

@@ -130,6 +130,11 @@ describe('a dealer group read by Jev and matched across groups', () => {
 
   it('sure-shot shows only pairs Jev has checked and rates high, and Refresh answers at once', async () => {
     const find = async (minJevFit?: number) => (await findCrossMatches({ limit: 500, includeWorked: true, minJevFit })).find((m) => m.have.posterPhone === sellerPhone);
+    // The pairing was put away above; undoing that brings it back.
+    const away = (await findCrossMatches({ limit: 500, includeWorked: true })).find((m) => m.have.posterPhone === sellerPhone);
+    expect(away).toBeUndefined();
+    const wantId = (await db.queryOne<{ want_listing_id: string; have_listing_id: string }>(`SELECT want_listing_id, have_listing_id FROM ipy_market_deal WHERE status = 'dismissed' ORDER BY updated_at DESC LIMIT 1`))!;
+    await recordOutcome(wantId.want_listing_id, wantId.have_listing_id, 'new', null, adminId);
     const match = (await find())!;
     await db.query(`DELETE FROM ipy_market_pair_check WHERE want_listing_id = $1 AND have_listing_id = $2`, [match.want.id, match.have.id]);
     expect(await find(0.7)).toBeUndefined();
@@ -145,9 +150,17 @@ describe('a dealer group read by Jev and matched across groups', () => {
   it('the HTTP routes answer, and refuse a status that does not exist', async () => {
     const list = await request(app).get('/api/market/matches?includeWorked=true&limit=500').set('Authorization', `Bearer ${adminToken}`);
     expect(list.status).toBe(200);
-    const found = (list.body as Array<{ have: { posterPhone: string }; want: { id: string }; status: string }>).find((m) => m.have.posterPhone === sellerPhone)!;
-    expect(found.status).toBe('dismissed');
-    const bad = await request(app).put(`/api/market/matches/${found.want.id}/${found.want.id}`)
+    const rows = list.body as Array<{ have: { posterPhone: string; id?: string }; want: { id: string }; status: string }>;
+    const found = rows.find((m) => m.have.posterPhone === sellerPhone)!;
+    expect(found).toBeDefined();
+    expect(Number(list.headers['x-total-count'])).toBeGreaterThanOrEqual(rows.length);
+    // "Not for us" puts the pairing away for good: it is not on the sheet again, even when finished work is asked for.
+    const put = await request(app).put(`/api/market/matches/${found.want.id}/${(found as unknown as { have: { id: string } }).have.id}`)
+      .set('Authorization', `Bearer ${adminToken}`).send({ status: 'dismissed' });
+    expect(put.status).toBe(200);
+    const again = await request(app).get('/api/market/matches?includeWorked=true&limit=500').set('Authorization', `Bearer ${adminToken}`);
+    expect((again.body as typeof rows).find((m) => m.have.posterPhone === sellerPhone)).toBeUndefined();
+    const bad = await request(app).put(`/api/market/matches/${rows[0]?.want.id ?? '00000000-0000-4000-8000-000000000000'}/${rows[0]?.want.id ?? '00000000-0000-4000-8000-000000000000'}`)
       .set('Authorization', `Bearer ${adminToken}`).send({ status: 'sold' });
     expect(bad.status).toBe(422);
   });

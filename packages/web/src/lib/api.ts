@@ -656,7 +656,9 @@ export type MarketIntroductionSort = 'best' | 'match' | 'newest';
 export interface MarketIntroductionQuery {
   crossGroupOnly: boolean;
   minScore: number;
-  includeWorked: boolean;
+  page: number;
+  pageSize: number;
+  status?: 'new' | 'called' | 'meeting' | 'won' | 'lost';
   sureShot?: boolean;
   category?: string;
   sizeMinSqYd?: number;
@@ -1449,16 +1451,19 @@ export const api = {
   },
   marketImports: () => get<{ imports: MarketImportRow[] }>('/api/market/imports'),
   marketPostDetail: (id: string) => get<MarketPostDetail>(`/api/market/posts/${id}`),
-  marketIntroductions: (query: MarketIntroductionQuery) => {
+  /** One page of the call sheet and how many pairings there are in all (`X-Total-Count`: the list itself stays a bare array). */
+  marketIntroductions: async (query: MarketIntroductionQuery) => {
     const params = new URLSearchParams({
-      crossGroupOnly: String(query.crossGroupOnly), minScore: String(query.minScore), includeWorked: String(query.includeWorked), limit: '100',
+      crossGroupOnly: String(query.crossGroupOnly), minScore: String(query.minScore), page: String(query.page), pageSize: String(query.pageSize),
     });
     if (query.sureShot) params.set('minJevFit', '0.7');
-    for (const key of ['category', 'sizeMinSqYd', 'sizeMaxSqYd', 'area', 'bhk', 'purpose', 'sort'] as const) {
+    for (const key of ['category', 'sizeMinSqYd', 'sizeMaxSqYd', 'area', 'bhk', 'purpose', 'sort', 'status'] as const) {
       const value = query[key];
       if (value !== undefined && value !== '') params.set(key, String(value));
     }
-    return get<MarketIntroduction[]>(`/api/market/matches?${params}`);
+    const res = await request<Response>(`/api/market/matches?${params}`, { raw: true });
+    const matches = await res.json() as MarketIntroduction[];
+    return { matches, total: Number(res.headers.get('X-Total-Count') ?? matches.length) };
   },
   refreshMarket: () => post<{ started: true }>('/api/market/refresh', {}),
   setMarketIntroduction: (wantId: string, haveId: string, status: MarketIntroductionStatus, note?: string) =>

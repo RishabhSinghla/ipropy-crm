@@ -217,13 +217,23 @@ const FIT_QUESTIONS = {
 };
 
 /**
+ * Pairings the team has already marked "not a real match", shown to Jev beside the one it is rating. This is
+ * how a click on that button teaches Jev: it is told what this desk rejects, not only what the words say.
+ */
+export function examplesText(rejected: Array<{ requirement: string; offer: string }>): string {
+  if (!rejected.length) return '';
+  const lines = rejected.slice(0, 3).map((pair, index) => `${index + 1}. REQUIREMENT: ${pair.requirement.slice(0, 200)} | OFFER: ${pair.offer.slice(0, 200)}`);
+  return `\n\nPAIRINGS THIS TEAM ALREADY REJECTED AS NOT A REAL MATCH (rate a similar pairing low):\n${lines.join('\n')}`;
+}
+
+/**
  * Jev's probability that an offer answers a requirement, or null when it could not say.
  *
  * Only the two listings' own lines are sent, never the whole messages: a broker's
  * twenty-plot broadcast beside a one-line requirement is not a question Jev can answer,
  * and the other nineteen plots are nobody's business.
  */
-export async function askJevFit(requirement: string, offer: string): Promise<number | null> {
+export async function askJevFit(requirement: string, offer: string, rejected: Array<{ requirement: string; offer: string }> = []): Promise<number | null> {
   const key = jevKey();
   if (!key) return null;
   try {
@@ -232,7 +242,7 @@ export async function askJevFit(requirement: string, offer: string): Promise<num
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: MODEL,
-        state: withoutPhoneNumbers(`REQUIREMENT:\n${requirement.slice(0, 600)}\n\nOFFER:\n${offer.slice(0, 600)}`),
+        state: withoutPhoneNumbers(`REQUIREMENT:\n${requirement.slice(0, 600)}\n\nOFFER:\n${offer.slice(0, 600)}${examplesText(rejected)}`),
         questions: FIT_QUESTIONS,
       }),
       signal: AbortSignal.timeout(20_000),

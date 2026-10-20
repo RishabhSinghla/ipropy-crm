@@ -17,7 +17,7 @@ import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { notifyMany } from '../notifications/index.js';
 import { isAiAvailable } from '../../ai/client.js';
-import { findCrossMatches } from './crossMatch.js';
+import { findCrossMatches, invalidateMarketMatches } from './crossMatch.js';
 import { syncDealerNotes } from './dealerNotes.js';
 import { alertOwners, knownLocalities, READ_VERSION } from './feed.js';
 import { askJev, askJevFit, jevIsAvailable, mergeReadings } from './jev.js';
@@ -199,10 +199,15 @@ const VERIFY_PER_VISIT = 40;
 export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
   if (!jevIsAvailable()) return 0;
   const unchecked = (await findCrossMatches({ limit: 300, includeWorked: false })).filter((match) => match.jevFit === null).slice(0, limit);
+  const rejected = (await db.query<{ want_summary: string; have_summary: string }>(
+    `SELECT w.summary AS want_summary, h.summary AS have_summary
+       FROM ipy_market_deal d JOIN ipy_market_listing w ON w.id = d.want_listing_id JOIN ipy_market_listing h ON h.id = d.have_listing_id
+      WHERE d.status = 'bad_match' ORDER BY d.updated_at DESC LIMIT 3`,
+  )).rows.map((row) => ({ requirement: row.want_summary, offer: row.have_summary }));
   let checked = 0;
   let failures = 0;
   for (const match of unchecked) {
-    const fit = await askJevFit(match.want.summary || match.want.body, match.have.summary || match.have.body);
+    const fit = await askJevFit(match.want.summary || match.want.body, match.have.summary || match.have.body, rejected);
     if (fit === null) {
       failures += 1;
       // Jev refusing three in a row is down or misconfigured; stop paying for attempts.
@@ -217,6 +222,7 @@ export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
     );
     checked += 1;
   }
+  if (checked) invalidateMarketMatches();
   return checked;
 }
 

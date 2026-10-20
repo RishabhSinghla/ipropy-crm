@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeReadings, readJevAnswers, withoutPhoneNumbers } from '../src/core/market/jev.js';
+import { examplesText, mergeReadings, readJevAnswers, withoutPhoneNumbers } from '../src/core/market/jev.js';
 import { readPost } from '../src/core/market/readPost.js';
 
 // The shape Jev really answered with on 12 October 2026 for a plot for sale.
@@ -147,3 +147,15 @@ describe('a rate per yard', () => {
     expect(rate('plot 200 gaj demand 3.5 cr @1.7/Sq.yd.')).toEqual([350, 350]);
   });
 });
+
+describe('teaching Jev what this desk rejects', () => {
+  it('shows it up to three rejected pairings, trimmed, beside the one it is rating', () => {
+    expect(examplesText([])).toBe('');
+    const text = examplesText([1, 2, 3, 4].map((n) => ({ requirement: `wants plot ${n}`, offer: `${'x'.repeat(500)}` })));
+    expect(text).toContain('NOT A REAL MATCH');
+    expect(text).toContain('1. REQUIREMENT: wants plot 1');
+    expect(text).not.toContain('4. REQUIREMENT');
+    expect(text.length).toBeLessThan(1200);
+  });
+});
+

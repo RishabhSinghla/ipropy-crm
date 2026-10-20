@@ -17,7 +17,7 @@ import { getPostDetail, importGroupExport, afterImport, searchMarket } from '../
 import { nudgeMarketWork } from '../../core/market/enrich.js';
 import { listImports, queueImports } from '../../core/market/imports.js';
 import { matchDeal } from '../../core/market/matchDeal.js';
-import { DEAL_STATUSES, findCrossMatches, MATCH_SORTS, recordOutcome } from '../../core/market/crossMatch.js';
+import { DEAL_STATUSES, findCrossMatchPage, invalidateMarketMatches, MATCH_SORTS, recordOutcome } from '../../core/market/crossMatch.js';
 import { dealsOfRecord } from '../../core/market/dealerDeals.js';
 import { DEAL_PATCH, deleteDeal, duplicateDeal, matchCounts, MATCH_COUNT_LIMIT, updateDeal } from '../../core/market/associateDeals.js';
 import { dealerDirectory, saveDealersAsAssociates } from '../../core/market/dealers.js';
@@ -109,7 +109,8 @@ marketRouter.get('/matches', asyncHandler(async (req, res) => {
     crossGroupOnly: z.enum(['true', 'false']).optional(),
     includeWorked: z.enum(['true', 'false']).optional(),
     minJevFit: z.coerce.number().min(0).max(1).optional(),
-    limit: z.coerce.number().int().min(1).max(500).optional(),
+    page: z.coerce.number().int().min(1).max(1000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25),
     category: z.string().trim().max(40).optional(),
     sizeMinSqYd: z.coerce.number().positive().optional(),
     sizeMaxSqYd: z.coerce.number().positive().optional(),
@@ -117,12 +118,22 @@ marketRouter.get('/matches', asyncHandler(async (req, res) => {
     bhk: z.coerce.number().int().min(1).max(14).optional(),
     purpose: z.enum(['sale', 'rent']).optional(),
     sort: z.enum(MATCH_SORTS).optional(),
+    status: z.enum(['new', 'called', 'meeting', 'won', 'lost']).optional(),
   }).parse(req.query);
-  res.json(await findCrossMatches({
-    ...query,
+  const { page, pageSize, ...rest } = query;
+  const started = Date.now();
+  const found = await findCrossMatchPage({
+    ...rest,
     crossGroupOnly: query.crossGroupOnly !== 'false',
-    includeWorked: query.includeWorked === 'true',
-  }));
+    // Worked pairings stay on the sheet, coloured by what was decided; only the two "put away" answers leave it.
+    includeWorked: query.includeWorked !== 'false',
+  }, page, pageSize);
+  // The count rides in a header, not a wrapped body: this endpoint has always answered a bare list.
+  res.setHeader('X-Total-Count', String(found.total));
+  res.setHeader('X-Page', String(page));
+  res.setHeader('X-Page-Size', String(pageSize));
+  res.setHeader('Server-Timing', `sheet;dur=${Date.now() - started}`);
+  res.json(found.matches);
 }));
 
 /**
@@ -130,6 +141,7 @@ marketRouter.get('/matches', asyncHandler(async (req, res) => {
  * instead of at the next 15-minute visit. Answers at once; the work runs behind it.
  */
 marketRouter.post('/refresh', blockApiKey, asyncHandler(async (_req, res) => {
+  invalidateMarketMatches();
   nudgeMarketWork();
   res.json({ started: true });
 }));
