@@ -3156,3 +3156,13 @@ second one teaching the system; and *"super duper precise and lightning fast"*.
   the kept sheet at once. Background jobs (`findCrossMatches`) always build fresh: they decide what to ask Jev and who to
   alert, and must never act on a stale sheet. `Server-Timing: sheet;dur=…` on the response says what a request cost.
   Pinned by `marketCallSheetPaging.test.ts`.
+
+**Where the five seconds really went (read off Render's own log, 20 October 2026):** loading the 13,171
+listings took 0.8 s; **pairing them took 4 to 6 s.** The matcher walked every offer in an area for every
+buyer — Greenfields alone has thousands — and ran the whole scorer, with its strings and arrays, on each.
+Three changes: offers are filed by purpose and kind of property as well as place (a buyer of a plot is
+never walked past a thousand flats), the certain refusals (`cannotMatch`: purpose, type, BHK, size, price) run
+before the scorer, and an index list is appended to rather than copied (that copy was quadratic). A busy-area
+benchmark went from 3.9 s to 0.6 s. `cannotMatch` may only refuse what `scorePair` refuses; a 4,000-pair
+property test pins that. Each build logs `market: call sheet built` with the time of every phase.
+

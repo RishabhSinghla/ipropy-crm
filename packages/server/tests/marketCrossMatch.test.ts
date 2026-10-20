@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaScore, bestPerRequirement, lessonPenalty, listingPasses, NO_LESSONS, samePerson, scorePair, sortMatches, type Lessons, type MarketListing } from '../src/core/market/crossMatch.js';
+import { areaScore, bestPerRequirement, cannotMatch, lessonPenalty, listingPasses, NO_LESSONS, samePerson, scorePair, sortMatches, type Lessons, type MarketListing } from '../src/core/market/crossMatch.js';
 import { onceEach } from '../src/core/market/dealerDeals.js';
 import { associateValues, looksLikeAFirm, usableName, type FieldInfo } from '../src/core/market/dealers.js';
 
@@ -271,6 +271,29 @@ describe('what the matcher learns from "not a real match"', () => {
   it('names the facts that agreed, so a pairing can be recognised as a kind', () => {
     const pairing = scorePair(buyer(), listing({}), NOW)!;
     expect(pairing.signature).toBe('area:sector+type:same+size:fits+budget');
+  });
+});
+
+describe('the quick refusal never refuses more than the scorer does', () => {
+  it('for any two properties in one place, "cannot match" implies the scorer says no', () => {
+    const cats = ['Residential Plot', 'Builder Floor', 'Apartment', 'Kothi/Villa', 'Commercial Plot', null];
+    let seed = 7;
+    const rnd = (n: number): number => { seed = (seed * 16807) % 2147483647; return seed % n; };
+    const make = (kind: 'have' | 'want'): MarketListing => listing({
+      kind, purpose: rnd(5) === 0 ? 'rent' : 'sale', category: cats[rnd(cats.length)] ?? null, bhk: rnd(2) ? 2 + rnd(3) : null,
+      sizeSqYd: rnd(5) ? 100 + 25 * rnd(12) : null, priceMinLakh: kind === 'have' && rnd(4) ? 100 + rnd(400) : null, priceMaxLakh: 100 + rnd(400), placeKeys: ['sector 85'],
+    });
+    let refused = 0;
+    for (let i = 0; i < 4000; i += 1) {
+      const want = make('want');
+      const have = make('have');
+      if (cannotMatch(want, have)) {
+        refused += 1;
+        expect(scorePair(want, have, NOW)).toBeNull();
+      }
+    }
+    // It must actually be doing the work it exists for.
+    expect(refused).toBeGreaterThan(1500);
   });
 });
 

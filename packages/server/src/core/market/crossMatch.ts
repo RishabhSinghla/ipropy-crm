@@ -349,6 +349,35 @@ export function lessonPenalty(signature: string, want: MarketListing, have: Mark
   return { penalty, notes };
 }
 
+function addTo(index: Map<string, MarketListing[]>, key: string, listing: MarketListing): void {
+  const list = index.get(key);
+  if (list) list.push(listing);
+  else index.set(key, [listing]);
+}
+
+/**
+ * The refusals `scorePair` would make anyway, asked without building anything: the wrong purpose, a different
+ * kind of property, a different BHK, a size or price that cannot fit. On a busy area (Greenfields has thousands of
+ * offers) running the whole scorer on each of them took six seconds; this takes a few hundred milliseconds.
+ * It may only ever refuse what `scorePair` refuses — a test pins that the two agree.
+ */
+export function cannotMatch(want: MarketListing, have: MarketListing): boolean {
+  if (want.purpose !== have.purpose) return true;
+  const a = categoryFamily(want.category);
+  const b = categoryFamily(have.category);
+  if (a && b) {
+    if (a !== b) return true;
+    if (want.category !== have.category && ((want.category === 'Apartment' && have.category === 'Kothi/Villa') || (want.category === 'Kothi/Villa' && have.category === 'Apartment'))) return true;
+  }
+  if (want.bhk && have.bhk && want.bhk !== have.bhk) return true;
+  if (want.sizeSqYd && have.sizeSqYd) {
+    const tolerance = Math.max(15, Math.round(want.sizeSqYd * 0.1));
+    if (Math.abs(want.sizeSqYd - have.sizeSqYd) > tolerance * 2) return true;
+  }
+  if (want.priceMaxLakh && have.priceMinLakh && have.priceMinLakh > want.priceMaxLakh * PRICE_GRACE) return true;
+  return false;
+}
+
 /**
  * Pure: the best seller for each buyer's requirement. Kept apart from the loader so
  * the ranking rules are pinned by a test that needs no database.
@@ -363,22 +392,37 @@ export function bestPerRequirement(
   for (const listing of listings) {
     if (listing.kind !== 'have') continue;
     for (const key of listing.placeKeys) {
-      offersByPlace.set(key, [...(offersByPlace.get(key) ?? []), listing]);
+      addTo(offersByPlace, `${listing.purpose}|${categoryFamily(listing.category) ?? '*'}|${key}`, listing);
       // A sector is also found from its pockets and the other way round.
       const parts = sectorParts(key);
-      if (parts) offersByPlace.set(`sector ${parts.base}`, [...(offersByPlace.get(`sector ${parts.base}`) ?? []), listing]);
+      if (parts) addTo(offersByPlace, `${listing.purpose}|${categoryFamily(listing.category) ?? '*'}|sector ${parts.base}`, listing);
     }
   }
 
   const best: Array<Pick<CrossMatch, 'want' | 'have' | 'score' | 'reasons' | 'crossGroup'>> = [];
   for (const want of listings) {
     if (want.kind !== 'want') continue;
-    const candidates = new Set(want.placeKeys.flatMap((key) => {
+    // Offers are filed by purpose and family of property as well as place, so a buyer of a plot is never walked past a thousand flats.
+    const wantFamily = categoryFamily(want.category);
+    const families = wantFamily ? [wantFamily, '*'] : ['plot', 'home', 'commercial', '*'];
+    const lists: MarketListing[][] = [];
+    let mayRepeat = want.placeKeys.length > 1;
+    for (const key of want.placeKeys) {
       const parts = sectorParts(key);
-      return [...(offersByPlace.get(key) ?? []), ...(parts ? offersByPlace.get(`sector ${parts.base}`) ?? [] : [])];
-    }));
+      if (parts) mayRepeat = true;
+      for (const family of families) {
+        const exact = offersByPlace.get(`${want.purpose}|${family}|${key}`);
+        if (exact) lists.push(exact);
+        const sector = parts ? offersByPlace.get(`${want.purpose}|${family}|sector ${parts.base}`) : undefined;
+        if (sector) lists.push(sector);
+      }
+    }
+    // Only a sector and its pockets, or several places, can offer the same listing twice; then, and only then, a set is worth building.
+    const candidates: Iterable<MarketListing> = lists.length === 1 ? lists[0]! : mayRepeat ? new Set(lists.flat()) : lists.flat();
     let top: (typeof best)[number] | null = null;
     for (const have of candidates) {
+      // The cheap, certain refusals first: most of a busy area's offers are the wrong kind, size or price.
+      if (cannotMatch(want, have)) continue;
       if (samePerson(want, have)) continue;
       // A pairing somebody put away, or Jev says does not fit, is skipped here so the buyer's next best seller is found.
       if (lessons.hidden.has(`${want.id}:${have.id}`)) continue;
