@@ -382,9 +382,38 @@ export function cannotMatch(want: MarketListing, have: MarketListing): boolean {
  * Pure: the best seller for each buyer's requirement. Kept apart from the loader so
  * the ranking rules are pinned by a test that needs no database.
  */
+type BestPair = Pick<CrossMatch, 'want' | 'have' | 'score' | 'reasons' | 'crossGroup'>;
+
 export function bestPerRequirement(
   listings: MarketListing[], query: CrossMatchQuery, now = new Date(), taught: Map<string, number> | Lessons = new Map(),
-): Array<Pick<CrossMatch, 'want' | 'have' | 'score' | 'reasons' | 'crossGroup'>> {
+): BestPair[] {
+  const steps = rankSteps(listings, query, now, taught);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+/**
+ * The same ranking, giving the server back to its other work every few dozen buyers. On production the sum takes
+ * seconds, and a request that arrives during it must not wait for it to finish.
+ */
+export async function bestPerRequirementYielding(
+  listings: MarketListing[], query: CrossMatchQuery, now = new Date(), taught: Map<string, number> | Lessons = new Map(),
+): Promise<BestPair[]> {
+  const steps = rankSteps(listings, query, now, taught);
+  let done = 0;
+  let step = steps.next();
+  while (!step.done) {
+    done += 1;
+    if (done % 20 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    step = steps.next();
+  }
+  return step.value;
+}
+
+function* rankSteps(
+  listings: MarketListing[], query: CrossMatchQuery, now: Date, taught: Map<string, number> | Lessons,
+): Generator<void, BestPair[], void> {
   const lessons: Lessons = taught instanceof Map ? { ...NO_LESSONS, wrong: taught } : taught;
   const minScore = query.minScore ?? 0.5;
   const crossGroupOnly = query.crossGroupOnly ?? true;
@@ -399,7 +428,7 @@ export function bestPerRequirement(
     }
   }
 
-  const best: Array<Pick<CrossMatch, 'want' | 'have' | 'score' | 'reasons' | 'crossGroup'>> = [];
+  const best: BestPair[] = [];
   for (const want of listings) {
     if (want.kind !== 'want') continue;
     // Offers are filed by purpose and family of property as well as place, so a buyer of a plot is never walked past a thousand flats.
@@ -439,6 +468,7 @@ export function bestPerRequirement(
       if (!top || pairing.score > top.score) top = { want, have, crossGroup, ...pairing };
     }
     if (top) best.push(top);
+    yield;
   }
   return withoutRepeats(best.sort((a, b) => b.score - a.score));
 }
@@ -583,7 +613,7 @@ async function buildSheet(query: CrossMatchQuery, fresh: boolean): Promise<Sheet
     timed('checks', db.query<{ want_listing_id: string; have_listing_id: string; fit: string }>(`SELECT want_listing_id, have_listing_id, fit FROM ipy_market_pair_check`)),
   ]);
   const loadedAt = Date.now() - t0;
-  const ranked = bestPerRequirement(loaded, query, new Date(), lessons);
+  const ranked = await bestPerRequirementYielding(loaded, query, new Date(), lessons);
   logger.info({ listings: loaded.length, loadedMs: loadedAt, queriesMs: spent, rankMs: Date.now() - t0 - loadedAt }, 'market: call sheet built');
   const outcome = new Map(worked.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), row]));
   const fit = new Map(checks.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), Number(row.fit)]));
@@ -665,8 +695,8 @@ export async function findCrossMatchPage(query: CrossMatchQuery, page = 1, pageS
 }
 
 /** The first `limit` of a freshly worked-out sheet, for the background jobs that verify pairings and write the alert. */
-export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<CrossMatch[]> {
-  return (await findCrossMatchPage(query, 1, Math.min(Math.max(query.limit ?? 100, 1), 500), true)).matches;
+export async function findCrossMatches(query: CrossMatchQuery = {}, fresh = true): Promise<CrossMatch[]> {
+  return (await findCrossMatchPage(query, 1, Math.min(Math.max(query.limit ?? 100, 1), 500), fresh)).matches;
 }
 
 export const DEAL_STATUSES = ['new', 'called', 'meeting', 'won', 'lost', 'dismissed', 'bad_match'] as const;

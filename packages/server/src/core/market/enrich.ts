@@ -198,7 +198,13 @@ const VERIFY_PER_VISIT = 40;
 
 export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
   if (!jevIsAvailable()) return 0;
-  const unchecked = (await findCrossMatches({ limit: 300, includeWorked: false })).filter((match) => match.jevFit === null).slice(0, limit);
+  // The kept sheet may be a few minutes behind Jev's own verdicts, so what it calls unchecked is checked against the table before paying for it.
+  const candidates = (await findCrossMatches({ limit: 300, includeWorked: false }, false)).filter((match) => match.jevFit === null);
+  const done = new Set((await db.query<{ k: string }>(
+    `SELECT want_listing_id || ':' || have_listing_id AS k FROM ipy_market_pair_check WHERE want_listing_id = ANY($1::uuid[])`,
+    [candidates.map((match) => match.want.id)],
+  )).rows.map((row) => row.k));
+  const unchecked = candidates.filter((match) => !done.has(`${match.want.id}:${match.have.id}`)).slice(0, limit);
   const rejected = (await db.query<{ want_summary: string; have_summary: string }>(
     `SELECT w.summary AS want_summary, h.summary AS have_summary
        FROM ipy_market_deal d JOIN ipy_market_listing w ON w.id = d.want_listing_id JOIN ipy_market_listing h ON h.id = d.have_listing_id
