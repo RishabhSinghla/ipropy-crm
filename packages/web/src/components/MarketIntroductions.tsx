@@ -19,15 +19,15 @@ import { Badge, EmptyState, Spinner } from './ui';
 import { toast } from '../lib/store';
 
 /**
- * The six answers. The first four are work in progress: the pairing stays where it is, the button takes a colour,
+ * The six answers. The first four are work in progress: the pairing stays where it is, the button fills with a colour (white text on each clears AA),
  * and pressing it again takes the answer back. The last two put the pairing away for good — "not a real match" also
  * teaches the matcher and Jev — so they ask for no colour and leave a line with one way back, for this visit only.
  */
 const ACTIONS: Array<{ status: MarketIntroductionStatus; label: string; keeps: boolean; colours?: { background: string; color: string; borderColor: string } }> = [
-  { status: 'called', label: 'Called', keeps: true, colours: { background: 'var(--accent-soft)', color: 'var(--accent-on-soft)', borderColor: 'var(--accent)' } },
-  { status: 'meeting', label: 'Meeting fixed', keeps: true, colours: { background: '#fde68a', color: '#78350f', borderColor: '#d97706' } },
-  { status: 'won', label: 'Won', keeps: true, colours: { background: 'var(--positive-soft)', color: 'var(--positive-on-soft)', borderColor: '#16a34a' } },
-  { status: 'lost', label: 'Lost', keeps: true, colours: { background: 'var(--negative-soft)', color: 'var(--negative-on-soft)', borderColor: '#dc2626' } },
+  { status: 'called', label: 'Called', keeps: true, colours: { background: '#4e45d5', color: '#ffffff', borderColor: '#4e45d5' } },
+  { status: 'meeting', label: 'Meeting fixed', keeps: true, colours: { background: '#b45309', color: '#ffffff', borderColor: '#b45309' } },
+  { status: 'won', label: 'Won', keeps: true, colours: { background: '#15803d', color: '#ffffff', borderColor: '#15803d' } },
+  { status: 'lost', label: 'Lost', keeps: true, colours: { background: '#b91c1c', color: '#ffffff', borderColor: '#b91c1c' } },
   { status: 'dismissed', label: 'Not for us', keeps: false },
   { status: 'bad_match', label: 'Not a real match', keeps: false },
 ];

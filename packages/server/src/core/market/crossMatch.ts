@@ -512,14 +512,19 @@ export async function loadLessons(now = new Date()): Promise<Lessons> {
 async function buildSheet(query: CrossMatchQuery): Promise<Sheet> {
   const days = Math.min(Math.max(query.days ?? MAX_DEAL_AGE_DAYS, 1), MAX_DEAL_AGE_DAYS);
   const built = version;
+  const t0 = Date.now();
+  const timed = async <T>(name: string, work: Promise<T>): Promise<T> => { const out = await work; spent[name] = Date.now() - t0; return out; };
+  const spent: Record<string, number> = {};
   const [loaded, lessons, worked, checks] = await Promise.all([
-    loadListings(days),
-    loadLessons(),
-    db.query<{ want_listing_id: string; have_listing_id: string; status: CrossMatch['status']; note: string | null }>(
-      `SELECT want_listing_id, have_listing_id, status, note FROM ipy_market_deal WHERE want_listing_id IS NOT NULL`),
-    db.query<{ want_listing_id: string; have_listing_id: string; fit: string }>(`SELECT want_listing_id, have_listing_id, fit FROM ipy_market_pair_check`),
+    timed('listings', loadListings(days)),
+    timed('lessons', loadLessons()),
+    timed('deals', db.query<{ want_listing_id: string; have_listing_id: string; status: CrossMatch['status']; note: string | null }>(
+      `SELECT want_listing_id, have_listing_id, status, note FROM ipy_market_deal WHERE want_listing_id IS NOT NULL`)),
+    timed('checks', db.query<{ want_listing_id: string; have_listing_id: string; fit: string }>(`SELECT want_listing_id, have_listing_id, fit FROM ipy_market_pair_check`)),
   ]);
+  const loadedAt = Date.now() - t0;
   const ranked = bestPerRequirement(loaded.filter((listing) => listingPasses(listing, query)), query, new Date(), lessons);
+  logger.info({ listings: loaded.length, loadedMs: loadedAt, queriesMs: spent, rankMs: Date.now() - t0 - loadedAt }, 'market: call sheet built');
   const outcome = new Map(worked.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), row]));
   const fit = new Map(checks.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), Number(row.fit)]));
 
