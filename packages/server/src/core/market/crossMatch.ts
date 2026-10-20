@@ -553,14 +553,28 @@ export async function loadLessons(now = new Date()): Promise<Lessons> {
   return lessons;
 }
 
-async function buildSheet(query: CrossMatchQuery): Promise<Sheet> {
+/**
+ * Every filter the screen offers is a different sheet but the same listings. Loading them is most of what a
+ * new filter costs after the pairing is fast, so they are loaded once and shared until something changes.
+ * Nobody mutates a listing, so sharing the objects is safe.
+ */
+let loaded: { version: number; at: number; days: number; rows: Promise<MarketListing[]> } | null = null;
+function sharedListings(days: number): Promise<MarketListing[]> {
+  if (loaded && loaded.version === version && loaded.days === days && Date.now() - loaded.at < SHEET_TTL_MS) return loaded.rows;
+  const rows = loadListings(days);
+  loaded = { version, at: Date.now(), days, rows };
+  rows.catch(() => { if (loaded?.rows === rows) loaded = null; });
+  return rows;
+}
+
+async function buildSheet(query: CrossMatchQuery, fresh: boolean): Promise<Sheet> {
   const days = Math.min(Math.max(query.days ?? MAX_DEAL_AGE_DAYS, 1), MAX_DEAL_AGE_DAYS);
   const built = version;
   const t0 = Date.now();
   const timed = async <T>(name: string, work: Promise<T>): Promise<T> => { const out = await work; spent[name] = Date.now() - t0; return out; };
   const spent: Record<string, number> = {};
   const [loaded, lessons, worked, checks] = await Promise.all([
-    timed('listings', loadListings(days)),
+    timed('listings', fresh ? loadListings(days) : sharedListings(days)),
     timed('lessons', loadLessons()),
     timed('deals', db.query<{ want_listing_id: string; have_listing_id: string; status: CrossMatch['status']; note: string | null }>(
       `SELECT want_listing_id, have_listing_id, status, note FROM ipy_market_deal WHERE want_listing_id IS NOT NULL`)),
@@ -594,7 +608,7 @@ async function sheetFor(query: CrossMatchQuery, fresh = false): Promise<CrossMat
   const refresh = (): Promise<Sheet> => {
     const running = building.get(key);
     if (running) return running;
-    const started = buildSheet(query)
+    const started = buildSheet(query, fresh)
       .then((sheet) => {
         sheets.delete(key);
         sheets.set(key, sheet);
