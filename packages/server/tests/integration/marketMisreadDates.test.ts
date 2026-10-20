@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { db } from '../../src/db/pool.js';
+import { db, transaction } from '../../src/db/pool.js';
 
 const group = `itest-misread-${Date.now()}`;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -28,6 +28,7 @@ const misread = (month: number, day: number, hour: number, minute: number): stri
 const NEW_ONLY = `${group} brand new deal`;
 const OLD_AND_NEW = `${group} older deal seen again`;
 const ELSEWHERE = `${group} other group untouched`;
+const EARLY = `${group} written first then updated`;
 
 beforeAll(async () => {
   await db.query(`DELETE FROM ipy_market_post WHERE body LIKE $1`, [`${group}%`]);
@@ -48,6 +49,17 @@ beforeAll(async () => {
   await db.query(
     `INSERT INTO ipy_market_import (group_name, file_name, file_hash, status, created_at)
      VALUES ($1, 'x.zip', 'h', 'done', '2026-10-20 11:12+00')`, [group]);
+  // The first deal of the import: its sightings are written, then the deal is updated again (a repeat), which
+  // gives it a newer transaction id than the sightings — the case the first repair drew its line too high for.
+  await db.query(
+    `INSERT INTO ipy_market_post (fingerprint, body, groups, first_posted_at, last_posted_at, created_at)
+     VALUES ($1, $2, ARRAY[$3::text], $4::timestamptz, $4::timestamptz, '2026-10-20 11:11+00')`,
+    [`${group}-e`, EARLY, group, misread(10, 18, 10, 0)]);
+  await db.query(`INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
+                  SELECT id, $2, $3::timestamptz, 'D' FROM ipy_market_post WHERE body = $1`, [EARLY, group, misread(10, 18, 10, 0)]);
+  await db.query(`INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
+                  SELECT id, $2, $3::timestamptz, 'E' FROM ipy_market_post WHERE body = $1`, [EARLY, group, misread(9, 8, 10, 0)]);
+  await db.query(`UPDATE ipy_market_post SET seen_count = seen_count + 1 WHERE body = $1`, [EARLY]);
   await db.query(
     `INSERT INTO ipy_market_post (fingerprint, body, groups, first_posted_at, last_posted_at, created_at)
      VALUES ($1, $2, ARRAY[$3::text], $4::timestamptz, $4::timestamptz, '2026-10-20 11:20+00')`,
@@ -73,7 +85,11 @@ afterAll(async () => {
 describe('migration 215 puts misread dates back', () => {
   it('turns every misread sighting back into the day it was posted, and leaves the rest alone', async () => {
     const sql = await readFile(join(here, '../../src/db/migrations/215_market_fix_misread_dates.sql'), 'utf8');
-    await db.query(sql);
+    // As the runner does it: the file and its row in ipy_migration share one transaction id.
+    await transaction(async (tx) => {
+      await tx.query(sql);
+      await tx.query(`UPDATE ipy_migration SET applied_at = applied_at WHERE name = '215_market_fix_misread_dates.sql'`);
+    });
 
     // 20 October 4:32 PM and 5 September 9:00 AM, India time.
     expect(await sightingsOf(NEW_ONLY)).toEqual(['2026-09-05T03:30:00.000Z', '2026-10-20T11:02:00.000Z']);
@@ -88,6 +104,20 @@ describe('migration 215 puts misread dates back', () => {
     // Another group's rows were never touched.
     expect(await sightingsOf(ELSEWHERE)).toEqual(['2026-10-01T04:30:00.000Z']);
     expect(await posted(ELSEWHERE)).toEqual({ first: '2026-10-01T04:30:00.000Z', last: '2026-10-01T04:30:00.000Z' });
+  });
+
+  it('the second pass finishes what the first could not reach, and leaves what the first fixed alone', async () => {
+    // After the first pass the early deal still has a future sighting.
+    expect((await sightingsOf(EARLY)).some((at) => new Date(at).getTime() > Date.now())).toBe(true);
+    const second = await readFile(join(here, '../../src/db/migrations/216_market_fix_misread_dates_second_pass.sql'), 'utf8');
+    await db.query(second);
+
+    // 18 October 10:00 IST and 8 September 10:00 IST.
+    expect(await sightingsOf(EARLY)).toEqual(['2026-09-08T04:30:00.000Z', '2026-10-18T04:30:00.000Z']);
+    expect(await posted(EARLY)).toEqual({ first: '2026-09-08T04:30:00.000Z', last: '2026-10-18T04:30:00.000Z' });
+    // Not turned back a second time.
+    expect(await sightingsOf(NEW_ONLY)).toEqual(['2026-09-05T03:30:00.000Z', '2026-10-20T11:02:00.000Z']);
+    expect(await sightingsOf(ELSEWHERE)).toEqual(['2026-10-01T04:30:00.000Z']);
   });
 
   it('brings the group\'s "read up to" back from 2028 to its newest real sighting', async () => {
