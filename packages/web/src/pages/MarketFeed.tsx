@@ -108,7 +108,7 @@ function importSummary(row: MarketImportRow): string {
   // A message can be many properties: say both, or "2 messages" hides what was found.
   const parts = [`${row.newDeals} new message${row.newDeals === 1 ? '' : 's'}`, `${row.listings} propert${row.listings === 1 ? 'y' : 'ies'} found`];
   if (row.repeats) parts.push(`${row.repeats} already known`);
-  if (row.skippedOld) parts.push(`${row.skippedOld} older messages skipped — read before`);
+  if (row.skippedOld) parts.push(`${row.skippedOld} skipped: older than 45 days or read before`);
   return `${parts.join(' · ')} · ${row.messages} lines in the file`;
 }
 
@@ -189,18 +189,38 @@ function ImportBox(): JSX.Element {
           <input className="input w-56" placeholder="Taken from the file's name" value={group} onChange={(e) => setGroup(e.target.value)} />
         </label>
       </div>
-      {imports.data && imports.data.imports.length > 0 && (
-        <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]" data-testid="market-imports">
-          {imports.data.imports.slice(0, 6).map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs">
-              <span className="min-w-[10rem] font-semibold">{row.groupName}</span>
-              <Badge color={row.status === 'done' ? '#16a34a' : row.status === 'failed' ? '#dc2626' : row.status === 'duplicate' ? '#64748b' : '#d97706'}>{STATUS_TEXT[row.status]}</Badge>
-              <span className="text-muted">{importSummary(row)}</span>
-              <span className="ml-auto text-muted">{relativeTime(row.createdAt)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {imports.data && imports.data.imports.length > 0 && (() => {
+        // Only the latest drop: everything since the newest group was queued, because the older log is not today's question.
+        const all = imports.data.imports;
+        const newest = Date.parse(all[0]!.createdAt);
+        const drop = all.filter((row) => newest - Date.parse(row.createdAt) < 60 * 60_000);
+        const done = drop.filter((row) => row.status === 'done' || row.status === 'duplicate' || row.status === 'failed').length;
+        const failed = drop.filter((row) => row.status === 'failed').length;
+        const newDeals = drop.reduce((sum, row) => sum + row.newDeals, 0);
+        return (
+          <div className="space-y-2" data-testid="market-imports">
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <span className="font-semibold">{done === drop.length ? `All ${drop.length} groups read` : `Reading ${done} of ${drop.length} groups…`}</span>
+              <span className="text-muted">{newDeals.toLocaleString('en-IN')} new deals{failed ? ` · ${failed} could not be read` : ''}</span>
+              <span className="ml-auto text-muted">{relativeTime(all[0]!.createdAt)}</span>
+            </div>
+            {done < drop.length && (
+              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-muted)]" role="progressbar" aria-valuenow={done} aria-valuemax={drop.length}>
+                <div className="h-full rounded-full bg-brand-600 transition-all" style={{ width: `${Math.round((done / drop.length) * 100)}%` }} />
+              </div>
+            )}
+            <ul className="max-h-72 divide-y divide-[var(--border)] overflow-y-auto rounded-lg border border-[var(--border)]">
+              {drop.map((row) => (
+                <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs">
+                  <span className="min-w-[10rem] font-semibold">{row.groupName}</span>
+                  <Badge color={row.status === 'done' ? '#16a34a' : row.status === 'failed' ? '#dc2626' : row.status === 'duplicate' ? '#64748b' : '#d97706'}>{STATUS_TEXT[row.status]}</Badge>
+                  <span className="text-muted">{importSummary(row)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -267,18 +287,50 @@ function DealsTab(): JSX.Element {
   );
 }
 
-type Tab = 'calls' | 'deals' | 'dealers';
+/** Every group the feed reads, in one list: what it holds today, when its newest message was posted, when it was last read. */
+function GroupsTab(): JSX.Element {
+  const { data, isLoading, error } = useQuery({ queryKey: ['market', 'groups'], queryFn: api.marketGroups, staleTime: 30_000 });
+  if (isLoading) return <div className="flex justify-center py-10"><Spinner /></div>;
+  if (error) return <p className="text-sm text-negative">Could not load the groups: {(error as Error).message}</p>;
+  const groups = data?.groups ?? [];
+  if (!groups.length) return <EmptyState title="No groups yet" body="Drop a group's export above." />;
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-muted">{groups.length} groups. The feed keeps the last 45 days of each and nothing older.</p>
+      <div className="card overflow-x-auto p-0">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-muted">
+            <tr><th className="px-3 py-2 font-semibold">Group</th><th className="px-3 py-2 text-right font-semibold">Deals held</th><th className="px-3 py-2 font-semibold">Newest message</th><th className="px-3 py-2 font-semibold">Last read</th></tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--border)]">
+            {groups.map((group) => (
+              <tr key={group.name}>
+                <td className="px-3 py-2 font-semibold">{group.name}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{group.deals.toLocaleString('en-IN')}</td>
+                <td className="px-3 py-2 text-muted">{group.newestAt ? relativeTime(group.newestAt) : '—'}</td>
+                <td className="px-3 py-2 text-muted">{group.lastReadAt ? relativeTime(group.lastReadAt) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+type Tab = 'calls' | 'deals' | 'dealers' | 'groups';
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'calls', label: 'Calls today' },
   { id: 'deals', label: 'All deals' },
   { id: 'dealers', label: 'Dealers' },
+  { id: 'groups', label: 'Groups' },
 ];
 
 export default function MarketFeedPage(): JSX.Element {
   const [params, setParams] = useSearchParams();
   // An alert about one deal or one buyer opens the list it is about; otherwise the call sheet leads.
   const wanted = params.get('tab');
-  const tab: Tab = wanted === 'calls' || wanted === 'deals' || wanted === 'dealers'
+  const tab: Tab = wanted === 'calls' || wanted === 'deals' || wanted === 'dealers' || wanted === 'groups'
     ? wanted
     : params.get('deal') || params.get('kind') || params.get('locality') ? 'deals' : 'calls';
 
@@ -309,6 +361,7 @@ export default function MarketFeedPage(): JSX.Element {
       {tab === 'calls' && <MarketIntroductions />}
       {tab === 'deals' && <DealsTab />}
       {tab === 'dealers' && <MarketDealers />}
+      {tab === 'groups' && <GroupsTab />}
     </div>
   );
 }

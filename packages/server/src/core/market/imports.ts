@@ -116,25 +116,42 @@ export async function queueImports(
   return rows;
 }
 
+/** Groups are independent of one another, so a drop of twenty-two chats is read three at a time rather than one after another. */
+const WORKERS = 3;
+
+async function readOne(next: Waiting): Promise<string | null> {
+  await db.query(`UPDATE ipy_market_import SET status = 'running' WHERE id = $1`, [next.id]);
+  try {
+    const outcome = await importGroupExport(next.groupName, next.text, next.userId);
+    await db.query(
+      `UPDATE ipy_market_import SET status = 'done', messages = $2, deals = $3, new_deals = $4, repeats = $5, skipped_old = $6, listings = $7, finished_at = now() WHERE id = $1`,
+      [next.id, outcome.messages, outcome.deals, outcome.newDeals, outcome.repeats, outcome.skippedOld, outcome.listings],
+    );
+    return next.groupName;
+  } catch (err) {
+    logger.warn({ err, group: next.groupName }, 'market: reading a group failed');
+    await db.query(`UPDATE ipy_market_import SET status = 'failed', error = $2, finished_at = now() WHERE id = $1`,
+      [next.id, err instanceof Error ? err.message.slice(0, 300) : 'Reading failed']);
+    return null;
+  }
+}
+
 async function drain(): Promise<void> {
   if (draining) return;
   draining = true;
   try {
-    for (let next = waiting.shift(); next; next = waiting.shift()) {
-      await db.query(`UPDATE ipy_market_import SET status = 'running' WHERE id = $1`, [next.id]);
-      try {
-        const outcome = await importGroupExport(next.groupName, next.text, next.userId);
-        await db.query(
-          `UPDATE ipy_market_import SET status = 'done', messages = $2, deals = $3, new_deals = $4, repeats = $5, skipped_old = $6, listings = $7, finished_at = now() WHERE id = $1`,
-          [next.id, outcome.messages, outcome.deals, outcome.newDeals, outcome.repeats, outcome.skippedOld, outcome.listings],
-        );
-        await afterImport(next.groupName);
-      } catch (err) {
-        logger.warn({ err, group: next.groupName }, 'market: reading a group failed');
-        await db.query(`UPDATE ipy_market_import SET status = 'failed', error = $2, finished_at = now() WHERE id = $1`,
-          [next.id, err instanceof Error ? err.message.slice(0, 300) : 'Reading failed']);
-      }
-    }
+    const finished: string[] = [];
+    // A file dropped while the others are being read joins them: look again before standing down.
+    do {
+      await Promise.all(Array.from({ length: WORKERS }, async () => {
+        for (let next = waiting.shift(); next; next = waiting.shift()) {
+          const group = await readOne(next);
+          if (group) finished.push(group);
+        }
+      }));
+    } while (waiting.length);
+    // The dealers' details and the background readers look at the whole feed, so once for the whole drop, not once per chat.
+    if (finished.length) await afterImport(finished);
   } finally {
     draining = false;
   }
@@ -152,4 +169,20 @@ export async function recoverInterruptedImports(): Promise<void> {
             error = 'The server restarted while this was being read. Drop the file again — it carries on from where it stopped.'
       WHERE status IN ('queued', 'running')`,
   );
+}
+
+export interface GroupRow { name: string; deals: number; newestAt: string | null; lastReadAt: string | null; messagesSeen: number }
+
+/** Every group the feed has read, with what it holds today. A re-drop of a group does not make a second row of it. */
+export async function listGroups(): Promise<GroupRow[]> {
+  const rows = await db.query<{ name: string; deals: number; newest: Date | null; last_import_at: Date | null; messages_seen: number }>(
+    `SELECT g.name, coalesce(d.n, 0)::int AS deals, n.newest, g.last_import_at, g.messages_seen
+       FROM ipy_market_group g
+       LEFT JOIN (SELECT grp, count(*) AS n FROM ipy_market_post, unnest(groups) AS grp WHERE NOT is_noise GROUP BY grp) d ON d.grp = g.name
+       LEFT JOIN (SELECT group_name, max(posted_at) AS newest FROM ipy_market_post_seen GROUP BY group_name) n ON n.group_name = g.name
+      ORDER BY n.newest DESC NULLS LAST, g.name`);
+  return rows.rows.map((row) => ({
+    name: row.name, deals: row.deals, newestAt: row.newest?.toISOString() ?? null,
+    lastReadAt: row.last_import_at?.toISOString() ?? null, messagesSeen: row.messages_seen,
+  }));
 }

@@ -332,16 +332,26 @@ export function worthAnAiRead(body: string, known: string[] = []): boolean {
  * `complex` marks a rules' split that is waiting for the model — it is not written
  * into anyone's notes until the model has looked, so the note carries the right tabs.
  */
-export async function saveListings(postId: string, drafts: ListingDraft[], source: 'rules' | 'ai', complex = false): Promise<void> {
-  await db.query(`DELETE FROM ipy_market_listing WHERE post_id = $1`, [postId]);
-  for (const [order, draft] of drafts.entries()) {
+export async function saveListings(
+  postId: string, drafts: ListingDraft[], source: 'rules' | 'ai', complex = false, options: { replace?: boolean } = {},
+): Promise<void> {
+  // A message that has just been stored has nothing to replace; a re-read does.
+  if (options.replace !== false) await db.query(`DELETE FROM ipy_market_listing WHERE post_id = $1`, [postId]);
+  if (drafts.length) {
+    // One statement for all of a broadcast's properties: a list of twenty plots used to be twenty-one round trips.
     await db.query(
       `INSERT INTO ipy_market_listing
          (post_id, ord, kind, purpose, category, bhk, size_sqyd, price_min_lakh, price_max_lakh,
           place_keys, project, facing, floor, summary, source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-      [postId, order, draft.kind, draft.purpose, draft.category, whole(draft.bhk), whole(draft.sizeSqYd), draft.priceMinLakh,
-        draft.priceMaxLakh, draft.placeKeys, draft.project, draft.facing, draft.floor, draft.summary, source],
+       SELECT $1, t.ord, t.kind, t.purpose, t.category, t.bhk, t.size_sqyd, t.price_min_lakh, t.price_max_lakh,
+              t.place_keys, t.project, t.facing, t.floor, t.summary, $3
+         FROM jsonb_to_recordset($2::jsonb) AS t(ord int, kind text, purpose text, category text, bhk int, size_sqyd int,
+              price_min_lakh numeric, price_max_lakh numeric, place_keys text[], project text, facing text, floor text, summary text)`,
+      [postId, JSON.stringify(drafts.map((draft, order) => ({
+        ord: order, kind: draft.kind, purpose: draft.purpose, category: draft.category, bhk: whole(draft.bhk), size_sqyd: whole(draft.sizeSqYd),
+        price_min_lakh: draft.priceMinLakh, price_max_lakh: draft.priceMaxLakh, place_keys: draft.placeKeys, project: draft.project,
+        facing: draft.facing, floor: draft.floor, summary: draft.summary,
+      }))), source],
     );
   }
   await db.query(

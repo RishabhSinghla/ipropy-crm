@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaScore, bestPerRequirement, cannotMatch, lessonPenalty, listingPasses, NO_LESSONS, samePerson, scorePair, sortMatches, type Lessons, type MarketListing } from '../src/core/market/crossMatch.js';
+import { areaScore, bestPerRequirement, cannotMatch, indiaDay, postedOnDay, lessonPenalty, listingPasses, NO_LESSONS, samePerson, scorePair, sortMatches, type Lessons, type MarketListing } from '../src/core/market/crossMatch.js';
 import { onceEach } from '../src/core/market/dealerDeals.js';
 import { associateValues, looksLikeAFirm, usableName, type FieldInfo } from '../src/core/market/dealers.js';
 
@@ -294,6 +294,44 @@ describe('the quick refusal never refuses more than the scorer does', () => {
     }
     // It must actually be doing the work it exists for.
     expect(refused).toBeGreaterThan(1500);
+  });
+});
+
+describe("today's buyers, yesterday's sellers", () => {
+  // 20 October 2026, 11:00 India time.
+  const NOW2 = new Date('2026-10-20T05:30:00Z');
+  const hoursAgo = (n: number) => new Date(NOW2.getTime() - n * 3_600_000);
+  const pair = (want: Partial<MarketListing>, have: Partial<MarketListing>) => ({ want: buyer(want), have: listing(have) });
+
+  it('counts the day in India, not wherever the server is', () => {
+    expect(indiaDay(new Date('2026-10-19T19:00:00Z'))).toBe('2026-10-20'); // 00:30 in India is already the 20th
+    expect(indiaDay(new Date('2026-10-20T18:00:00Z'))).toBe('2026-10-20');
+    expect(indiaDay(new Date('2026-10-20T18:31:00Z'))).toBe('2026-10-21');
+  });
+
+  it("a buyer who posted today, whoever the seller is, whenever they posted", () => {
+    const todaysBuyer = pair({ postedAt: hoursAgo(2) }, { postedAt: daysAgo(30) });
+    expect(postedOnDay(todaysBuyer, 'today', ['buyer'], NOW2)).toBe(true);
+    // A seller from today is not a buyer from today.
+    expect(postedOnDay(pair({ postedAt: daysAgo(10) }, { postedAt: hoursAgo(2) }), 'today', ['buyer'], NOW2)).toBe(false);
+    expect(postedOnDay(pair({ postedAt: daysAgo(10) }, { postedAt: hoursAgo(2) }), 'today', ['seller'], NOW2)).toBe(true);
+  });
+
+  it('tenant and landlord are the rental sides, and several ticks mean either', () => {
+    const rent = pair({ purpose: 'rent', postedAt: hoursAgo(1) }, { purpose: 'rent', postedAt: daysAgo(12) });
+    expect(postedOnDay(rent, 'today', ['tenant'], NOW2)).toBe(true);
+    expect(postedOnDay(rent, 'today', ['buyer'], NOW2)).toBe(false);
+    expect(postedOnDay(rent, 'today', ['landlord'], NOW2)).toBe(false);
+    expect(postedOnDay(rent, 'today', ['buyer', 'tenant'], NOW2)).toBe(true);
+    // Nothing ticked is everything.
+    expect(postedOnDay(rent, 'today', [], NOW2)).toBe(true);
+  });
+
+  it('yesterday is the day before, and a posting with no date is on no day', () => {
+    const yesterday = pair({ postedAt: hoursAgo(20) }, { postedAt: daysAgo(3) });
+    expect(postedOnDay(yesterday, 'yesterday', ['buyer'], NOW2)).toBe(true);
+    expect(postedOnDay(yesterday, 'today', ['buyer'], NOW2)).toBe(false);
+    expect(postedOnDay(pair({ postedAt: null }, { postedAt: null }), 'today', [], NOW2)).toBe(false);
   });
 });
 

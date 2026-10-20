@@ -214,6 +214,9 @@ export interface CrossMatchQuery {
   bhk?: number;
   purpose?: 'sale' | 'rent';
   sort?: MatchSort;
+  /** "Today's buyers": only pairings where one of the chosen sides was posted on this India-time day. The other side can be any age in the window. */
+  day?: 'today' | 'yesterday';
+  sides?: Array<'buyer' | 'seller' | 'tenant' | 'landlord'>;
   /** Show only pairings in this state: "new" is the ones nobody has worked yet. */
   status?: 'new' | 'called' | 'meeting' | 'won' | 'lost';
 }
@@ -237,6 +240,28 @@ export function listingPasses(listing: MarketListing, query: CrossMatchQuery): b
   const area = query.area?.trim().toLowerCase();
   if (area && !listing.placeKeys.some((key) => key.includes(area) || label(key).toLowerCase().includes(area))) return false;
   return true;
+}
+
+export const MATCH_SIDES = ['buyer', 'seller', 'tenant', 'landlord'] as const;
+
+/** The India-time calendar day a moment falls on: "today" means the team's today, not the server's. */
+export function indiaDay(at: Date): string {
+  return new Date(at.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Pure: is this pairing about somebody who posted on the chosen day? A buyer is a requirement to buy, a tenant one to rent,
+ * a seller an offer for sale, a landlord an offer to let. Ticking "buyers" and "tenants" shows pairings where either of
+ * those was posted that day; the other side of the pairing may be from anywhere in the 45 days.
+ */
+export function postedOnDay(
+  match: { want: MarketListing; have: MarketListing }, day: 'today' | 'yesterday', sides: ReadonlyArray<(typeof MATCH_SIDES)[number]>, now = new Date(),
+): boolean {
+  const target = indiaDay(day === 'today' ? now : new Date(now.getTime() - 24 * 3_600_000));
+  const on = (listing: MarketListing): boolean => listing.postedAt !== null && indiaDay(listing.postedAt) === target;
+  const wanted = sides.length ? sides : MATCH_SIDES;
+  return (wanted.includes(match.want.purpose === 'rent' ? 'tenant' : 'buyer') && on(match.want))
+    || (wanted.includes(match.have.purpose === 'rent' ? 'landlord' : 'seller') && on(match.have));
 }
 
 /** The older of the two postings: a pair is only as fresh as its stalest side. */
@@ -677,6 +702,7 @@ export async function findCrossMatchPage(query: CrossMatchQuery, page = 1, pageS
   let all = (await sheetFor(query, fresh)).filter((match) => listingPasses(match.want, query) && listingPasses(match.have, query));
   if (query.includeWorked === false) all = all.filter((match) => match.status !== 'won' && match.status !== 'lost');
   if (query.status) all = all.filter((match) => match.status === query.status);
+  if (query.day) all = all.filter((match) => postedOnDay(match, query.day!, query.sides ?? []));
   const ordered = sortMatches(all, query.sort);
   const size = Math.min(Math.max(pageSize, 1), 100);
   const from = (Math.max(page, 1) - 1) * size;

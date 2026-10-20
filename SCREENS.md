@@ -3172,3 +3172,37 @@ is one subtlety: a pairing shows when **both** sides fit the filter, so a buyer 
 outside it is not shown that buyer's second-best seller. Scoring rewards agreeing type, size and area, so the best
 seller usually satisfies the same filter as the buyer; if it ever matters, narrow by Sure-shot first.
 
+
+## 20 October 2026, night — today's buyers, a card you can read at a glance, 45 days and no more, a faster drop
+
+**The owner:** a *Today* and *Yesterday* filter with the four sides ticked (buyers, sellers, tenants, landlords);
+cards readable at a glance; a drop of 22 chats that is slow and shows six of them; *"no chats nowhere before 45 days … I
+don't want to keep any stale or junk data"*; and Jev connected properly, with his own TypeSafe key.
+
+* **Today / Yesterday** sit at the top of the filter card. Pressing one shows the four ticks (all on); a pairing is shown
+  when **any ticked side** posted on that **India-time** day. *Today's buyers* means the buyer is from today — the seller can
+  be anything in the 45 days, which is the point. Buyer = a requirement to buy, tenant = to rent, seller = an offer for
+  sale, landlord = an offer to let. Applied to the kept sheet, so it is instant (`postedOnDay`, tested around midnight IST).
+* **The card** says one thing per glance: a coloured verdict (Sure-shot / Possible / Jev is checking…), the reasons as
+  ticks (`✓ Sector 85  ✓ Residential Plot  ✓ 180 ≈ 179 yd  ✓ within budget`) instead of the rules' sentence, then two
+  panels — green for who wants, blue for who offers — each with the phone number large and callable, the key facts as big
+  chips (size, type, BHK, **budget up to** for a buyer, price for a seller), a freshness chip (green today/yesterday,
+  amber past two weeks), two lines of the message and the group. The four answers that mean work sit left; the two that put a
+  pairing away are quiet ghost buttons on the right.
+* **45 days and no more.** Messages older than that, or with no date to prove they are not, are **never stored** (`KEEP_DAYS`
+  in `feed.ts`); a daily clear (`retention.ts`, run from the feed's own visit) removes whatever has aged out together with its
+  properties, sightings, Jev verdicts and the note it left on a dealer's record. Read first: on 20 October 12,941 of 19,277 stored
+  deals, 30,941 property rows and 8,274 notes were older, and nobody had worked any of them (two worked pairings existed, neither
+  old), so nothing the team did was lost. Anything not copied from a chat is never touched.
+* **A drop is read three groups at a time**, and **repeats are filed in bulk**: the fingerprints of the whole file are checked
+  against the feed in one query, the messages the feed already holds are recorded in a few statements (sightings, counts,
+  groups, dates — the same facts the one-by-one path wrote), and only what is new is read and stored one by one, sixteen at a
+  time, with a broadcast's properties written in one statement instead of one per property. The dealers' details and the
+  background readers run **once for the whole drop**, not once per chat.
+* **Every group is visible**: while a drop is read, a progress bar and *Reading 14 of 22 groups…*, then *All 22 groups read*, with
+  every chat of that drop listed in a scrollable box (it showed the latest six). A **Groups** tab lists every group the feed
+  reads, once each, with what it holds today, its newest message and when it was last read.
+* **Jev.** Checked on production: 19,277 posts read, 0 waiting, 428 of 693 pairings on the sheet already rated (107 sure-shots),
+  the rest being worked through. Two changes: Jev can now be reached **directly** at `api.typesafe.ai/v1/systemone` (model
+  `jev-latest`) with a key pasted into **Admin → Integrations → Jev — TypeSafe**, or `TYPESAFE_API_KEY`; without one it keeps
+  using the OpenRouter route. And pairings are rated **eight at a time**, 120 a visit, instead of one after another.

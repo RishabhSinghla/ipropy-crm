@@ -18,6 +18,7 @@ import { logger } from '../../utils/logger.js';
 import { notifyMany } from '../notifications/index.js';
 import { isAiAvailable } from '../../ai/client.js';
 import { findCrossMatches, invalidateMarketMatches } from './crossMatch.js';
+import { purgeStaleMarketDataDaily } from './retention.js';
 import { syncDealerNotes } from './dealerNotes.js';
 import { alertOwners, knownLocalities, READ_VERSION } from './feed.js';
 import { askJev, askJevFit, jevIsAvailable, mergeReadings } from './jev.js';
@@ -194,7 +195,8 @@ export async function refineWithAi(limit = AI_PER_VISIT): Promise<number> {
  * Jev's second opinion on the pairings that would be shown. Each pairing is asked once,
  * best first; "no" takes it off the call sheet, and nothing is ever re-asked.
  */
-const VERIFY_PER_VISIT = 40;
+const VERIFY_PER_VISIT = 120;
+const VERIFY_PARALLEL = 8;
 
 export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
   if (!jevIsAvailable()) return 0;
@@ -212,21 +214,23 @@ export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
   )).rows.map((row) => ({ requirement: row.want_summary, offer: row.have_summary }));
   let checked = 0;
   let failures = 0;
-  for (const match of unchecked) {
-    const fit = await askJevFit(match.want.summary || match.want.body, match.have.summary || match.have.body, rejected);
-    if (fit === null) {
-      failures += 1;
-      // Jev refusing three in a row is down or misconfigured; stop paying for attempts.
-      if (failures >= 3) break;
-      continue;
+  // Eight questions at a time: Jev answers each in well under a second, and asking one after another is what made the
+  // backlog of unchecked pairings take hours to clear.
+  for (let offset = 0; offset < unchecked.length && failures < 3; offset += VERIFY_PARALLEL) {
+    const batch = unchecked.slice(offset, offset + VERIFY_PARALLEL);
+    const answers = await Promise.all(batch.map((match) => askJevFit(match.want.summary || match.want.body, match.have.summary || match.have.body, rejected)));
+    for (const [index, fit] of answers.entries()) {
+      const match = batch[index]!;
+      if (fit === null) { failures += 1; continue; }
+      await db.query(
+        `INSERT INTO ipy_market_pair_check (want_listing_id, have_listing_id, fit) VALUES ($1, $2, $3)
+         ON CONFLICT (want_listing_id, have_listing_id) DO UPDATE SET fit = EXCLUDED.fit, checked_at = now()`,
+        [match.want.id, match.have.id, fit],
+      );
+      checked += 1;
     }
-    failures = 0;
-    await db.query(
-      `INSERT INTO ipy_market_pair_check (want_listing_id, have_listing_id, fit) VALUES ($1, $2, $3)
-       ON CONFLICT (want_listing_id, have_listing_id) DO UPDATE SET fit = EXCLUDED.fit, checked_at = now()`,
-      [match.want.id, match.have.id, fit],
-    );
-    checked += 1;
+    // Jev refusing three in a row is down or misconfigured; stop paying for attempts.
+    if (answers.every((fit) => fit === null)) failures += 2;
   }
   if (checked) invalidateMarketMatches();
   return checked;
@@ -270,6 +274,9 @@ export async function marketWork(): Promise<void> {
   if (busy) return;
   busy = true;
   try {
+    // First: nothing older than the feed keeps is read, paired or alerted about, and it is cleared once a day.
+    const purged = await purgeStaleMarketDataDaily();
+    if (purged?.posts) invalidateMarketMatches();
     const started = Date.now();
     const deadline = started + VISIT_BUDGET_MS;
 

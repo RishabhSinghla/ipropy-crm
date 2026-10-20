@@ -388,6 +388,7 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'google_ads', kind: 'lead_source', label: 'Google Ads Lead Form' },
     { provider: 'zapier', kind: 'lead_source', label: 'Zapier Lead Capture' },
     { provider: 'sarvam_voice', kind: 'telephony', label: 'AI Voice Agent — Sarvam' },
+    { provider: 'typesafe_jev', kind: 'ai', label: 'Jev — TypeSafe (reads the dealer groups)' },
     { provider: 'google_rcs', kind: 'messaging', label: 'Google RCS for Business' },
     /*
       The official WhatsApp Business route, one card per way of buying it.

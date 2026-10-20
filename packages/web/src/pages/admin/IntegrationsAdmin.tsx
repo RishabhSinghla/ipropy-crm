@@ -225,6 +225,9 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'region', label: 'RBM Region', source: 'config', placeholder: 'us' },
     { key: 'serviceAccountJson', label: 'Google Service Account JSON', source: 'credentials', secret: true, placeholder: '{ "client_email": "…", "private_key": "…" }' },
   ],
+  typesafe_jev: [
+    { key: 'apiKey', label: 'TypeSafe API key', source: 'credentials', secret: true, placeholder: 'From console.typesafe.ai/keys — Jev is then reached directly, not through OpenRouter' },
+  ],
   sarvam_voice: [
     { key: 'apiKey', label: 'Sarvam API key', source: 'credentials', secret: true },
     { key: 'webhookSecret', label: 'Webhook secret', source: 'credentials', secret: true, placeholder: 'Use a long random value; Sarvam receives it in the callback URL' },
@@ -732,7 +735,7 @@ const JOBS: JobDef[] = [
     title: 'Turn on AI',
     blurb: 'Lead scoring, reply drafting and the assistant. Free options available.',
     icon: Sparkles,
-    providers: ['ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'anthropic'],
+    providers: ['ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'anthropic', 'typesafe_jev'],
     recommended: 'ai_gemini',
     wanted: true,
     short: 'AI',

@@ -51,7 +51,12 @@ export interface ImportOutcome {
  */
 const ALERT_WITHIN_DAYS = 7;
 /** Keep a small group of messages moving together instead of making each DB round-trip wait for the last. */
-const IMPORT_CONCURRENCY = 8;
+const IMPORT_CONCURRENCY = 16;
+/**
+ * Nothing the feed holds is older than this. A deal from last quarter is gone, a requirement from last quarter is
+ * filled, and keeping them only buried the live ones: 12,941 of 19,277 stored deals were older on 20 October 2026.
+ */
+export const KEEP_DAYS = 45;
 
 /** "FEAWA  Registered Members " and "feawa registered members" are one group. */
 export function groupKey(name: string): string {
@@ -126,7 +131,7 @@ export async function importGroupExport(rawGroupName: string, text: string, user
       if (!notice) {
         const found = splitListings(message.body, localities, reading);
         try {
-          await saveListings(result.id, found, 'rules', worthAnAiRead(message.body, localities));
+          await saveListings(result.id, found, 'rules', worthAnAiRead(message.body, localities), { replace: false });
           outcome.listings += found.length;
         } catch (err) {
           // The message is kept; the background re-read tries its listings again, and sets it aside if it fails again.
@@ -142,16 +147,72 @@ export async function importGroupExport(rawGroupName: string, text: string, user
     }
   };
 
+  const cutoff = Date.now() - KEEP_DAYS * 86_400_000;
   const freshMessages = messages.filter((message) => {
     if (message.postedAt && (!newest || message.postedAt > newest)) newest = message.postedAt;
-    if (readUpTo && message.postedAt && message.postedAt < readUpTo) {
+    // Older than the feed keeps, or with no date to prove it is not: never stored, so there is nothing to clean up later.
+    if (!message.postedAt || message.postedAt.getTime() < cutoff) {
+      outcome.skippedOld += 1;
+      return false;
+    }
+    if (readUpTo && message.postedAt < readUpTo) {
       outcome.skippedOld += 1;
       return false;
     }
     return true;
   });
-  for (let offset = 0; offset < freshMessages.length; offset += IMPORT_CONCURRENCY) {
-    const batch = freshMessages.slice(offset, offset + IMPORT_CONCURRENCY);
+
+  // Most of a re-uploaded group is what the feed already holds. Those are recorded in a few statements
+  // for the whole file instead of three round trips each, and only what is genuinely new is read and stored one by one.
+  const prints = freshMessages.map((message) => fingerprintOf(message.body));
+  const held = new Set<string>();
+  for (let offset = 0; offset < prints.length; offset += 5000) {
+    const rows = await db.query<{ fingerprint: string }>(
+      `SELECT fingerprint FROM ipy_market_post WHERE fingerprint = ANY($1::text[])`, [prints.slice(offset, offset + 5000)]);
+    for (const row of rows.rows) held.add(row.fingerprint);
+  }
+  const repeats: Array<{ fingerprint: string; posted: string; sender: string }> = [];
+  const brandNew: typeof freshMessages = [];
+  freshMessages.forEach((message, index) => {
+    if (held.has(prints[index]!)) repeats.push({ fingerprint: prints[index]!, posted: message.postedAt!.toISOString(), sender: message.sender });
+    else brandNew.push(message);
+  });
+  for (let offset = 0; offset < repeats.length; offset += 2000) {
+    const chunk = repeats.slice(offset, offset + 2000);
+    try {
+      const done = await db.queryOne<{ repeats: number }>(
+        `WITH incoming AS (
+           SELECT fp, posted, sender FROM unnest($1::text[], $2::timestamptz[], $3::text[]) AS t(fp, posted, sender)
+         ), hit AS (
+           SELECT p.id, i.posted, i.sender FROM incoming i JOIN ipy_market_post p ON p.fingerprint = i.fp
+         ), newly AS (
+           INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
+           SELECT id, $4::text, posted, sender FROM hit ON CONFLICT DO NOTHING RETURNING post_id
+         ), counted AS (
+           SELECT post_id, count(*)::int AS n FROM newly GROUP BY post_id
+         ), spread AS (
+           SELECT id, max(posted) AS last_at, min(posted) AS first_at FROM hit GROUP BY id
+         ), upd AS (
+           UPDATE ipy_market_post p
+              SET seen_count = p.seen_count + coalesce(c.n, 0),
+                  groups = CASE WHEN $4::text = ANY(p.groups) THEN p.groups ELSE p.groups || $4::text END,
+                  last_posted_at = GREATEST(p.last_posted_at, s.last_at),
+                  first_posted_at = LEAST(p.first_posted_at, s.first_at)
+             FROM spread s LEFT JOIN counted c ON c.post_id = s.id
+            WHERE p.id = s.id RETURNING p.id
+         )
+         SELECT (SELECT count(*) FROM newly)::int AS repeats`,
+        [chunk.map((r) => r.fingerprint), chunk.map((r) => r.posted), chunk.map((r) => r.sender), groupName]);
+      outcome.deals += chunk.length;
+      outcome.repeats += done?.repeats ?? 0;
+    } catch (err) {
+      outcome.refused += chunk.length;
+      logger.error({ err, group: groupName }, 'market: a batch of repeated messages could not be recorded; skipped');
+    }
+  }
+
+  for (let offset = 0; offset < brandNew.length; offset += IMPORT_CONCURRENCY) {
+    const batch = brandNew.slice(offset, offset + IMPORT_CONCURRENCY);
     await Promise.all(batch.map(async (message) => {
       try {
         await storeMessage(message);
@@ -178,11 +239,12 @@ export async function importGroupExport(rawGroupName: string, text: string, user
 }
 
 /** The people who posted become Associates and their messages go into their notes; then Jev reads. */
-export async function afterImport(groupName: string): Promise<void> {
+export async function afterImport(groupName: string | string[]): Promise<void> {
   // New deals are in: the kept call sheet is stale and is rebuilt behind the one being shown.
   invalidateMarketMatches();
+  const names = new Set((Array.isArray(groupName) ? groupName : [groupName]).map(groupKey));
   try {
-    const dealers = (await dealerDirectory()).filter((dealer) => dealer.groups.includes(groupKey(groupName)));
+    const dealers = (await dealerDirectory()).filter((dealer) => dealer.groups.some((group) => names.has(group)));
     const saved = await saveDealersAsAssociates(dealers);
     logger.info({ groupName, ...saved }, 'market: dealers added to Associates');
   } catch (err) {

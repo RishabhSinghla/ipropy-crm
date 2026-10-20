@@ -15,9 +15,9 @@ import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/au
 import { assertCapability } from '../../core/permissions/index.js';
 import { getPostDetail, importGroupExport, afterImport, searchMarket } from '../../core/market/feed.js';
 import { nudgeMarketWork } from '../../core/market/enrich.js';
-import { listImports, queueImports } from '../../core/market/imports.js';
+import { listGroups, listImports, queueImports } from '../../core/market/imports.js';
 import { matchDeal } from '../../core/market/matchDeal.js';
-import { DEAL_STATUSES, findCrossMatchPage, invalidateMarketMatches, MATCH_SORTS, recordOutcome } from '../../core/market/crossMatch.js';
+import { DEAL_STATUSES, findCrossMatchPage, invalidateMarketMatches, MATCH_SIDES, MATCH_SORTS, recordOutcome } from '../../core/market/crossMatch.js';
 import { dealsOfRecord } from '../../core/market/dealerDeals.js';
 import { DEAL_PATCH, deleteDeal, duplicateDeal, matchCounts, MATCH_COUNT_LIMIT, updateDeal } from '../../core/market/associateDeals.js';
 import { dealerDirectory, saveDealersAsAssociates } from '../../core/market/dealers.js';
@@ -67,6 +67,11 @@ marketRouter.post('/import-files', blockApiKey, uploadMany.array('files', 60), a
 /** What has been dropped, newest first, and what came of each. */
 marketRouter.get('/imports', asyncHandler(async (_req, res) => {
   res.json({ imports: await listImports() });
+}));
+
+/** Every group the feed reads, and what it holds from each. */
+marketRouter.get('/groups', asyncHandler(async (_req, res) => {
+  res.json({ groups: await listGroups() });
 }));
 
 /** One message in full, with the properties read out of it and everywhere it was posted. */
@@ -119,11 +124,15 @@ marketRouter.get('/matches', asyncHandler(async (req, res) => {
     purpose: z.enum(['sale', 'rent']).optional(),
     sort: z.enum(MATCH_SORTS).optional(),
     status: z.enum(['new', 'called', 'meeting', 'won', 'lost']).optional(),
+    day: z.enum(['today', 'yesterday']).optional(),
+    sides: z.string().max(60).optional(),
   }).parse(req.query);
-  const { page, pageSize, ...rest } = query;
+  const { page, pageSize, sides: sidesText, ...rest } = query;
+  const sides = (sidesText ?? '').split(',').filter((side): side is (typeof MATCH_SIDES)[number] => (MATCH_SIDES as readonly string[]).includes(side));
   const started = Date.now();
   const found = await findCrossMatchPage({
     ...rest,
+    sides,
     crossGroupOnly: query.crossGroupOnly !== 'false',
     // Worked pairings stay on the sheet, coloured by what was decided; only the two "put away" answers leave it.
     includeWorked: query.includeWorked !== 'false',

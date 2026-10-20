@@ -659,6 +659,8 @@ export interface MarketIntroductionQuery {
   page: number;
   pageSize: number;
   status?: 'new' | 'called' | 'meeting' | 'won' | 'lost';
+  day?: 'today' | 'yesterday';
+  sides?: string[];
   sureShot?: boolean;
   category?: string;
   sizeMinSqYd?: number;
@@ -1452,6 +1454,7 @@ export const api = {
     return request<{ imports: MarketImportRow[] }>('/api/market/import-files', { method: 'POST', body: form });
   },
   marketImports: () => get<{ imports: MarketImportRow[] }>('/api/market/imports'),
+  marketGroups: () => get<{ groups: Array<{ name: string; deals: number; newestAt: string | null; lastReadAt: string | null; messagesSeen: number }> }>('/api/market/groups'),
   marketPostDetail: (id: string) => get<MarketPostDetail>(`/api/market/posts/${id}`),
   /** One page of the call sheet and how many pairings there are in all (`X-Total-Count`: the list itself stays a bare array). */
   marketIntroductions: async (query: MarketIntroductionQuery) => {
@@ -1459,6 +1462,7 @@ export const api = {
       crossGroupOnly: String(query.crossGroupOnly), minScore: String(query.minScore), page: String(query.page), pageSize: String(query.pageSize),
     });
     if (query.sureShot) params.set('minJevFit', '0.7');
+    if (query.day) { params.set('day', query.day); if (query.sides?.length) params.set('sides', query.sides.join(',')); }
     for (const key of ['category', 'sizeMinSqYd', 'sizeMaxSqYd', 'area', 'bhk', 'purpose', 'sort', 'status'] as const) {
       const value = query[key];
       if (value !== undefined && value !== '') params.set(key, String(value));

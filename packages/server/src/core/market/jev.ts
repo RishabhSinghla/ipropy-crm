@@ -11,12 +11,26 @@
  * or if Jev is down, every function here answers `null` and the word-list
  * reading stands (CLAUDE.md rule 7: AI degrades, it never blocks).
  */
-import { getAiProviderSettings } from '../settings/integrations.js';
+import { getAiProviderSettings, getIntegrationCredentials } from '../settings/integrations.js';
 import { logger } from '../../utils/logger.js';
 import type { PostReading } from './readPost.js';
 
-const ENDPOINT = 'https://openrouter.ai/api/alpha/decisions';
-const MODEL = 'typesafe/jev-1.13';
+/** Through OpenRouter, which is how Jev was first reached: one more hop and a pinned model version. */
+const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/alpha/decisions';
+const OPENROUTER_MODEL = 'typesafe/jev-1.13';
+/** Straight to TypeSafe (docs.typesafe.ai, read 20 October 2026): the same questions and answers, no middleman, the latest Jev. */
+const DIRECT_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
+const DIRECT_MODEL = 'jev-latest';
+
+export interface JevTarget { url: string; key: string; model: string; via: 'typesafe' | 'openrouter' }
+
+/** A TypeSafe key (the Jev card, or TYPESAFE_API_KEY) wins; the OpenRouter key keeps working when there is none. */
+export function jevTarget(): JevTarget | null {
+  const direct = getIntegrationCredentials('typesafe_jev')?.apiKey?.trim() || process.env.TYPESAFE_API_KEY?.trim();
+  if (direct) return { url: DIRECT_ENDPOINT, key: direct, model: DIRECT_MODEL, via: 'typesafe' };
+  const routed = getAiProviderSettings('openrouter')?.apiKey;
+  return routed ? { url: OPENROUTER_ENDPOINT, key: routed, model: OPENROUTER_MODEL, via: 'openrouter' } : null;
+}
 
 export const PROPERTY_CATEGORIES = [
   'Apartment', 'Builder Floor', 'Commercial Plot', 'Factory', 'Kothi/Villa',
@@ -140,24 +154,24 @@ export function withoutPhoneNumbers(text: string): string {
 }
 
 export function jevKey(): string | null {
-  return getAiProviderSettings('openrouter')?.apiKey || null;
+  return jevTarget()?.key ?? null;
 }
 
 export function jevIsAvailable(): boolean {
-  return jevKey() !== null;
+  return jevTarget() !== null;
 }
 
 export type JevAnswer = { reading: JevReading } | { failed: 'no_key' | 'unreadable' | 'refused' | 'unreachable' };
 
 /** Never throws: a Jev outage must not stop a group from being read. */
 export async function askJev(text: string): Promise<JevAnswer> {
-  const key = jevKey();
-  if (!key) return { failed: 'no_key' };
+  const target = jevTarget();
+  if (!target) return { failed: 'no_key' };
   try {
-    const res = await fetch(ENDPOINT, {
+    const res = await fetch(target.url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, state: withoutPhoneNumbers(text).slice(0, 4000), questions: QUESTIONS }),
+      headers: { Authorization: `Bearer ${target.key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: target.model, state: withoutPhoneNumbers(text).slice(0, 4000), questions: QUESTIONS }),
       signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) {
@@ -234,14 +248,14 @@ export function examplesText(rejected: Array<{ requirement: string; offer: strin
  * and the other nineteen plots are nobody's business.
  */
 export async function askJevFit(requirement: string, offer: string, rejected: Array<{ requirement: string; offer: string }> = []): Promise<number | null> {
-  const key = jevKey();
-  if (!key) return null;
+  const target = jevTarget();
+  if (!target) return null;
   try {
-    const res = await fetch(ENDPOINT, {
+    const res = await fetch(target.url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${target.key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: MODEL,
+        model: target.model,
         state: withoutPhoneNumbers(`REQUIREMENT:\n${requirement.slice(0, 600)}\n\nOFFER:\n${offer.slice(0, 600)}${examplesText(rejected)}`),
         questions: FIT_QUESTIONS,
       }),

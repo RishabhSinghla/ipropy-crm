@@ -57,55 +57,77 @@ function useSettled<T>(value: T, ms = 400): T {
   return settled;
 }
 
-/** How old a posting is, in the words a dealer would use. Never says "in the future": that was a misread date. */
-function ageText(postedAt: string | null): string | null {
-  if (!postedAt) return null;
-  const days = Math.floor((Date.now() - new Date(postedAt).getTime()) / 86_400_000);
-  if (days <= 0) return 'Posted today';
-  return days === 1 ? 'Posted yesterday' : `Posted ${days} days ago`;
-}
-
 function placeText(key: string): string {
   if (key.includes(':')) return key.replace(/^(.*?):block (.)$/, (_m, project: string, block: string) => `${project.toUpperCase()} · Block ${block}`);
   const sector = /^sector (\d+)([a-z]?)$/.exec(key);
   return sector ? `Sector ${sector[1]}${sector[2]!.toUpperCase()}` : key.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function facts(side: MarketDealSide): string {
-  const parts: string[] = [];
-  if (side.sizeSqYd) parts.push(`${side.sizeSqYd} yd`);
-  if (side.bhk) parts.push(`${side.bhk} BHK`);
-  if (side.category) parts.push(side.category);
-  if (side.priceMinLakh !== null) parts.push(`${formatIndianPrice(side.priceMinLakh * 100_000)}${side.purpose === 'rent' ? ' / month' : ''}`);
-  return parts.join(' · ');
+/** How fresh a posting is, as a coloured chip: green is today or yesterday, amber is getting old. */
+function Freshness({ postedAt }: { postedAt: string | null }): JSX.Element | null {
+  if (!postedAt) return null;
+  const days = Math.floor((Date.now() - new Date(postedAt).getTime()) / 86_400_000);
+  const text = days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
+  const tone = days <= 1 ? 'bg-[var(--positive-soft)] text-[var(--positive-on-soft)]' : days <= 14 ? 'bg-[var(--surface-muted)] text-[var(--text)]' : 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100';
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{text}</span>;
 }
+
+/** The few facts a dealer reads first, large: size, type, BHK and the money — what the buyer can spend or the seller wants. */
+function keyFacts(side: MarketDealSide): string[] {
+  const out: string[] = [];
+  if (side.sizeSqYd) out.push(`${side.sizeSqYd} yd`);
+  if (side.category) out.push(side.category);
+  if (side.bhk) out.push(`${side.bhk} BHK`);
+  const money = side.kind === 'want' ? side.priceMaxLakh : side.priceMinLakh;
+  if (money !== null) out.push(`${side.kind === 'want' ? 'Budget up to ' : ''}${formatIndianPrice(money * 100_000)}${side.purpose === 'rent' ? ' / month' : ''}`);
+  return out;
+}
+
+const ROLE_TONE = { buy: '#15803d', sell: '#0369a1' } as const;
 
 function Side({ title, side, onOpen }: { title: string; side: MarketDealSide; onOpen: (message: MessageToShow) => void }): JSX.Element {
   const open = (): void => onOpen({
     postId: side.postId, body: side.body, posterName: side.posterName, posterPhone: side.posterPhone,
     groups: side.groups, postedAt: side.postedAt, highlight: side.summary,
   });
+  const tone = side.kind === 'want' ? ROLE_TONE.buy : ROLE_TONE.sell;
+  const facts = keyFacts(side);
+  const named = side.posterName && !/^[+\d\s]+$/.test(side.posterName);
   return (
-    <div className="min-w-0 flex-1 space-y-1">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</p>
-      <p className="text-sm font-semibold">{side.posterName ?? 'Unknown sender'}</p>
-      <p className="text-xs text-muted">{side.groups.join(', ')}</p>
-      {ageText(side.postedAt) && <p className="text-xs text-muted">{ageText(side.postedAt)}</p>}
-      {facts(side) && <p className="text-xs">{facts(side)}</p>}
-      {side.placeKeys.length > 0 && <p className="flex flex-wrap gap-1">{side.placeKeys.slice(0, 4).map((key) => <Badge key={key}>{placeText(key)}</Badge>)}</p>}
+    <div className="min-w-0 flex-1 space-y-2 rounded-lg border border-[var(--border)] p-3" style={{ borderLeft: `4px solid ${tone}` }}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-bold uppercase tracking-wide" style={{ color: tone }}>{title}</p>
+        <Freshness postedAt={side.postedAt} />
+      </div>
+      {named && <p className="truncate text-base font-bold leading-tight">{side.posterName}</p>}
+      {side.posterPhone && (
+        <a href={`tel:${side.posterPhone}`} className="inline-flex items-center gap-1.5 text-lg font-bold tabular-nums text-brand-700 hover:underline dark:text-brand-300">
+          <Phone className="h-4 w-4" /> {side.posterPhone}
+        </a>
+      )}
+      {facts.length > 0 && <p className="flex flex-wrap gap-1.5">{facts.map((fact) => <span key={fact} className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-sm font-semibold">{fact}</span>)}</p>}
+      {side.placeKeys.length > 0 && <p className="flex flex-wrap gap-1">{side.placeKeys.slice(0, 3).map((key) => <Badge key={key}>{placeText(key)}</Badge>)}</p>}
       <button type="button" onClick={open} className="block w-full text-left" aria-label={`Read the full message from ${side.posterName ?? 'this dealer'}`}>
-        <span className="line-clamp-3 whitespace-pre-wrap text-xs text-muted">{side.summary || side.body}</span>
+        <span className="line-clamp-2 whitespace-pre-wrap text-xs text-muted">{side.summary || side.body}</span>
       </button>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <button type="button" onClick={open} className="text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">Read full message</button>
-        {side.posterPhone && (
-          <a href={`tel:${side.posterPhone}`} className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">
-            <Phone className="h-3.5 w-3.5" /> {side.posterPhone}
-          </a>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="min-w-0 truncate text-muted">{side.groups.slice(0, 2).join(' · ')}{side.groups.length > 2 ? ` +${side.groups.length - 2}` : ''}</span>
+        <button type="button" onClick={open} className="shrink-0 font-semibold text-brand-700 hover:underline dark:text-brand-300">Read full message</button>
       </div>
     </div>
   );
+}
+
+/** Why the two fit, as ticks a person reads in a second — not the sentence the rules wrote. */
+export function whyItFits(match: MarketIntroduction): string[] {
+  const out: string[] = [];
+  const area = match.reasons.map((reason) => /^same (?:area|sector): ([^/]+)/.exec(reason)?.[1]?.trim()).find(Boolean);
+  if (area) out.push(area);
+  if (match.have.category) out.push(match.have.category);
+  if (match.want.sizeSqYd && match.have.sizeSqYd) out.push(`${match.want.sizeSqYd} ≈ ${match.have.sizeSqYd} yd`);
+  if (match.have.bhk && match.want.bhk) out.push(`${match.have.bhk} BHK`);
+  if (match.reasons.includes('within budget')) out.push('within budget');
+  return out;
 }
 
 function Introduction({ match, onOpen }: { match: MarketIntroduction; onOpen: (message: MessageToShow) => void }): JSX.Element {
@@ -137,29 +159,33 @@ function Introduction({ match, onOpen }: { match: MarketIntroduction; onOpen: (m
   // saturates at 100% for almost any pair of the right area, type and size.
   const jev = match.jevFit;
   const sure = jev !== null && jev >= 0.7;
+  const verdict = jev === null ? { text: 'Jev is checking…', tone: 'bg-[var(--surface-muted)] text-muted' }
+    : sure ? { text: `Sure-shot · ${Math.round(jev * 100)}%`, tone: 'bg-[var(--positive-soft)] text-[var(--positive-on-soft)]' }
+      : { text: `Possible · ${Math.round(jev * 100)}%`, tone: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100' };
+  const ticks = whyItFits(match);
   return (
     <li className="card space-y-3 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        {jev !== null
-          ? <Badge color={sure ? '#16a34a' : '#d97706'}>{sure ? 'Sure-shot' : 'Possible'} · Jev {Math.round(jev * 100)}%</Badge>
-          : <Badge color="#64748b">Not checked by Jev yet</Badge>}
-        {match.crossGroup && <Badge>Different groups</Badge>}
-        <span className="text-muted">Rules fit {Math.round(match.score * 100)}% · {match.reasons.join(' · ')}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`rounded-full px-3 py-1 text-sm font-bold ${verdict.tone}`} title="Jev's read of whether the offer answers the requirement">{verdict.text}</span>
+        {ticks.map((tick) => <span key={tick} className="rounded-full border border-[var(--border)] px-2.5 py-1 text-xs font-semibold">✓ {tick}</span>)}
+        {match.crossGroup && <span className="ml-auto text-xs text-muted">Different groups</span>}
       </div>
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <Side title={match.want.purpose === 'rent' ? 'Tenant' : 'Buyer'} side={match.want} onOpen={onOpen} />
-        <Side title={match.have.purpose === 'rent' ? 'Landlord' : 'Seller'} side={match.have} onOpen={onOpen} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+        <Side title={match.want.purpose === 'rent' ? 'Tenant wants' : 'Buyer wants'} side={match.want} onOpen={onOpen} />
+        <div className="hidden items-center text-2xl text-muted sm:flex" aria-hidden="true">⇄</div>
+        <Side title={match.have.purpose === 'rent' ? 'Landlord offers' : 'Seller offers'} side={match.have} onOpen={onOpen} />
       </div>
-      <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-2">
-        {ACTIONS.map((action) => {
-          const on = action.keeps && status === action.status;
+      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+        <span className="mr-1 text-xs font-semibold text-muted">Your answer</span>
+        {ACTIONS.filter((action) => action.keeps).map((action) => {
+          const on = status === action.status;
           return (
             <button
               key={action.status}
               type="button"
               className="btn-secondary"
               style={on ? { ...action.colours, fontWeight: 700 } : undefined}
-              aria-pressed={action.keeps ? on : undefined}
+              aria-pressed={on}
               disabled={mark.isPending}
               onClick={() => choose(action)}
             >
@@ -167,6 +193,13 @@ function Introduction({ match, onOpen }: { match: MarketIntroduction; onOpen: (m
             </button>
           );
         })}
+        <span className="ml-auto flex flex-wrap gap-2">
+          {ACTIONS.filter((action) => !action.keeps).map((action) => (
+            <button key={action.status} type="button" className="btn-ghost text-xs text-muted" disabled={mark.isPending} onClick={() => choose(action)}>
+              {action.label}
+            </button>
+          ))}
+        </span>
       </div>
     </li>
   );
@@ -204,10 +237,12 @@ export default function MarketIntroductions(): JSX.Element {
   const [purpose, setPurpose] = useState<'' | 'sale' | 'rent'>('');
   const [sort, setSort] = useState<MarketIntroductionSort>('best');
   const [status, setStatus] = useState<'' | 'new' | 'called' | 'meeting' | 'won' | 'lost'>('');
+  const [day, setDay] = useState<'' | 'today' | 'yesterday'>('');
+  const [sides, setSides] = useState<string[]>(['buyer', 'seller', 'tenant', 'landlord']);
   const [page, setPage] = useState(1);
   const settled = useSettled({ sizeMin, sizeMax, area });
-  const narrowed = Boolean(category || sizeMin || sizeMax || area.trim() || bhk || purpose || status);
-  const clearFilters = (): void => { setCategory(''); setSizeMin(''); setSizeMax(''); setArea(''); setBhk(''); setPurpose(''); setStatus(''); };
+  const narrowed = Boolean(category || sizeMin || sizeMax || area.trim() || bhk || purpose || status || day);
+  const clearFilters = (): void => { setCategory(''); setSizeMin(''); setSizeMax(''); setArea(''); setBhk(''); setPurpose(''); setStatus(''); setDay(''); };
   const sureShot = minScore >= 0.8;
   const filters = {
     crossGroupOnly, minScore: sureShot ? 0.7 : minScore, sureShot, sort,
@@ -218,6 +253,8 @@ export default function MarketIntroductions(): JSX.Element {
     bhk: bhk ? Number(bhk) : undefined,
     purpose: purpose || undefined,
     status: status || undefined,
+    day: day || undefined,
+    sides: day ? sides : undefined,
   };
   // A different question starts at its first page.
   const filterKey = JSON.stringify(filters);
@@ -255,6 +292,36 @@ export default function MarketIntroductions(): JSX.Element {
         and mark what happened: the button takes a colour and stays until you press it again. "Not for us" and "Not a real match" put a pairing away for good, and the second one teaches the matcher.
       </p>
       <div className="card space-y-2 p-3" role="search" aria-label="Filter and sort the call sheet">
+        <div className="flex flex-wrap items-center gap-2" data-testid="day-filter">
+          {(['today', 'yesterday'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={day === value}
+              className="btn-secondary"
+              style={day === value ? { background: '#4e45d5', color: '#fff', borderColor: '#4e45d5', fontWeight: 700 } : undefined}
+              onClick={() => setDay(day === value ? '' : value)}
+            >
+              {value === 'today' ? 'Today' : 'Yesterday'}
+            </button>
+          ))}
+          {day && (
+            <>
+              <span className="text-xs text-muted">who posted {day === 'today' ? 'today' : 'yesterday'}:</span>
+              {([['buyer', 'Buyers'], ['seller', 'Sellers'], ['tenant', 'Tenants'], ['landlord', 'Landlords']] as const).map(([value, label]) => (
+                <label key={value} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-2.5 py-1 text-sm font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={sides.includes(value)}
+                    onChange={(e) => setSides((current) => (e.target.checked ? [...current, value] : current.filter((side) => side !== value)))}
+                  />
+                  {label}
+                </label>
+              ))}
+              <span className="text-xs text-muted">The other side can be from any of the last 45 days.</span>
+            </>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <select className="input w-auto" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Type of property">
             <option value="">Any type</option>
