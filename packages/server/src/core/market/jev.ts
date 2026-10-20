@@ -12,6 +12,7 @@
  * reading stands (CLAUDE.md rule 7: AI degrades, it never blocks).
  */
 import { getAiProviderSettings, getIntegrationCredentials } from '../settings/integrations.js';
+import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import type { PostReading } from './readPost.js';
 
@@ -161,29 +162,72 @@ export function jevIsAvailable(): boolean {
   return jevTarget() !== null;
 }
 
-export type JevAnswer = { reading: JevReading } | { failed: 'no_key' | 'unreadable' | 'refused' | 'unreachable' };
+/** TypeSafe's published price (docs.typesafe.ai/models, 20 October 2026): $0.042 per million input tokens, output free. */
+export const JEV_USD_PER_MILLION_TOKENS = 0.042;
 
-/** Never throws: a Jev outage must not stop a group from being read. */
-export async function askJev(text: string): Promise<JevAnswer> {
+let inFlight = 0;
+let lastOkAt: Date | null = null;
+let lastError: { at: Date; message: string } | null = null;
+
+/** What Jev is doing right now, for the status line: how many questions are out, and when it last answered or failed. */
+export function jevActivity(): { inFlight: number; lastOkAt: string | null; lastError: { at: string; message: string } | null; via: 'typesafe' | 'openrouter' | null; model: string | null } {
+  const target = jevTarget();
+  return { inFlight, lastOkAt: lastOkAt?.toISOString() ?? null, lastError: lastError ? { at: lastError.at.toISOString(), message: lastError.message } : null,
+    via: target?.via ?? null, model: target?.model ?? null };
+}
+
+/** One row per day and kind, kept so the bill and the progress can be read. Never allowed to hold up a question. */
+function noteUsage(kind: 'post' | 'pair', ok: boolean, tokens: number): void {
+  void db.query(
+    `INSERT INTO ipy_market_jev_usage (day, kind, calls, failed, input_tokens)
+     VALUES ((now() AT TIME ZONE 'Asia/Kolkata')::date, $1, 1, $2, $3)
+     ON CONFLICT (day, kind) DO UPDATE SET calls = ipy_market_jev_usage.calls + 1,
+       failed = ipy_market_jev_usage.failed + $2, input_tokens = ipy_market_jev_usage.input_tokens + $3`,
+    [kind, ok ? 0 : 1, Math.round(tokens)],
+  ).catch((err) => logger.debug({ err }, 'market: Jev usage could not be counted'));
+}
+
+/** The one place Jev is called from, so every question is counted, timed out and reported the same way. */
+async function callJev(kind: 'post' | 'pair', state: string, questions: object): Promise<{ payload: unknown } | { failed: 'no_key' | 'refused' | 'unreachable' }> {
   const target = jevTarget();
   if (!target) return { failed: 'no_key' };
+  const estimate = state.length / 3.5;
+  inFlight += 1;
   try {
     const res = await fetch(target.url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${target.key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: target.model, state: withoutPhoneNumbers(text).slice(0, 4000), questions: QUESTIONS }),
+      body: JSON.stringify({ model: target.model, state, questions }),
       signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) {
-      logger.warn({ status: res.status }, 'market: Jev refused a post');
+      lastError = { at: new Date(), message: `Jev answered ${res.status}` };
+      noteUsage(kind, false, 0);
+      logger.warn({ status: res.status, via: target.via }, 'market: Jev refused a question');
       return { failed: 'refused' };
     }
-    const reading = readJevAnswers(await res.json());
-    return reading ? { reading } : { failed: 'unreadable' };
+    const payload = await res.json() as { usage?: { input_tokens?: number } };
+    lastOkAt = new Date();
+    noteUsage(kind, true, typeof payload?.usage?.input_tokens === 'number' ? payload.usage.input_tokens : estimate);
+    return { payload };
   } catch (err) {
+    lastError = { at: new Date(), message: err instanceof Error ? err.message : 'Jev could not be reached' };
+    noteUsage(kind, false, 0);
     logger.warn({ err }, 'market: Jev could not be reached');
     return { failed: 'unreachable' };
+  } finally {
+    inFlight -= 1;
   }
+}
+
+export type JevAnswer = { reading: JevReading } | { failed: 'no_key' | 'unreadable' | 'refused' | 'unreachable' };
+
+/** Never throws: a Jev outage must not stop a group from being read. */
+export async function askJev(text: string): Promise<JevAnswer> {
+  const answer = await callJev('post', withoutPhoneNumbers(text).slice(0, 4000), QUESTIONS);
+  if ('failed' in answer) return answer;
+  const reading = readJevAnswers(answer.payload);
+  return reading ? { reading } : { failed: 'unreadable' };
 }
 
 /** Below this, Jev is guessing and the word lists keep their say. */
@@ -248,25 +292,9 @@ export function examplesText(rejected: Array<{ requirement: string; offer: strin
  * and the other nineteen plots are nobody's business.
  */
 export async function askJevFit(requirement: string, offer: string, rejected: Array<{ requirement: string; offer: string }> = []): Promise<number | null> {
-  const target = jevTarget();
-  if (!target) return null;
-  try {
-    const res = await fetch(target.url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${target.key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: target.model,
-        state: withoutPhoneNumbers(`REQUIREMENT:\n${requirement.slice(0, 600)}\n\nOFFER:\n${offer.slice(0, 600)}${examplesText(rejected)}`),
-        questions: FIT_QUESTIONS,
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) return null;
-    const payload = asObject(await res.json());
-    const answers = asObject(payload?.answers) ?? payload;
-    return number(answers?.fit, ['noul', 'probability', 'yes', 'value']);
-  } catch (err) {
-    logger.warn({ err }, 'market: Jev could not check a pairing');
-    return null;
-  }
+  const answer = await callJev('pair', withoutPhoneNumbers(`REQUIREMENT:\n${requirement.slice(0, 600)}\n\nOFFER:\n${offer.slice(0, 600)}${examplesText(rejected)}`), FIT_QUESTIONS);
+  if ('failed' in answer) return null;
+  const payload = asObject(answer.payload);
+  const answers = asObject(payload?.answers) ?? payload;
+  return number(answers?.fit, ['noul', 'probability', 'yes', 'value']);
 }

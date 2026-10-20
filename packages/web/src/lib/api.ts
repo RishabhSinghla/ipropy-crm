@@ -649,6 +649,16 @@ export interface MarketIntroduction {
   note: string | null;
   /** Jev's probability that the offer answers the requirement; null while it has not looked. */
   jevFit: number | null;
+  /** Times Jev could not answer about this pairing; at three it is left alone. */
+  jevTried?: number;
+}
+
+export interface MarketJevStatus {
+  connection: { connected: boolean; via: 'typesafe' | 'openrouter' | null; model: string | null; lastOkAt: string | null; lastError: { at: string; message: string } | null };
+  pairings: { total: number; rated: number; sure: number; possible: number; waiting: number; gaveUp: number; checkingNow: number };
+  messages: { read: number; waiting: number; gaveUp: number };
+  today: { calls: number; failed: number; tokens: number; costUsd: number };
+  week: { calls: number; costUsd: number };
 }
 
 export type MarketIntroductionSort = 'best' | 'match' | 'newest';
@@ -1454,6 +1464,7 @@ export const api = {
     return request<{ imports: MarketImportRow[] }>('/api/market/import-files', { method: 'POST', body: form });
   },
   marketImports: () => get<{ imports: MarketImportRow[] }>('/api/market/imports'),
+  marketJevStatus: () => get<MarketJevStatus>('/api/market/jev-status'),
   marketGroups: () => get<{ groups: Array<{ name: string; deals: number; newestAt: string | null; lastReadAt: string | null; messagesSeen: number }> }>('/api/market/groups'),
   marketPostDetail: (id: string) => get<MarketPostDetail>(`/api/market/posts/${id}`),
   /** One page of the call sheet and how many pairings there are in all (`X-Total-Count`: the list itself stays a bare array). */

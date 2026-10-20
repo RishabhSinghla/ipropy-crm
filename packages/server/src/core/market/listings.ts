@@ -332,27 +332,78 @@ export function worthAnAiRead(body: string, known: string[] = []): boolean {
  * `complex` marks a rules' split that is waiting for the model — it is not written
  * into anyone's notes until the model has looked, so the note carries the right tabs.
  */
+/** What makes two listings the same property, so a rewrite of a message keeps what was decided about each one. */
+function sameProperty(row: { kind: string; purpose: string; category: string | null; bhk: number | null; size_sqyd: number | null; price_min_lakh: string | number | null; place_keys: string[] }): string {
+  return [row.kind, row.purpose, row.category ?? '', row.bhk ?? '', row.size_sqyd ?? '', row.price_min_lakh === null ? '' : Number(row.price_min_lakh), [...row.place_keys].sort().join(',')].join('|');
+}
+
 export async function saveListings(
   postId: string, drafts: ListingDraft[], source: 'rules' | 'ai', complex = false, options: { replace?: boolean } = {},
 ): Promise<void> {
-  // A message that has just been stored has nothing to replace; a re-read does.
-  if (options.replace !== false) await db.query(`DELETE FROM ipy_market_listing WHERE post_id = $1`, [postId]);
+  const replacing = options.replace !== false;
+  // A message that has just been stored has nothing to replace. A re-read does, and the listings it replaces carry two things
+  // nobody should have to redo: Jev's verdict on each pairing (a paid question) and what the team decided about it (called,
+  // won, "not a real match"). Both hang off the listing's id, and a new listing has a new id, so they are carried across.
+  const before = replacing
+    ? (await db.query<{ id: string; kind: string; purpose: string; category: string | null; bhk: number | null; size_sqyd: number | null; price_min_lakh: string | null; place_keys: string[] }>(
+      `SELECT id, kind, purpose, category, bhk, size_sqyd, price_min_lakh, place_keys FROM ipy_market_listing WHERE post_id = $1`, [postId])).rows
+    : [];
+  type Memory = { checks: Array<{ want: string; have: string; fit: string }>; deals: Array<Record<string, unknown>>; failed: Array<{ want: string; have: string; attempts: number }> };
+  let memory: Memory = { checks: [], deals: [], failed: [] };
+  if (before.length) {
+    const ids = before.map((row) => row.id);
+    const [checks, deals, failed] = await Promise.all([
+      db.query<{ want: string; have: string; fit: string }>(
+        `SELECT want_listing_id AS want, have_listing_id AS have, fit FROM ipy_market_pair_check WHERE want_listing_id = ANY($1::uuid[]) OR have_listing_id = ANY($1::uuid[])`, [ids]),
+      db.query<Record<string, unknown>>(
+        `SELECT * FROM ipy_market_deal WHERE want_listing_id = ANY($1::uuid[]) OR have_listing_id = ANY($1::uuid[])`, [ids]),
+      db.query<{ want: string; have: string; attempts: number }>(
+        `SELECT want_listing_id AS want, have_listing_id AS have, attempts FROM ipy_market_pair_failed WHERE want_listing_id = ANY($1::uuid[]) OR have_listing_id = ANY($1::uuid[])`, [ids]),
+    ]);
+    memory = { checks: checks.rows, deals: deals.rows, failed: failed.rows };
+  }
+  if (replacing) await db.query(`DELETE FROM ipy_market_listing WHERE post_id = $1`, [postId]);
   if (drafts.length) {
     // One statement for all of a broadcast's properties: a list of twenty plots used to be twenty-one round trips.
-    await db.query(
+    const inserted = await db.query<{ id: string; ord: number; kind: string; purpose: string; category: string | null; bhk: number | null; size_sqyd: number | null; price_min_lakh: string | null; place_keys: string[] }>(
       `INSERT INTO ipy_market_listing
          (post_id, ord, kind, purpose, category, bhk, size_sqyd, price_min_lakh, price_max_lakh,
           place_keys, project, facing, floor, summary, source)
        SELECT $1, t.ord, t.kind, t.purpose, t.category, t.bhk, t.size_sqyd, t.price_min_lakh, t.price_max_lakh,
               t.place_keys, t.project, t.facing, t.floor, t.summary, $3
          FROM jsonb_to_recordset($2::jsonb) AS t(ord int, kind text, purpose text, category text, bhk int, size_sqyd int,
-              price_min_lakh numeric, price_max_lakh numeric, place_keys text[], project text, facing text, floor text, summary text)`,
+              price_min_lakh numeric, price_max_lakh numeric, place_keys text[], project text, facing text, floor text, summary text)
+       RETURNING id, ord, kind, purpose, category, bhk, size_sqyd, price_min_lakh, place_keys`,
       [postId, JSON.stringify(drafts.map((draft, order) => ({
         ord: order, kind: draft.kind, purpose: draft.purpose, category: draft.category, bhk: whole(draft.bhk), size_sqyd: whole(draft.sizeSqYd),
         price_min_lakh: draft.priceMinLakh, price_max_lakh: draft.priceMaxLakh, place_keys: draft.placeKeys, project: draft.project,
         facing: draft.facing, floor: draft.floor, summary: draft.summary,
       }))), source],
     );
+    if (before.length) {
+      // Old id -> new id, matched by what the property is; a property that changed is a new question and is asked again.
+      const fresh = new Map<string, string[]>();
+      for (const row of inserted.rows) fresh.set(sameProperty(row), [...(fresh.get(sameProperty(row)) ?? []), row.id]);
+      const carried = new Map<string, string>();
+      for (const row of before) {
+        const next = fresh.get(sameProperty(row))?.shift();
+        if (next) carried.set(row.id, next);
+      }
+      const map = (id: string): string => carried.get(id) ?? id;
+      const stillThere = (id: string): boolean => !before.some((row) => row.id === id) || carried.has(id);
+      for (const check of memory.checks.filter((c) => stillThere(c.want) && stillThere(c.have))) {
+        await db.query(`INSERT INTO ipy_market_pair_check (want_listing_id, have_listing_id, fit) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [map(check.want), map(check.have), check.fit]);
+      }
+      for (const failed of memory.failed.filter((f) => stillThere(f.want) && stillThere(f.have))) {
+        await db.query(`INSERT INTO ipy_market_pair_failed (want_listing_id, have_listing_id, attempts) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [map(failed.want), map(failed.have), failed.attempts]);
+      }
+      for (const deal of memory.deals.filter((d) => stillThere(String(d.want_listing_id)) && stillThere(String(d.have_listing_id)))) {
+        await db.query(
+          `INSERT INTO ipy_market_deal (want_listing_id, have_listing_id, want_post_id, have_post_id, status, note, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
+          [map(String(deal.want_listing_id)), map(String(deal.have_listing_id)), deal.want_post_id, deal.have_post_id, deal.status, deal.note, deal.updated_by, deal.updated_at]);
+      }
+    }
   }
   await db.query(
     `UPDATE ipy_market_post SET listings_source = $2, listings_checked_at = now(), ai_pending = $3 WHERE id = $1`,

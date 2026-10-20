@@ -15,6 +15,7 @@ import { formatIndianPrice } from '@ipropy/shared';
 import { ChevronLeft, ChevronRight, Phone } from 'lucide-react';
 import { api, type MarketDealSide, type MarketIntroduction, type MarketIntroductionSort, type MarketIntroductionStatus } from '../lib/api';
 import DealMessageDialog, { type MessageToShow } from './DealMessageDialog';
+import JevStatusStrip, { useJevStatus } from './JevStatusStrip';
 import { Badge, EmptyState, Spinner } from './ui';
 import { toast } from '../lib/store';
 
@@ -159,7 +160,12 @@ function Introduction({ match, onOpen }: { match: MarketIntroduction; onOpen: (m
   // saturates at 100% for almost any pair of the right area, type and size.
   const jev = match.jevFit;
   const sure = jev !== null && jev >= 0.7;
-  const verdict = jev === null ? { text: 'Jev is checking…', tone: 'bg-[var(--surface-muted)] text-muted' }
+  const jevStatus = useJevStatus().data;
+  // Three different things used to read "checking" or "not checked": rated (a score), waiting its turn, and could not be read.
+  const verdict = jev === null
+    ? ((match.jevTried ?? 0) >= 3 ? { text: 'Jev could not read this', tone: 'bg-[var(--surface-muted)] text-muted' }
+      : jevStatus && !jevStatus.connection.connected ? { text: 'Jev not connected', tone: 'bg-[var(--surface-muted)] text-muted' }
+        : { text: 'Waiting for Jev', tone: 'bg-[var(--surface-muted)] text-muted' })
     : sure ? { text: `Sure-shot · ${Math.round(jev * 100)}%`, tone: 'bg-[var(--positive-soft)] text-[var(--positive-on-soft)]' }
       : { text: `Possible · ${Math.round(jev * 100)}%`, tone: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100' };
   const ticks = whyItFits(match);
@@ -372,6 +378,7 @@ export default function MarketIntroductions(): JSX.Element {
             </select>
           </label>
         </div>
+        <JevStatusStrip />
       </div>
       {isLoading && <div className="flex justify-center py-10"><Spinner /></div>}
       {error && <p className="text-sm text-negative">Could not load the introductions: {(error as Error).message}</p>}

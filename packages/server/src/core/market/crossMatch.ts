@@ -191,6 +191,8 @@ export interface CrossMatch {
   note: string | null;
   /** Jev's probability that the offer answers the requirement; null until it has looked. */
   jevFit: number | null;
+  /** Times Jev was asked about this pairing and could not answer. Three, and it is left alone rather than asked at every visit. */
+  jevTried: number;
 }
 
 export interface CrossMatchQuery {
@@ -630,13 +632,15 @@ async function buildSheet(query: CrossMatchQuery, fresh: boolean): Promise<Sheet
   const t0 = Date.now();
   const timed = async <T>(name: string, work: Promise<T>): Promise<T> => { const out = await work; spent[name] = Date.now() - t0; return out; };
   const spent: Record<string, number> = {};
-  const [loaded, lessons, worked, checks] = await Promise.all([
+  const [loaded, lessons, worked, checks, tried] = await Promise.all([
     timed('listings', fresh ? loadListings(days) : sharedListings(days)),
     timed('lessons', loadLessons()),
     timed('deals', db.query<{ want_listing_id: string; have_listing_id: string; status: CrossMatch['status']; note: string | null }>(
       `SELECT want_listing_id, have_listing_id, status, note FROM ipy_market_deal WHERE want_listing_id IS NOT NULL`)),
     timed('checks', db.query<{ want_listing_id: string; have_listing_id: string; fit: string }>(`SELECT want_listing_id, have_listing_id, fit FROM ipy_market_pair_check`)),
+    db.query<{ want_listing_id: string; have_listing_id: string; attempts: number }>(`SELECT want_listing_id, have_listing_id, attempts FROM ipy_market_pair_failed`),
   ]);
+  const failedTimes = new Map(tried.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), row.attempts]));
   const loadedAt = Date.now() - t0;
   const ranked = await bestPerRequirementYielding(loaded, query, new Date(), lessons);
   logger.info({ listings: loaded.length, loadedMs: loadedAt, queriesMs: spent, rankMs: Date.now() - t0 - loadedAt }, 'market: call sheet built');
@@ -654,7 +658,7 @@ async function buildSheet(query: CrossMatchQuery, fresh: boolean): Promise<Sheet
     if (jevFit !== null && jevFit < JEV_FIT_FLOOR) continue;
     if ((query.onlyVerified || query.minJevFit !== undefined) && jevFit === null) continue;
     if (query.minJevFit !== undefined && jevFit! < query.minJevFit) continue;
-    matches.push({ ...pairing, id, status, note: done?.note ?? null, jevFit });
+    matches.push({ ...pairing, id, status, note: done?.note ?? null, jevFit, jevTried: failedTimes.get(id) ?? 0 });
   }
   return { version: built, at: Date.now(), ranked: matches };
 }
@@ -742,3 +746,23 @@ export async function recordOutcome(
   // The rest of the system learns from it: the matcher's lessons are rebuilt behind the kept sheet.
   invalidateMarketMatches();
 }
+
+export interface JevCounts { total: number; rated: number; sure: number; possible: number; waiting: number; gaveUp: number }
+
+/** How much of the call sheet Jev has rated, from the kept sheet (nothing is worked out again for this). */
+export async function jevCounts(): Promise<JevCounts> {
+  const all = await sheetFor({ minScore: 0.5, crossGroupOnly: true });
+  const counts: JevCounts = { total: all.length, rated: 0, sure: 0, possible: 0, waiting: 0, gaveUp: 0 };
+  for (const match of all) {
+    if (match.jevFit !== null) {
+      counts.rated += 1;
+      if (match.jevFit >= 0.7) counts.sure += 1; else counts.possible += 1;
+    } else if (match.jevTried >= 3) {
+      counts.gaveUp += 1;
+    } else {
+      counts.waiting += 1;
+    }
+  }
+  return counts;
+}
+

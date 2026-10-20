@@ -3206,3 +3206,33 @@ don't want to keep any stale or junk data"*; and Jev connected properly, with hi
   the rest being worked through. Two changes: Jev can now be reached **directly** at `api.typesafe.ai/v1/systemone` (model
   `jev-latest`) with a key pasted into **Admin → Integrations → Jev — TypeSafe**, or `TYPESAFE_API_KEY`; without one it keeps
   using the OpenRouter route. And pairings are rated **eight at a time**, 120 a visit, instead of one after another.
+
+## 20 October 2026, night — Jev audited: what it costs, what it repeats, and a status line beside the sort
+
+**The owner:** *"Is Jev really configured the best way … no mess, all edge cases, not redoing things again and again? Many
+pairs say a score, some 'Jev is checking', some 'not checked yet'. Would the Jev bill come out lots? … I want to see how much
+Jev worked, how much is left, how much is working."*
+
+* **Cost.** TypeSafe's published price is **$0.042 per million input tokens, output free** (docs.typesafe.ai/models). The
+  busiest day on record — 4,547 messages read and 1,485 pairings checked, mostly the stale chats since cleared — is about 6 million
+  tokens: **roughly thirty cents**. A normal day with 45 days of chat is a fraction of that. (The OpenRouter route's own markup was not
+  checked; the direct route is the one with a documented price.) The AI model that splits long broadcasts (`refineWithAi`) is a *different* provider and
+  not Jev; it is capped at three minutes a visit.
+* **Used properly.** One call per message with all six questions batched (TypeSafe's own cookbook measured batching at 12× cheaper
+  and 10× faster), one call per pairing, each asked **once** and kept (`ipy_market_pair_check`), phone numbers stripped before
+  anything leaves, a 20-second timeout, and a stop when a whole batch fails.
+* **Found and fixed — it *did* redo work.** A re-read or AI re-split of a message deleted its listings, and every verdict and every
+  team decision hung off a listing id, so a pairing Jev had rated (a paid question) was asked again, **and a pairing somebody had
+  marked Called, Won or "Not a real match" lost that mark and could come back.** `saveListings` now carries both across to the
+  new listings by what the property *is* (kind, type, BHK, size, price, places); a property that actually changed is a new question.
+* **Found and fixed — one odd pairing could stall the rest.** A pairing Jev could not answer was retried at every visit for ever, and
+  three failures in a row made the checker believe Jev was down and stop for everybody. Now a **whole batch failing is an outage**
+  (nobody is blamed, nothing marked, try again next visit) and **a few failing among answers marks those pairings**
+  (`ipy_market_pair_failed`); at three tries a pairing is left alone and says so. Pairings are also chosen from the **whole sheet**,
+  best first, not only the top 300, and from a freshly worked-out sheet, since each question costs money.
+* **Three words, three meanings.** A card now says **a score** (rated), **Waiting for Jev** (it will be asked), **Jev could not
+  read this** (tried three times), or **Jev not connected** (no key). It used to say "checking" or "not checked yet" for all of them.
+* **The status line** under the sort: connected (and whether directly or through OpenRouter), a bar of **rated of total**, **N waiting
+  for Jev**, **N checking now** (questions actually in flight), sure-shots, any it could not read, and **today's questions and cost**, with the
+  week in the hover. Questions are counted per day and kind (`ipy_market_jev_usage`, migration `219`); tokens come from Jev's own
+  `usage` when it reports one, else an estimate. Proved by `marketJevIsHonest.test.ts`.

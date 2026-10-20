@@ -29,7 +29,7 @@ const EVERY_MS = 30_000;
 const PER_VISIT = 24;
 const AT_ONCE = 4;
 /** After this many failed asks a post is left to the word lists rather than retried for ever. */
-const GIVE_UP_AFTER = 3;
+export const GIVE_UP_AFTER = 3;
 const ALERT_WITHIN_DAYS = 7;
 
 interface WaitingPost {
@@ -197,11 +197,14 @@ export async function refineWithAi(limit = AI_PER_VISIT): Promise<number> {
  */
 const VERIFY_PER_VISIT = 120;
 const VERIFY_PARALLEL = 8;
+/** A pairing Jev could not answer this many times is left alone: a paid question asked at every visit for ever helps nobody. */
+const MAX_TRIES = 3;
 
 export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
   if (!jevIsAvailable()) return 0;
-  // The kept sheet may be a few minutes behind Jev's own verdicts, so what it calls unchecked is checked against the table before paying for it.
-  const candidates = (await findCrossMatches({ limit: 300, includeWorked: false }, false)).filter((match) => match.jevFit === null);
+  // Worked out fresh: what is asked of Jev costs money, so it is never chosen from a sheet that may be minutes behind its own verdicts.
+  // The whole sheet, best first: looking only at the top 300 left a pairing beyond it waiting until others cleared.
+  const candidates = (await findCrossMatches({ limit: 1000, includeWorked: false })).filter((match) => match.jevFit === null && match.jevTried < MAX_TRIES);
   const done = new Set((await db.query<{ k: string }>(
     `SELECT want_listing_id || ':' || have_listing_id AS k FROM ipy_market_pair_check WHERE want_listing_id = ANY($1::uuid[])`,
     [candidates.map((match) => match.want.id)],
@@ -219,9 +222,21 @@ export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
   for (let offset = 0; offset < unchecked.length && failures < 3; offset += VERIFY_PARALLEL) {
     const batch = unchecked.slice(offset, offset + VERIFY_PARALLEL);
     const answers = await Promise.all(batch.map((match) => askJevFit(match.want.summary || match.want.body, match.have.summary || match.have.body, rejected)));
+    // Every answer missing means Jev (or the key, or the network) is down: nobody is to blame, so no pairing is marked.
+    // A few missing among answers means those pairings are the problem, and each is counted against itself.
+    const outage = answers.every((fit) => fit === null);
     for (const [index, fit] of answers.entries()) {
       const match = batch[index]!;
-      if (fit === null) { failures += 1; continue; }
+      if (fit === null) {
+        failures += 1;
+        if (!outage) {
+          await db.query(
+            `INSERT INTO ipy_market_pair_failed (want_listing_id, have_listing_id) VALUES ($1, $2)
+             ON CONFLICT (want_listing_id, have_listing_id) DO UPDATE SET attempts = ipy_market_pair_failed.attempts + 1, last_at = now()`,
+            [match.want.id, match.have.id]);
+        }
+        continue;
+      }
       await db.query(
         `INSERT INTO ipy_market_pair_check (want_listing_id, have_listing_id, fit) VALUES ($1, $2, $3)
          ON CONFLICT (want_listing_id, have_listing_id) DO UPDATE SET fit = EXCLUDED.fit, checked_at = now()`,
@@ -229,8 +244,8 @@ export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
       );
       checked += 1;
     }
-    // Jev refusing three in a row is down or misconfigured; stop paying for attempts.
-    if (answers.every((fit) => fit === null)) failures += 2;
+    // A whole batch refused is an outage: stop paying for attempts and try again at the next visit.
+    if (outage) failures += 3;
   }
   if (checked) invalidateMarketMatches();
   return checked;

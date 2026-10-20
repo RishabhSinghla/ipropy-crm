@@ -69,6 +69,12 @@ marketRouter.get('/imports', asyncHandler(async (_req, res) => {
   res.json({ imports: await listImports() });
 }));
 
+/** Jev at a glance: connected or not, how much it has rated, how much waits, what it is costing. */
+marketRouter.get('/jev-status', asyncHandler(async (_req, res) => {
+  const { jevStatus } = await import('../../core/market/jevStatus.js');
+  res.json(await jevStatus());
+}));
+
 /** Every group the feed reads, and what it holds from each. */
 marketRouter.get('/groups', asyncHandler(async (_req, res) => {
   res.json({ groups: await listGroups() });
