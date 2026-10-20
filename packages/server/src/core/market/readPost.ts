@@ -47,6 +47,23 @@ const IPHONE_LINE = /^\[(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s+(\d{1,2}):(\d{2})(?:
 /** WhatsApp's own placeholders, not anything a dealer said. */
 const NOT_A_POST = /^(<media omitted>|image omitted|video omitted|this message was deleted|you deleted this message|null|<attached: .*>)$/i;
 
+/** An export names its dates one way throughout: Indian phones write day first, American-set phones month first. */
+export type DateOrder = 'day-first' | 'month-first';
+
+/**
+ * Read it from the file itself: a first number above 12 can only be a day, a second above 12
+ * can only be a day. Nothing says which when every date is under 13, and then the Indian order wins.
+ * Reading month-first exports as day-first put every deal two years into the future (October 2026).
+ */
+export function dateOrderOf(pairs: Array<[number, number]>): DateOrder {
+  if (pairs.some(([first]) => first > 12)) return 'day-first';
+  if (pairs.some(([, second]) => second > 12)) return 'month-first';
+  return 'day-first';
+}
+
+/** A message cannot have been posted tomorrow; a date that says so was misread, and is better unknown than wrong. */
+const FUTURE_SLACK_MS = 36 * 3_600_000;
+
 function toDate(day: string, month: string, year: string, hour: string, minute: string, ampm?: string): Date | null {
   let y = Number(year);
   if (y < 100) y += 2000;
@@ -77,20 +94,26 @@ function withPlainDigits(text: string): string {
   return text.replace(/(\d)\uFE0F?\u20E3/g, '$1');
 }
 
-export function parseWhatsAppExport(text: string): ChatMessage[] {
+export function parseWhatsAppExport(text: string, now = new Date()): ChatMessage[] {
   const messages: ChatMessage[] = [];
   // Exports put an invisible narrow space before am/pm and a mark at the start of some lines.
   const lines = text.replace(/[  ]/g, ' ').replace(/‎/g, '').split(/\r?\n/);
 
-  for (const line of lines) {
-    const match = ANDROID_LINE.exec(line) ?? IPHONE_LINE.exec(line);
+  const matches = lines.map((line) => ANDROID_LINE.exec(line) ?? IPHONE_LINE.exec(line));
+  const order = dateOrderOf(matches.flatMap((match) => (match ? [[Number(match[1]), Number(match[2])] as [number, number]] : [])));
+  const newest = now.getTime() + FUTURE_SLACK_MS;
+
+  lines.forEach((line, index) => {
+    const match = matches[index];
     if (match) {
-      const [, day, month, year, hour, minute, ampm, sender, body] = match;
-      messages.push({ postedAt: toDate(day!, month!, year!, hour!, minute!, ampm), sender: sender!.trim(), body: body ?? '' });
+      const [, first, second, year, hour, minute, ampm, sender, body] = match;
+      const [day, month] = order === 'day-first' ? [first!, second!] : [second!, first!];
+      const postedAt = toDate(day, month, year!, hour!, minute!, ampm);
+      messages.push({ postedAt: postedAt && postedAt.getTime() <= newest ? postedAt : null, sender: sender!.trim(), body: body ?? '' });
     } else if (messages.length && line.trim()) {
       messages[messages.length - 1]!.body += `\n${line}`;
     }
-  }
+  });
 
   return messages
     .map((message) => ({ ...message, body: message.body.trim() }))

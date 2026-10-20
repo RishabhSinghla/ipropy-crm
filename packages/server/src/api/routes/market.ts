@@ -17,7 +17,7 @@ import { getPostDetail, importGroupExport, afterImport, searchMarket } from '../
 import { nudgeMarketWork } from '../../core/market/enrich.js';
 import { listImports, queueImports } from '../../core/market/imports.js';
 import { matchDeal } from '../../core/market/matchDeal.js';
-import { DEAL_STATUSES, findCrossMatches, recordOutcome } from '../../core/market/crossMatch.js';
+import { DEAL_STATUSES, findCrossMatches, MATCH_SORTS, recordOutcome } from '../../core/market/crossMatch.js';
 import { dealsOfRecord } from '../../core/market/dealerDeals.js';
 import { DEAL_PATCH, deleteDeal, duplicateDeal, matchCounts, MATCH_COUNT_LIMIT, updateDeal } from '../../core/market/associateDeals.js';
 import { dealerDirectory, saveDealersAsAssociates } from '../../core/market/dealers.js';
@@ -110,6 +110,13 @@ marketRouter.get('/matches', asyncHandler(async (req, res) => {
     includeWorked: z.enum(['true', 'false']).optional(),
     minJevFit: z.coerce.number().min(0).max(1).optional(),
     limit: z.coerce.number().int().min(1).max(500).optional(),
+    category: z.string().trim().max(40).optional(),
+    sizeMinSqYd: z.coerce.number().positive().optional(),
+    sizeMaxSqYd: z.coerce.number().positive().optional(),
+    area: z.string().trim().max(60).optional(),
+    bhk: z.coerce.number().int().min(1).max(14).optional(),
+    purpose: z.enum(['sale', 'rent']).optional(),
+    sort: z.enum(MATCH_SORTS).optional(),
   }).parse(req.query);
   res.json(await findCrossMatches({
     ...query,

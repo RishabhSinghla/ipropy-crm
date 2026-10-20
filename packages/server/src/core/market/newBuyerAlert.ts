@@ -39,6 +39,7 @@ export async function dealsForBuyer(values: Record<string, unknown>): Promise<nu
     `SELECT count(*)::int AS n FROM ipy_market_post
       WHERE kind = 'have'
         AND coalesce(last_posted_at, created_at) > now() - make_interval(days => $1::int)
+        AND coalesce(last_posted_at, created_at) <= now() + interval '1 day'
         AND localities && $2::text[]
         AND (cardinality($3::int[]) = 0 OR bhk IS NULL OR bhk = ANY($3::int[]))
         AND ($4::numeric IS NULL OR price_min_lakh IS NULL OR price_min_lakh * 100000 <= $4::numeric * 1.15)`,

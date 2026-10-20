@@ -3093,3 +3093,33 @@ unedited one beside it. Nothing is lost; somebody may delete the extra.
 Unit No. and For Sale / For Rent) and the deal-form fields. **A column list saved before
 13 October still lacks the two new columns** — a saved list is an admin's choice and is not
 rewritten; tick them in the designer.
+
+## 20 October 2026 — Dealer groups: two years old, and the call sheet's filters
+
+**The owner:** *"I want both sides maximum 45 days old … you are showing 2 years and many many years back."*
+Nothing was two years old. Twenty-two exports from another team member's phone were written
+**month first** (`10/20/26`) and the reader assumed **day first**, so that line became the 10th day of
+the 20th month — July 2027 or later — and 5,898 deals arrived dated 2026 to 2028. The 45-day filter
+(`> now() - 45 days`) only looked backwards, so a post dated 2028 passed it, and the screen counted
+from today to 2028.
+
+* **`parseWhatsAppExport` works the order out from the file** (`dateOrderOf`): a first number above 12
+  is a day, a second above 12 is a day, nothing decisive keeps the Indian day-first order. A message
+  dated after tomorrow gets **no date** rather than a wrong one — unknown cannot reach the alerts.
+* **Every 45-day query also has a ceiling** (`<= now() + 1 day`): the call sheet, All deals, a dealer's
+  tabs and the new-buyer alert. `findCrossMatches` and `searchMarket` clamp `days` to **45 at most**.
+* **Migration `215` turned the dates back** instead of guessing. The sightings written by those imports
+  are found by their transaction id (`xmin`) plus their group, inverted exactly, the deals' first and
+  last dates rebuilt from what is left, the notes they left on Associates re-dated, and each group's
+  "read up to" mark pulled back from 2028 (left alone it would have skipped real news on the next drop).
+  It does nothing on a database without those imports. `marketMisreadDates.test.ts` proves it.
+* **The side effect worth knowing:** because every one of those deals looked "posted in the last 7 days"
+  to the alert code, the team got **2,183 notifications** that afternoon. They cannot be unsent.
+* **Calls today now has filters and an order** — type, size (sq yd from/to), area, BHK, sale or rent —
+  applied to **both** sides before the best seller is chosen for each buyer, so a filter shows the best
+  match *inside* it. A property that does not state its size or type is kept: silence is not a mismatch.
+  Default order is **"Latest & most matching"**: 65% fit (Jev's read blended with the rules' score) and
+  35% freshness, where a pair is only as fresh as its **older** side. The others are "Most matching"
+  and "Newest first". Each side shows "Posted N days ago".
+* **The order is applied before the limit of 100**, not after: cutting first would have kept whichever
+  hundred pairs were found first.

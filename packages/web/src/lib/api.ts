@@ -651,6 +651,22 @@ export interface MarketIntroduction {
   jevFit: number | null;
 }
 
+export type MarketIntroductionSort = 'best' | 'match' | 'newest';
+
+export interface MarketIntroductionQuery {
+  crossGroupOnly: boolean;
+  minScore: number;
+  includeWorked: boolean;
+  sureShot?: boolean;
+  category?: string;
+  sizeMinSqYd?: number;
+  sizeMaxSqYd?: number;
+  area?: string;
+  bhk?: number;
+  purpose?: 'sale' | 'rent';
+  sort?: MarketIntroductionSort;
+}
+
 export interface MarketDealer {
   altPhone?: string | null;
   phone: string;
@@ -1433,8 +1449,17 @@ export const api = {
   },
   marketImports: () => get<{ imports: MarketImportRow[] }>('/api/market/imports'),
   marketPostDetail: (id: string) => get<MarketPostDetail>(`/api/market/posts/${id}`),
-  marketIntroductions: (query: { crossGroupOnly: boolean; minScore: number; includeWorked: boolean; sureShot?: boolean }) =>
-    get<MarketIntroduction[]>(`/api/market/matches?crossGroupOnly=${query.crossGroupOnly}&minScore=${query.minScore}&includeWorked=${query.includeWorked}${query.sureShot ? '&minJevFit=0.7' : ''}&limit=100`),
+  marketIntroductions: (query: MarketIntroductionQuery) => {
+    const params = new URLSearchParams({
+      crossGroupOnly: String(query.crossGroupOnly), minScore: String(query.minScore), includeWorked: String(query.includeWorked), limit: '100',
+    });
+    if (query.sureShot) params.set('minJevFit', '0.7');
+    for (const key of ['category', 'sizeMinSqYd', 'sizeMaxSqYd', 'area', 'bhk', 'purpose', 'sort'] as const) {
+      const value = query[key];
+      if (value !== undefined && value !== '') params.set(key, String(value));
+    }
+    return get<MarketIntroduction[]>(`/api/market/matches?${params}`);
+  },
   refreshMarket: () => post<{ started: true }>('/api/market/refresh', {}),
   setMarketIntroduction: (wantId: string, haveId: string, status: MarketIntroductionStatus, note?: string) =>
     put<{ ok: true }>(`/api/market/matches/${wantId}/${haveId}`, { status, note: note ?? null }),

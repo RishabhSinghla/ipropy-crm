@@ -266,8 +266,13 @@ export interface MarketPost {
 }
 
 export async function searchMarket(query: MarketQuery): Promise<{ total: number; posts: MarketPost[] }> {
-  const where: string[] = [`NOT is_noise`, `coalesce(last_posted_at, created_at) > now() - make_interval(days => $1::int)`];
-  const params: unknown[] = [Math.min(Math.max(query.days ?? 45, 1), 365)];
+  // Never older than 45 days and never from the future: a date after today was misread, not posted tomorrow.
+  const where: string[] = [
+    `NOT is_noise`,
+    `coalesce(last_posted_at, created_at) > now() - make_interval(days => $1::int)`,
+    `coalesce(last_posted_at, created_at) <= now() + interval '1 day'`,
+  ];
+  const params: unknown[] = [Math.min(Math.max(query.days ?? 45, 1), 45)];
   const add = (value: unknown): string => { params.push(value); return `$${params.length}`; };
 
   if (query.kind) where.push(`kind = ${add(query.kind)}`);

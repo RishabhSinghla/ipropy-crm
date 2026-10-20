@@ -105,7 +105,8 @@ export async function derivedListings(numbers: string[], extraWhere = '', extraP
   const rows = await db.query<Row>(
     `${DERIVED_SQL}
       WHERE p.poster_phone = ANY($1::text[]) AND NOT p.is_noise
-        AND coalesce(p.last_posted_at, p.created_at) > now() - make_interval(days => $2::int) ${extraWhere}
+        AND coalesce(p.last_posted_at, p.created_at) > now() - make_interval(days => $2::int)
+        AND coalesce(p.last_posted_at, p.created_at) <= now() + interval '1 day' ${extraWhere}
       ORDER BY coalesce(p.last_posted_at, p.created_at) DESC, l.ord
       LIMIT 1000`,
     [numbers, DAYS, ...extraParams],

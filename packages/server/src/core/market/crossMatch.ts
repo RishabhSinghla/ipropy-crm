@@ -196,6 +196,60 @@ export interface CrossMatchQuery {
   /** "Sure-shot": Jev has looked and rates the fit at least this high. Implies verified. */
   minJevFit?: number;
   limit?: number;
+  /** Narrow the sheet. A listing that does not say (no size, no type) is kept: silence is not a mismatch. */
+  category?: string;
+  sizeMinSqYd?: number;
+  sizeMaxSqYd?: number;
+  /** Part of a sector, block or project name: "77", "greenfield". */
+  area?: string;
+  bhk?: number;
+  purpose?: 'sale' | 'rent';
+  sort?: MatchSort;
+}
+
+/** `best` is the default: strongest fits first, but a fresh pair outranks a stale one. */
+export const MATCH_SORTS = ['best', 'match', 'newest'] as const;
+export type MatchSort = (typeof MATCH_SORTS)[number];
+
+/** Nobody works a deal older than this: a requirement or an offer from last quarter is gone. */
+export const MAX_DEAL_AGE_DAYS = 45;
+
+/** Pure: does this one property survive the narrowing the person asked for? */
+export function listingPasses(listing: MarketListing, query: CrossMatchQuery): boolean {
+  if (query.purpose && listing.purpose !== query.purpose) return false;
+  if (query.category && listing.category && listing.category !== query.category) return false;
+  if (query.bhk && listing.bhk && listing.bhk !== query.bhk) return false;
+  if (listing.sizeSqYd) {
+    if (query.sizeMinSqYd && listing.sizeSqYd < query.sizeMinSqYd) return false;
+    if (query.sizeMaxSqYd && listing.sizeSqYd > query.sizeMaxSqYd) return false;
+  }
+  const area = query.area?.trim().toLowerCase();
+  if (area && !listing.placeKeys.some((key) => key.includes(area) || label(key).toLowerCase().includes(area))) return false;
+  return true;
+}
+
+/** The older of the two postings: a pair is only as fresh as its stalest side. */
+function pairAgeDays(pair: { want: MarketListing; have: MarketListing }, now: Date): number {
+  const times = [pair.want.postedAt, pair.have.postedAt].filter((at): at is Date => at !== null).map((at) => at.getTime());
+  return times.length ? Math.max(0, (now.getTime() - Math.min(...times)) / DAY_MS) : MAX_DEAL_AGE_DAYS;
+}
+
+/** Jev's read when there is one, blended with the rules' score; the rules alone saturate for any pair in one sector. */
+function quality(pair: { score: number; jevFit: number | null }): number {
+  return pair.jevFit === null ? pair.score : 0.6 * pair.jevFit + 0.4 * pair.score;
+}
+
+/**
+ * Pure: put the sheet in order. Default `best` weighs fit at 65% and freshness at 35%, so the top of
+ * the list is the latest and most matching on both sides; `match` ignores age; `newest` ignores fit.
+ */
+export function sortMatches<T extends { want: MarketListing; have: MarketListing; score: number; jevFit: number | null }>(
+  matches: T[], sort: MatchSort = 'best', now = new Date(),
+): T[] {
+  const fresh = (m: T): number => Math.max(0, 1 - pairAgeDays(m, now) / MAX_DEAL_AGE_DAYS);
+  const key = (m: T): number => (sort === 'newest' ? fresh(m) : sort === 'match' ? quality(m) : 0.65 * quality(m) + 0.35 * fresh(m));
+  const tie = (m: T): number => (sort === 'newest' ? quality(m) : fresh(m));
+  return [...matches].sort((a, b) => key(b) - key(a) || tie(b) - tie(a));
 }
 
 function sharesAGroup(a: string[], b: string[]): boolean {
@@ -317,14 +371,16 @@ export async function loadListings(days: number): Promise<MarketListing[]> {
     `SELECT ${LISTING_COLUMNS}
        FROM ipy_market_listing l JOIN ipy_market_post p ON p.id = l.post_id
       WHERE NOT p.is_noise AND l.place_keys <> '{}'
-        AND coalesce(p.last_posted_at, p.created_at) > now() - make_interval(days => $1::int)`,
+        AND coalesce(p.last_posted_at, p.created_at) > now() - make_interval(days => $1::int)
+        -- A date after today is a date somebody misread, never a fresh deal.
+        AND coalesce(p.last_posted_at, p.created_at) <= now() + interval '1 day'`,
     [days],
   );
   return rows.rows.map(rowToListing);
 }
 
 export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<CrossMatch[]> {
-  const days = Math.min(Math.max(query.days ?? 45, 1), 365);
+  const days = Math.min(Math.max(query.days ?? MAX_DEAL_AGE_DAYS, 1), MAX_DEAL_AGE_DAYS);
   const limit = Math.min(Math.max(query.limit ?? 100, 1), 500);
   const learned = await db.query<{ listing: string; n: number }>(
     `SELECT l AS listing, count(*)::int AS n FROM (
@@ -332,7 +388,8 @@ export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<Cro
        UNION ALL SELECT want_listing_id FROM ipy_market_deal WHERE status = 'bad_match' AND want_listing_id IS NOT NULL
      ) wrong GROUP BY l`,
   );
-  const ranked = bestPerRequirement(await loadListings(days), query, new Date(), new Map(learned.rows.map((row) => [row.listing, row.n])));
+  const listings = (await loadListings(days)).filter((listing) => listingPasses(listing, query));
+  const ranked = bestPerRequirement(listings, query, new Date(), new Map(learned.rows.map((row) => [row.listing, row.n])));
 
   const worked = await db.query<{ want_listing_id: string; have_listing_id: string; status: CrossMatch['status']; note: string | null }>(
     `SELECT want_listing_id, have_listing_id, status, note FROM ipy_market_deal WHERE want_listing_id IS NOT NULL`,
@@ -356,8 +413,11 @@ export async function findCrossMatches(query: CrossMatchQuery = {}): Promise<Cro
     if ((query.onlyVerified || query.minJevFit !== undefined) && jevFit === null) continue;
     if (query.minJevFit !== undefined && jevFit! < query.minJevFit) continue;
     matches.push({ ...pairing, id, status, note: done?.note ?? null, jevFit });
-    if (matches.length >= limit) break;
   }
+  // Order first, then cut: the limit must keep the best of all of them, not the first hundred found.
+  const shown = sortMatches(matches, query.sort).slice(0, limit);
+  matches.length = 0;
+  matches.push(...shown);
 
   // The whole messages, for the pairings that are being shown and nothing else.
   const postIds = [...new Set(matches.flatMap((m) => [m.want.postId, m.have.postId]))];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fingerprintOf, localitiesOf, looksLikeADeal, parseWhatsAppExport, readPost } from '../src/core/market/readPost.js';
+import { dateOrderOf, fingerprintOf, localitiesOf, looksLikeADeal, parseWhatsAppExport, readPost } from '../src/core/market/readPost.js';
 
 describe('reading a WhatsApp group export', () => {
   it('reads the Android shape, joining a long post that spans lines', () => {
@@ -75,4 +75,31 @@ describe('reading one post', () => {
   it('the same forward is one fingerprint, whatever its spacing and case', () => {
     expect(fingerprintOf('3 BHK  available, Greenfields!')).toBe(fingerprintOf('3 bhk available greenfields'));
   });
+
+  // 20 October 2026: "10/20/26" was read as the 10th day of the 20th month, so a month-first
+  // export put every deal in 2027 and 2028, and the 45-day filter (which only looked backwards) kept them.
+  it('reads a month-first export (American-set phone) by the month, not the day', () => {
+    const text = [
+      '[10/20/26, 4:32:10 PM] Realtor 1261 FBD: Plot for sale sector 85',
+      '[9/5/26, 9:00:00 AM] Realtor 2784 FBD: Need 3 BHK Greenfields',
+    ].join('\n');
+    const [first, second] = parseWhatsAppExport(text, new Date('2026-10-21T00:00:00Z'));
+    expect(first!.postedAt?.toISOString()).toBe('2026-10-20T11:02:00.000Z');
+    // 9/5 is the ninth of May in a day-first export and the fifth of September here: the file decides, not the line.
+    expect(second!.postedAt?.toISOString()).toBe('2026-09-05T03:30:00.000Z');
+  });
+
+  it('works the order out from the whole file, and prefers the Indian order when nothing says', () => {
+    expect(dateOrderOf([[20, 10]])).toBe('day-first');
+    expect(dateOrderOf([[10, 20], [9, 5]])).toBe('month-first');
+    expect(dateOrderOf([[9, 5], [3, 4]])).toBe('day-first');
+    expect(dateOrderOf([])).toBe('day-first');
+  });
+
+  it('never gives a message a date after today; unknown is better than wrong', () => {
+    const [message] = parseWhatsAppExport('[12/10/2027, 10:15 am] Ramesh: 3 BHK available', new Date('2026-10-20T00:00:00Z'));
+    expect(message!.postedAt).toBeNull();
+    expect(message!.body).toContain('3 BHK');
+  });
 });
+

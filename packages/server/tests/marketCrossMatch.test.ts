@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaScore, bestPerRequirement, samePerson, scorePair, type MarketListing } from '../src/core/market/crossMatch.js';
+import { areaScore, bestPerRequirement, listingPasses, samePerson, scorePair, sortMatches, type MarketListing } from '../src/core/market/crossMatch.js';
 import { onceEach } from '../src/core/market/dealerDeals.js';
 import { associateValues, looksLikeAFirm, usableName, type FieldInfo } from '../src/core/market/dealers.js';
 
@@ -193,3 +193,44 @@ describe('a dealer\'s deal lists', () => {
     expect(onceEach(['Sector 78', 'sector 78', 'Greenfields Colony'])).toEqual(['Sector 78', 'Greenfields Colony']);
   });
 });
+
+describe('narrowing and ordering the call sheet', () => {
+  const pair = (want: Partial<MarketListing>, have: Partial<MarketListing>, score: number, jevFit: number | null = null) =>
+    ({ want: buyer(want), have: listing(have), score, jevFit });
+
+  it('keeps a property that does not say its size or type, and drops one that says the wrong thing', () => {
+    expect(listingPasses(listing({ sizeSqYd: null }), { sizeMinSqYd: 200, sizeMaxSqYd: 300 })).toBe(true);
+    expect(listingPasses(listing({ sizeSqYd: 250 }), { sizeMinSqYd: 200, sizeMaxSqYd: 300 })).toBe(true);
+    expect(listingPasses(listing({ sizeSqYd: 150 }), { sizeMinSqYd: 200 })).toBe(false);
+    expect(listingPasses(listing({ category: 'Builder Floor' }), { category: 'Residential Plot' })).toBe(false);
+    expect(listingPasses(listing({ category: null }), { category: 'Residential Plot' })).toBe(true);
+    expect(listingPasses(listing({ purpose: 'rent' }), { purpose: 'sale' })).toBe(false);
+  });
+
+  it('finds an area by any part of its name, as the sheet prints it', () => {
+    expect(listingPasses(listing({ placeKeys: ['sector 85'] }), { area: '85' })).toBe(true);
+    expect(listingPasses(listing({ placeKeys: ['sector 85'] }), { area: 'Sector 8' })).toBe(true);
+    expect(listingPasses(listing({ placeKeys: ['sector 85'] }), { area: 'sector 21' })).toBe(false);
+    expect(listingPasses(listing({ placeKeys: ['bptp:block a'] }), { area: 'BPTP' })).toBe(true);
+  });
+
+  it('puts a fresh strong pair above a stale one, and a stronger fit above a weaker one of the same age', () => {
+    const stale = pair({ postedAt: daysAgo(40) }, { postedAt: daysAgo(40) }, 0.9);
+    const fresh = pair({ postedAt: daysAgo(1) }, { postedAt: daysAgo(1) }, 0.8);
+    const weakFresh = pair({ postedAt: daysAgo(1) }, { postedAt: daysAgo(1) }, 0.5);
+    expect(sortMatches([stale, weakFresh, fresh], 'best', NOW)).toEqual([fresh, weakFresh, stale]);
+  });
+
+  it('is only as fresh as its older side', () => {
+    const oneStale = pair({ postedAt: daysAgo(1) }, { postedAt: daysAgo(44) }, 0.9);
+    const bothFresh = pair({ postedAt: daysAgo(3) }, { postedAt: daysAgo(3) }, 0.9);
+    expect(sortMatches([oneStale, bothFresh], 'newest', NOW)[0]).toBe(bothFresh);
+  });
+
+  it('"most matching" ignores age and trusts Jev over the rules alone', () => {
+    const oldButSure = pair({ postedAt: daysAgo(40) }, { postedAt: daysAgo(40) }, 0.7, 0.95);
+    const newButMaybe = pair({ postedAt: daysAgo(1) }, { postedAt: daysAgo(1) }, 0.7, 0.5);
+    expect(sortMatches([newButMaybe, oldButSure], 'match', NOW)[0]).toBe(oldButSure);
+  });
+});
+

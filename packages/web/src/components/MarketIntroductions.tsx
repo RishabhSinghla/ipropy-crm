@@ -9,11 +9,11 @@
  * gets done — and "not a real match" is its own answer, because that one teaches the
  * matcher and is never shown again.
  */
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatIndianPrice } from '@ipropy/shared';
 import { Phone } from 'lucide-react';
-import { api, type MarketDealSide, type MarketIntroduction, type MarketIntroductionStatus } from '../lib/api';
+import { api, type MarketDealSide, type MarketIntroduction, type MarketIntroductionSort, type MarketIntroductionStatus } from '../lib/api';
 import DealMessageDialog, { type MessageToShow } from './DealMessageDialog';
 import { Badge, EmptyState, Spinner } from './ui';
 import { toast } from '../lib/store';
@@ -30,6 +30,33 @@ const ACTIONS: Array<{ status: MarketIntroductionStatus; label: string }> = [
 const STATUS_LABEL: Record<MarketIntroductionStatus, string> = {
   new: 'New', called: 'Called', meeting: 'Meeting fixed', won: 'Won', lost: 'Lost', dismissed: 'Not for us', bad_match: 'Not a real match',
 };
+
+/** The kinds of property the feed tells apart, as the reader names them. */
+const TYPES = ['Residential Plot', 'Builder Floor', 'Apartment', 'Kothi/Villa', 'Commercial Plot', 'Office Space', 'Factory'];
+
+const SORTS: Array<{ id: MarketIntroductionSort; label: string }> = [
+  { id: 'best', label: 'Latest & most matching' },
+  { id: 'match', label: 'Most matching' },
+  { id: 'newest', label: 'Newest first' },
+];
+
+/** Typing in a box should not ask the server a question for every key. */
+function useSettled<T>(value: T, ms = 400): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
+}
+
+/** How old a posting is, in the words a dealer would use. Never says "in the future": that was a misread date. */
+function ageText(postedAt: string | null): string | null {
+  if (!postedAt) return null;
+  const days = Math.floor((Date.now() - new Date(postedAt).getTime()) / 86_400_000);
+  if (days <= 0) return 'Posted today';
+  return days === 1 ? 'Posted yesterday' : `Posted ${days} days ago`;
+}
 
 function placeText(key: string): string {
   if (key.includes(':')) return key.replace(/^(.*?):block (.)$/, (_m, project: string, block: string) => `${project.toUpperCase()} · Block ${block}`);
@@ -56,6 +83,7 @@ function Side({ title, side, onOpen }: { title: string; side: MarketDealSide; on
       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</p>
       <p className="text-sm font-semibold">{side.posterName ?? 'Unknown sender'}</p>
       <p className="text-xs text-muted">{side.groups.join(', ')}</p>
+      {ageText(side.postedAt) && <p className="text-xs text-muted">{ageText(side.postedAt)}</p>}
       {facts(side) && <p className="text-xs">{facts(side)}</p>}
       {side.placeKeys.length > 0 && <p className="flex flex-wrap gap-1">{side.placeKeys.slice(0, 4).map((key) => <Badge key={key}>{placeText(key)}</Badge>)}</p>}
       <button type="button" onClick={open} className="block w-full text-left" aria-label={`Read the full message from ${side.posterName ?? 'this dealer'}`}>
@@ -120,8 +148,26 @@ export default function MarketIntroductions(): JSX.Element {
   const [minScore, setMinScore] = useState(0.5);
   const [includeWorked, setIncludeWorked] = useState(false);
   const [message, setMessage] = useState<MessageToShow | null>(null);
+  const [category, setCategory] = useState('');
+  const [sizeMin, setSizeMin] = useState('');
+  const [sizeMax, setSizeMax] = useState('');
+  const [area, setArea] = useState('');
+  const [bhk, setBhk] = useState('');
+  const [purpose, setPurpose] = useState<'' | 'sale' | 'rent'>('');
+  const [sort, setSort] = useState<MarketIntroductionSort>('best');
+  const settled = useSettled({ sizeMin, sizeMax, area });
+  const narrowed = Boolean(category || sizeMin || sizeMax || area.trim() || bhk || purpose);
+  const clearFilters = (): void => { setCategory(''); setSizeMin(''); setSizeMax(''); setArea(''); setBhk(''); setPurpose(''); };
   const sureShot = minScore >= 0.8;
-  const query = { crossGroupOnly, minScore: sureShot ? 0.7 : minScore, includeWorked, sureShot };
+  const query = {
+    crossGroupOnly, minScore: sureShot ? 0.7 : minScore, includeWorked, sureShot, sort,
+    category: category || undefined,
+    sizeMinSqYd: settled.sizeMin ? Number(settled.sizeMin) : undefined,
+    sizeMaxSqYd: settled.sizeMax ? Number(settled.sizeMax) : undefined,
+    area: settled.area.trim() || undefined,
+    bhk: bhk ? Number(bhk) : undefined,
+    purpose: purpose || undefined,
+  };
   const [refreshing, setRefreshing] = useState(false);
   // Jev checks the new pairings in the background; give it a moment, then look again.
   const refresh = async (): Promise<void> => {
@@ -141,9 +187,37 @@ export default function MarketIntroductions(): JSX.Element {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        A buyer in one group who fits a seller in another, property by property. Ring both, fix a meeting, and mark what happened — the list gets shorter as you work.
-        If a pairing is wrong, say so: it will not come back.
+        A buyer in one group who fits a seller in another, property by property — only deals posted in the last 45 days, on both sides. Ring both, fix a meeting,
+        and mark what happened — the list gets shorter as you work. If a pairing is wrong, say so: it will not come back.
       </p>
+      <div className="card space-y-2 p-3" role="search" aria-label="Filter and sort the call sheet">
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="input w-auto" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Type of property">
+            <option value="">Any type</option>
+            {TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+          <input className="input w-24" inputMode="numeric" placeholder="Size from" value={sizeMin} onChange={(e) => setSizeMin(e.target.value.replace(/\D/g, ''))} aria-label="Smallest size in square yards" />
+          <input className="input w-24" inputMode="numeric" placeholder="Size to" value={sizeMax} onChange={(e) => setSizeMax(e.target.value.replace(/\D/g, ''))} aria-label="Largest size in square yards" />
+          <span className="text-xs text-muted">sq yd</span>
+          <input className="input w-44" placeholder="Area, sector or project" value={area} onChange={(e) => setArea(e.target.value)} aria-label="Area" />
+          <select className="input w-auto" value={bhk} onChange={(e) => setBhk(e.target.value)} aria-label="BHK">
+            <option value="">Any BHK</option>
+            {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n} BHK</option>)}
+          </select>
+          <select className="input w-auto" value={purpose} onChange={(e) => setPurpose(e.target.value as '' | 'sale' | 'rent')} aria-label="Sale or rent">
+            <option value="">Sale and rent</option>
+            <option value="sale">Sale</option>
+            <option value="rent">Rent</option>
+          </select>
+          {narrowed && <button type="button" className="btn-secondary" onClick={clearFilters}>Clear filters</button>}
+          <label className="ml-auto inline-flex items-center gap-1.5 text-sm">
+            Sort
+            <select className="input w-auto" value={sort} onChange={(e) => setSort(e.target.value as MarketIntroductionSort)} aria-label="Sort the call sheet">
+              {SORTS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <label className="inline-flex items-center gap-1.5">
           <input type="checkbox" checked={crossGroupOnly} onChange={(e) => setCrossGroupOnly(e.target.checked)} /> Only people in different groups
@@ -163,10 +237,13 @@ export default function MarketIntroductions(): JSX.Element {
       {isLoading && <div className="flex justify-center py-10"><Spinner /></div>}
       {error && <p className="text-sm text-negative">Could not load the introductions: {(error as Error).message}</p>}
       {data && (data.length === 0 ? (
-        <EmptyState title="Nothing to ring about yet" body="Introductions appear once groups with both buyers and sellers are added. A property needs a sector or a named area to be matched." />
+        <EmptyState
+          title={narrowed ? 'Nothing matches those filters' : 'Nothing to ring about yet'}
+          body={narrowed ? 'Loosen a filter, or clear them to see everything from the last 45 days.' : 'Introductions appear once groups with both buyers and sellers are added. A property needs a sector or a named area to be matched.'}
+        />
       ) : (
         <ul className="space-y-3">
-          {[...data].sort((a, b) => (b.jevFit ?? -1) - (a.jevFit ?? -1) || b.score - a.score).map((match) => (
+          {data.map((match) => (
             <Introduction key={match.id} match={match} onOpen={setMessage} onDone={() => void queryClient.invalidateQueries({ queryKey: ['market', 'introductions'] })} />
           ))}
         </ul>
