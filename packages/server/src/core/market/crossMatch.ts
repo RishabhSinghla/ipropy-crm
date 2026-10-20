@@ -230,6 +230,9 @@ export type MatchSort = (typeof MATCH_SORTS)[number];
 /** Nobody works a deal older than this: a requirement or an offer from last quarter is gone. */
 export const MAX_DEAL_AGE_DAYS = 45;
 
+/** Times Jev may fail to answer about one pairing before it is left alone. */
+export const JEV_MAX_TRIES = 3;
+
 /** Pure: does this one property survive the narrowing the person asked for? */
 export function listingPasses(listing: MarketListing, query: CrossMatchQuery): boolean {
   if (query.purpose && listing.purpose !== query.purpose) return false;
@@ -757,12 +760,23 @@ export async function jevCounts(): Promise<JevCounts> {
     if (match.jevFit !== null) {
       counts.rated += 1;
       if (match.jevFit >= 0.7) counts.sure += 1; else counts.possible += 1;
-    } else if (match.jevTried >= 3) {
+    } else if (match.jevTried >= JEV_MAX_TRIES) {
       counts.gaveUp += 1;
     } else {
       counts.waiting += 1;
     }
   }
   return counts;
+}
+
+/**
+ * Every pairing on the sheet that Jev has not rated and has not given up on, best first, from a freshly worked-out sheet.
+ *
+ * The checker used to take the first 500 of the sheet (the paging limit) and filter those: pairings Jev had already rated rank
+ * above unrated ones, so on 20 October only 23 of 264 waiting pairings were ever in view and the rest sat for hours.
+ */
+export async function pairsWaitingForJev(): Promise<CrossMatch[]> {
+  const all = await sheetFor({ minScore: 0.5, crossGroupOnly: true }, true);
+  return sortMatches(all.filter((match) => match.jevFit === null && match.jevTried < JEV_MAX_TRIES && match.status !== 'won' && match.status !== 'lost'), 'best');
 }
 

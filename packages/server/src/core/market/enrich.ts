@@ -17,7 +17,7 @@ import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { notifyMany } from '../notifications/index.js';
 import { isAiAvailable } from '../../ai/client.js';
-import { findCrossMatches, invalidateMarketMatches } from './crossMatch.js';
+import { findCrossMatches, invalidateMarketMatches, pairsWaitingForJev } from './crossMatch.js';
 import { purgeStaleMarketDataDaily } from './retention.js';
 import { syncDealerNotes } from './dealerNotes.js';
 import { alertOwners, knownLocalities, READ_VERSION } from './feed.js';
@@ -195,16 +195,14 @@ export async function refineWithAi(limit = AI_PER_VISIT): Promise<number> {
  * Jev's second opinion on the pairings that would be shown. Each pairing is asked once,
  * best first; "no" takes it off the call sheet, and nothing is ever re-asked.
  */
-const VERIFY_PER_VISIT = 120;
+const VERIFY_PER_VISIT = 400;
 const VERIFY_PARALLEL = 8;
-/** A pairing Jev could not answer this many times is left alone: a paid question asked at every visit for ever helps nobody. */
-const MAX_TRIES = 3;
 
 export async function verifyPairs(limit = VERIFY_PER_VISIT): Promise<number> {
   if (!jevIsAvailable()) return 0;
   // Worked out fresh: what is asked of Jev costs money, so it is never chosen from a sheet that may be minutes behind its own verdicts.
   // The whole sheet, best first: looking only at the top 300 left a pairing beyond it waiting until others cleared.
-  const candidates = (await findCrossMatches({ limit: 1000, includeWorked: false })).filter((match) => match.jevFit === null && match.jevTried < MAX_TRIES);
+  const candidates = await pairsWaitingForJev();
   const done = new Set((await db.query<{ k: string }>(
     `SELECT want_listing_id || ':' || have_listing_id AS k FROM ipy_market_pair_check WHERE want_listing_id = ANY($1::uuid[])`,
     [candidates.map((match) => match.want.id)],

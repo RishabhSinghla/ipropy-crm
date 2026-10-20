@@ -3236,3 +3236,7 @@ Jev worked, how much is left, how much is working."*
   for Jev**, **N checking now** (questions actually in flight), sure-shots, any it could not read, and **today's questions and cost**, with the
   week in the hover. Questions are counted per day and kind (`ipy_market_jev_usage`, migration `219`); tokens come from Jev's own
   `usage` when it reports one, else an estimate. Proved by `marketJevIsHonest.test.ts`.
+
+**And one more found the moment it ran live:** only 23 of 264 waiting pairings were being asked about. The checker took the sheet's
+first 500 (the paging cap) and kept the unrated ones, but rated pairings rank above unrated, so the waiting ones were mostly beyond
+the cap. `pairsWaitingForJev` reads the whole freshly worked-out sheet instead, and a visit asks up to 400, eight at a time.
