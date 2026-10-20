@@ -1168,3 +1168,8 @@ opening the list could not tell a buyer who gave a budget from a phone that rang
 * Proved by `sarvamOutcome.test.ts` (the real transcripts from production) and `integration/sarvamReconcile.test.ts`
   (Sarvam stubbed at the network edge only: a lost call completed, an outside call placed on its record, a DND number
   opted out, a second pass adding nothing, the recording played through the CRM).
+
+**A trap found the minute it ran on production:** Sarvam answers `NO_INTERACTION_ID` for an attempt that never became a
+conversation (busy, no answer, refused). The first pass stored that as a conversation id and gave 36 calls a recording link
+that plays nothing. A real id looks like `20261020/9f1c…`; `realInteractionId` accepts nothing else, and migration `218`
+cleared the 36. An answer from somebody else's API that is a *placeholder in an id field* is the shape to suspect first.

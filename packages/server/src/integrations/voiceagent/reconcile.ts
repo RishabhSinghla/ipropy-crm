@@ -14,7 +14,7 @@ import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { matchContact } from '../whatsapp/matchContact.js';
 import { toE164 } from '@ipropy/shared';
-import { readSarvamSettings, recordSarvamResult, SARVAM_PROVIDER, type SarvamResult, type SarvamSettings } from './sarvam.js';
+import { readSarvamSettings, realInteractionId, recordSarvamResult, SARVAM_PROVIDER, type SarvamResult, type SarvamSettings } from './sarvam.js';
 import { listAttempts, listInteractions, type SarvamAttempt, type SarvamInteraction } from './analytics.js';
 import { finishAiCall } from './afterCall.js';
 
@@ -45,13 +45,14 @@ export function transcriptOf(interaction: SarvamInteraction | undefined): string
 /** One attempt (and its conversation, when it has one) as the result the webhook would have delivered. */
 export function resultFromAttempt(attempt: SarvamAttempt, interaction: SarvamInteraction | undefined): SarvamResult | null {
   if (!attempt.attempt_id) return null;
-  const connected = attempt.connectivity_status === 'connected' || Boolean(attempt.interaction_id);
+  const interactionId = realInteractionId(attempt.interaction_id);
+  const connected = attempt.connectivity_status === 'connected' || Boolean(interactionId);
   const status: SarvamResult['status'] = connected ? 'connected'
     : attempt.connectivity_status === 'busy' ? 'busy'
       : attempt.connectivity_status === 'no_answer' ? 'no_answer' : 'failed';
   return {
     attemptId: attempt.attempt_id,
-    interactionId: attempt.interaction_id ?? null,
+    interactionId,
     status,
     durationSeconds: Math.round(attempt.duration_in_seconds ?? 0),
     failureReason: NOTHING(attempt.failure_reason) ? null : attempt.failure_reason!,
@@ -86,7 +87,7 @@ export async function reconcileSarvam(options: { hours?: number } = {}): Promise
       for (const attempt of attempts) {
         if (!attempt.attempt_id || attempt.is_debug_call === 1) { report.skipped += 1; continue; }
         report.checked += 1;
-        await reconcileOne(attempt, byInteraction.get(attempt.interaction_id ?? ''), app, report);
+        await reconcileOne(attempt, byInteraction.get(realInteractionId(attempt.interaction_id) ?? ''), app, report);
       }
     }
     report.message = `Checked ${report.checked} calls: ${report.completed} completed, ${report.backfilled} added, ${report.enriched} given their outcome and recording.`;

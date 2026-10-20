@@ -299,6 +299,14 @@ export async function placeAgentCall(input: {
   return { ok: true, attemptId: answer.attempt_id };
 }
 
+/**
+ * A conversation id looks like `20261020/9f1c…`. Sarvam writes `NO_INTERACTION_ID` (and other placeholders) for an
+ * attempt that never connected; keeping that as an id gave 36 busy calls a recording that plays nothing.
+ */
+export function realInteractionId(value: unknown): string | null {
+  return typeof value === 'string' && /^\d{8}\/.+/.test(value) ? value : null;
+}
+
 export interface SarvamResult {
   attemptId: string;
   /** The conversation (`<YYYYMMDD>/<id>`): what Sarvam's recording and transcript endpoints are addressed by. Null when nobody answered. */
@@ -327,7 +335,7 @@ export function parseSarvamResult(body: unknown): SarvamResult | null {
   const finalVariables = b.final_agent_variables;
   return {
     attemptId: b.attempt_id,
-    interactionId: typeof b.interaction_id === 'string' && b.interaction_id ? b.interaction_id : null,
+    interactionId: realInteractionId(b.interaction_id),
     status: b.status as SarvamResult['status'],
     durationSeconds: typeof b.duration === 'number' ? Math.round(b.duration) : 0,
     failureReason: typeof b.failure_reason === 'string' ? b.failure_reason : null,

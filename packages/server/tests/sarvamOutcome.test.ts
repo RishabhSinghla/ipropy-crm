@@ -87,6 +87,9 @@ describe('reading what Sarvam sends and what its analytics return', () => {
     expect(failed).toMatchObject({ status: 'failed', failureReason: 'exotel: Phone number is registered under TRAI NDNC', transcript: null });
     expect(resultFromAttempt({ attempt_id: 'a3', connectivity_status: 'busy' }, undefined)?.status).toBe('busy');
     expect(resultFromAttempt({ connectivity_status: 'connected' }, undefined)).toBeNull();
+    // Sarvam's placeholder for an attempt that never became a conversation is not an id.
+    expect(resultFromAttempt({ attempt_id: 'a4', interaction_id: 'NO_INTERACTION_ID', connectivity_status: 'busy' }, undefined)).toMatchObject({ status: 'busy', interactionId: null });
+    expect(parseSarvamResult({ attempt_id: 'a5', status: 'failed', interaction_id: 'NO_INTERACTION_ID' })?.interactionId).toBeNull();
   });
 
   it('finds the agents the CRM calls through, once each', () => {
