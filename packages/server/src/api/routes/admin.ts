@@ -1050,6 +1050,21 @@ adminRouter.post('/integrations/sarvam_voice/sync-inbound', asyncHandler(async (
   res.json(await syncSarvamInbound());
 }));
 
+/** Is the AI caller properly connected: every check a person can act on, in one answer. */
+adminRouter.get('/integrations/sarvam_voice/health', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const { sarvamHealth } = await import('../../integrations/voiceagent/reconcile.js');
+  res.json({ checks: await sarvamHealth(config.appUrl.split(',')[0]!.trim()) });
+}));
+
+/** Ask Sarvam what happened to every recent call and make the CRM agree; nothing is dialled. */
+adminRouter.post('/integrations/sarvam_voice/reconcile', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const { hours } = z.object({ hours: z.coerce.number().int().min(1).max(336).default(72) }).parse(req.body ?? {});
+  const { reconcileAndRemember } = await import('../../integrations/voiceagent/reconcile.js');
+  res.json(await reconcileAndRemember({ hours }));
+}));
+
 adminRouter.get('/integrations/sarvam_voice/context-hook', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
   const { readSarvamSettings, sarvamWebhookUrl } = await import('../../integrations/voiceagent/sarvam.js');

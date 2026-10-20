@@ -1123,3 +1123,48 @@ and a quick phrase fills the box rather than posting on its own, twice adding
 nothing. **Still not proved on a handset**, for the same reason as the rest:
 no Android SDK here, so nothing is compiled. These screens ride in the web
 bundle and reach every installed phone on the next launch.
+
+## The AI caller, connected end to end (Sarvam) — 20 October 2026
+
+**The owner:** *"I need you properly connected end to end and working with Sarvam, my AI voice calling agent."*
+The outbound half had been built (dial, queue, calling hours, inbound recognition). Read off production first:
+112 AI calls, 76 answered — **and not one with an outcome, a summary or a recording.** Of those 76, 30 were real
+conversations, 22 were somebody picking up and saying nothing, 21 were a word or two, and 3 were voicemail. A rep
+opening the list could not tell a buyer who gave a budget from a phone that rang in a pocket.
+
+* **Verified against Sarvam's own reference** (docs.sarvam.ai, read 20 October 2026): the instant-outbound request, the
+  webhook payload and the analytics API (`attempts`, `interactions`, `recordings`). Their base URLs differ by service
+  (`/api/outbounds`, `/api/analytics`, `/api/app-authoring`) and so does the path shape — analytics puts the ids
+  straight after the version and takes the agent's `app_id`.
+* **The conversation id is kept** (`ipy_call.sarvam_interaction_id`, migration `217`). It is what Sarvam addresses every
+  recording and transcript by; the CRM kept only the attempt.
+* **Every finished call is read** (`voiceagent/outcome.ts`, `afterCall.ts`), from the **customer's words only** — the
+  agent's greeting says "am I speaking with…" and must never decide an outcome. Silent pick-up, voicemail, wrong number,
+  not interested, already bought, asked to be called back, asked not to be called, or a conversation: each is named in the
+  CRM's *own* call-disposition dropdown (`dispositionFor` finds the option an admin has; it never invents one), gets a
+  one-line summary without a model, and — when a model is available — the fuller analysis after. A customer who stayed for
+  more than three turns is a conversation whatever one word ended it.
+* **Nobody is rung again after asking, or after the network says so.** An explicit "do not call me" and a provider failure
+  naming NDNC/DND both write a **call opt-out** (`recordConsent`, source `call_disposition`) and set `do_not_call` on the
+  record; the dial queue already refuses opted-out numbers.
+* **"Call me tomorrow" becomes a date** on the record (`scheduleFollowUp`, only if there is no earlier one), and the owner is
+  told when the AI had a real conversation or was asked to call back. Never for a call older than two hours: back-filling
+  history must not ring a rep's phone about last week.
+* **The recording plays in the CRM.** `GET /api/telephony/calls/:id/recording` streams Sarvam's WAV with the workspace key
+  held server-side, behind the same permission as every other recording, with the same security headers and range support.
+* **The CRM asks Sarvam what happened** (`voiceagent/reconcile.ts`, every ten minutes, and a two-week look-back on each start).
+  Sarvam signs nothing and retries only so long, so a lost webhook used to leave a call "queued" for ever and the dial queue
+  stopped for a call it could not account for. The same pass (1) completes such a call, (2) gives the 76 older calls their
+  conversation id, outcome and recording, and (3) writes a call Sarvam made that the CRM never placed — a campaign launched in
+  Sarvam's dashboard, a lost inbound callback — onto the right record by phone number. Test calls made from Sarvam's
+  playground (`is_debug_call`) are skipped. Idempotent: running it twice adds nothing.
+* **The call request carries the customer.** `agent_variables` (the same keys the on-start hook returns) and
+  `webhook_config.metadata` (record, module, user) now travel in the request itself, so the agent knows who it is ringing from
+  its first word instead of waiting for a round trip that can fail on a bad line. If Sarvam refuses the variables the call is
+  asked for again without them. **Not exercised against Sarvam from here** — `placeAgentCall` against a stub only — so the first
+  real call after this deploy is the proof; the on-start hook is still there as the fallback.
+* **Admin → Integrations → Sarvam** has *Check everything* (key, agents, telephony connection, result address, calls waiting,
+  calls without an outcome) and *Sync from Sarvam* (the reconcile pass for the last 72 hours).
+* Proved by `sarvamOutcome.test.ts` (the real transcripts from production) and `integration/sarvamReconcile.test.ts`
+  (Sarvam stubbed at the network edge only: a lost call completed, an outside call placed on its record, a DND number
+  opted out, a second pass adding nothing, the recording played through the CRM).

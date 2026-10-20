@@ -15,6 +15,7 @@ import { logManualCall } from '../../integrations/telephony/manualCall.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { emitToUser } from '../../realtime.js';
 import { parseByteRange } from '../../utils/httpRange.js';
+import { logger } from '../../utils/logger.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 
 export const telephonyRouter = Router();
@@ -571,8 +572,9 @@ telephonyRouter.get('/calls/:id/history', asyncHandler(async (req, res) => {
 
 telephonyRouter.get('/calls/:id/recording', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const call = await db.queryOne<{ recording_key: string | null; recording_url: string | null; user_id: string | null }>(
-    `SELECT recording_key, recording_url, user_id FROM ipy_call WHERE id = $1`, [req.params.id],
+  const call = await db.queryOne<{ recording_key: string | null; recording_url: string | null; user_id: string | null;
+    sarvam_interaction_id: string | null; sarvam_app_id: string | null }>(
+    `SELECT recording_key, recording_url, user_id, sarvam_interaction_id, sarvam_app_id FROM ipy_call WHERE id = $1`, [req.params.id],
   );
   if (!call) throw new NotFoundError('Call not found');
 
@@ -581,24 +583,37 @@ telephonyRouter.get('/calls/:id/recording', asyncHandler(async (req, res) => {
     || await hasCapability(user, 'telephony.listen_recordings');
   if (!canListen) throw new ForbiddenError('You do not have permission to listen to call recordings');
 
-  // Provider-hosted recordings (Twilio, Exotel) are absolute URLs we do not
-  // hold bytes for — redirect rather than proxying someone else's audio.
-  if (!call.recording_key) {
-    if (call.recording_url && /^https?:\/\//i.test(call.recording_url)) {
-      res.redirect(call.recording_url);
-      return;
+  let buffer: Buffer | null = null;
+  let mime = 'audio/mpeg';
+  let fileName = 'recording';
+  if (call.sarvam_interaction_id && call.sarvam_app_id && !call.recording_key) {
+    // An AI call: the audio is Sarvam's, fetched with the workspace key the browser never sees, and streamed like any other.
+    const { fetchRecording } = await import('../../integrations/voiceagent/analytics.js');
+    const audio = await fetchRecording(call.sarvam_app_id, call.sarvam_interaction_id)
+      .catch((err) => { logger.warn({ err }, 'sarvam recording could not be fetched'); return null; });
+    if (!audio) throw new NotFoundError('Sarvam has no recording for this call');
+    buffer = audio.buffer;
+    mime = audio.mime;
+    fileName = `${call.sarvam_interaction_id.split('/').pop() ?? 'ai-call'}.wav`;
+  } else {
+    // Provider-hosted recordings (Twilio, Exotel) are absolute URLs we do not
+    // hold bytes for — redirect rather than proxying someone else's audio.
+    if (!call.recording_key) {
+      if (call.recording_url && /^https?:\/\//i.test(call.recording_url)) {
+        res.redirect(call.recording_url);
+        return;
+      }
+      throw new NotFoundError('There is no recording for this call');
     }
-    throw new NotFoundError('There is no recording for this call');
+    const { getDriver } = await import('../../core/storage/index.js');
+    buffer = await (await getDriver()).read(call.recording_key);
+    if (!buffer) throw new NotFoundError('The recording file is no longer available');
+    const extension = call.recording_key.split('.').pop()?.toLowerCase() ?? 'mp3';
+    mime = extension === 'm4a' || extension === 'mp4' ? 'audio/mp4'
+      : extension === 'amr' ? 'audio/amr'
+        : extension === 'wav' ? 'audio/wav' : 'audio/mpeg';
+    fileName = call.recording_key.split('/').pop() ?? 'recording';
   }
-
-  const { getDriver } = await import('../../core/storage/index.js');
-  const buffer = await (await getDriver()).read(call.recording_key);
-  if (!buffer) throw new NotFoundError('The recording file is no longer available');
-
-  const extension = call.recording_key.split('.').pop()?.toLowerCase() ?? 'mp3';
-  const mime = extension === 'm4a' || extension === 'mp4' ? 'audio/mp4'
-    : extension === 'amr' ? 'audio/amr'
-      : extension === 'wav' ? 'audio/wav' : 'audio/mpeg';
 
   /*
     The same headers every other byte-serving route in this CRM applies —
@@ -612,7 +627,7 @@ telephonyRouter.get('/calls/:id/recording', asyncHandler(async (req, res) => {
     header set only on the whole-file path protects the one request nobody
     makes — the player asks for ranges.
   */
-  applyFileSecurityHeaders(res, mime, call.recording_key.split('/').pop() ?? 'recording', false);
+  applyFileSecurityHeaders(res, mime, fileName, false);
 
   // Range support so the player can seek — without it, scrubbing a ten-minute
   // call re-downloads from the start on every drag.

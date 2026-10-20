@@ -1,4 +1,5 @@
 import { SarvamOperations } from '../../components/SarvamOperations';
+import SarvamHealth from '../../components/SarvamHealth';
 import { Fragment, type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
@@ -1587,6 +1588,7 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
           <p className="mt-1 text-muted">In each Sarvam agent, add an <strong>on-start</strong> API hook using this URL. Map <code>user_name</code>, <code>crm_context</code>, <code>crm_module</code>, <code>crm_record_id</code>, and <code>lead_phone</code> as input variables. The call’s captured output values return through the end callback and are written to the matching CRM record.</p>
         </div>
       )}
+      {summary.provider === 'sarvam_voice' && <SarvamHealth />}
       {summary.provider === 'sarvam_voice' && (
         <div className="flex flex-wrap items-end gap-2 px-4 pb-3">
           <div className="min-w-56 flex-1">

@@ -1231,6 +1231,8 @@ export const api = {
   testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),
   sarvamCall: (data: { to: string; recordId: string; module: string }) =>
     post<{ ok: true; attemptId: string }>('/api/telephony/sarvam', data),
+  sarvamHealth: () => get<{ checks: Array<{ label: string; status: 'ok' | 'warn' | 'fail'; detail: string }> }>('/api/admin/integrations/sarvam_voice/health'),
+  sarvamReconcile: (hours: number) => post<{ ok: boolean; message: string; checked: number; completed: number; backfilled: number; enriched: number }>('/api/admin/integrations/sarvam_voice/reconcile', { hours }),
   syncSarvamInbound: () => post<{ enabled: boolean; version?: number; status?: string }>('/api/admin/integrations/sarvam_voice/sync-inbound', {}),
   sarvamPolicy: () => get<SarvamCallingPolicy>('/api/telephony/sarvam-policy'),
   sarvamControl: (batchPage = 0) => get<SarvamControl>(`/api/telephony/sarvam-control?batchPage=${batchPage}`),

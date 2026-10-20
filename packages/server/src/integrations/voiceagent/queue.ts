@@ -8,6 +8,7 @@ import { assertCapability, buildScopeContext } from '../../core/permissions/inde
 import { recordService } from '../../core/entity/recordService.js';
 import { logger } from '../../utils/logger.js';
 import { placeAgentCall } from './sarvam.js';
+import { reconcileAndRemember } from './reconcile.js';
 
 /** Claim and dispatch under a cross-process advisory lock. Never redial a lost response. */
 export async function tickSarvamQueue(): Promise<void> {
@@ -77,12 +78,23 @@ let timer: ReturnType<typeof setInterval> | undefined;
 let busy = false;
 let inboundBusy = false;
 let lastInboundCheck = 0;
+let reconcileBusy = false;
+let lastReconcile = 0;
+let reconciledOnce = false;
+/** Sarvam is asked what happened to every recent call this often: a lost callback is found within minutes, not never. */
+const RECONCILE_EVERY_MS = 10 * 60_000;
 export function startSarvamQueue(): void {
   if (timer) return;
   timer = setInterval(() => {
     if (!inboundBusy && Date.now() - lastInboundCheck >= 60_000) {
       inboundBusy = true; lastInboundCheck = Date.now();
       void syncSarvamInbound().catch((err) => logger.error({ err }, 'Sarvam inbound version sync failed')).finally(() => { inboundBusy = false; });
+    }
+    if (!reconcileBusy && Date.now() - lastReconcile >= (reconciledOnce ? RECONCILE_EVERY_MS : 60_000)) {
+      reconcileBusy = true; lastReconcile = Date.now();
+      // The first pass after a start looks back two weeks (it also gives older calls their outcome and recording); later ones a day.
+      void reconcileAndRemember({ hours: reconciledOnce ? 24 : 14 * 24 }).then((report) => { reconciledOnce = true; if (report.completed || report.backfilled || report.enriched) logger.info(report, 'sarvam: reconciled with Sarvam'); })
+        .catch((err) => logger.error({ err }, 'Sarvam reconciliation failed')).finally(() => { reconcileBusy = false; });
     }
     if (busy) return;
     busy = true;

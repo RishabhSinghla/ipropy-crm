@@ -173,22 +173,27 @@ export async function sarvamCallContext(phoneNumber: string, appId?: string, app
     return inboundCallerContext(phoneNumber, appId);
   }
 
+  return sarvamRecordVariables(call.record_module, call.record_id, phoneNumber);
+}
+
+/**
+ * What the agent is told about the person it is ringing: the same keys whether Sarvam asks for them in its on-start
+ * hook or the CRM hands them over in the call request, so the agent's instruction reads the same either way.
+ */
+export async function sarvamRecordVariables(moduleName: string, recordId: string, phoneNumber: string): Promise<Record<string, unknown>> {
   const [{ recordService }, { systemContext }] = await Promise.all([
     import('../../core/entity/recordService.js'),
     import('../../core/workflow/tasks.js'),
   ]);
-  const record = await recordService.getRecord(
-    await systemContext(null), call.record_module, call.record_id, { withDisplay: false },
-  );
+  const record = await recordService.getRecord(await systemContext(null), moduleName, recordId, { withDisplay: false });
   const values = record.values ?? {};
   const userName = String(values.full_name ?? values.name ?? record.label ?? '').trim();
-  const firstName = sarvamFirstName(userName);
   return {
     user_name: userName,
-    first_name: firstName,
-    crm_context: JSON.stringify({ module: call.record_module, recordId: call.record_id, fields: values }),
-    crm_module: call.record_module,
-    crm_record_id: call.record_id,
+    first_name: sarvamFirstName(userName),
+    crm_context: JSON.stringify({ module: moduleName, recordId, fields: values }),
+    crm_module: moduleName,
+    crm_record_id: recordId,
     lead_phone: phoneNumber,
   };
 }
@@ -230,7 +235,15 @@ export async function placeAgentCall(input: {
   if (!appId) return { ok: false, message: `No Sarvam agent is configured for the ${input.recordModule ?? 'default'} module.` };
   if (!connectionId || !agentPhoneNumber) return { ok: false, message: 'Add a telephony connection ID and agent phone number to the Sarvam configuration.' };
 
-  const body = {
+  // The person's details go in the request itself (Sarvam's documented `agent_variables`) so the agent knows who it is
+  // ringing from its first word, instead of waiting for a mid-call round trip to the CRM that can fail on a bad line.
+  // If the record cannot be read the call still goes: the agent's on-start hook asks for the same facts.
+  let agentVariables: Record<string, unknown> | undefined;
+  if (input.recordId && input.recordModule) {
+    try { agentVariables = await sarvamRecordVariables(input.recordModule, input.recordId, input.toNumber); }
+    catch (err) { logger.warn({ err, recordId: input.recordId }, 'sarvam: the record could not be read for the call request'); }
+  }
+  const bodyFor = (variables: Record<string, unknown> | undefined) => ({
     app_config: {
       app_id: appId,
       app_version: appVersion,
@@ -238,19 +251,33 @@ export async function placeAgentCall(input: {
         connection_id: connectionId,
         agent_phone_number: agentPhoneNumber,
       },
+      ...(variables ? { agent_variables: variables } : {}),
     },
     user_config: { user_phone_number: input.toNumber },
-    webhook_config: { url: sarvamWebhookUrl(input.publicBaseUrl, settings.webhookSecret) },
-  };
+    // Echoed back in the result, so a result finds its call by what we sent and not by guessing.
+    webhook_config: {
+      url: sarvamWebhookUrl(input.publicBaseUrl, settings.webhookSecret),
+      metadata: { crm_record_id: input.recordId ?? null, crm_module: input.recordModule ?? null, crm_user_id: input.userId ?? null },
+    },
+  });
+  const send = (variables: Record<string, unknown> | undefined): Promise<Response> => fetch(workspacePath(settings, 'outbounds', 'outbounds'), {
+    method: 'POST',
+    headers: { 'X-API-Key': settings.apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify(bodyFor(variables)),
+    signal: AbortSignal.timeout(20_000),
+  });
 
   let res: Response;
   try {
-    res = await fetch(workspacePath(settings, 'outbounds', 'outbounds'), {
-      method: 'POST',
-      headers: { 'X-API-Key': settings.apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20_000),
-    });
+    res = await send(agentVariables);
+    // An agent that has not declared these variables may refuse them (a validation error, so no call was made): ask again without.
+    if (res.status === 422 && agentVariables) {
+      const detail = (await res.clone().text()).slice(0, 300);
+      if (/variable/i.test(detail)) {
+        logger.warn({ detail }, 'sarvam refused agent_variables; calling without them');
+        res = await send(undefined);
+      }
+    }
   } catch (err) {
     return { ok: false, uncertain: true, message: `Could not reach Sarvam: ${err instanceof Error ? err.message : String(err)}` };
   }
@@ -264,16 +291,18 @@ export async function placeAgentCall(input: {
 
   await db.query(
     `INSERT INTO ipy_call (direction, from_number, to_number, status, provider, provider_call_id,
-                           source, record_id, record_module, user_id, sarvam_batch_id)
-     VALUES ('outbound', $1, $2, 'queued', $3, $4, 'sarvam', $5, $6, $7, $8)`,
+                           source, record_id, record_module, user_id, sarvam_batch_id, sarvam_app_id)
+     VALUES ('outbound', $1, $2, 'queued', $3, $4, 'sarvam', $5, $6, $7, $8, $9)`,
     [agentPhoneNumber, input.toNumber, SARVAM_PROVIDER, answer.attempt_id,
-      input.recordId ?? null, input.recordModule ?? null, input.userId ?? null, input.batchId ?? null],
+      input.recordId ?? null, input.recordModule ?? null, input.userId ?? null, input.batchId ?? null, appId],
   );
   return { ok: true, attemptId: answer.attempt_id };
 }
 
 export interface SarvamResult {
   attemptId: string;
+  /** The conversation (`<YYYYMMDD>/<id>`): what Sarvam's recording and transcript endpoints are addressed by. Null when nobody answered. */
+  interactionId: string | null;
   status: 'connected' | 'no_answer' | 'busy' | 'failed';
   durationSeconds: number;
   failureReason: string | null;
@@ -298,6 +327,7 @@ export function parseSarvamResult(body: unknown): SarvamResult | null {
   const finalVariables = b.final_agent_variables;
   return {
     attemptId: b.attempt_id,
+    interactionId: typeof b.interaction_id === 'string' && b.interaction_id ? b.interaction_id : null,
     status: b.status as SarvamResult['status'],
     durationSeconds: typeof b.duration === 'number' ? Math.round(b.duration) : 0,
     failureReason: typeof b.failure_reason === 'string' ? b.failure_reason : null,
@@ -652,10 +682,11 @@ export async function recordSarvamResult(result: SarvamResult): Promise<boolean>
         SET status = $2, duration_seconds = $3, transcript = $4,
             notes = COALESCE($5, notes), ended_at = now(),
             disposition = COALESCE($7, disposition),
-            disposition_at = CASE WHEN $7 IS NULL THEN disposition_at ELSE now() END
+            disposition_at = CASE WHEN $7 IS NULL THEN disposition_at ELSE now() END,
+            sarvam_interaction_id = COALESCE($8, sarvam_interaction_id)
       WHERE provider = $6 AND provider_call_id = $1 AND status = 'queued'`,
     [result.attemptId, callStatus, result.durationSeconds, result.transcript,
-      result.failureReason, SARVAM_PROVIDER, disposition],
+      result.failureReason, SARVAM_PROVIDER, disposition, result.interactionId],
   );
   if (!(row.rowCount ?? 0)) return false;
 
@@ -684,6 +715,11 @@ export async function recordSarvamResult(result: SarvamResult): Promise<boolean>
       );
       throw err;
     }
+  }
+  const finished = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_call WHERE provider = $1 AND provider_call_id = $2`, [SARVAM_PROVIDER, result.attemptId]);
+  if (finished) {
+    const { finishAiCall } = await import('./afterCall.js');
+    await finishAiCall(finished.id, { failureReason: result.failureReason });
   }
   return true;
 }
