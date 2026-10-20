@@ -3166,3 +3166,9 @@ before the scorer, and an index list is appended to rather than copied (that cop
 benchmark went from 3.9 s to 0.6 s. `cannotMatch` may only refuse what `scorePair` refuses; a 4,000-pair
 property test pins that. Each build logs `market: call sheet built` with the time of every phase.
 
+**Filters are applied to the kept sheet, not re-paired** (type, size, area, BHK, sale/rent, status). Re-pairing
+for each combination cost 1 to 4 seconds on a busy area; filtering a few hundred pairings is instant. The price
+is one subtlety: a pairing shows when **both** sides fit the filter, so a buyer whose overall best seller falls
+outside it is not shown that buyer's second-best seller. Scoring rewards agreeing type, size and area, so the best
+seller usually satisfies the same filter as the buyer; if it ever matters, narrow by Sure-shot first.
+

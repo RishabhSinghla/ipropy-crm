@@ -503,11 +503,13 @@ export function invalidateMarketMatches(): void {
   version += 1;
 }
 
-/** Only what changes WHICH pairings exist; sorting, paging and status are applied to the kept sheet. */
+/**
+ * Only what changes WHICH pairings exist. Type, size, area, BHK, purpose, status, sorting and paging are all applied to the kept
+ * sheet: narrowing it is a filter over a few hundred pairings, not another pass over thirteen thousand listings.
+ */
 function sheetKey(query: CrossMatchQuery): string {
-  const { minScore, crossGroupOnly, onlyVerified, minJevFit, category, sizeMinSqYd, sizeMaxSqYd, area, bhk, purpose, days } = query;
-  return JSON.stringify([days ?? MAX_DEAL_AGE_DAYS, minScore ?? 0.5, crossGroupOnly ?? true, onlyVerified ?? false, minJevFit ?? null,
-    category ?? null, sizeMinSqYd ?? null, sizeMaxSqYd ?? null, area?.trim().toLowerCase() ?? null, bhk ?? null, purpose ?? null]);
+  const { minScore, crossGroupOnly, onlyVerified, minJevFit, days } = query;
+  return JSON.stringify([days ?? MAX_DEAL_AGE_DAYS, minScore ?? 0.5, crossGroupOnly ?? true, onlyVerified ?? false, minJevFit ?? null]);
 }
 
 const pairKey = (wantId: string, haveId: string): string => `${wantId}:${haveId}`;
@@ -581,7 +583,7 @@ async function buildSheet(query: CrossMatchQuery, fresh: boolean): Promise<Sheet
     timed('checks', db.query<{ want_listing_id: string; have_listing_id: string; fit: string }>(`SELECT want_listing_id, have_listing_id, fit FROM ipy_market_pair_check`)),
   ]);
   const loadedAt = Date.now() - t0;
-  const ranked = bestPerRequirement(loaded.filter((listing) => listingPasses(listing, query)), query, new Date(), lessons);
+  const ranked = bestPerRequirement(loaded, query, new Date(), lessons);
   logger.info({ listings: loaded.length, loadedMs: loadedAt, queriesMs: spent, rankMs: Date.now() - t0 - loadedAt }, 'market: call sheet built');
   const outcome = new Map(worked.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), row]));
   const fit = new Map(checks.rows.map((row) => [pairKey(row.want_listing_id, row.have_listing_id), Number(row.fit)]));
@@ -641,7 +643,8 @@ export interface MatchPage { total: number; matches: CrossMatch[] }
 
 /** One page of the sheet, in the order asked, with the whole messages for the pairings on it and nothing else. */
 export async function findCrossMatchPage(query: CrossMatchQuery, page = 1, pageSize = 25, fresh = false): Promise<MatchPage> {
-  let all = await sheetFor(query, fresh);
+  // A pairing is on screen when both its sides fit what was asked for.
+  let all = (await sheetFor(query, fresh)).filter((match) => listingPasses(match.want, query) && listingPasses(match.have, query));
   if (query.includeWorked === false) all = all.filter((match) => match.status !== 'won' && match.status !== 'lost');
   if (query.status) all = all.filter((match) => match.status === query.status);
   const ordered = sortMatches(all, query.sort);
