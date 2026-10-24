@@ -291,7 +291,13 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   */
   let releaseSlot: (() => void) | null = null;
   if (linkedDevice) {
-    await provider.preflight?.();
+    try {
+      await provider.preflight?.();
+    } catch (err) {
+      // Already worded for a rep ("OpenWA is down", "re-link the phone"); a
+      // bare throw would reach the screen as "Something went wrong".
+      throw new BadRequestError((err as Error).message);
+    }
     releaseSlot = await takeSendSlot();
     try {
       await assertWithinLimits(input.userId, handle);

@@ -11,7 +11,7 @@ import { assertCapability, invalidatePermissions, buildScopeContext, hierarchyVi
 import { registry } from '../../core/metadata/registry.js';
 import { AUTOMATION_USER_ID } from '../../core/auth/systemAccounts.js';
 import {
-  getSettings, getOneDriveProviderSettings, listIntegrations, getIntegrationSummary, saveIntegration, recordIntegrationResult,
+  getSettings, getOneDriveProviderSettings, listIntegrations, getIntegrationSummary, saveIntegration, recordIntegrationResult, setIntegrationActive,
 } from '../../core/settings/integrations.js';
 import { verifyConnection as verifySmtpConnection } from '../../integrations/email/service.js';
 import { syncInboundEmails, testImapConnection } from '../../integrations/email/inbound.js';
@@ -1091,6 +1091,25 @@ adminRouter.get('/integrations/:provider', asyncHandler(async (req, res) => {
   res.json(summary);
 }));
 
+/**
+ * One WhatsApp business connection is live at a time. Two live ones on one
+ * number is two systems answering the same customer, and the registry would
+ * quietly pick whichever comes first in its list — so an admin switching from
+ * one provider to another (WhatsMarketing to OpenWA, say) would see nothing
+ * change. Turning one on turns the others off.
+ */
+async function keepOneWhatsAppProviderOn(provider: string): Promise<void> {
+  if (!provider.startsWith('whatsapp_')) return;
+  const { BUSINESS_PROVIDERS } = await import('../../integrations/whatsapp/business/registry.js');
+  const ids = BUSINESS_PROVIDERS.map((entry) => entry.id);
+  if (!ids.includes(provider)) return;
+  const summary = await getIntegrationSummary(provider);
+  if (!summary?.isActive) return;
+  for (const other of ids) {
+    if (other !== provider) await setIntegrationActive(other, false);
+  }
+}
+
 adminRouter.put('/integrations/:provider', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
   const input = z.object({
@@ -1107,6 +1126,7 @@ adminRouter.put('/integrations/:provider', asyncHandler(async (req, res) => {
     sarvamPolicySchema.parse({ ...existing.config, ...input.config });
   }
   await saveIntegration(req.params.provider, input);
+  await keepOneWhatsAppProviderOn(req.params.provider);
   if (req.params.provider === 'facebook_leads') {
     await db.query('UPDATE ipy_facebook_health SET last_checked_at = NULL WHERE id = true');
     await db.query(`UPDATE ipy_facebook_delivery SET next_attempt_at = now() WHERE status = 'pending'`);
