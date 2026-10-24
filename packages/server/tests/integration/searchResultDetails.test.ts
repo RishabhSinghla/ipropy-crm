@@ -20,6 +20,16 @@ it('includes mobile and property facts on authorised search hits', async () => {
   expect(listed.rows[0]?.display?.owner_id).toBeTruthy();
 });
 
+it('finds a record by its live mobile field when its search index is stale', async () => {
+  const mobile = `98${String(Date.now()).slice(-8)}`;
+  const record = await recordService.createRecord(ctx, 'leads', leadInput({ mobile }));
+  await db.query('UPDATE ipy_record SET search_text = $1 WHERE id = $2', ['stale imported text', record.id]);
+
+  const hit = (await recordService.globalSearch(ctx, mobile)).find((item) => item.id === record.id);
+  expect(hit).toBeDefined();
+  expect(hit?.mobile).toContain(mobile);
+});
+
 it('finds a partial house number in universal search', async () => {
   const house = `A-${Date.now()}-7`;
   const record = await recordService.createRecord(ctx, 'properties', propertyInput({ unit_number: house }));

@@ -2,7 +2,7 @@ import {
   createContext, type JSX, type ReactNode, useContext, useEffect, useRef, useState,
 } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Loader2, Phone, Sparkles } from 'lucide-react';
+import { Loader2, Phone, PhoneCall } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -303,7 +303,7 @@ export function CallButton({ to, iconOnly = false, round = false, plain = false,
             void calls.startSarvamCall(to, recordId, module).finally(() => setAiPending(false));
           }}
         >
-          {aiPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {aiPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PhoneCall className="h-3.5 w-3.5" />}
           {textOnly && <span className="ml-1">AI</span>}
           {!iconOnly && !round && !textOnly && <span className="hidden sm:inline">AI call</span>}
         </button>

@@ -243,9 +243,10 @@ const notifyUser: TaskHandler = async (config, ctx) => {
 
 /*
   `send_whatsapp` was here and went with WhatsApp on 17 September 2026. A
-  workflow still carrying that step is safe: `runTask` logs an unknown type and
-  carries on, so the rest of the workflow's steps still run. Its replacement is
-  `send_whatsapp_template` (whatsappTemplateStep.ts): approved templates only.
+  workflow still carrying that step now gets a clear task failure in its run
+  log, while the engine continues with the workflow's other steps. Its
+  replacement is `send_whatsapp_template` (whatsappTemplateStep.ts): approved
+  templates only.
 */
 const sendEmail: TaskHandler = async (config, ctx) => {
   const { sendTemplatedEmail } = await import('../../integrations/email/service.js');
@@ -345,8 +346,13 @@ export async function runTask(
 ): Promise<void> {
   const handler = TASK_HANDLERS[type];
   if (!handler) {
-    logger.warn({ type }, 'unknown workflow task type');
-    return;
+    if (type === 'send_whatsapp') {
+      throw new Error(
+        'This workflow still uses the retired WhatsApp message step. Replace it with '
+        + '“Send a WhatsApp template” and choose an approved, mapped template.',
+      );
+    }
+    throw new Error(`Unknown workflow task type “${type}”. Rebuild this step using a supported action.`);
   }
   await handler(config, ctx);
 }

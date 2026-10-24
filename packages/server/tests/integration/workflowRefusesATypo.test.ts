@@ -1,11 +1,12 @@
 /**
  * A workflow that cannot work should not save.
  *
- * `runTask` answers an unknown task type with a log line and a return, and the
- * engine only listens for the triggers it knows. Both fields were `z.string()`,
- * so a workflow built with a typo saved happily, appeared in the list looking
- * armed, ran green on every matching record and did nothing at all — with a run
- * log full of successes.
+ * Historically, `runTask` answered an unknown task type with a log line and a
+ * return, and the engine only listens for the triggers it knows. Both fields
+ * used to be `z.string()`, so a workflow built with a typo saved happily,
+ * appeared in the list looking armed, ran green on every matching record and
+ * did nothing at all — with a run log full of successes. Runtime errors now
+ * make stale workflows visible too; this guards against creating new ones.
  *
  * `field_update` for `update_fields` is the obvious guess and the one that
  * caught this. Refused now, at the point somebody can still fix it, and the

@@ -56,6 +56,10 @@ metadataRouter.get('/modules', asyncHandler(async (req, res) => {
   const modules = await registry.getModules({ entityOnly: false });
   const out = [];
   for (const m of modules) {
+    // The app bootstrap feeds the dock, mobile navigation and record module
+    // switcher. A globally disabled module must not remain reachable there;
+    // role/profile permissions below then further restrict each individual.
+    if (!m.isActive) continue;
     const perm = await getModulePermission(user, m.name);
     if (!perm.view) continue;
     out.push({
@@ -329,6 +333,7 @@ const moduleSchema = z.object({
   icon: z.string().default('box'),
   color: z.string().default('#6366f1'),
   menuGroup: z.string().default('Custom'),
+  sequence: z.number().int().optional(),
   showInMenu: z.boolean().default(true),
   labelFields: z.array(z.string()).default([]),
   pipelineField: z.string().nullable().optional(),
@@ -427,6 +432,7 @@ metadataRouter.patch('/modules/:name', asyncHandler(async (req, res) => {
   const map: Record<string, string> = {
     label: 'label', singularLabel: 'singular_label', icon: 'icon', color: 'color',
     menuGroup: 'menu_group', showInMenu: 'show_in_menu', pipelineField: 'pipeline_field',
+    sequence: 'sequence',
   };
   const sets: string[] = [];
   const params: unknown[] = [module.id];

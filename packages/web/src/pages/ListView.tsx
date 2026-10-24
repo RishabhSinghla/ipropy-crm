@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowLeftRight, ListFilter, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
+  PhoneCall,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Sparkles, Tag, Trash2, Upload, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -1858,8 +1859,14 @@ function SarvamBulkCallButton({
 
   return (
     <>
-      <button type="button" className="btn-secondary btn-sm text-violet-700 dark:text-violet-300" onClick={openBatch}>
-        <Sparkles className="h-3.5 w-3.5" /> {finished && offset + batchSize < total ? 'AI call · next batch' : 'AI call'}
+      <button
+        type="button"
+        className="btn-secondary btn-sm h-8 w-8 justify-center px-0 text-violet-700 dark:text-violet-300"
+        onClick={openBatch}
+        title={finished && offset + batchSize < total ? 'AI call next batch' : allQuery ? 'AI call records in this view' : 'AI call selected records'}
+        aria-label={finished && offset + batchSize < total ? 'AI call next batch' : allQuery ? 'AI call records in this view' : 'AI call selected records'}
+      >
+        <PhoneCall className="h-4 w-4" />
       </button>
       <Modal
         open={open}

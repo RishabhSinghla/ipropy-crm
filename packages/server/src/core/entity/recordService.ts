@@ -1047,7 +1047,7 @@ export async function deleteRecord(
 }
 
 /**
- * Move a record between the two core CRM modules.
+ * Move a contact/unit between the core contact modules.
  *
  * This deliberately creates a fresh record in the destination module instead
  * of changing `module_name` in place: each module has its own payload table,
@@ -1063,9 +1063,9 @@ export async function moveRecord(
   recordId: string,
   targetModuleName: string,
 ): Promise<RecordEnvelope> {
-  const validPair = (sourceModuleName === 'leads' && targetModuleName === 'properties')
-    || (sourceModuleName === 'properties' && targetModuleName === 'leads');
-  if (!validPair) throw new ValidationError('Records can only be moved between Leads and Inventories');
+  const movable = new Set(['leads', 'properties', 'associates']);
+  const validPair = movable.has(sourceModuleName) && movable.has(targetModuleName) && sourceModuleName !== targetModuleName;
+  if (!validPair) throw new ValidationError('Records can only be moved between Leads, Inventories, and Associates');
   await assertCapability(ctx.user, 'records.move_between_modules');
   // Moving is an edit-plus-create operation. It must not silently depend on
   // broad delete access just because the source row disappears afterwards.
@@ -2110,6 +2110,12 @@ export async function globalSearch(
   // Notes belong to the scoped pass only; the name-only courtesy outside the
   // user's record scope must never reveal matches from somebody else's notes.
   const search = buildSearchClause(term, params, true);
+  // The record index is deliberately denormalized for fast typing, but older
+  // records and imports can have a stale search_text value. Phone numbers are
+  // special: the duplicate checker reads the live module fields, so universal
+  // search must do the same instead of trusting that index alone.
+  const phoneDigits = term.replace(/\D/g, '');
+  const phoneTail = phoneDigits.length >= 8 ? phoneDigits.slice(-8) : null;
 
   // Sharing is configured per module — leads/deals are private while
   // projects/properties are public_read — so one module's scope fragment must
@@ -2120,11 +2126,21 @@ export async function globalSearch(
   for (const m of allowed) {
     const moduleParam = params.add(m.id);
     const scope = ctx.system ? null : await recordScopeSql(ctx, m.name, params);
-    branches.push(
-      scope
-        ? `(${RECORD_ALIAS}.module_id = ${moduleParam}::uuid AND ${scope})`
-        : `${RECORD_ALIAS}.module_id = ${moduleParam}::uuid`,
-    );
+    const phoneFields = phoneTail
+      ? m.fields.filter((field) => field.isActive && field.uitype === 'phone')
+      : [];
+    const phoneClause = phoneFields.length ? (() => {
+      const tailParam = params.add(phoneTail);
+      const clauses = phoneFields.map((field) => {
+        const value = field.storage === 'column'
+          ? `e.${quoteIdent(field.columnName)}`
+          : `e.custom_fields->>${params.add(field.columnName)}`;
+        return `right(regexp_replace(coalesce(${value}, ''), '\\D', '', 'g'), 8) = ${tailParam}`;
+      });
+      return `EXISTS (SELECT 1 FROM ${quoteIdent(m.tableName)} e WHERE e.record_id = ${RECORD_ALIAS}.id AND (${clauses.join(' OR ')}))`;
+    })() : '';
+    const moduleScope = scope ? `(${RECORD_ALIAS}.module_id = ${moduleParam}::uuid AND ${scope})` : `${RECORD_ALIAS}.module_id = ${moduleParam}::uuid`;
+    branches.push(phoneClause ? `(${moduleScope} AND (${search} OR ${phoneClause}))` : `(${moduleScope} AND ${search})`);
   }
 
   const limitParam = params.add(limit);
@@ -2153,7 +2169,6 @@ export async function globalSearch(
      WHERE (${branches.join(' OR ')})
        AND ${RECORD_ALIAS}.is_deleted = false
        AND ${RECORD_ALIAS}.archived_at IS NULL
-       AND ${search}
      ORDER BY ${RECORD_ALIAS}.updated_at DESC
      LIMIT ${limitParam}`,
     params.all(),

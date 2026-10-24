@@ -12,7 +12,7 @@ import { ModuleIcon } from '../../components/Layout';
 interface ModuleRow {
   id: string; name: string; label: string; singularLabel: string;
   icon: string; color: string; isActive: boolean; isCustom: boolean; isCore: boolean;
-  disabledReason: string | null; menuGroup: string;
+  disabledReason: string | null; menuGroup: string; sequence: number;
   fieldCount: number; recordCount: number; dependents: string[];
 }
 
@@ -23,6 +23,7 @@ export default function ModuleManager(): JSX.Element {
   const [confirming, setConfirming] = useState<ModuleRow | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [orderDraft, setOrderDraft] = useState<Record<string, number>>({});
 
   const { data: modules, isLoading } = useQuery({
     queryKey: ['all-modules'],
@@ -47,8 +48,24 @@ export default function ModuleManager(): JSX.Element {
     }
   };
 
+  const saveOrder = async (module: ModuleRow): Promise<void> => {
+    const sequence = orderDraft[module.name];
+    if (sequence === undefined || sequence === module.sequence) return;
+    setBusy(module.name);
+    try {
+      await api.updateModule(module.name, { sequence });
+      toast.success(`${module.label} order saved`);
+      await queryClient.invalidateQueries({ queryKey: ['all-modules'] });
+      await bootstrap();
+    } catch (err) {
+      toast.error('Could not update module order', (err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const grouped = groupModules(
-    (modules ?? []).map((m) => ({ ...m, sequence: 0 })) as (ModuleRow & { sequence: number })[],
+    (modules ?? []).map((m) => ({ ...m, sequence: m.sequence ?? 0 })) as (ModuleRow & { sequence: number })[],
   );
   const activeCount = (modules ?? []).filter((m) => m.isActive).length;
 
@@ -117,6 +134,18 @@ export default function ModuleManager(): JSX.Element {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
+                      <label className="hidden items-center gap-1 text-2xs text-muted md:flex" title="Module order in the left toolbar">
+                        Order
+                        <input
+                          aria-label={`${module.label} toolbar order`}
+                          type="number"
+                          min={0}
+                          className="h-8 w-14 rounded-md border border-slate-200 bg-white px-1.5 text-center text-xs dark:border-slate-700 dark:bg-slate-900"
+                          value={orderDraft[module.name] ?? module.sequence}
+                          onChange={(event) => setOrderDraft((current) => ({ ...current, [module.name]: Number(event.target.value) }))}
+                          onBlur={() => void saveOrder(module)}
+                        />
+                      </label>
                       <button
                         type="button"
                         className="btn-secondary btn-sm"
