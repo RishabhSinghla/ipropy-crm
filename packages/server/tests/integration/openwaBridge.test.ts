@@ -253,7 +253,7 @@ describe('sending', () => {
     const row = await db.queryOne<{ sent_by: string; status: string; provider_message_id: string }>(
       `SELECT sent_by, status, provider_message_id FROM ipy_message WHERE id = $1`, [res.body.messageId]);
     expect(row).toMatchObject({ sent_by: userId, status: 'sent' });
-    expect(row!.provider_message_id).toMatch(/^FAKE\d+$/);
+    expect(row!.provider_message_id).toMatch(/^FAKE[A-Z0-9]+$/);
     await letTimePass();
   });
 
@@ -263,7 +263,7 @@ describe('sending', () => {
     const outcome = await openWaProvider.sendMediaById({
       to: `91${KNOWN}`, type: 'document', mediaId: id, caption: 'Brochure', filename: 'brochure.pdf',
     });
-    expect(outcome.providerMessageId).toMatch(/^FAKE\d+$/);
+    expect(outcome.providerMessageId).toMatch(/^FAKE[A-Z0-9]+$/);
     expect(fake.sends.at(-1)).toMatchObject({
       route: 'send-document', chatId: `91${KNOWN}@c.us`, caption: 'Brochure', filename: 'brochure.pdf', bytes: bytes.byteLength,
     });

@@ -15,6 +15,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 
 export interface FakeSend {
+  /** The short message id OpenWA would announce this message under in webhooks. */
+  id: string;
   route: string;
   chatId: string;
   text?: string;
@@ -72,6 +74,8 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
     deliver: async () => { throw new Error('not started'); },
   };
   let counter = 0;
+  // Unique per fake, so ids from one run never collide with the CRM's memory of an earlier run's.
+  const run = Math.random().toString(36).slice(2, 7).toUpperCase();
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://fake');
@@ -102,7 +106,9 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
       }
       const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
       counter += 1;
+      const id = `FAKE${run}${counter}`;
       fake.sends.push({
+        id,
         route: send[2]!,
         chatId: String(body.chatId),
         text: typeof body.text === 'string' ? body.text : undefined,
@@ -111,7 +117,7 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
         bytes: typeof body.base64 === 'string' ? Buffer.from(body.base64, 'base64').byteLength : undefined,
         idempotencyKey: (req.headers['idempotency-key'] as string | undefined) ?? null,
       });
-      json(res, 201, { messageId: `true_${body.chatId}_FAKE${counter}`, timestamp: Math.floor(Date.now() / 1000) });
+      json(res, 201, { messageId: `true_${body.chatId}_${id}`, timestamp: Math.floor(Date.now() / 1000) });
       return;
     }
 
