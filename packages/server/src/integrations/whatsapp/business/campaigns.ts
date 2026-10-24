@@ -226,8 +226,17 @@ export async function approveCampaign(input: {
   if (campaign.status !== 'draft') {
     throw new BadRequestError('Only a draft campaign can be approved.');
   }
-  if (!activeBusinessProvider()) {
+  const live = activeBusinessProvider();
+  if (!live) {
     throw new BadRequestError('No official WhatsApp provider is switched on, so nothing could be sent.');
+  }
+  // A linked device (OpenWA) is for ordinary one-to-one chat. Sending one
+  // template to many people from it is exactly the pattern that gets a number
+  // banned, so it is refused here by name rather than left to chance.
+  if (live.capabilities.has('linkedDevice')) {
+    throw new BadRequestError(
+      'Campaigns are switched off while WhatsApp runs through a linked device (OpenWA). Chats are one-to-one only.',
+    );
   }
 
   const phoneFields = await phoneFieldNames(campaign.moduleName);
@@ -329,7 +338,9 @@ export async function setCampaignStatus(campaignId: string, status: 'paused' | '
  * one person who has opted out must not stop the other three hundred.
  */
 export async function sendCampaignBatch(): Promise<{ sent: number; failed: number }> {
-  if (!activeBusinessProvider()) return { sent: 0, failed: 0 };
+  const live = activeBusinessProvider();
+  // No provider, or a linked device that must never carry a campaign.
+  if (!live || live.capabilities.has('linkedDevice')) return { sent: 0, failed: 0 };
 
   const { rows: due } = await db.query<{
     id: string; campaign_id: string; record_id: string; handle: string;

@@ -17,8 +17,9 @@
 import { db } from '../../../db/pool.js';
 import { BadRequestError, NotFoundError } from '../../../utils/errors.js';
 import { notify } from '../../../core/notifications/index.js';
+import { replyWindowAlwaysOpen } from './registry.js';
 
-export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread';
+export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread' | 'unmatched';
 
 /**
  * Whether the number on thread `c` has unsubscribed from WhatsApp.
@@ -132,6 +133,8 @@ export async function listConversations(input: {
   }
   if (input.filter === 'unassigned') where.push(`${HOLDER} IS NULL`);
   if (input.filter === 'unread') where.push(`c.unread_count > 0`);
+  // Numbers the CRM has no contact for: the inbox for deciding what to do with a stranger.
+  if (input.filter === 'unmatched') where.push(`c.record_id IS NULL`);
 
   if (input.module?.trim()) {
     params.push(input.module.trim());
@@ -174,6 +177,7 @@ export async function listConversations(input: {
   );
 
   const now = Date.now();
+  const alwaysOpen = replyWindowAlwaysOpen();
   return rows.map((row) => ({
     id: row.id,
     handle: row.handle,
@@ -187,7 +191,7 @@ export async function listConversations(input: {
     unreadCount: row.unread_count,
     lastMessageAt: row.last_message_at,
     lastMessagePreview: row.last_message_preview,
-    windowOpen: Boolean(row.window_expires_at && new Date(row.window_expires_at).getTime() > now),
+    windowOpen: alwaysOpen || Boolean(row.window_expires_at && new Date(row.window_expires_at).getTime() > now),
     windowExpiresAt: row.window_expires_at,
     optedOut: row.opted_out,
     waId: row.wa_id,

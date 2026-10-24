@@ -17,6 +17,7 @@ import {
   aisensyProvider, AISENSY_PROVIDER, gupshupProvider, GUPSHUP_PROVIDER,
 } from './resellers.js';
 import { whatsMarketingProvider, WHATSMARKETING_PROVIDER } from './whatsMarketing.js';
+import { openWaProvider, OPENWA_PROVIDER } from './openwa.js';
 import type { WhatsAppBusinessProvider } from './types.js';
 
 /** In the order an admin sees them, which is also the order a tie is broken. */
@@ -25,6 +26,7 @@ export const BUSINESS_PROVIDERS: { id: string; label: string; provider: WhatsApp
   { id: AISENSY_PROVIDER, label: 'AiSensy', provider: aisensyProvider },
   { id: GUPSHUP_PROVIDER, label: 'Gupshup', provider: gupshupProvider },
   { id: WHATSMARKETING_PROVIDER, label: 'whatsmarketing.in', provider: whatsMarketingProvider },
+  { id: OPENWA_PROVIDER, label: 'OpenWA (linked device)', provider: openWaProvider },
 ];
 
 const byId = new Map(BUSINESS_PROVIDERS.map((entry) => [entry.id, entry.provider]));
@@ -38,6 +40,14 @@ export function businessProvider(id: string): WhatsAppBusinessProvider | null {
 export function activeBusinessProvider(): WhatsAppBusinessProvider | null {
   const id = firstActiveIntegration(BUSINESS_PROVIDERS.map((entry) => entry.id));
   return id ? byId.get(id) ?? null : null;
+}
+
+/**
+ * A linked device is an ordinary chat: WhatsApp's 24-hour template window does
+ * not apply, so every screen treats the reply box as always open for it.
+ */
+export function replyWindowAlwaysOpen(): boolean {
+  return activeBusinessProvider()?.capabilities.has('linkedDevice') ?? false;
 }
 
 /**

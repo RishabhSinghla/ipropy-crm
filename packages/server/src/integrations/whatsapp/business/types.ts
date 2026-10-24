@@ -32,7 +32,7 @@ export interface InboundMessage {
   type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'location' | 'other';
   text: string | null;
   /** A link the CRM can fetch, or an id it must exchange for one. */
-  media: { link?: string; id?: string; mimeType?: string; filename?: string; caption?: string } | null;
+  media: { link?: string; id?: string; mimeType?: string; filename?: string; caption?: string; sizeBytes?: number } | null;
   /** When the customer sent it, not when the webhook arrived. */
   sentAt: Date;
   /** The customer's WhatsApp profile name, where the provider passes it on. */
@@ -51,6 +51,18 @@ export interface StatusUpdate {
 export interface WebhookBatch {
   messages: InboundMessage[];
   statuses: StatusUpdate[];
+  /**
+   * Messages the business itself sent from another device (the phone, a
+   * teammate's linked device). Only linked-device providers can see these.
+   */
+  sentElsewhere?: {
+    providerMessageId: string; to: string; text: string | null;
+    media: InboundMessage['media']; sentAt: Date; profileName: string | null;
+  }[];
+  /** The linked session changed state (ready, disconnected, qr_ready…). */
+  session?: { status: string };
+  /** Messages skipped because the sender could not be turned into a phone number. */
+  unresolvedSenders?: number;
 }
 
 export interface SendTemplateRequest {
@@ -172,6 +184,13 @@ export interface WhatsAppBusinessProvider extends WhatsAppProvider {
 
   /** The vendor's delivery, in the CRM's own words. */
   parseWebhook(body: unknown): WebhookBatch;
+
+  /**
+   * Checked before the CRM writes anything for a send. A linked device that is
+   * not ready should refuse here, with the reason, rather than leave a message
+   * stuck in 'queued'. Optional: the official providers have no such state.
+   */
+  preflight?(): Promise<void>;
 
   /** A cheap call that proves the credentials work, for the Test button. */
   testConnection(): Promise<{ ok: boolean; detail: string }>;

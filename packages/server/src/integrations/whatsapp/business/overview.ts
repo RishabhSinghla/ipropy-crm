@@ -24,6 +24,7 @@
 import { db } from '../../../db/pool.js';
 import { getIntegrationConfig } from '../../../core/settings/integrations.js';
 import { activeBusinessProvider } from './registry.js';
+import { openWaMetrics } from './openwaHealth.js';
 
 export interface WhatsAppOverview {
   provider: string | null;
@@ -37,6 +38,8 @@ export interface WhatsAppOverview {
   templates: { total: number; approved: number; unmapped: number };
   /** What still needs their dashboard, so nobody goes looking for it here. */
   stillTheirs: string[];
+  /** Present only while OpenWA (a linked device) is the connection. */
+  openwa: Awaited<ReturnType<typeof openWaMetrics>> | null;
 }
 
 const STILL_THEIRS = [
@@ -130,6 +133,12 @@ export async function whatsAppOverview(): Promise<WhatsAppOverview> {
       approved: Number(templates?.approved ?? 0),
       unmapped: Number(templates?.unmapped ?? 0),
     },
-    stillTheirs: STILL_THEIRS,
+    stillTheirs: provider?.capabilities.has('linkedDevice')
+      ? [
+        'Re-linking the phone if WhatsApp logs OpenWA out (open WhatsApp on the phone at least every two weeks)',
+        'Keeping the OpenWA server running day and night',
+      ]
+      : STILL_THEIRS,
+    openwa: provider?.capabilities.has('linkedDevice') ? await openWaMetrics() : null,
   };
 }

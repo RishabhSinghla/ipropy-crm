@@ -15,6 +15,7 @@
 import { db } from '../../../db/pool.js';
 import { BadRequestError } from '../../../utils/errors.js';
 import { matchKey } from '../matchContact.js';
+import { replyWindowAlwaysOpen } from './registry.js';
 
 export interface NumberThread {
   handle: string;
@@ -66,7 +67,8 @@ export async function threadForNumber(to: string, withMessages: boolean): Promis
   return {
     handle,
     conversationId: thread?.id ?? null,
-    windowOpen: Boolean(thread?.window_expires_at && new Date(thread.window_expires_at) > new Date()),
+    windowOpen: replyWindowAlwaysOpen()
+      || Boolean(thread?.window_expires_at && new Date(thread.window_expires_at) > new Date()),
     windowExpiresAt: thread?.window_expires_at ?? null,
     assignedName: thread?.assigned_name ?? null,
     messages,

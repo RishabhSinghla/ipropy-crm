@@ -13,6 +13,7 @@ import { registerMarketListeners } from './core/market/newBuyerAlert.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { startWhatsAppPolling, stopWhatsAppPolling } from './integrations/whatsapp/business/pollInbound.js';
+import { startOpenWaHealth, stopOpenWaHealth } from './integrations/whatsapp/business/openwaHealth.js';
 import { startCampaignSending, stopCampaignSending } from './integrations/whatsapp/business/campaigns.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
     one comparison a minute when no provider is connected.
   */
   startWhatsAppPolling();
+  startOpenWaHealth();
   startCampaignSending();
   startSarvamQueue();
 
@@ -100,6 +102,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'shutting down…');
     stopScheduler();
   stopWhatsAppPolling();
+  stopOpenWaHealth();
   stopCampaignSending();
     stopSarvamQueue();
     closeRealtime();

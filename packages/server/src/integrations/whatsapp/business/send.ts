@@ -26,6 +26,7 @@ import { activeBusinessProvider } from './registry.js';
 import { whyItFailed } from './whyItFailed.js';
 import { templateWording } from './templates.js';
 import { prepareOutgoingMedia } from './media.js';
+import { assertWithinLimits, takeSendSlot } from './openwaGuards.js';
 
 export interface BusinessSendInput {
   userId: string;
@@ -224,6 +225,27 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     throw new BadRequestError('This person has opted out of WhatsApp messages.');
   }
 
+  /*
+    A linked-device connection (OpenWA) only ever messages somebody the CRM
+    already has a reason to be talking to: a record the user opened, or a
+    chat that already exists. A typed-in number with neither is how a tool
+    becomes a cold-outreach machine, so it is refused here, in the one send
+    path, whatever screen or route asked.
+  */
+  const linkedDevice = provider.capabilities.has('linkedDevice');
+  if (linkedDevice && !input.recordId) {
+    const known = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_conversation
+        WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL LIMIT 1`,
+      [handle],
+    );
+    if (!known) {
+      throw new BadRequestError(
+        'Open the contact (or an existing chat) first — the CRM only messages people it already has a record or a conversation for.',
+      );
+    }
+  }
+
   const conversation = await conversationFor(handle, input.recordId ?? null, input.userId);
 
   const dialTo = await dialableNumber(conversation.waId, input.to, input.recordId ?? null);
@@ -238,7 +260,8 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   if (input.attachmentId) requireCapability(provider, 'media');
   if (!input.template) {
     requireCapability(provider, input.attachmentId ? 'media' : 'text');
-    if (!conversation.windowOpen) {
+    // A linked device is an ordinary chat: there is no template window to respect.
+    if (!conversation.windowOpen && !linkedDevice) {
       throw new BadRequestError(
         'This chat is outside WhatsApp\'s 24-hour window, so only an approved template can be sent.',
       );
@@ -261,35 +284,57 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     ? await templateWording(input.template.name, input.template.language, input.template.params)
     : input.text ?? (media ? media.fileName : '');
 
+  /*
+    The linked device is checked and the row reserved under one lock, so two
+    clicks in the same instant cannot both pass the spacing and daily limits.
+    A session that is not ready refuses here, before anything is written.
+  */
+  let releaseSlot: (() => void) | null = null;
+  if (linkedDevice) {
+    await provider.preflight?.();
+    releaseSlot = await takeSendSlot();
+    try {
+      await assertWithinLimits(input.userId, handle);
+    } catch (err) {
+      releaseSlot();
+      throw err;
+    }
+  }
+
   // Written first, on purpose: a provider that accepts and then times out on
   // the answer must not leave the customer holding a message the CRM never
   // heard of.
-  const queued = await db.queryOne<{ id: string }>(
-    `INSERT INTO ipy_message
-       (conversation_id, direction, channel, type, body, status, provider, route, sent_by,
-        template_name, template_params, media)
-     VALUES ($1, 'outbound', 'whatsapp', $2, $3, 'queued', $4, 'business', $5, $6, $7, $8)
-     RETURNING id`,
-    [
-      conversation.id,
-      input.template ? 'template' : media ? media.type : 'text',
-      body,
-      provider.name,
-      input.userId,
-      input.template?.name ?? null,
-      input.template ? JSON.stringify(input.template.params) : null,
-      // The CRM's own file, named the same way an inbound one is, so one
-      // renderer draws both sides of the conversation.
-      media && input.attachmentId
-        ? JSON.stringify({
-          attachmentId: input.attachmentId,
-          url: `/api/files/${input.attachmentId}`,
-          fileName: media.fileName,
-          mimeType: media.mimeType,
-        })
-        : null,
-    ],
-  );
+  let queued: { id: string } | null;
+  try {
+    queued = await db.queryOne<{ id: string }>(
+      `INSERT INTO ipy_message
+         (conversation_id, direction, channel, type, body, status, provider, route, sent_by,
+          template_name, template_params, media)
+       VALUES ($1, 'outbound', 'whatsapp', $2, $3, 'queued', $4, 'business', $5, $6, $7, $8)
+       RETURNING id`,
+      [
+        conversation.id,
+        input.template ? 'template' : media ? media.type : 'text',
+        body,
+        provider.name,
+        input.userId,
+        input.template?.name ?? null,
+        input.template ? JSON.stringify(input.template.params) : null,
+        // The CRM's own file, named the same way an inbound one is, so one
+        // renderer draws both sides of the conversation.
+        media && input.attachmentId
+          ? JSON.stringify({
+            attachmentId: input.attachmentId,
+            url: `/api/files/${input.attachmentId}`,
+            fileName: media.fileName,
+            mimeType: media.mimeType,
+          })
+          : null,
+      ],
+    );
+  } finally {
+    releaseSlot?.();
+  }
   // A message sent from the CRM is activity on the record it is about.
   if (input.recordId) await touchActivity(input.recordId);
 

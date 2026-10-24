@@ -41,6 +41,9 @@ import {
   setCampaignStatus,
 } from '../../integrations/whatsapp/business/campaigns.js';
 import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.js';
+import { currentLinkHealth, checkOpenWaNow, openWaMetrics } from '../../integrations/whatsapp/business/openwaHealth.js';
+import { createLeadFromChat, loadMessageFile } from '../../integrations/whatsapp/business/openwaChats.js';
+import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 
 /**
  * May this person send that file to a customer?
@@ -64,6 +67,46 @@ async function assertMaySendFile(req: Parameters<typeof getScope>[0], attachment
   if (!(await canAccessRecord(getScope(req), record.module_name, file.record_id, 'view'))) {
     throw new ForbiddenError('You cannot send a file from a record you cannot open.');
   }
+}
+
+/**
+ * On a linked device a message goes only to a number tied to something the
+ * sender may open: a record they can view that actually holds that number, or
+ * an existing chat that is in their inbox. A typed-in stranger is refused —
+ * that is the cold-outreach pattern this connection must never be.
+ *
+ * The official providers keep their old behaviour; this only bites for OpenWA.
+ */
+async function assertMayMessageOnLinkedDevice(
+  req: Parameters<typeof getScope>[0], input: { to: string; recordId?: string },
+): Promise<void> {
+  const provider = activeBusinessProvider();
+  if (!provider?.capabilities.has('linkedDevice')) return;
+  const user = getUser(req);
+  const key = matchKey(input.to);
+  if (!key) throw new BadRequestError('That is not a number WhatsApp can reach.');
+
+  if (input.recordId) {
+    const row = await db.queryOne<{ module_name: string }>(
+      `SELECT module_name FROM ipy_record WHERE id = $1`, [input.recordId],
+    );
+    if (!row) throw new NotFoundError('That record no longer exists.');
+    // `getRecord` is the permission check: it throws if this person may not open it.
+    const record = await recordService.getRecord(getScope(req), row.module_name, input.recordId);
+    const handles = await handlesOf(row.module_name, record.values ?? {});
+    if (!handles.includes(key)) {
+      throw new ForbiddenError('That number is not on this contact, so the CRM will not message it from here.');
+    }
+    return;
+  }
+
+  const convo = await db.queryOne<{ id: string }>(
+    `SELECT id FROM ipy_conversation
+      WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL LIMIT 1`,
+    [key],
+  );
+  if (!convo) throw new ForbiddenError('Open the contact first — the CRM only messages numbers it has a record or a chat for.');
+  await readableConversation(user.id, user.isAdmin, convo.id);
 }
 
 export const whatsappBusinessRouter = Router();
@@ -100,12 +143,23 @@ whatsappBusinessRouter.get('/status', asyncHandler(async (_req, res) => {
     res.json({ connected: false, provider: null, capabilities: [], businessNumber: null });
     return;
   }
+  const linked = provider.capabilities.has('linkedDevice');
   res.json({
     connected: await provider.isConfigured(),
     provider: provider.name,
     capabilities: [...provider.capabilities],
-    businessNumber: await provider.businessNumber(),
+    // Never a network call here: this is asked by every chat screen. The
+    // minute timer (and OpenWA's own session webhooks) keep it fresh.
+    businessNumber: linked ? currentLinkHealth().phoneMasked : await provider.businessNumber(),
+    link: linked ? currentLinkHealth() : null,
   });
+}));
+
+/** OpenWA's health in numbers, for the Health page. `?fresh=1` asks OpenWA right now. */
+whatsappBusinessRouter.get('/openwa/health', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  if (req.query.fresh === '1') await checkOpenWaNow();
+  res.json(await openWaMetrics());
 }));
 
 /**
@@ -183,6 +237,7 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
   const input = sendSchema.parse(req.body ?? {});
   if (!activeBusinessProvider()) throw new BadRequestError('No official WhatsApp provider is switched on.');
   if (input.attachmentId) await assertMaySendFile(req, input.attachmentId);
+  await assertMayMessageOnLinkedDevice(req, input);
 
   res.json(await sendOnBusinessNumber({
     userId: user.id,
@@ -198,7 +253,7 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
 // The shared inbox
 // ---------------------------------------------------------------------------
 
-const filters = ['all', 'mine', 'unassigned', 'unread'] as const;
+const filters = ['all', 'mine', 'unassigned', 'unread', 'unmatched'] as const;
 
 whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
   const user = getUser(req);
@@ -253,6 +308,27 @@ whatsappBusinessRouter.post('/conversations/:id/take', asyncHandler(async (req, 
   const user = getUser(req);
   await assign({ userId: user.id, isAdmin: user.isAdmin, conversationId: req.params.id, to: user.id });
   res.json({ ok: true });
+}));
+
+/**
+ * One-click "create contact from this chat" for a number the CRM does not
+ * know. Prefilled with the phone and the person's own WhatsApp name — nothing
+ * is looked up anywhere else. If the number is already a contact it links to
+ * that one instead of making a second.
+ */
+whatsappBusinessRouter.post('/conversations/:id/create-lead', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'whatsapp.send');
+  res.json(await createLeadFromChat(getScope(req), user.id, user.isAdmin, req.params.id));
+}));
+
+/** A received file, fetched from OpenWA only now that somebody asked to see it. */
+whatsappBusinessRouter.get('/messages/:id/file', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const file = await loadMessageFile(user.id, user.isAdmin, req.params.id);
+  applyFileSecurityHeaders(res, file.mimeType, file.fileName, false);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(file.data);
 }));
 
 /**

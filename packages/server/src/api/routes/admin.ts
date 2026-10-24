@@ -1225,7 +1225,8 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
       case 'whatsapp_meta':
       case 'whatsapp_aisensy':
       case 'whatsapp_gupshup':
-      case 'whatsapp_whatsmarketing': {
+      case 'whatsapp_whatsmarketing':
+      case 'whatsapp_openwa': {
         const { businessProvider } = await import('../../integrations/whatsapp/business/registry.js');
         const adapter = businessProvider(provider);
         if (!adapter) return { ok: false, message: 'That WhatsApp provider is not known.' };

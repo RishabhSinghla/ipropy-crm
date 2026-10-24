@@ -13,6 +13,7 @@ import { getSettings } from '../../core/settings/integrations.js';
 import { db } from '../../db/pool.js';
 import { businessProvider } from '../../integrations/whatsapp/business/registry.js';
 import { applyStatus, receiveInbound } from '../../integrations/whatsapp/business/inbound.js';
+import { handleOpenWaExtras } from '../../integrations/whatsapp/business/openwaInbound.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { NotFoundError, ServiceUnavailableError, UnauthorizedError } from '../../utils/errors.js';
@@ -171,6 +172,9 @@ webhooksRouter.post('/whatsapp/:slug', asyncHandler(async (req, res) => {
       logger.error({ err, provider: provider.name }, 'could not apply a WhatsApp status');
     }
   }
+  // Messages sent from the phone or another device, and session changes —
+  // things only a linked-device provider can see.
+  await handleOpenWaExtras(provider.name, batch);
 }));
 
 webhooksRouter.get('/leads/facebook', (req, res) => {

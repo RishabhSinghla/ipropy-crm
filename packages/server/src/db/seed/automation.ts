@@ -402,6 +402,7 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'whatsapp_aisensy', kind: 'messaging', label: 'WhatsApp Business — AiSensy' },
     { provider: 'whatsapp_gupshup', kind: 'messaging', label: 'WhatsApp Business — Gupshup' },
     { provider: 'whatsapp_whatsmarketing', kind: 'messaging', label: 'WhatsApp Business — whatsmarketing.in' },
+    { provider: 'whatsapp_openwa', kind: 'messaging', label: 'WhatsApp — OpenWA (linked device)' },
     { provider: 'housing', kind: 'lead_source', label: 'Housing.com' },
     { provider: '99acres', kind: 'lead_source', label: '99acres' },
     { provider: 'magicbricks', kind: 'lead_source', label: 'MagicBricks' },

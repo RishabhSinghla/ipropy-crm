@@ -642,6 +642,8 @@ const SECRET_FIELDS: Record<string, string[]> = {
   whatsapp_aisensy: ['apiKey', 'webhookToken'],
   whatsapp_gupshup: ['apiKey', 'webhookToken'],
   whatsapp_whatsmarketing: ['apiToken', 'webhookToken'],
+  // OpenWA: the gateway's API key, and the secret its webhooks are signed with.
+  whatsapp_openwa: ['apiKey', 'webhookSecret'],
 };
 
 function mask(value: string): string {

@@ -34,7 +34,13 @@ export type WhatsAppCapability =
   /** Reading the approved template list back from the provider. */
   | 'templateSync'
   /** Sending an approved template to many people in one job. */
-  | 'campaigns';
+  | 'campaigns'
+  /**
+   * An ordinary chat from a linked device (OpenWA): no 24-hour template
+   * window, and in exchange the CRM puts hard send limits in front of it.
+   * Never combined with `campaigns` or `templates`.
+   */
+  | 'linkedDevice';
 
 export type WhatsAppConnectionStatus =
   | 'disconnected' | 'connecting' | 'qr' | 'pairing' | 'connected' | 'error';
