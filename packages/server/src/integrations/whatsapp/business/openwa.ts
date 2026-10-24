@@ -37,7 +37,6 @@ import type {
 } from './types.js';
 
 export const OPENWA_PROVIDER = 'whatsapp_openwa';
-const LABEL = 'OpenWA';
 
 const CAPABILITIES: ReadonlySet<WhatsAppCapability> = new Set<WhatsAppCapability>([
   'text', 'media', 'messageStatus', 'linkedDevice',
