@@ -182,8 +182,10 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   status to a Lost option stamps `ipy_record.lost_archive_due_at` in the same transaction;
   the scheduler then sets `archived_at`. Changing the status back before then cancels it.
   **An archived record is hidden by `archived_at IS NULL`**, written into `prepareList`,
-  group counts, `recordCounts`, dashboard widgets, global search and the public listings —
-  so **any new query that lists or counts records must add the same clause**, or archived
+  group counts, `recordCounts`, dashboard widgets and the public listings —
+  (**global search is the one exception since 24 October 2026**: it finds archived records inside the searcher's own
+  scope, badged *Archived* and listed after every live match; its "belongs to somebody else" doorbell and the phone-number
+  lookup still skip them) so **any new query that lists or counts records must add the same clause**, or archived
   records reappear there. (17 October 2026: the phone-number fallback in search,
   `assignedNumberLookup`, was written before the archive and forgot it — an administrator
   searching an archived contact's number was shown a locked "not shared with you" row.

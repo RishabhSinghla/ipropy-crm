@@ -4,7 +4,7 @@
  * **17 October 2026, the owner, signed in as an administrator:** searched a
  * mobile number and was told *"Already in Leads, assigned to … Not shared with
  * you."* The contact was Lost and archived (migration 201) — gone from every
- * list and from search on purpose — but the phone-number lookup, written
+ * list on purpose — but the phone-number lookup, written
  * earlier, never learned that rule, so it still found the record and showed it
  * as a locked row to everybody, administrators included.
  *
@@ -59,13 +59,34 @@ describe('searching a phone number', () => {
     expect(real!.restricted).toBeFalsy();
   });
 
-  it('names nobody once the contact is archived — to a rep or to an administrator', async () => {
+  it('names an archived contact to nobody who cannot open it, and shows an administrator the real record marked archived', async () => {
     await db.query('UPDATE ipy_record SET archived_at = now() WHERE id = $1', [recordId]);
     try {
+      // 24 October 2026: archived records are found by search now, but only inside the searcher's own scope.
       expect(await searchFor(stranger)).toEqual([]);
-      expect(await searchFor(admin)).toEqual([]);
+      const hit = (await searchFor(admin)).find((item) => item.id === recordId);
+      expect(hit, 'an administrator can open an archived contact').toBeTruthy();
+      expect(hit!.archived).toBe(true);
+      expect(hit!.restricted).toBeFalsy();
     } finally {
       await db.query('UPDATE ipy_record SET archived_at = NULL WHERE id = $1', [recordId]);
+    }
+  });
+
+  it('lists archived matches after every live one', async () => {
+    const token = `Archsort${Date.now().toString(36)}`;
+    const ctx = await contextFor(SEEDED.executiveA);
+    const archivedOne = await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `${token} Old` }));
+    const liveOne = await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `${token} Live` }));
+    // The archived one was touched most recently, so a plain recency sort would put it first.
+    await db.query('UPDATE ipy_record SET archived_at = now(), updated_at = now() + interval \'1 minute\' WHERE id = $1', [archivedOne.id]);
+    try {
+      const res = await request(app).get('/api/search').query({ q: token }).set('Authorization', `Bearer ${admin}`).expect(200);
+      const ids = (res.body as Array<{ id: string }>).map((hit) => hit.id);
+      expect(ids.indexOf(liveOne.id)).toBeGreaterThanOrEqual(0);
+      expect(ids.indexOf(liveOne.id)).toBeLessThan(ids.indexOf(archivedOne.id));
+    } finally {
+      await db.query('UPDATE ipy_record SET archived_at = NULL WHERE id = $1', [archivedOne.id]);
     }
   });
 });

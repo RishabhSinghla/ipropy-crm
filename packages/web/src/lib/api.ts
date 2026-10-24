@@ -272,6 +272,8 @@ export interface SearchHit {
    * owner and nothing else — there is no id to follow.
    */
   restricted?: true;
+  /** Left the lists after being Lost; found by search, marked with an Archived badge and listed last. */
+  archived?: true;
   /**
    * Who the record belongs to, and when it was last touched.
    *

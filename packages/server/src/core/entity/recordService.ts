@@ -1909,6 +1909,11 @@ export interface SearchHit {
   mobile?: string;
   details?: string;
   /**
+   * The record has left the lists (it was Lost 12 hours ago or more). Still found by search, so nobody makes the
+   * customer a second time; the screen marks it and the results list it after every live match.
+   */
+  archived?: true;
+  /**
    * A record this user cannot open, shown by name alone.
    *
    * Carries a name, who owns it, and the record's id — and **nothing else**.
@@ -2159,17 +2164,17 @@ export async function globalSearch(
   */
   const res = await db.query<{
     id: string; module_name: string; label: string; record_number: string | null;
-    owner_name: string | null; updated_at: string | null;
+    owner_name: string | null; updated_at: string | null; archived_at: string | null;
   }>(
     `SELECT ${RECORD_ALIAS}.id, ${RECORD_ALIAS}.module_name, ${RECORD_ALIAS}.label,
-            ${RECORD_ALIAS}.record_number, ${RECORD_ALIAS}.updated_at,
+            ${RECORD_ALIAS}.record_number, ${RECORD_ALIAS}.updated_at, ${RECORD_ALIAS}.archived_at,
             nullif(trim(owner.first_name || ' ' || owner.last_name), '') AS owner_name
      FROM ipy_record ${RECORD_ALIAS}
      LEFT JOIN ipy_user owner ON owner.id = ${RECORD_ALIAS}.owner_id
      WHERE (${branches.join(' OR ')})
        AND ${RECORD_ALIAS}.is_deleted = false
-       AND ${RECORD_ALIAS}.archived_at IS NULL
-     ORDER BY ${RECORD_ALIAS}.updated_at DESC
+     -- Archived records are found too (24 October 2026), after every live match, inside the same per-module scope.
+     ORDER BY (${RECORD_ALIAS}.archived_at IS NOT NULL), ${RECORD_ALIAS}.updated_at DESC
      LIMIT ${limitParam}`,
     params.all(),
   );
@@ -2183,6 +2188,7 @@ export async function globalSearch(
     recordNumber: r.record_number,
     ownerName: r.owner_name,
     updatedAt: r.updated_at,
+    ...(r.archived_at ? { archived: true as const } : {}),
   }));
 
   // Only enrich already-authorised hits. Hidden fields and masked phones stay

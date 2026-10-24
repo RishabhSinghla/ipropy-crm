@@ -1136,12 +1136,14 @@ function GlobalSearch(): JSX.Element {
                     flat[highlight]?.id === hit.id
                       ? 'bg-brand-50 dark:bg-slate-700'
                       : 'hover:bg-slate-50 dark:hover:bg-slate-800',
+                    // Archived rows look different as well as being badged, so colour is never the only signal.
+                    hit.archived && 'border-l-4 border-amber-500 bg-amber-50/70 dark:bg-amber-950/30',
                   )}
                   selected={flat[highlight]?.id === hit.id}
                 >
                   <Avatar name={hit.label} size={28} className="shrink-0" />
                   <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 items-center gap-2 text-sm font-semibold"><span className="truncate">{hit.label}</span>{hit.mobile && <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">{hit.mobile}</span>}<span className="ml-auto truncate text-[10px] font-normal text-muted">{[hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)].filter(Boolean).join(' · ')}</span></span>
+                    <span className="flex min-w-0 items-center gap-2 text-sm font-semibold"><span className="truncate">{hit.label}</span>{hit.archived && <span data-testid="archived-badge" className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">Archived</span>}{hit.mobile && <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">{hit.mobile}</span>}<span className="ml-auto truncate text-[10px] font-normal text-muted">{[hit.recordNumber, hit.ownerName, hit.updatedAt && relativeTime(hit.updatedAt)].filter(Boolean).join(' · ')}</span></span>
                     {/* What tells two people of the same name apart. Each part
                         is skipped when it is empty rather than printed as a
                         dash — a sub-line of separators says nothing. */}
