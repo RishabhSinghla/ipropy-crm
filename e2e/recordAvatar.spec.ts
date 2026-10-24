@@ -32,7 +32,9 @@ for (const path of ['/leads', '/properties']) {
 
     // The avatar itself is the image control; opening its menu exposes upload,
     // replace, preview, and remove actions.
-    const open = page.getByRole('button', { name: /^Photo of / }).first();
+    // The queue avatar is intentionally covered by its Gmail-style selection
+    // target. Photo management belongs to the middle-pane header avatar.
+    const open = page.getByTestId('split-hero-avatar').getByRole('button', { name: /^Photo of / });
     await expect(open).toBeVisible({ timeout: 20_000 });
     await open.click();
 
@@ -53,7 +55,7 @@ for (const path of ['/leads', '/properties']) {
     await expect(photo).toHaveAttribute('src', /\/api\/files\/[0-9a-f-]{36}/);
 
     // And off again, so the next run starts where this one did.
-    await page.getByRole('button', { name: /^Photo of / }).first().click();
+    await page.getByTestId('split-hero-avatar').getByRole('button', { name: /^Photo of / }).click();
     await page.getByRole('button', { name: 'Remove photo' }).click();
     await expect(page.getByText('Photo removed')).toBeVisible({ timeout: 20_000 });
   });

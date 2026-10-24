@@ -168,7 +168,7 @@ export function RecordAvatar({ module, recordId, name, canEdit, size = 96 }: {
             disabled={busy}
             aria-label={`Photo of ${name}`}
             title={canEdit ? 'Preview, upload, replace or remove the photo' : 'Preview the photo'}
-            className="relative inline-flex rounded-full transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-60"
+            className="relative inline-flex rounded-full p-0 transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-60"
           >
             {face}
             {busy && (
