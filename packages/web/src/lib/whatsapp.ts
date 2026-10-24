@@ -30,7 +30,11 @@ export function waDigits(value: string): string {
 export type ComposerMode = 'text' | 'template';
 
 export function composerMode(capabilities: string[], windowOpen: boolean): ComposerMode {
-  return capabilities.includes('text') && windowOpen ? 'text' : 'template';
+  // A linked device (OpenWA) is an ordinary chat, so there is no 24-hour window
+  // to wait out; the server enforces its own brakes instead.
+  return capabilities.includes('text') && (windowOpen || capabilities.includes('linkedDevice'))
+    ? 'text'
+    : 'template';
 }
 
 /** What to say about a shut box, which is different in the two cases above. */
@@ -48,6 +52,41 @@ export interface MessageMedia {
   size?: number;
   /** What a customer typed under the picture. Rendered as the message body. */
   caption?: string;
+  /** Linked-device messages keep only this much until somebody asks for the file. */
+  sizeBytes?: number;
+  filename?: string;
+}
+
+/**
+ * A file OpenWA told us about but the CRM has not fetched: type, name, size.
+ * Shown as a chip with a Load button — fetched only when somebody asks.
+ */
+export function readRemoteFile(value: unknown): { mimeType: string; fileName: string; sizeBytes?: number } | null {
+  if (!value || typeof value !== 'object') return null;
+  const media = value as MessageMedia;
+  if (media.attachmentId) return null;
+  const mimeType = media.mimeType;
+  if (!mimeType) return null;
+  return { mimeType, fileName: media.fileName ?? media.filename ?? 'file', sizeBytes: media.sizeBytes ?? media.size };
+}
+
+/**
+ * The little ticks under a sent message: one for sent, two for delivered, two
+ * (blue, drawn by the caller) for read. A refused message gets none.
+ */
+export function ticks(status: string): { marks: string; read: boolean } {
+  if (status === 'read') return { marks: '✓✓', read: true };
+  if (status === 'delivered') return { marks: '✓✓', read: false };
+  if (status === 'sent') return { marks: '✓', read: false };
+  return { marks: '', read: false };
+}
+
+/** Plain words for the banner above the chat when the OpenWA link is not healthy. */
+export function linkBanner(link: { state: string; message: string } | null | undefined): string | null {
+  if (!link || link.state === 'ready' || link.state === 'unknown') return null;
+  return link.state === 'unreachable'
+    ? `The CRM cannot reach OpenWA, so messages can't be sent or received right now. ${link.message}`
+    : `${link.message}`;
 }
 
 /** `media` off a message row, which is loose JSON until it is read. */

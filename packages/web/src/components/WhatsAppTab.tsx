@@ -1,13 +1,13 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, ExternalLink, MessageCircle, Send } from 'lucide-react';
+import { AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
-import { readMessageMedia, WhatsAppMedia } from './WhatsAppMedia';
+import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from './WhatsAppMedia';
 import { UnsubscribedPanel, UnsubscribeLink } from './WhatsAppConsent';
-import { bubbleTime, composerMode, dayLabel, outboundTone, wentOut, whyNoTextBox } from '../lib/whatsapp';
+import { bubbleTime, composerMode, dayLabel, linkBanner, outboundTone, ticks, wentOut, whyNoTextBox } from '../lib/whatsapp';
 import { EmptyState, Select, Skeleton, Spinner } from './ui';
 
 /**
@@ -93,7 +93,32 @@ export function WhatsAppTab({ module, recordId, mobile }: {
       setDraft('');
       void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
     },
-    onError: (err: Error) => toast.error('Could not send', err.message),
+    onError: (err: Error) => {
+      // The refused message is a row too ("NOT delivered", with the reason),
+      // so refresh and let the thread show it beside the toast.
+      void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
+      toast.error('Could not send', err.message);
+    },
+  });
+
+  /*
+    One attachment at a time, from this computer. It goes into the CRM first
+    (the record's own Files) and is sent from there, never straight to the
+    gateway — the same rule as the Chats screen.
+  */
+  const attach = useMutation({
+    mutationFn: async (file: File) => {
+      const uploaded = await api.uploadFile(file, recordId, module);
+      await api.waBizSend({ to: mobile!, attachmentId: uploaded.id, text: draft.trim() || undefined, recordId });
+    },
+    onSuccess: () => {
+      setDraft('');
+      void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
+    },
+    onError: (err: Error) => {
+      void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
+      toast.error('Could not send that file', err.message);
+    },
   });
 
   /*
@@ -178,6 +203,13 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           Open in WhatsApp
         </Link>
       </div>
+      {/* OpenWA down or the phone unlinked: said above the chat, in words. */}
+      {linkBanner(business?.link) && (
+        <div role="alert" className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{linkBanner(business?.link)}</span>
+        </div>
+      )}
       {/*
         A tinted canvas, the same one the Chats screen uses, so a white
         incoming bubble reads as a bubble. On white the thread looked like a
@@ -225,19 +257,32 @@ export function WhatsAppTab({ module, recordId, mobile }: {
             >
               {(() => {
                 const media = readMessageMedia(m.media);
-                return media ? (
+                if (media) {
+                  return (
+                    <div className="mb-1 min-w-[12rem]">
+                      <WhatsAppMedia media={media} dark={m.direction === 'outbound'} />
+                    </div>
+                  );
+                }
+                const remote = readRemoteFile(m.media);
+                return remote ? (
                   <div className="mb-1 min-w-[12rem]">
-                    <WhatsAppMedia media={media} dark={m.direction === 'outbound'} />
+                    <WhatsAppRemoteFile messageId={m.id} file={remote} dark={m.direction === 'outbound'} />
                   </div>
                 ) : null;
               })()}
-              {(m.body || !readMessageMedia(m.media)) && (
+              {(m.body || !(readMessageMedia(m.media) || readRemoteFile(m.media))) && (
                 <p className="whitespace-pre-wrap break-words">
                   {m.body ?? <span className="italic opacity-70">Attachment</span>}
                 </p>
               )}
-              <p className={cn('mt-1 text-[10px]', m.direction === 'outbound' ? 'text-white/80' : 'text-muted')}>
+              <p className={cn('mt-1 flex items-center gap-1 text-[10px]', m.direction === 'outbound' ? 'text-white/80' : 'text-muted')}>
                 {bubbleTime(m.createdAt)}
+                {m.direction === 'outbound' && ticks(m.status).marks && (
+                  ticks(m.status).marks === '✓'
+                    ? <Check className="h-3 w-3" aria-label="sent" />
+                    : <CheckCheck className={cn('h-3 w-3', ticks(m.status).read && 'text-sky-200')} aria-label={ticks(m.status).read ? 'read' : 'delivered'} />
+                )}
                 {/* Which number it left from — older rows may name a rep's
                     own phone, from before that route was removed. */}
                 {m.direction === 'outbound' && m.sentVia
@@ -314,6 +359,26 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         className="flex flex-wrap items-end gap-2 border-t border-[var(--border)] bg-white p-3 dark:bg-slate-900"
         onSubmit={(e) => { e.preventDefault(); if (draft.trim()) send.mutate(draft.trim()); }}
       >
+        <label
+          className={cn(
+            'btn-ghost btn-sm shrink-0 cursor-pointer',
+            (!linked || !mobile || attach.isPending) && 'pointer-events-none opacity-40',
+          )}
+          title="Send one photo or document"
+        >
+          {attach.isPending ? <Spinner className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}
+          <input
+            type="file"
+            className="hidden"
+            aria-label="Send one photo or document"
+            disabled={!linked || !mobile || attach.isPending}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) attach.mutate(file);
+            }}
+          />
+        </label>
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

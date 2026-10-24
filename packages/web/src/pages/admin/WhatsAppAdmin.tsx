@@ -143,6 +143,38 @@ export default function WhatsAppAdmin(): JSX.Element {
         )}
       </section>
 
+      {/* OpenWA only: is the phone still linked, and what has the CRM sent through it today? */}
+      {data.openwa && (
+        <section className="card p-4" data-testid="openwa-health">
+          <h2 className="text-sm font-semibold">OpenWA (linked device)</h2>
+          <p className={`mt-1 text-sm ${data.openwa.state === 'ready' ? '' : 'text-amber-700 dark:text-amber-300'}`}>
+            {data.openwa.message}
+            {data.openwa.phoneMasked ? ` Linked number: ${data.openwa.phoneMasked}.` : ''}
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Tile label="Sent today" value={data.openwa.sendsToday} hint="through the CRM" />
+            <Tile label="Failed today" value={data.openwa.sendsFailedToday} warn={data.openwa.sendsFailedToday > 0} />
+            <Tile
+              label="Webhooks refused"
+              value={data.openwa.rejectedWebhooks}
+              hint="bad signature or too old, since the CRM last restarted"
+              warn={data.openwa.rejectedWebhooks > 0}
+            />
+            <Tile
+              label="Senders with no number"
+              value={data.openwa.unresolvedSenders}
+              hint="set RESOLVE_LID_TO_PHONE=true in OpenWA"
+              warn={data.openwa.unresolvedSenders > 0}
+            />
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            {data.openwa.lastWebhookAt
+              ? `Last message from OpenWA: ${new Date(data.openwa.lastWebhookAt).toLocaleString()}.`
+              : 'No message has reached the CRM from OpenWA since the CRM last restarted.'}
+          </p>
+        </section>
+      )}
+
       {/* 3. The numbers, in the order somebody asks for them. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Tile label="Conversations" value={data.conversations.total} hint="people who have ever written" />
@@ -224,6 +256,7 @@ function label(provider: string): string {
     whatsapp_meta: 'Meta Cloud API',
     whatsapp_aisensy: 'AiSensy',
     whatsapp_gupshup: 'Gupshup',
+    whatsapp_openwa: 'OpenWA',
   };
   return names[provider] ?? provider;
 }

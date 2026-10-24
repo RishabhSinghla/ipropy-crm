@@ -1597,7 +1597,22 @@ export const api = {
   // --- WhatsApp Business (the official number) -----------------------------
   waBizStatus: () => get<{
     connected: boolean; provider: string | null; capabilities: string[]; businessNumber: string | null;
+    /** Present only for a linked device (OpenWA): is the phone linked and reachable? */
+    link?: { state: 'ready' | 'needs-link' | 'unreachable' | 'unknown'; message: string; checkedAt: string | null } | null;
   }>('/api/whatsapp-business/status'),
+  waBizCreateLead: (conversationId: string) => post<{ recordId: string; linkedExisting: boolean }>(
+    `/api/whatsapp-business/conversations/${conversationId}/create-lead`, {},
+  ),
+  /** A received file, fetched from OpenWA only now, as a blob the page can show. */
+  waBizMessageFile: async (messageId: string): Promise<Blob> => {
+    const res = await request<Response>(`/api/whatsapp-business/messages/${messageId}/file`, { raw: true });
+    return res.blob();
+  },
+  waBizOpenWaHealth: (fresh = false) => get<{
+    state: string; message: string; checkedAt: string | null; status: string | null; phoneMasked: string | null;
+    lastWebhookAt: string | null; rejectedWebhooks: number; unresolvedSenders: number;
+    sendsToday: number; sendsFailedToday: number;
+  }>(`/api/whatsapp-business/openwa/health${fresh ? '?fresh=1' : ''}`),
   waBizProviders: () => get<{ id: string; label: string; capabilities: string[]; webhookPath: string }[]>(
     '/api/whatsapp-business/providers',
   ),
@@ -1668,6 +1683,11 @@ export const api = {
     messages: { inboundToday: number; outboundToday: number; failedToday: number; deliveredToday: number };
     templates: { total: number; approved: number; unmapped: number };
     stillTheirs: string[];
+    openwa: {
+      state: string; message: string; checkedAt: string | null; status: string | null; phoneMasked: string | null;
+      lastWebhookAt: string | null; rejectedWebhooks: number; unresolvedSenders: number;
+      sendsToday: number; sendsFailedToday: number;
+    } | null;
   }>('/api/whatsapp-business/overview'),
   waBizCampaignRecipients: (id: string, status?: string) => get<{
     recordId: string; label: string; handle: string; status: string;

@@ -2,7 +2,7 @@ import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  BellOff, CheckCheck, Clock, Inbox, MessageCircle, Paperclip, Search, Send,
+  AlertTriangle, BellOff, Check, CheckCheck, Clock, Inbox, MessageCircle, Paperclip, Search, Send, UserPlus,
 } from 'lucide-react';
 import { relativeTime, type RecordEnvelope } from '@ipropy/shared';
 import { api, type ModuleSummary } from '../lib/api';
@@ -10,7 +10,8 @@ import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
 import {
-  bubbleTime, composerMode, dayLabel, displayNumber, moduleTag, outboundTone, wentOut, whyNoTextBox, windowLeft,
+  bubbleTime, composerMode, dayLabel, displayNumber, linkBanner, moduleTag, outboundTone, ticks, wentOut, whyNoTextBox,
+  windowLeft,
 } from '../lib/whatsapp';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { badgeVars } from '../lib/color';
@@ -18,7 +19,7 @@ import { ChatRecordPane, ChatRecordPaneSkeleton, useChatRecord } from '../compon
 import { HeaderFieldStrip } from '../components/RecordBlocks';
 import { FieldValue } from '../components/FieldRenderer';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
-import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
+import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from '../components/WhatsAppMedia';
 import { UnsubscribedPanel, UnsubscribeLink } from '../components/WhatsAppConsent';
 
 /**
@@ -35,13 +36,15 @@ import { UnsubscribedPanel, UnsubscribeLink } from '../components/WhatsAppConsen
  * which was true.
  */
 
-type Filter = 'all' | 'mine' | 'unassigned' | 'unread';
+type Filter = 'all' | 'mine' | 'unassigned' | 'unread' | 'unmatched';
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'All chats' },
   { value: 'mine', label: 'My chats' },
   { value: 'unassigned', label: 'Unassigned' },
   { value: 'unread', label: 'Unread' },
+  // Numbers the CRM has no contact for yet — decide what to do with each stranger.
+  { value: 'unmatched', label: 'Unmatched numbers' },
 ];
 
 /*
@@ -158,6 +161,15 @@ export default function BusinessChats(): JSX.Element {
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['wa-biz'] });
   };
+
+  const createLead = useMutation({
+    mutationFn: () => api.waBizCreateLead(active!.id),
+    onSuccess: ({ linkedExisting }) => {
+      toast.success(linkedExisting ? 'Linked to the contact that already has this number' : 'Contact created from this chat');
+      refresh();
+    },
+    onError: (err: Error) => toast.error('Could not create the contact', err.message),
+  });
 
   const consent = useMutation({
     mutationFn: (subscribed: boolean) => api.waBizConversationConsent(active!.id, subscribed),
@@ -355,6 +367,13 @@ export default function BusinessChats(): JSX.Element {
               show, so it gets the name and the number and nothing pretending
               to be more.
             */}
+            {/* OpenWA down or the phone unlinked: say so above the chat, in words. */}
+            {linkBanner(status?.link) && (
+              <div role="alert" className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{linkBanner(status?.link)}</span>
+              </div>
+            )}
             <header className="border-b border-[var(--border)] bg-white px-4 py-2.5 dark:bg-slate-900">
               <div className="flex min-w-0 items-start gap-3">
                 <Avatar name={who} size={42} className="mt-0.5" />
@@ -367,6 +386,17 @@ export default function BusinessChats(): JSX.Element {
                       <p className="mt-0.5 text-sm font-semibold text-slate-600 dark:text-slate-300">
                         {displayNumber(active.handle, active.waId)}
                       </p>
+                      {/* One click: the phone and the WhatsApp name go in, a
+                          person confirms by pressing it. Never automatic. */}
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm mt-2"
+                        disabled={createLead.isPending}
+                        onClick={() => createLead.mutate()}
+                      >
+                        {createLead.isPending ? <Spinner className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+                        Create contact from this chat
+                      </button>
                     </>
                   )}
                 </div>
@@ -407,9 +437,18 @@ export default function BusinessChats(): JSX.Element {
                   )}>
                     {(() => {
                       const media = readMessageMedia(message.media);
-                      return media ? (
+                      if (media) {
+                        return (
+                          <div className="mb-1 min-w-[12rem]">
+                            <WhatsAppMedia media={media} dark={message.direction === 'outbound'} />
+                          </div>
+                        );
+                      }
+                      // A linked device keeps the file at OpenWA until asked.
+                      const remote = readRemoteFile(message.media);
+                      return remote ? (
                         <div className="mb-1 min-w-[12rem]">
-                          <WhatsAppMedia media={media} dark={message.direction === 'outbound'} />
+                          <WhatsAppRemoteFile messageId={message.id} file={remote} dark={message.direction === 'outbound'} />
                         </div>
                       ) : null;
                     })()}
@@ -424,7 +463,7 @@ export default function BusinessChats(): JSX.Element {
                       link on purpose (it expires), so the honest answer is to
                       name the thing and say it is not here.
                     */}
-                    {!readMessageMedia(message.media)
+                    {!readMessageMedia(message.media) && !readRemoteFile(message.media)
                       && (!message.body || message.body === `[${message.type}]`) && (
                       <p className="italic opacity-70">
                         {message.type === 'text' ? 'Empty message' : `${message.type} — not saved in the CRM`}
@@ -441,7 +480,10 @@ export default function BusinessChats(): JSX.Element {
                           {message.status === 'failed'
                             ? <span className="font-semibold">NOT delivered</span>
                             : <span className="inline-flex items-center gap-0.5">
-                              <CheckCheck className="h-3 w-3" />{wentOut(message.status)}
+                              {ticks(message.status).marks === '✓'
+                                ? <Check className="h-3 w-3" />
+                                : <CheckCheck className={cn('h-3 w-3', ticks(message.status).read && 'text-sky-200')} />}
+                              {wentOut(message.status)}
                             </span>}
                           {/* Which road it took, because the business number
                               and a rep's own phone are different phones. */}
