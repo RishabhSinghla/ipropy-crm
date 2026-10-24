@@ -144,6 +144,11 @@ rough conversion, not a quote. No other running cost.
   refused before writing, OpenWA rate limit shown plainly, create-contact-from-chat, OpenWA down.
 * 8 browser tests (Playwright) on the contact's chat panel and the unmatched inbox, including a phone-sized screen.
 * Existing unit suite, the WhatsApp integration tests, and the existing WhatsApp / campaign browser specs still pass.
+* **Whole integration suite: 961 of 969 pass; the 8 that did not are not from this change.** Two
+  (`marketDealMatches`, `semanticSearchThroughTheIndex`) fail identically on a clean `main`; two list-order
+  tests passed when re-run alone (they share a database with other sessions); and `companionApk` / `fileCrud`
+  fail only because this working copy sits inside a hidden `.claude` folder, which the file-serving library
+  refuses (they pass on a clean `main` checked out elsewhere).
 
 ## Six lines for the manager
 
