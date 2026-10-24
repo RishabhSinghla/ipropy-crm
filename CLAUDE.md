@@ -14,7 +14,7 @@ before you work in that area** — each carries traps that have already cost a d
 
 | Working on | Read first |
 |---|---|
-| WhatsApp — inbox, templates, campaigns, media, reports | [`WHATSAPP.md`](WHATSAPP.md) |
+| WhatsApp — inbox, templates, campaigns, media, reports, and the OpenWA linked-device connection | [`WHATSAPP.md`](WHATSAPP.md) (OpenWA: [`docs/OPENWA.md`](docs/OPENWA.md)) |
 | The phone app, dialling, call recording, the call console, the dialler screens | [`CALLING.md`](CALLING.md) |
 | Lists, the split view, tags | [`SCREENS.md`](SCREENS.md) |
 | A deploy, or something misbehaving on production | [`OPERATIONS.md`](OPERATIONS.md) |

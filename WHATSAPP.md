@@ -1430,3 +1430,52 @@ is the safe kind for a welcome.
 Pinned by `tests/integration/workflowSendsWhatsAppTemplate.test.ts`, against a stand-in for
 Meta's server: the right request leaves for a New lead, nothing for any other status, nothing
 twice, nothing to an opted-out number. **Never run against the real WhatsApp provider.**
+
+---
+
+## OpenWA — the company number as a linked device (24 October 2026, branch `crm-openwa-bridge`)
+
+**Read [`docs/OPENWA.md`](docs/OPENWA.md) first; this is the part that belongs with the rest of the story.**
+
+It is a fifth provider (`whatsapp_openwa`) beside Meta, AiSensy, Gupshup and WhatsMarketing, and **one is live at a
+time** — `PUT /api/admin/integrations/:provider` now turns the other WhatsApp cards off when one is switched on (before
+this, nothing enforced it and the registry quietly preferred whichever came first in its list, so switching to a
+provider listed later changed nothing).
+
+**It overrides a line in this file, knowingly.** "The official business route below is the only WhatsApp road now.
+Do not build the QR one a third time" was written about *reps linking their own personal numbers*. This is one company
+number, linked once by the owner, as one of WhatsApp's own (up to four) linked devices, through a separate self-hosted
+gateway. It is still **unofficial** — OpenWA speaks WhatsApp's protocol through open-source libraries — so the ban risk
+the line was written for is real here too. It is off until an admin switches the card on, and the owner's phone must be
+opened at least every 14 days or WhatsApp logs the linked device out.
+
+What is different from every other adapter, and why:
+
+* **`linkedDevice` capability, no `templates`, no `campaigns`.** There is no 24-hour window (`replyWindowAlwaysOpen()`),
+  and every bulk path refuses it: campaigns are refused by name in `approveCampaign` and the sender, and the workflow
+  template step has no template to send.
+* **Guard-rails in the one send path** (`send.ts` + `openwaGuards.ts`): a number must be on a record the user can open or
+  an existing chat; daily cap per user (60) and per customer number (15); minimum 10 seconds between sends; refuse before
+  writing anything when the session is not `ready`. One lock makes the check and the queued row atomic.
+* **Both sides of the chat arrive.** A message the owner sends from the phone is recorded (`recordSentElsewhere`, after a
+  20-second pause so the CRM's own sends are not stored twice). Ids are normalised to OpenWA's short form
+  (`normaliseMessageId`) for exactly that reason.
+* **Webhook:** HMAC-SHA256 over the raw body in `X-OpenWA-Signature` (read from OpenWA's own source, not only its docs);
+  the `timestamp` inside the signed body is the replay window (30 minutes, `webhookMaxAgeMinutes`); message ids are claimed
+  once. An unsigned or wrongly signed delivery is a 401 and is counted on the Health page.
+* **Media is metadata only** until someone presses **Load** (`GET /api/whatsapp-business/messages/:id/file`, which checks
+  the chat is in the user's inbox and streams the bytes through with the file security headers).
+* **Unmatched numbers** are an inbox filter (`unmatched`) with one button, "Create contact from this chat"
+  (`openwaChats.ts`): phone and the person's own WhatsApp name only, links to an existing contact instead when the number
+  already has one, and never runs on its own.
+* **Privacy:** groups, channels and status posts are ignored. A sender WhatsApp hides behind a privacy id (`@lid`) has no
+  number until OpenWA resolves it — set `RESOLVE_LID_TO_PHONE=true` in OpenWA; unresolved ones are counted on the Health
+  page, not stored.
+* **Health:** `openwaHealth.ts` asks OpenWA for the session every minute while the card is on, writes the same
+  `whatsapp.last_poll` row the Health page already reads, logs each change of state once, and feeds the banner above the
+  chat. OpenWA down means a banner and a visibly failed send — never a silent queue.
+
+**Proved with a pretend OpenWA** (`tests/fakes/fakeOpenWa.ts`) in 21 API tests and 8 browser tests, plus a read-only look
+at the real local OpenWA (session list and status only). **Not proved:** a real WhatsApp message in either direction, a
+message sent from the phone arriving as `message.sent`/`fromMe` (the shape comes from OpenWA's docs), and what WhatsApp
+does to a number over weeks.
