@@ -4,6 +4,12 @@
  * hard-coded into business logic.
  */
 
+/**
+ * How many days of WhatsApp-group deals the Market feed, the call sheet and the dealers' deal lists show and accept.
+ * The one place this number lives: the server and the screens both read it, so they cannot disagree.
+ */
+export const MARKET_FEED_DAYS = 15;
+
 export const LEAD_STATUSES = [
   { value: 'New', label: 'New', color: '#64748b' },
   { value: 'Attempted Contact', label: 'Attempted Contact', color: '#94a3b8' },

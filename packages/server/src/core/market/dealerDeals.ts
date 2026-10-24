@@ -13,6 +13,7 @@
  * Found by the dealer's number (the last ten digits, as every other match in this
  * CRM). A record whose number nobody has posted under simply has four empty lists.
  */
+import { MARKET_FEED_DAYS } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
 import { registry } from '../metadata/registry.js';
 import { getRecord, type ServiceContext } from '../entity/recordService.js';
@@ -75,7 +76,7 @@ export interface DealerDeals {
 const LIMIT = 100;
 // Keep the Associate's personal deal lists aligned with the Market screen's
 // freshness window: stale posts should not crowd out today's useful stock.
-const DAYS = 45;
+const DAYS = MARKET_FEED_DAYS;
 
 /** The business's own spelling first ("Sector 78"); the reader's lower-cased twin of it is dropped. */
 export function onceEach(names: string[]): string[] {

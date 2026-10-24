@@ -77,7 +77,7 @@ describe('reading one post', () => {
   });
 
   // 20 October 2026: "10/20/26" was read as the 10th day of the 20th month, so a month-first
-  // export put every deal in 2027 and 2028, and the 45-day filter (which only looked backwards) kept them.
+  // export put every deal in 2027 and 2028, and the feed-window filter (which only looked backwards) kept them.
   it('reads a month-first export (American-set phone) by the month, not the day', () => {
     const text = [
       '[10/20/26, 4:32:10 PM] Realtor 1261 FBD: Plot for sale sector 85',

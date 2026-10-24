@@ -637,7 +637,7 @@ export interface MarketDealSide {
   postedAt: string | null;
 }
 
-export type MarketIntroductionStatus = 'new' | 'called' | 'meeting' | 'won' | 'lost' | 'dismissed' | 'bad_match';
+export type MarketIntroductionStatus = 'new' | 'called' | 'busy' | 'meeting' | 'won' | 'lost' | 'dismissed' | 'bad_match';
 
 /** A buyer in one dealer group and a seller in another who fit each other. */
 export interface MarketIntroduction {
@@ -670,7 +670,7 @@ export interface MarketIntroductionQuery {
   minScore: number;
   page: number;
   pageSize: number;
-  status?: 'new' | 'called' | 'meeting' | 'won' | 'lost';
+  status?: 'new' | 'called' | 'busy' | 'meeting' | 'won' | 'lost';
   day?: 'today' | 'yesterday';
   sides?: string[];
   sureShot?: boolean;

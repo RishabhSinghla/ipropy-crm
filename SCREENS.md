@@ -3240,3 +3240,33 @@ Jev worked, how much is left, how much is working."*
 **And one more found the moment it ran live:** only 23 of 264 waiting pairings were being asked about. The checker took the sheet's
 first 500 (the paging cap) and kept the unrated ones, but rated pairings rank above unrated, so the waiting ones were mostly beyond
 the cap. `pairsWaitingForJev` reads the whole freshly worked-out sheet instead, and a visit asks up to 400, eight at a time.
+
+## 24 October 2026 — 15 days, a search box in the filters, Busy, and the card that crashed
+
+**The manager, five requests in one message.** All of them are on the call sheet and the dealer-group screens.
+
+* **The feed shows 15 days, not 45.** One named number, `MARKET_FEED_DAYS` in `@ipropy/shared` (`constants.ts`), read by the
+  server (`KEEP_DAYS` in `feed.ts` is that same number; `MAX_DEAL_AGE_DAYS` in `crossMatch.ts`; the dealers' deal lists in
+  `dealerDeals.ts`) **and** by the screens' wording. Messages older than 15 days are not stored on import, the feed, the call
+  sheet and an Associate's deal tabs stop showing them, and the "posted" filter on the deal table now offers *15 days* where it
+  offered 30. **Nothing was deleted by the deploy**: the daily clear in `retention.ts` has its own number,
+  `PURGE_AFTER_DAYS = 45`, so rows between 15 and 45 days old stay in the database, hidden, until somebody lowers that number.
+  The 20 October section above describes 45 days and is history. `newBuyerAlert.ts` has its own 30-day look-back and is not this.
+* **Every filter drop-down on these screens has a search box** (`components/SearchableSelect.tsx`, the pure matching in
+  `lib/searchOptions.ts`): the call sheet's type / BHK / sale-or-rent / status, the Market feed's two, and the dealers' deal-table
+  column filters. It replaces the browser's `<select>`, which cannot hold one. Typing keeps every option whose label *or hidden
+  keywords* contain every word typed; the box is focused on open, ↑ ↓ move, Enter chooses, Escape closes and hands focus back to the
+  button, and it is 16px on a phone so iOS does not zoom. The Leads / Inventories toolbar pickers are not changed here (the list
+  picker already has its own search).
+* **Global search finds archived records** — see `CLAUDE.md`, *A Lost record leaves the lists*. Badge says **Archived** in words as
+  well as a different colour and a left bar, and they come after every live match.
+* **Busy** is a fifth work-in-progress answer on a call-sheet card, straight after *Called* (`ipy_market_deal.status = 'busy'`,
+  migration `220`, which only widens the CHECK). It keeps the card on the sheet like Called, shows *Line was busy — ring again in a
+  couple of hours*, appears in the status filter and in the daily call-sheet message, and **does not teach the matcher** (it is
+  not in `loadLessons`' judged list: a busy line says nothing about whether the pair fits). The two-hour retry is the same default
+  the call console already gives its own *Busy* outcome (`callConsole.ts`), which needed no change. A pairing has no follow-up date
+  of its own, so the retry is a prompt on the card, not a timer.
+* **React error #300 on *Not for us* and *Not a real match*.** `Introduction` called `useJevStatus()` *after* the early
+  `return` that swaps the card for a one-line note, so the second render had one hook fewer and React threw. The hook now sits
+  above that return. Pinned by `tests/callSheetCards.test.tsx` (fails with "Rendered fewer hooks than expected" on the old order) and
+  `e2e/marketFeed.spec.ts` (clicks both, reloads, checks neither comes back). A save shows a small *Marked "…"* toast and a refused one rolls the card back.

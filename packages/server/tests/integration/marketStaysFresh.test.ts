@@ -1,5 +1,5 @@
 /**
- * The feed holds 45 days and no more, and a group is read quickly: stale messages never get in, repeats are filed in bulk,
+ * The feed shows 15 days and no more (rows are deleted only after 45), and a group is read quickly: stale messages never get in, repeats are filed in bulk,
  * and a daily clear removes whatever has aged out together with everything derived from it.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -34,7 +34,7 @@ afterAll(async () => {
   await db.query(`DELETE FROM ipy_market_group WHERE name = $1`, [`Fresh ${marker}`]);
 });
 
-describe('the feed keeps 45 days and no more', () => {
+describe('the feed keeps 15 days and no more', () => {
   it('never stores a message older than that, and says how many it left out', async () => {
     const outcome = await importGroupExport(`Fresh ${marker}`, chat, '00000000-0000-0000-0000-000000000000');
     expect(outcome.newDeals).toBe(2);

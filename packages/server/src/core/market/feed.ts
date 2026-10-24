@@ -5,6 +5,7 @@
  * things that touch the database: putting a group's export in, once per deal,
  * and asking it questions — the same question a rep types into chat.ipropy.com.
  */
+import { MARKET_FEED_DAYS } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
 import { notify } from '../notifications/index.js';
 import { logger } from '../../utils/logger.js';
@@ -56,7 +57,7 @@ const IMPORT_CONCURRENCY = 16;
  * Nothing the feed holds is older than this. A deal from last quarter is gone, a requirement from last quarter is
  * filled, and keeping them only buried the live ones: 12,941 of 19,277 stored deals were older on 20 October 2026.
  */
-export const KEEP_DAYS = 45;
+export const KEEP_DAYS = MARKET_FEED_DAYS;
 
 /** "FEAWA  Registered Members " and "feawa registered members" are one group. */
 export function groupKey(name: string): string {
@@ -331,13 +332,13 @@ export interface MarketPost {
 }
 
 export async function searchMarket(query: MarketQuery): Promise<{ total: number; posts: MarketPost[] }> {
-  // Never older than 45 days and never from the future: a date after today was misread, not posted tomorrow.
+  // Never older than the feed window and never from the future: a date after today was misread, not posted tomorrow.
   const where: string[] = [
     `NOT is_noise`,
     `coalesce(last_posted_at, created_at) > now() - make_interval(days => $1::int)`,
     `coalesce(last_posted_at, created_at) <= now() + interval '1 day'`,
   ];
-  const params: unknown[] = [Math.min(Math.max(query.days ?? 45, 1), 45)];
+  const params: unknown[] = [Math.min(Math.max(query.days ?? KEEP_DAYS, 1), KEEP_DAYS)];
   const add = (value: unknown): string => { params.push(value); return `$${params.length}`; };
 
   if (query.kind) where.push(`kind = ${add(query.kind)}`);

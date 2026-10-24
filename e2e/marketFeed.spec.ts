@@ -31,7 +31,16 @@ test('a group export becomes searchable deals', async ({ page }) => {
 
   await page.getByPlaceholder('Any word in the post').fill(marker);
   await expect(page.getByText(/^2 deals/)).toBeVisible();
-  await page.getByLabel('Has or wants').selectOption('have');
+  // The filter is a drop-down with a search box at the top: typing narrows the options, Enter chooses.
+  await page.getByRole('button', { name: 'Has or wants' }).click();
+  const search = page.getByRole('combobox', { name: 'Search Has or wants' });
+  await expect(search).toBeFocused();
+  const axe = await new AxeBuilder({ page }).include('.popover').analyze();
+  expect(axe.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+  await search.fill('seller');
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await expect(page.getByRole('option', { name: 'Has a property' })).toBeVisible();
+  await page.keyboard.press('Enter');
   await expect(page.getByText(/^1 deal/)).toBeVisible();
   await expect(page.getByRole('link', { name: '9811012345' })).toBeVisible();
   // The deal names no locality this database knows, so it fits nothing — and says why.
@@ -86,6 +95,15 @@ test('a buyer and a seller in different groups appear as a call, and what was do
   await expect(call.getByText('Called').first()).toBeVisible();
   await page.reload();
   await expect(page.locator('li', { hasText: `E2E Buyer ${stamp}` }).getByText('Called').first()).toBeVisible();
+
+  // Busy sits right after Called, keeps the card on the sheet, and survives a reload; pressing it again takes it back.
+  const buttons = await page.locator('li', { hasText: `E2E Buyer ${stamp}` }).getByRole('button').allTextContents();
+  const names = buttons.map((text) => text.replace('✓ ', '').trim());
+  expect(names.indexOf('Busy')).toBe(names.indexOf('Called') + 1);
+  await page.locator('li', { hasText: `E2E Buyer ${stamp}` }).getByRole('button', { name: 'Busy', exact: true }).click();
+  await expect(page.locator('li', { hasText: `E2E Buyer ${stamp}` }).getByText('Line was busy')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('li', { hasText: `E2E Buyer ${stamp}` }).getByText('Line was busy')).toBeVisible();
 
   // Not for us takes it off the list.
   await page.locator('li', { hasText: `E2E Buyer ${stamp}` }).getByRole('button', { name: 'Not for us' }).click();
@@ -187,7 +205,8 @@ test('the deal table filters by column, one line a row, and each row has its own
   await expect(table.getByText('Posted Date')).toBeVisible();
 
   // For Sale / For Rent is one column, and filters.
-  await table.getByLabel('Filter by For Sale or For Rent').selectOption('rent');
+  await table.getByRole('button', { name: 'Filter by For Sale or For Rent', exact: true }).click();
+  await page.getByRole('option', { name: 'For Rent' }).click();
   await expect(table.getByTestId('deal-row')).toHaveCount(1);
   await expect(table.getByTestId('deal-count')).toContainText('1 of 3');
   await table.getByRole('button', { name: /Clear 1 filter/ }).click();
@@ -322,4 +341,52 @@ test('Admin -> Layouts chooses the deal columns and the form fields, and a field
     }
     await save().catch(() => undefined);
   }
+});
+
+// Regression for React error #300 ("Rendered fewer hooks than expected"): both put-away buttons swapped the card for a
+// one-line note, and a hook placed after that early return crashed the whole screen. Two pairings, one button each.
+test('Not for us and Not a real match put a pairing away and the screen stays alive', async ({ page }) => {
+  const stamp = Date.now();
+  // Sector and size are both taken from the clock: a pairing needs the same area and a close size, so a run
+  // must not pair with the sellers earlier runs left in this database.
+  const sectors = [`${stamp % 60 + 10}`, `${stamp % 60 + 80}`];
+  const sizes = [400 + (stamp % 300), 800 + (stamp % 300)];
+  const now = new Date();
+  const day = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
+  const phone = (prefix: string, n: number) => `${prefix}${String(stamp + n).slice(-8)}`;
+  const buyers = sectors.map((sector, i) => `${day}, 9:0${i + 1} am - E2E Buyer${i} ${stamp}: Required ${sizes[i]} gaj plot sector ${sector} budget 4 cr call ${phone('98', i)}`).join('\n');
+  const sellers = sectors.map((sector, i) => `${day}, 10:2${i} am - E2E Seller${i} ${stamp}: ${sizes[i] + 5} sq yd residential plot for sale sector ${sector} demand 3.5 cr call ${phone('97', i)}`).join('\n');
+  const crashes: string[] = [];
+  page.on('pageerror', (error) => crashes.push(error.message));
+
+  await page.goto('/market');
+  await page.getByLabel('Exported chat files').setInputFiles([
+    { name: `WhatsApp Chat with E2E Buyers ${stamp}.txt`, mimeType: 'text/plain', buffer: Buffer.from(buyers) },
+    { name: `WhatsApp Chat with E2E Sellers ${stamp}.txt`, mimeType: 'text/plain', buffer: Buffer.from(sellers) },
+  ]);
+  for (const group of [`E2E Buyers ${stamp}`, `E2E Sellers ${stamp}`]) {
+    await expect(page.getByTestId('market-imports').locator('li', { hasText: group })).toContainText('Done', { timeout: 30_000 });
+  }
+  const card = (i: number) => page.locator('li', { hasText: `E2E Buyer${i} ${stamp}` });
+  await expect(card(0)).toContainText(`E2E Seller0 ${stamp}`);
+  await expect(card(1)).toContainText(`E2E Seller1 ${stamp}`);
+
+  await card(0).getByRole('button', { name: 'Not for us' }).click();
+  await expect(card(0)).toHaveCount(0);
+  await expect(page.locator('li', { hasText: 'Marked not for us' }).first()).toBeVisible();
+  await expect(page.locator('li', { hasText: 'Marked not for us' }).first().getByRole('button', { name: 'Undo' })).toBeVisible();
+  await expect(page.getByText('Something went wrong on this screen')).toHaveCount(0);
+  await expect(card(1).getByRole('button', { name: 'Not a real match' })).toBeVisible();
+
+  await card(1).getByRole('button', { name: 'Not a real match' }).click();
+  await expect(card(1)).toHaveCount(0);
+  await expect(page.locator('li', { hasText: 'Marked not a real match' }).first()).toBeVisible();
+  await expect(page.getByText('Something went wrong on this screen')).toHaveCount(0);
+
+  // Saved on the server, not just on the screen: after a reload neither pairing comes back.
+  await page.reload();
+  await expect(page.getByTestId('match-count')).toBeVisible();
+  await expect(card(0)).toHaveCount(0);
+  await expect(card(1)).toHaveCount(0);
+  expect(crashes.filter((message) => /Minified React error|hooks/.test(message))).toEqual([]);
 });

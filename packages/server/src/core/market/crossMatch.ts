@@ -14,6 +14,7 @@
  * (`ipy_market_pair_check`). Pairings themselves are worked out fresh each time,
  * so a better rule tomorrow improves the whole feed without a rebuild.
  */
+import { MARKET_FEED_DAYS } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { BROAD_AREAS, categoryFamily, isProjectKey, tidyBody } from './readPost.js';
@@ -165,9 +166,9 @@ export function scorePair(want: MarketListing, have: MarketListing, now = new Da
   const times = [want.postedAt?.getTime(), have.postedAt?.getTime()].filter((t): t is number => typeof t === 'number');
   if (times.length) {
     const ageDays = (now.getTime() - Math.min(...times)) / DAY_MS;
-    if (ageDays <= 45) {
+    if (ageDays <= MAX_DEAL_AGE_DAYS) {
       score += 0.07;
-      reasons.push('recent (within 45 days)');
+      reasons.push(`recent (within ${MAX_DEAL_AGE_DAYS} days)`);
     } else if (ageDays > 200) {
       score -= 0.05;
       reasons.push('older postings');
@@ -187,7 +188,7 @@ export interface CrossMatch {
   reasons: string[];
   /** True when the two were posted in groups with nobody in common — the pairs only we can see. */
   crossGroup: boolean;
-  status: 'new' | 'called' | 'meeting' | 'won' | 'lost' | 'dismissed' | 'bad_match';
+  status: 'new' | 'called' | 'busy' | 'meeting' | 'won' | 'lost' | 'dismissed' | 'bad_match';
   note: string | null;
   /** Jev's probability that the offer answers the requirement; null until it has looked. */
   jevFit: number | null;
@@ -220,7 +221,7 @@ export interface CrossMatchQuery {
   day?: 'today' | 'yesterday';
   sides?: Array<'buyer' | 'seller' | 'tenant' | 'landlord'>;
   /** Show only pairings in this state: "new" is the ones nobody has worked yet. */
-  status?: 'new' | 'called' | 'meeting' | 'won' | 'lost';
+  status?: 'new' | 'called' | 'busy' | 'meeting' | 'won' | 'lost';
 }
 
 /** `best` is the default: strongest fits first, but a fresh pair outranks a stale one. */
@@ -228,7 +229,7 @@ export const MATCH_SORTS = ['best', 'match', 'newest'] as const;
 export type MatchSort = (typeof MATCH_SORTS)[number];
 
 /** Nobody works a deal older than this: a requirement or an offer from last quarter is gone. */
-export const MAX_DEAL_AGE_DAYS = 45;
+export const MAX_DEAL_AGE_DAYS = MARKET_FEED_DAYS;
 
 /** Times Jev may fail to answer about one pairing before it is left alone. */
 export const JEV_MAX_TRIES = 3;
@@ -257,7 +258,7 @@ export function indiaDay(at: Date): string {
 /**
  * Pure: is this pairing about somebody who posted on the chosen day? A buyer is a requirement to buy, a tenant one to rent,
  * a seller an offer for sale, a landlord an offer to let. Ticking "buyers" and "tenants" shows pairings where either of
- * those was posted that day; the other side of the pairing may be from anywhere in the 45 days.
+ * those was posted that day; the other side of the pairing may be from anywhere in the feed window.
  */
 export function postedOnDay(
   match: { want: MarketListing; have: MarketListing }, day: 'today' | 'yesterday', sides: ReadonlyArray<(typeof MATCH_SIDES)[number]>, now = new Date(),
@@ -732,7 +733,7 @@ export async function findCrossMatches(query: CrossMatchQuery = {}, fresh = true
   return (await findCrossMatchPage(query, 1, Math.min(Math.max(query.limit ?? 100, 1), 500), fresh)).matches;
 }
 
-export const DEAL_STATUSES = ['new', 'called', 'meeting', 'won', 'lost', 'dismissed', 'bad_match'] as const;
+export const DEAL_STATUSES = ['new', 'called', 'busy', 'meeting', 'won', 'lost', 'dismissed', 'bad_match'] as const;
 
 export async function recordOutcome(
   wantListingId: string, haveListingId: string, status: (typeof DEAL_STATUSES)[number], note: string | null, userId: string,

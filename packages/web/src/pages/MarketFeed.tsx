@@ -10,12 +10,13 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatIndianPrice, relativeTime } from '@ipropy/shared';
+import { MARKET_FEED_DAYS, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import { Phone, Upload, Users } from 'lucide-react';
 import { PeekLink } from '../components/PeekLink';
 import { api, type MarketImportRow, type MarketPost } from '../lib/api';
 import DealMessageDialog, { type MessageToShow } from '../components/DealMessageDialog';
 import { Badge, EmptyState, Spinner } from '../components/ui';
+import SearchableSelect from '../components/SearchableSelect';
 import MarketDealers from '../components/MarketDealers';
 import MarketIntroductions from '../components/MarketIntroductions';
 import { toast } from '../lib/store';
@@ -108,7 +109,7 @@ function importSummary(row: MarketImportRow): string {
   // A message can be many properties: say both, or "2 messages" hides what was found.
   const parts = [`${row.newDeals} new message${row.newDeals === 1 ? '' : 's'}`, `${row.listings} propert${row.listings === 1 ? 'y' : 'ies'} found`];
   if (row.repeats) parts.push(`${row.repeats} already known`);
-  if (row.skippedOld) parts.push(`${row.skippedOld} skipped: older than 45 days or read before`);
+  if (row.skippedOld) parts.push(`${row.skippedOld} skipped: older than ${MARKET_FEED_DAYS} days or read before`);
   return `${parts.join(' · ')} · ${row.messages} lines in the file`;
 }
 
@@ -243,7 +244,7 @@ function DealsTab(): JSX.Element {
     maxLakh: maxCr ? Number(maxCr) * 100 : undefined,
     locality: locality.trim() || undefined,
     text: text.trim() || undefined,
-    days: 45,
+    days: MARKET_FEED_DAYS,
     limit: 100,
   };
   const { data, isLoading, error } = useQuery({
@@ -253,18 +254,13 @@ function DealsTab(): JSX.Element {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">Deals posted in WhatsApp groups in the last 45 days. Ask about them in plain words at /ask too.</p>
+      <p className="text-sm text-muted">Deals posted in WhatsApp groups in the last {MARKET_FEED_DAYS} days. Ask about them in plain words at /ask too.</p>
 
       <div className="flex flex-wrap gap-2">
-        <select className="input w-auto" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Has or wants">
-          <option value="">Has or wants</option>
-          <option value="have">Has a property</option>
-          <option value="want">Wants a property</option>
-        </select>
-        <select className="input w-auto" value={bhk} onChange={(e) => setBhk(e.target.value)} aria-label="BHK">
-          <option value="">Any BHK</option>
-          {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n} BHK</option>)}
-        </select>
+        <SearchableSelect ariaLabel="Has or wants" value={kind} onChange={setKind}
+          options={[{ value: '', label: 'Has or wants' }, { value: 'have', label: 'Has a property', keywords: 'seller sale offer' }, { value: 'want', label: 'Wants a property', keywords: 'buyer requirement' }]} />
+        <SearchableSelect ariaLabel="BHK" value={bhk} onChange={setBhk}
+          options={[{ value: '', label: 'Any BHK' }, ...[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `${n} BHK` }))]} />
         <input className="input w-36" inputMode="decimal" placeholder="Up to ₹ Cr" value={maxCr} onChange={(e) => setMaxCr(e.target.value.replace(/[^\d.]/g, ''))} aria-label="Up to crore" />
         <input className="input w-44" placeholder="Locality" value={locality} onChange={(e) => setLocality(e.target.value)} />
         <input className="input min-w-[10rem] flex-1" placeholder="Any word in the post" value={text} onChange={(e) => setText(e.target.value)} />
@@ -296,7 +292,7 @@ function GroupsTab(): JSX.Element {
   if (!groups.length) return <EmptyState title="No groups yet" body="Drop a group's export above." />;
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted">{groups.length} groups. The feed keeps the last 45 days of each and nothing older.</p>
+      <p className="text-sm text-muted">{groups.length} groups. The feed keeps the last {MARKET_FEED_DAYS} days of each and nothing older.</p>
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted">

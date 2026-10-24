@@ -11,21 +11,23 @@
  */
 import { type JSX, useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatIndianPrice } from '@ipropy/shared';
+import { MARKET_FEED_DAYS, formatIndianPrice } from '@ipropy/shared';
 import { ChevronLeft, ChevronRight, Phone } from 'lucide-react';
 import { api, type MarketDealSide, type MarketIntroduction, type MarketIntroductionSort, type MarketIntroductionStatus } from '../lib/api';
 import DealMessageDialog, { type MessageToShow } from './DealMessageDialog';
 import JevStatusStrip, { useJevStatus } from './JevStatusStrip';
+import SearchableSelect from './SearchableSelect';
 import { Badge, EmptyState, Spinner } from './ui';
 import { toast } from '../lib/store';
 
 /**
- * The six answers. The first four are work in progress: the pairing stays where it is, the button fills with a colour (white text on each clears AA),
+ * The seven answers. The first five are work in progress: the pairing stays where it is, the button fills with a colour (white text on each clears AA),
  * and pressing it again takes the answer back. The last two put the pairing away for good — "not a real match" also
  * teaches the matcher and Jev — so they ask for no colour and leave a line with one way back, for this visit only.
  */
 const ACTIONS: Array<{ status: MarketIntroductionStatus; label: string; keeps: boolean; colours?: { background: string; color: string; borderColor: string } }> = [
   { status: 'called', label: 'Called', keeps: true, colours: { background: '#4e45d5', color: '#ffffff', borderColor: '#4e45d5' } },
+  { status: 'busy', label: 'Busy', keeps: true, colours: { background: '#0f766e', color: '#ffffff', borderColor: '#0f766e' } },
   { status: 'meeting', label: 'Meeting fixed', keeps: true, colours: { background: '#b45309', color: '#ffffff', borderColor: '#b45309' } },
   { status: 'won', label: 'Won', keeps: true, colours: { background: '#15803d', color: '#ffffff', borderColor: '#15803d' } },
   { status: 'lost', label: 'Lost', keeps: true, colours: { background: '#b91c1c', color: '#ffffff', borderColor: '#b91c1c' } },
@@ -34,10 +36,6 @@ const ACTIONS: Array<{ status: MarketIntroductionStatus; label: string; keeps: b
 ];
 
 const PAGE_SIZE = 25;
-
-const STATUS_LABEL: Record<MarketIntroductionStatus, string> = {
-  new: 'New', called: 'Called', meeting: 'Meeting fixed', won: 'Won', lost: 'Lost', dismissed: 'Not for us', bad_match: 'Not a real match',
-};
 
 /** The kinds of property the feed tells apart, as the reader names them. */
 const TYPES = ['Residential Plot', 'Builder Floor', 'Apartment', 'Kothi/Villa', 'Commercial Plot', 'Office Space', 'Factory'];
@@ -135,9 +133,16 @@ function Introduction({ match, onOpen }: { match: MarketIntroduction; onOpen: (m
   // What is shown is the answer the server last accepted, so a click changes the screen at once and a refused one changes it back.
   const [status, setStatus] = useState<MarketIntroductionStatus>(match.status);
   useEffect(() => setStatus(match.status), [match.status]);
+  // Every hook sits above the early return below. "Not for us" and "Not a real match" swap this card for a one-line
+  // note, and a hook placed after that return is skipped on that render: React error #300, a dead screen.
+  const jevStatus = useJevStatus().data;
   const mark = useMutation({
     mutationFn: (next: MarketIntroductionStatus) => api.setMarketIntroduction(match.want.id, match.have.id, next),
     onMutate: (next) => { const before = status; setStatus(next); return { before }; },
+    onSuccess: (_saved, next) => {
+      const action = ACTIONS.find((item) => item.status === next);
+      toast.success(action ? `Marked “${action.label}”` : 'Answer cleared');
+    },
     onError: (err, _next, context) => {
       if (context) setStatus(context.before);
       toast.error('Could not save that', (err as Error).message);
@@ -160,7 +165,6 @@ function Introduction({ match, onOpen }: { match: MarketIntroduction; onOpen: (m
   // saturates at 100% for almost any pair of the right area, type and size.
   const jev = match.jevFit;
   const sure = jev !== null && jev >= 0.7;
-  const jevStatus = useJevStatus().data;
   // Three different things used to read "checking" or "not checked": rated (a score), waiting its turn, and could not be read.
   const verdict = jev === null
     ? ((match.jevTried ?? 0) >= 3 ? { text: 'Jev could not read this', tone: 'bg-[var(--surface-muted)] text-muted' }
@@ -199,6 +203,7 @@ function Introduction({ match, onOpen }: { match: MarketIntroduction; onOpen: (m
             </button>
           );
         })}
+        {status === 'busy' && <span className="text-xs text-muted">Line was busy — ring again in a couple of hours.</span>}
         <span className="ml-auto flex flex-wrap gap-2">
           {ACTIONS.filter((action) => !action.keeps).map((action) => (
             <button key={action.status} type="button" className="btn-ghost text-xs text-muted" disabled={mark.isPending} onClick={() => choose(action)}>
@@ -242,7 +247,7 @@ export default function MarketIntroductions(): JSX.Element {
   const [bhk, setBhk] = useState('');
   const [purpose, setPurpose] = useState<'' | 'sale' | 'rent'>('');
   const [sort, setSort] = useState<MarketIntroductionSort>('best');
-  const [status, setStatus] = useState<'' | 'new' | 'called' | 'meeting' | 'won' | 'lost'>('');
+  const [status, setStatus] = useState<'' | 'new' | 'called' | 'busy' | 'meeting' | 'won' | 'lost'>('');
   const [day, setDay] = useState<'' | 'today' | 'yesterday'>('');
   const [sides, setSides] = useState<string[]>(['buyer', 'seller', 'tenant', 'landlord']);
   const [page, setPage] = useState(1);
@@ -294,7 +299,7 @@ export default function MarketIntroductions(): JSX.Element {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        A buyer in one group who fits a seller in another, property by property — only deals posted in the last 45 days, on both sides. Ring both, fix a meeting,
+        A buyer in one group who fits a seller in another, property by property — only deals posted in the last {MARKET_FEED_DAYS} days, on both sides. Ring both, fix a meeting,
         and mark what happened: the button takes a colour and stays until you press it again. "Not for us" and "Not a real match" put a pairing away for good, and the second one teaches the matcher.
       </p>
       <div className="card space-y-2 p-3" role="search" aria-label="Filter and sort the call sheet">
@@ -324,36 +329,26 @@ export default function MarketIntroductions(): JSX.Element {
                   {label}
                 </label>
               ))}
-              <span className="text-xs text-muted">The other side can be from any of the last 45 days.</span>
+              <span className="text-xs text-muted">The other side can be from any of the last {MARKET_FEED_DAYS} days.</span>
             </>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select className="input w-auto" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Type of property">
-            <option value="">Any type</option>
-            {TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-          </select>
+          <SearchableSelect ariaLabel="Type of property" value={category} onChange={setCategory}
+            options={[{ value: '', label: 'Any type' }, ...TYPES.map((type) => ({ value: type, label: type }))]} />
           <input className="input w-24" inputMode="numeric" placeholder="Size from" value={sizeMin} onChange={(e) => setSizeMin(e.target.value.replace(/\D/g, ''))} aria-label="Smallest size in square yards" />
           <input className="input w-24" inputMode="numeric" placeholder="Size to" value={sizeMax} onChange={(e) => setSizeMax(e.target.value.replace(/\D/g, ''))} aria-label="Largest size in square yards" />
           <span className="text-xs text-muted">sq yd</span>
           <input className="input w-44" placeholder="Area, sector or project" value={area} onChange={(e) => setArea(e.target.value)} aria-label="Area" />
-          <select className="input w-auto" value={bhk} onChange={(e) => setBhk(e.target.value)} aria-label="BHK">
-            <option value="">Any BHK</option>
-            {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n} BHK</option>)}
-          </select>
-          <select className="input w-auto" value={purpose} onChange={(e) => setPurpose(e.target.value as '' | 'sale' | 'rent')} aria-label="Sale or rent">
-            <option value="">Sale and rent</option>
-            <option value="sale">Sale</option>
-            <option value="rent">Rent</option>
-          </select>
-          <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Show pairings by status">
-            <option value="">Every status</option>
-            <option value="new">Not worked yet</option>
-            <option value="called">Called</option>
-            <option value="meeting">Meeting fixed</option>
-            <option value="won">Won</option>
-            <option value="lost">Lost</option>
-          </select>
+          <SearchableSelect ariaLabel="BHK" value={bhk} onChange={setBhk}
+            options={[{ value: '', label: 'Any BHK' }, ...[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `${n} BHK` }))]} />
+          <SearchableSelect ariaLabel="Sale or rent" value={purpose} onChange={(next) => setPurpose(next as '' | 'sale' | 'rent')}
+            options={[{ value: '', label: 'Sale and rent' }, { value: 'sale', label: 'Sale', keywords: 'buy seller' }, { value: 'rent', label: 'Rent', keywords: 'tenant landlord lease' }]} />
+          <SearchableSelect ariaLabel="Show pairings by status" value={status} onChange={(next) => setStatus(next as typeof status)}
+            options={[
+              { value: '', label: 'Every status' }, { value: 'new', label: 'Not worked yet' }, { value: 'called', label: 'Called' }, { value: 'busy', label: 'Busy', keywords: 'retry later engaged' },
+              { value: 'meeting', label: 'Meeting fixed' }, { value: 'won', label: 'Won' }, { value: 'lost', label: 'Lost' },
+            ]} />
           {narrowed && <button type="button" className="btn-secondary" onClick={clearFilters}>Clear filters</button>}
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border)] pt-2 text-sm">
@@ -385,7 +380,7 @@ export default function MarketIntroductions(): JSX.Element {
       {data && (data.matches.length === 0 ? (
         <EmptyState
           title={narrowed ? 'Nothing matches those filters' : 'Nothing to ring about yet'}
-          body={narrowed ? 'Loosen a filter, or clear them to see everything from the last 45 days.' : 'Introductions appear once groups with both buyers and sellers are added. A property needs a sector or a named area to be matched.'}
+          body={narrowed ? 'Loosen a filter, or clear them to see everything from the last ' + MARKET_FEED_DAYS + ' days.' : 'Introductions appear once groups with both buyers and sellers are added. A property needs a sector or a named area to be matched.'}
         />
       ) : (
         <>

@@ -1,6 +1,6 @@
 /**
  * 20 October 2026: 22 month-first WhatsApp exports were read day-first, which put deals in 2027
- * and 2028 and past the 45-day filter. Migration 215 turns those dates back. Only a real database
+ * and 2028 and past the feed-window filter. Migration 215 turns those dates back. Only a real database
  * can prove it, because it works on the rows' own transaction ids and on time zones.
  */
 import { readFile } from 'node:fs/promises';

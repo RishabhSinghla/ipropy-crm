@@ -88,12 +88,12 @@ describe('scoring a requirement against an offer', () => {
     expect(stale).toBeLessThan(fresh);
   });
 
-  it('marks a pair recent only when both posts are within the 45-day window', () => {
-    const withinWindow = scorePair(buyer({ postedAt: daysAgo(45) }), listing({ postedAt: daysAgo(45) }), NOW)!;
-    const outsideWindow = scorePair(buyer({ postedAt: daysAgo(46) }), listing({ postedAt: daysAgo(46) }), NOW)!;
+  it('marks a pair recent only when both posts are within the 15-day window', () => {
+    const withinWindow = scorePair(buyer({ postedAt: daysAgo(15) }), listing({ postedAt: daysAgo(15) }), NOW)!;
+    const outsideWindow = scorePair(buyer({ postedAt: daysAgo(16) }), listing({ postedAt: daysAgo(16) }), NOW)!;
 
-    expect(withinWindow.reasons).toContain('recent (within 45 days)');
-    expect(outsideWindow.reasons).not.toContain('recent (within 45 days)');
+    expect(withinWindow.reasons).toContain('recent (within 15 days)');
+    expect(outsideWindow.reasons).not.toContain('recent (within 15 days)');
   });
 });
 

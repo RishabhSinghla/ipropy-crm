@@ -78,7 +78,7 @@ describe('the column filters', () => {
     expect(ids({ category: 'plot' })).toEqual(['cheap']);
     expect(ids({ dealType: 'rent' })).toEqual(['rent']);
   });
-  it('filters by how recently it was posted', () => expect(ids({ postedWithinDays: '30' })).toEqual(['cheap', 'mid']));
+  it('filters by how recently it was posted', () => expect(ids({ postedWithinDays: '15' })).toEqual(['cheap', 'mid']));
   it('narrows when several filters are set together', () => expect(ids({ bedrooms: '3', dealType: 'sale' })).toEqual(['mid']));
 });
 

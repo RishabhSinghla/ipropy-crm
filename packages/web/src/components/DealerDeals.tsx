@@ -14,7 +14,7 @@
  */
 import { type JSX, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatIndianPrice } from '@ipropy/shared';
+import { MARKET_FEED_DAYS, formatIndianPrice } from '@ipropy/shared';
 import { ArrowUpDown, Scale, X } from 'lucide-react';
 import { api, type DealerDeal, type DealerDealPatch } from '../lib/api';
 import {
@@ -25,6 +25,7 @@ import DealMessageDialog, { type MessageToShow } from './DealMessageDialog';
 import { DealRowActions } from './DealRowActions';
 import DealCompareDialog, { COMPARE_LIMIT } from './DealCompareDialog';
 import DealDetailForm from './DealDetailForm';
+import SearchableSelect from './SearchableSelect';
 import { Badge, ConfirmDialog, EmptyState, Spinner } from './ui';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -42,6 +43,7 @@ const ACTIONS_COLUMN = 56;
 // The tick box and the buttons stay in view while the columns between them scroll. A pinned cell needs a background of its own, or the cells sliding under it show through.
 const PIN_LEFT = 'sticky left-0 z-10 bg-white dark:bg-slate-900';
 const PIN_RIGHT = 'sticky right-0 z-10 bg-white dark:bg-slate-900';
+const FILTER_SELECT = 'h-7 min-h-0 px-1.5 py-0 text-[11px]';
 const FILTER_BOX = 'h-7 w-full min-w-0 rounded border border-[var(--border)] bg-white px-1.5 text-[11px] outline-none focus:border-brand-500 dark:bg-slate-900';
 
 const widthOf = (key: DealColumn): number => DEAL_COLUMNS.find((column) => column.key === key)!.width;
@@ -95,16 +97,14 @@ function FilterCell({ column, filters, set, rows }: { column: DealColumn; filter
     </div>
   );
   const pick = (key: 'bedrooms' | 'category' | 'facing', label: string, options: string[]): JSX.Element => (
-    <select aria-label={`Filter by ${label}`} className={FILTER_BOX} value={filters[key]} onChange={(event) => set({ [key]: event.target.value })}>
-      <option value="">All</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}
-    </select>
+    <SearchableSelect ariaLabel={`Filter by ${label}`} className={FILTER_SELECT} fullWidth value={filters[key]} onChange={(next) => set({ [key]: next })}
+      options={[{ value: '', label: 'All' }, ...options.map((option) => ({ value: option, label: option }))]} />
   );
   switch (column) {
     case 'property': return text('property', 'property');
     case 'deal_type': return (
-      <select aria-label="Filter by For Sale or For Rent" className={FILTER_BOX} value={filters.dealType} onChange={(event) => set({ dealType: event.target.value as DealFilters['dealType'] })}>
-        <option value="">All</option><option value="sale">For Sale</option><option value="rent">For Rent</option>
-      </select>
+      <SearchableSelect ariaLabel="Filter by For Sale or For Rent" className={FILTER_SELECT} fullWidth value={filters.dealType} onChange={(next) => set({ dealType: next as DealFilters['dealType'] })}
+        options={[{ value: '', label: 'All' }, { value: 'sale', label: 'For Sale' }, { value: 'rent', label: 'For Rent' }]} />
     );
     case 'house_no': return text('houseNo', 'house number');
     case 'location': return text('location', 'locality');
@@ -115,9 +115,8 @@ function FilterCell({ column, filters, set, rows }: { column: DealColumn; filter
     case 'facing': return pick('facing', 'facing', distinct(rows.map((row) => row.facing)));
     case 'floor': return text('floor', 'floor or portion');
     case 'posted': return (
-      <select aria-label="Filter by posted date" className={FILTER_BOX} value={filters.postedWithinDays} onChange={(event) => set({ postedWithinDays: event.target.value })}>
-        <option value="">Any time</option><option value="1">Today</option><option value="7">7 days</option><option value="30">30 days</option>
-      </select>
+      <SearchableSelect ariaLabel="Filter by posted date" className={FILTER_SELECT} fullWidth value={filters.postedWithinDays} onChange={(next) => set({ postedWithinDays: next })}
+        options={[{ value: '', label: 'Any time' }, { value: '1', label: 'Today' }, { value: '7', label: '7 days' }, { value: String(MARKET_FEED_DAYS), label: `${MARKET_FEED_DAYS} days` }]} />
     );
   }
 }

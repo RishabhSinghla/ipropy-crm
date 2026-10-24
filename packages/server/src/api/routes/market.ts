@@ -129,7 +129,7 @@ marketRouter.get('/matches', asyncHandler(async (req, res) => {
     bhk: z.coerce.number().int().min(1).max(14).optional(),
     purpose: z.enum(['sale', 'rent']).optional(),
     sort: z.enum(MATCH_SORTS).optional(),
-    status: z.enum(['new', 'called', 'meeting', 'won', 'lost']).optional(),
+    status: z.enum(['new', 'called', 'busy', 'meeting', 'won', 'lost']).optional(),
     day: z.enum(['today', 'yesterday']).optional(),
     sides: z.string().max(60).optional(),
   }).parse(req.query);
@@ -161,7 +161,7 @@ marketRouter.post('/refresh', blockApiKey, asyncHandler(async (_req, res) => {
   res.json({ started: true });
 }));
 
-/** What happened when somebody acted on a pairing: called, meeting, won, lost, not for us. */
+/** What happened when somebody acted on a pairing: called, busy, meeting, won, lost, not for us. */
 marketRouter.put('/matches/:wantId/:haveId', blockApiKey, asyncHandler(async (req, res) => {
   const wantId = z.string().uuid().parse(req.params.wantId);
   const haveId = z.string().uuid().parse(req.params.haveId);

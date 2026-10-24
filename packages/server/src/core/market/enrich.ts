@@ -343,7 +343,7 @@ export async function sendCallSheet(now = new Date()): Promise<boolean> {
   if (today.hour < SHEET_HOUR_IST) return false;
   const last = await db.queryOne<{ value: { date?: string } }>(`SELECT value FROM ipy_setting WHERE key = $1`, [SHEET_MARKER]);
   if (last?.value?.date === today.date) return false;
-  const matches = (await findCrossMatches({ limit: SHEET_SIZE })).filter((m) => m.status === 'new' || m.status === 'called');
+  const matches = (await findCrossMatches({ limit: SHEET_SIZE })).filter((m) => m.status === 'new' || m.status === 'called' || m.status === 'busy');
   if (!matches.length) return false;
   // Claim the day first, so two containers waking together cannot both send it.
   const claimed = await db.queryOne<{ key: string }>(
