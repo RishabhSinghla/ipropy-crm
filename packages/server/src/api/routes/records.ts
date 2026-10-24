@@ -537,7 +537,7 @@ recordsRouter.post('/:module/transfer-all', asyncHandler(async (req, res) => {
 // creates the destination record and only then removes the source record, all
 // in one transaction, so a failed move never makes a row disappear.
 recordsRouter.post('/:module/:id/move', asyncHandler(async (req, res) => {
-  const { targetModule } = z.object({ targetModule: z.enum(['leads', 'properties']) }).parse(req.body ?? {});
+  const { targetModule } = z.object({ targetModule: z.enum(['leads', 'properties', 'associates']) }).parse(req.body ?? {});
   res.status(201).json(await recordService.moveRecord(getScope(req), req.params.module, req.params.id, targetModule));
 }));
 

@@ -91,7 +91,9 @@ export default function Layout(): JSX.Element {
   }, [brand?.primaryColor]);
 
   const menuModules = useMemo(
-    () => modules.filter((m) => m.showInMenu && m.isEntity && m.permissions.view),
+    () => modules
+      .filter((m) => m.showInMenu && m.isEntity && m.permissions.view)
+      .sort((a, b) => a.sequence - b.sequence || a.label.localeCompare(b.label)),
     [modules],
   );
 

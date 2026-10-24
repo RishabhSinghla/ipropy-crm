@@ -75,7 +75,9 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
   const here = useLocation().pathname.split('/')[1];
   const favouriteModule = modules.find((module) => module.isEntity && module.name === here)?.name
     ?? modules.find((module) => module.isEntity)?.name ?? 'leads';
-  const entityModules = modules.filter((module) => module.isEntity);
+  const entityModules = modules
+    .filter((module) => module.isEntity && module.showInMenu && module.permissions.view)
+    .sort((a, b) => a.sequence - b.sequence || a.label.localeCompare(b.label));
   /*
     The same destinations either way, so folding changes how a row is *drawn*
     and never which rows exist. Two lists would be two things to keep in step,

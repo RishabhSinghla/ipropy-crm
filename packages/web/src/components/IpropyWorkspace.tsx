@@ -13,9 +13,6 @@ import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { BuilderFloorTable, localityFilter, matchesForContact, unitsOfProject } from './BuilderFloorTable';
 import { MatchingTab } from './MatchingTab';
-import { DealerDealsTab, dealsQueryKey } from './DealerDeals';
-import { DEAL_TAB_OF, tabCountLabel, type CustomDealField } from '../lib/dealGrid';
-import type { DealTabKey } from '../lib/splitViewLayout';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
@@ -508,8 +505,8 @@ export function IpropyWorkspace({
   const [savedMenu, setSavedMenu] = useState<MenuKey[] | null>(() => loadRecordMenu(module.name));
   useEffect(() => { setSavedMenu(loadRecordMenu(module.name)); }, [module.name]);
   const availableMenu = useMemo<MenuKey[]>(
-    () => [...tabs.filter((item) => item.key !== 'timeline').map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
-    [tabs],
+    () => [...tabs.filter((item) => item.key !== 'timeline' && !(module.name === 'associates' && item.key.startsWith('deals_'))).map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
+    [tabs, module.name],
   );
   const menuOrder = useMemo(() => arrangeRecordMenu(availableMenu, savedMenu), [availableMenu, savedMenu]);
   const reorderMenu = useCallback((from: number, to: number) => {
@@ -613,17 +610,6 @@ export function IpropyWorkspace({
     enabled: Boolean(active?.id),
     staleTime: 60_000,
   });
-  // An Associate's four deal lists. One answer feeds the numbers on the tabs and the rows under them.
-  const { data: dealerDeals } = useQuery({
-    queryKey: dealsQueryKey(active?.id ?? ''),
-    queryFn: () => api.dealerDeals(module.name, active!.id),
-    enabled: Boolean(active?.id) && module.name === 'associates',
-    staleTime: 60_000,
-  });
-  // What Admin -> Layouts chose for the Associates deal table and its form.
-  const associateDealSettings = (module.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config ?? {}) as {
-    associateDealColumns?: string[]; associateDealFormFields?: string[]; associateDealCustomFields?: CustomDealField[];
-  };
   const menuCount = (key: MenuKey): string | null => {
     const shown = (count: number | undefined, cap: number): string | null => {
       if (!count) return null;
@@ -633,7 +619,6 @@ export function IpropyWorkspace({
     if (key === 'matching') return shown(matchingCount, 50);
     if (key === 'files') return shown(fileRows?.length, 1000);
     if (key === 'calls') return shown(callRows?.length, 50);
-    if (key in DEAL_TAB_OF) return tabCountLabel(dealerDeals, DEAL_TAB_OF[key]);
     // The three stream entries count out of the same answer the tabs do, so a
     // badge and the list it labels cannot disagree and nothing is asked twice.
     const kind = activityKindOf(key);
@@ -667,12 +652,13 @@ export function IpropyWorkspace({
   */
   const [summarising, setSummarising] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
-  const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
+  const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | 'associates' | null>(null);
 
   const move = useMutation({
-    mutationFn: (target: 'leads' | 'properties') => api.move(module.name, active!.id, target),
+    mutationFn: (target: 'leads' | 'properties' | 'associates') => api.move(module.name, active!.id, target),
     onSuccess: (moved, target) => {
-      toast.success(`Moved to ${target === 'properties' ? 'Inventories' : 'Leads'}`, moved.label);
+      const targetLabel = target === 'properties' ? 'Inventories' : target === 'associates' ? 'Associates' : 'Leads';
+      toast.success(`Moved to ${targetLabel}`, moved.label);
       invalidateRecordQueries(queryClient, module.name, active?.id);
       void queryClient.invalidateQueries({ queryKey: ['records', target] });
       // The record has left this module, so the queue must forget it rather
@@ -1202,13 +1188,12 @@ export function IpropyWorkspace({
                   Send to a buyer
                 </DropdownItem>
               )}
-              {canEdit && onDelete && (module.name === 'leads' || module.name === 'properties') && (
-                <DropdownItem
-                  icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
-                  onClick={() => { close(); setMoveTarget(module.name === 'leads' ? 'properties' : 'leads'); }}
-                >
-                  Move to {module.name === 'leads' ? 'Inventories' : 'Leads'}
-                </DropdownItem>
+              {canEdit && onDelete && ['leads', 'properties', 'associates'].includes(module.name) && (
+                <>
+                  {module.name !== 'leads' && <DropdownItem icon={<ArrowRightLeft className="h-3.5 w-3.5" />} onClick={() => { close(); setMoveTarget('leads'); }}>Move to Leads</DropdownItem>}
+                  {module.name !== 'properties' && <DropdownItem icon={<ArrowRightLeft className="h-3.5 w-3.5" />} onClick={() => { close(); setMoveTarget('properties'); }}>Move to Inventories</DropdownItem>}
+                  {module.name !== 'associates' && <DropdownItem icon={<ArrowRightLeft className="h-3.5 w-3.5" />} onClick={() => { close(); setMoveTarget('associates'); }}>Move to Associates</DropdownItem>}
+                </>
               )}
               <ShowOnWebsiteItem module={module} record={active} close={close} />
               {onDelete && (
@@ -1303,14 +1288,6 @@ export function IpropyWorkspace({
               emptyLine="No inventory carries this project's name yet. Set Project on a unit in Inventories and it appears here."
             />
           )}
-          {module.name === 'associates' && shownKey in DEAL_TAB_OF && <DealerDealsTab
-            module={module.name}
-            recordId={active.id}
-            tab={shownKey as DealTabKey}
-            columns={associateDealSettings.associateDealColumns}
-            formFields={associateDealSettings.associateDealFormFields}
-            customFields={associateDealSettings.associateDealCustomFields}
-          />}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownKey === 'calls' && <CallsTab recordId={active.id} />}
           {shownKey === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
@@ -1426,7 +1403,7 @@ export function IpropyWorkspace({
         if (moveTarget) await move.mutateAsync(moveTarget);
         setMoveTarget(null);
       }}
-      title={`Move to ${moveTarget === 'properties' ? 'Inventories' : 'Leads'}?`}
+      title={`Move to ${moveTarget === 'properties' ? 'Inventories' : moveTarget === 'associates' ? 'Associates' : 'Leads'}?`}
       body="Matching values, files, and call history move to the new record. The original record is removed from its current module."
       confirmLabel={move.isPending ? 'Moving…' : 'Move record'}
     />
@@ -1543,9 +1520,10 @@ function QueueCard({
     filter is the fix — and it keeps working when an admin flags or unflags a
     field, which naming the house-number field here would not.
   */
-  const unit = card.unit ? read(card.unit) : '';
   const facts = queueFields ? queueFields.map((field) => read(field)) : [unitDescription(card, read)];
-  const description = oneOfEach([unit, ...facts]);
+  // The admin's queue/layout fields own the middle row. Do not inject the
+  // legacy unit-number shortcut as a second, competing source of house number.
+  const description = oneOfEach(facts);
   const agentName = card.agent ? read(card.agent) : '';
   const statusValue = statusField ? row.values[statusField.name] : undefined;
   const status = statusField && statusValue != null && statusValue !== ''
@@ -1620,7 +1598,7 @@ function QueueCard({
              the height of Left pane record Height from Auto adjust, even the
              Middle row blank or not."* So the rows are always drawn, an empty
              one as a blank line, and the card never grows or shrinks. */
-          'relative block h-[92px] w-full cursor-pointer overflow-hidden py-4 pl-[3.75rem] pr-3 text-left transition-colors',
+          'relative block min-h-[92px] w-full cursor-pointer py-4 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1677,7 +1655,6 @@ function QueueCard({
           reach the inner one, which is the same reason the tick box and the
           inline name editor sit out here too.
         */}
-        <span className="pointer-events-none absolute left-3 top-1/2 z-[2] -translate-y-1/2" />
         {/*
           1. Who, and what kind of contact — the line a rep scans, so it is the
           heaviest thing on the card.
@@ -1693,18 +1670,6 @@ function QueueCard({
           >
             {row.label}
           </span>
-          {moduleName === 'associates' && phoneField && read(phoneField) && (
-            <>
-              <span aria-hidden="true" className="shrink-0 text-muted">|</span>
-              <span className="min-w-0 truncate text-[11px] font-medium text-muted">{read(phoneField)}</span>
-            </>
-          )}
-          {moduleName === 'associates' && row.updatedAt && (
-            <>
-              <span aria-hidden="true" className="shrink-0 text-muted">|</span>
-              <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] font-normal text-[#6e7685] dark:text-slate-400">{queueAge(row.updatedAt)}</span>
-            </>
-          )}
           {/* No contact-type chip beside the name since 2 October 2026 —
               *"I don't need to see it there"*. It is in the fields pane. */}
           {/* How stale it is, top right — "13h ago". The palest grey that still
@@ -1731,9 +1696,7 @@ function QueueCard({
           // `lib/color.ts` exists.
           active ? 'font-semibold text-brand-700 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400',
         )}>
-          {moduleName === 'associates'
-            ? oneOfEach([companyField ? read(companyField) : '', localityField ? read(localityField) : '']) || '\u00a0'
-            : oneOfEach([description, area]) || '\u00a0'}
+          {oneOfEach([description, area]) || '\u00a0'}
         </span>
 
         {/*
@@ -1742,8 +1705,7 @@ function QueueCard({
           record and the next is the only one this queue needs.
         */}
         <span className="mt-1 flex min-h-[22px] items-center gap-2 text-xs">
-          {moduleName === 'associates' && <span className="min-w-0 truncate font-medium text-muted">{agentName || 'Unassigned'} <span aria-hidden="true">·</span> Associates</span>}
-          {moduleName !== 'associates' && price && (
+          {price && (
             <span className={cn(
               // The prototype's money green, a step dark enough for AA on both fills.
               'shrink-0 whitespace-nowrap text-[15px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300',
@@ -1753,7 +1715,7 @@ function QueueCard({
           )}
           {/* `text-muted` and not a slate step: the token is the one that
               carries a contrast guarantee in both themes. */}
-          {moduleName !== 'associates' && agentName && <span title={agentName} className="min-w-0 truncate rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">{agentName}</span>}
+          {agentName && <span title={agentName} className="min-w-0 truncate rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">{agentName}</span>}
           {/*
             The record's status, hard against the right edge, in the colour the
             admin picked for it in the dropdown master — the owner, 10 October
@@ -1764,7 +1726,7 @@ function QueueCard({
 
             `truncate` on the chip makes it give way before the price does.
           */}
-          {moduleName !== 'associates' && statusLabel && (
+          {statusLabel && (
             <Badge
               color={status?.color}
               /* The tick box appears over this corner on hover; the chip moves
@@ -1789,20 +1751,20 @@ function QueueCard({
         The box only shows on hover or once ticked, so the row reads as a name
         and a price until somebody reaches for a bulk action.
       */}
-      <span className="absolute left-3 top-3 z-[2]">
-        <RecordAvatar module={moduleName} recordId={row.id} name={row.label} canEdit={canEdit} size={40} />
-      </span>
-
-      <span className="absolute bottom-2.5 left-6 flex items-center gap-1">
-        <input
-          aria-label={`Select ${row.label}`}
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onToggle(event.target.checked)}
-          className={cn(
-            'h-3 w-3 cursor-pointer rounded border-slate-300',
-          )}
-        />
+      <span className="absolute left-3 top-1/2 z-[2] -translate-y-1/2">
+        <span data-testid="queue-record-avatar" className={cn('pointer-events-none block rounded-full', checked && 'ring-2 ring-brand-500 ring-offset-2')}>
+          <RecordAvatar module={moduleName} recordId={row.id} name={row.label} canEdit={false} size={40} />
+        </span>
+        <button
+          type="button"
+          aria-label={`${checked ? 'Unselect' : 'Select'} ${row.label}`}
+          aria-pressed={checked}
+          title={`${checked ? 'Unselect' : 'Select'} ${row.label}`}
+          onClick={() => onToggle(!checked)}
+          className="absolute inset-0 rounded-full hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        >
+          {checked && <span className="absolute inset-0 flex items-center justify-center rounded-full bg-brand-600/80 text-white"><Check className="h-5 w-5" /></span>}
+        </button>
       </span>
     </div>
   );

@@ -110,7 +110,7 @@ function FullRecordPage(): JSX.Element {
 
   const [tab, setTab] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
+  const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | 'associates' | null>(null);
   const [sharing, setSharing] = useState(false);
   const [compose, setCompose] = useState<'email' | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
@@ -247,9 +247,9 @@ function FullRecordPage(): JSX.Element {
   });
 
   const moveMutation = useMutation({
-    mutationFn: (targetModule: 'leads' | 'properties') => api.move(moduleName!, id!, targetModule),
+    mutationFn: (targetModule: 'leads' | 'properties' | 'associates') => api.move(moduleName!, id!, targetModule),
     onSuccess: (moved, targetModule) => {
-      toast.success(`Moved to ${targetModule === 'properties' ? 'Inventories' : 'Leads'}`, moved.label);
+      toast.success(`Moved to ${targetModule === 'properties' ? 'Inventories' : targetModule === 'associates' ? 'Associates' : 'Leads'}`, moved.label);
       invalidateRecordQueries(queryClient, moduleName, id);
       void queryClient.invalidateQueries({ queryKey: ['records', targetModule] });
       navigate(`/${targetModule}/${moved.id}`);
@@ -512,17 +512,11 @@ function FullRecordPage(): JSX.Element {
                       keep working, and they are still listed and revocable on
                       the record.
                     */}
-                    {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && record.can?.delete && (
-                      <DropdownItem
-                        icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
-                        onClick={() => {
-                          close();
-                          setMoveTarget(moduleName === 'leads' ? 'properties' : 'leads');
-                        }}
-                      >
-                        Move to {moduleName === 'leads' ? 'Inventories' : 'Leads'}
-                      </DropdownItem>
-                    )}
+                    {['leads', 'properties', 'associates'].includes(moduleName ?? '') && record.can?.edit && record.can?.delete && <>
+                      {moduleName !== 'leads' && <DropdownItem icon={<ArrowRightLeft className="h-3.5 w-3.5" />} onClick={() => { close(); setMoveTarget('leads'); }}>Move to Leads</DropdownItem>}
+                      {moduleName !== 'properties' && <DropdownItem icon={<ArrowRightLeft className="h-3.5 w-3.5" />} onClick={() => { close(); setMoveTarget('properties'); }}>Move to Inventories</DropdownItem>}
+                      {moduleName !== 'associates' && <DropdownItem icon={<ArrowRightLeft className="h-3.5 w-3.5" />} onClick={() => { close(); setMoveTarget('associates'); }}>Move to Associates</DropdownItem>}
+                    </>}
                     {meta && <ShowOnWebsiteItem module={meta} record={record} close={close} />}
                     {record.can?.delete && (
                       <DropdownItem
@@ -768,7 +762,7 @@ function FullRecordPage(): JSX.Element {
           if (moveTarget) await moveMutation.mutateAsync(moveTarget);
           setMoveTarget(null);
         }}
-        title={`Move to ${moveTarget === 'properties' ? 'Inventories' : 'Leads'}?`}
+        title={`Move to ${moveTarget === 'properties' ? 'Inventories' : moveTarget === 'associates' ? 'Associates' : 'Leads'}?`}
         body="Matching values, files, and call history move to the new record. The original record is removed from its current module."
         confirmLabel={moveMutation.isPending ? 'Moving…' : 'Move record'}
       />

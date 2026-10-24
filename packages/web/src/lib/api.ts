@@ -934,7 +934,7 @@ export const api = {
   uitypes: () => get<{ uitypes: Record<string, unknown>[]; formulaFunctions: string[] }>('/api/meta/uitypes'),
   allModules: () => get<{
     id: string; name: string; label: string; singularLabel: string;
-    icon: string; color: string; isActive: boolean; isCustom: boolean; isCore: boolean;
+    icon: string; color: string; sequence: number; isActive: boolean; isCustom: boolean; isCore: boolean;
     disabledReason: string | null; menuGroup: string;
     fieldCount: number; recordCount: number; dependents: string[];
   }[]>('/api/meta/modules/all'),
@@ -1040,7 +1040,7 @@ export const api = {
   update: (module: string, id: string, values: Record<string, unknown>) =>
     patch<RecordEnvelope>(`/api/records/${module}/${id}`, values),
   remove: (module: string, id: string) => del(`/api/records/${module}/${id}`),
-  move: (module: string, id: string, targetModule: 'leads' | 'properties') =>
+  move: (module: string, id: string, targetModule: 'leads' | 'properties' | 'associates') =>
     post<RecordEnvelope>(`/api/records/${module}/${id}/move`, { targetModule }),
   lookup: (module: string, q: string, filter?: unknown) =>
     get<{ id: string; label: string; recordNumber: string | null }[]>(`/api/records/${module}/lookup${qs({ q, filter })}`),

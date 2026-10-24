@@ -63,7 +63,7 @@ async function splitView(page: import('@playwright/test').Page): Promise<void> {
 /** Both places use the same compact avatar size in the current split view. */
 test('the record avatar is the same size in the queue and middle header', async ({ page }) => {
   await splitView(page);
-  const queueAvatar = page.getByRole('button', { name: /^Photo of / }).first();
+  const queueAvatar = page.getByTestId('queue-record-avatar').first();
   const headerAvatar = recordPane(page).getByTestId('split-hero-avatar').getByRole('button', { name: /^Photo of / });
   await expect(queueAvatar).toBeVisible();
   await expect(headerAvatar).toBeVisible();
@@ -72,4 +72,14 @@ test('the record avatar is the same size in the queue and middle header', async 
   expect(headerBox).not.toBeNull();
   expect(Math.abs(queueBox!.width - headerBox!.width)).toBeLessThanOrEqual(1);
   expect(Math.abs(queueBox!.height - headerBox!.height)).toBeLessThanOrEqual(1);
+});
+
+test('selecting a queue record uses its avatar and does not open photo actions', async ({ page }) => {
+  await splitView(page);
+  const card = page.getByTestId('queue-card').first();
+  const select = card.getByRole('button', { name: /^Select / });
+  await expect(card.getByTestId('queue-record-avatar')).toBeVisible();
+  await select.click();
+  await expect(card.getByRole('button', { name: /^Unselect / })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /Upload photo|Replace photo/ })).toHaveCount(0);
 });
