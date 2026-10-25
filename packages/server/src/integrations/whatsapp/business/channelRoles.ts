@@ -96,3 +96,8 @@ export function redactAutomated<T extends Record<string, unknown>>(rows: T[], is
     };
   });
 }
+
+/** The route whose outgoing messages stay private to admins, or null when there is none. */
+export function automationOnlyRoute(): string | null {
+  return roles.automation && roles.automation !== roles.chat ? roles.automation : null;
+}

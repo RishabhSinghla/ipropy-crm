@@ -522,7 +522,7 @@ whatsappBusinessRouter.get('/threads/by-number', asyncHandler(async (req, res) =
   const readable = Boolean(query.module && query.recordId);
   if (readable) await recordService.getRecord(scope, query.module!, query.recordId!);
 
-  res.json(await threadForNumber(query.to, readable));
+  res.json(await threadForNumber(query.to, readable, getUser(req).isAdmin));
 }));
 
 // ---------------------------------------------------------------------------
