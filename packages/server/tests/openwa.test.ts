@@ -164,6 +164,12 @@ describe('plain-language refusals', () => {
     expect(text).toMatch(/42 seconds/);
     expect(text).not.toMatch(/SEND_PACING/);
   });
+  it('says when sending comes back after a long daily-allowance pause, not a count of seconds', () => {
+    const text = explainOpenWaRefusal(429, { code: 'SEND_PACING_LIMITED', retryAfterSeconds: 49_728 });
+    expect(text).toMatch(/allowance/);
+    expect(text).toMatch(/India time/);
+    expect(text).not.toMatch(/49[, ]?728|seconds/);
+  });
   it('explains a bad key, a missing session and a disconnected phone', () => {
     expect(explainOpenWaRefusal(401, {})).toMatch(/API key/);
     expect(explainOpenWaRefusal(404, { message: "Session 'x' not found" })).toMatch(/does not know that session/);

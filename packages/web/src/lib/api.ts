@@ -1600,7 +1600,7 @@ export const api = {
     /** Two WhatsApp routes with separate jobs are set up (admins then see two screens). */
     split?: boolean;
     /** Present only for a linked device (OpenWA): is the phone linked and reachable? */
-    link?: { state: 'ready' | 'needs-link' | 'unreachable' | 'unknown'; message: string; checkedAt: string | null } | null;
+    link?: { state: 'ready' | 'needs-link' | 'unreachable' | 'unknown'; message: string; checkedAt: string | null; pausedUntil?: string | null } | null;
   }>('/api/whatsapp-business/status'),
   waBizCreateLead: (conversationId: string) => post<{ recordId: string; linkedExisting: boolean }>(
     `/api/whatsapp-business/conversations/${conversationId}/create-lead`, {},

@@ -82,7 +82,13 @@ export function ticks(status: string): { marks: string; read: boolean } {
 }
 
 /** Plain words for the banner above the chat when the OpenWA link is not healthy. */
-export function linkBanner(link: { state: string; message: string } | null | undefined): string | null {
+export function linkBanner(link: { state: string; message: string; pausedUntil?: string | null } | null | undefined): string | null {
+  // Linked and well, but OpenWA's daily allowance for a new number is used up: say
+  // when it comes back rather than let people press Send and meet a refusal.
+  if (link?.pausedUntil && Date.parse(link.pausedUntil) > Date.now()) {
+    const back = new Date(link.pausedUntil).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true, weekday: 'short' });
+    return `Chat sending is paused until about ${back}: this newly linked number has reached today's allowance, a protection that grows every day. Customer messages still arrive.`;
+  }
   if (!link || link.state === 'ready' || link.state === 'unknown') return null;
   return link.state === 'unreachable'
     ? `The CRM cannot reach OpenWA, so messages can't be sent or received right now. ${link.message}`

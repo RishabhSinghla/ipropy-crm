@@ -27,11 +27,16 @@ export interface LinkHealth {
   checkedAt: string | null;
   status: string | null;
   phoneMasked: string | null;
+  /** Set while OpenWA's own daily allowance has paused sending, until it comes back. */
+  pausedUntil?: string | null;
 }
 
 let current: LinkHealth = { state: 'unknown', message: 'OpenWA has not been checked yet.', checkedAt: null, status: null, phoneMasked: null };
 
-export function currentLinkHealth(): LinkHealth { return current; }
+export function currentLinkHealth(): LinkHealth {
+  const until = openWaStats.pausedUntil;
+  return until && Date.parse(until) > Date.now() ? { ...current, pausedUntil: until } : current;
+}
 
 /** A `session.status` webhook is fresher than the minute timer, so it updates the banner at once. */
 export function rememberSessionStatus(status: string): void {

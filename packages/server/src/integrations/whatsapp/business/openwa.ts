@@ -302,10 +302,13 @@ export const openWaStats = {
   unresolvedSenders: 0,
   sendsOk: 0,
   sendsFailed: 0,
+  /** When OpenWA's own daily allowance says sending comes back, while it is paused for a long time. */
+  pausedUntil: null as string | null,
 };
 
 function reached(): void {
   openWaStats.lastReachedAt = new Date().toISOString();
+  if (openWaStats.pausedUntil && Date.parse(openWaStats.pausedUntil) <= Date.now()) openWaStats.pausedUntil = null;
 }
 function failed(message: string): void {
   openWaStats.lastErrorAt = new Date().toISOString();
@@ -330,6 +333,16 @@ export function explainOpenWaRefusal(status: number, body: Record<string, unknow
   const detail = typeof body.message === 'string' ? body.message : Array.isArray(body.message) ? body.message.join('; ') : '';
   if (status === 429 || code === 'SEND_PACING_LIMITED') {
     const wait = Number(body.retryAfterSeconds);
+    if (Number.isFinite(wait) && wait > 600) {
+      /*
+        A long wait is the new-number daily allowance, not a hiccup. A count of
+        seconds ("49,728") tells nobody anything; the time sending comes back does.
+      */
+      const back = new Date(Date.now() + wait * 1000).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true, weekday: 'short',
+      });
+      return `This WhatsApp number has reached today's sending allowance — a protection for newly linked numbers that grows every day. Chat sending resumes around ${back} (India time). Customers' messages still arrive.`;
+    }
     return 'WhatsApp is being protected from sending too fast, so OpenWA paused this message'
       + (Number.isFinite(wait) && wait > 0 ? ` — try again in about ${Math.ceil(wait)} seconds.` : ' — try again shortly.');
   }
@@ -369,6 +382,10 @@ async function api<T>(
   try { parsed = text ? JSON.parse(text) as Record<string, unknown> : {}; } catch { /* non-JSON error page */ }
   if (!res.ok) {
     const message = explainOpenWaRefusal(res.status, parsed);
+    const longWait = Number(parsed.retryAfterSeconds);
+    if (parsed.code === 'SEND_PACING_LIMITED' && Number.isFinite(longWait) && longWait > 600) {
+      openWaStats.pausedUntil = new Date(Date.now() + longWait * 1000).toISOString();
+    }
     // A rate limit is OpenWA doing its job, not the connection being unwell.
     if (res.status !== 429) failed(message);
     throw new OpenWaError(message, res.status, typeof parsed.code === 'string' ? parsed.code : null);
