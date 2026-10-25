@@ -280,7 +280,9 @@ test('the queue can be ticked in bulk and sorted from its own header', async ({ 
   // what the bulk-edit bar needs to appear.
   const all = queue.getByRole('checkbox', { name: /^Select all/ });
   await all.check();
-  await expect(queue.getByRole('checkbox').nth(1)).toBeChecked();
+  // Rows carry no box of their own now; the one beside the name is the tick, and
+  // the bar above says how many it caught.
+  await expect(all).toBeChecked();
   await expect(page.getByText(/selected/i).first()).toBeVisible();
   await all.uncheck();
 
