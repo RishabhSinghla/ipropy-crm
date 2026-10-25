@@ -126,7 +126,9 @@ whatsappBusinessRouter.use(
     if (rolesInUse() && !getUser(req).isAdmin) {
       // The composer asks for the template list on every open; an empty list is
       // the honest answer for somebody who may not use templates, not an error.
-      if (req.method === 'GET' && (req.path === '/templates' || req.path === '/templates/saved')) {
+      // `req.path` is relative to the mount point here, so rebuild the whole address.
+      const address = `${req.baseUrl}${req.path}`.replace(/^.*\/whatsapp-business/, '').replace(/\/$/, '');
+      if (req.method === 'GET' && (address === '/templates' || address === '/templates/saved')) {
         _res.json([]);
         return;
       }
