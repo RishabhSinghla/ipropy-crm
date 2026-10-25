@@ -475,7 +475,7 @@ async function keepSentElsewhere(row: Record<string, unknown>, handle: string, f
 }
 
 export async function pollWhatsMarketingInbound(): Promise<{ checked: number; stored: number }> {
-  const provider = activeBusinessProvider();
+  const provider = activeBusinessProvider('automation');
   // Only when WhatsMarketing is the live provider. Another BSP's webhook works
   // properly and polling it as well would be two doors for no reason.
   if (provider?.name !== WHATSMARKETING_PROVIDER) return { checked: 0, stored: 0 };

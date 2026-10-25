@@ -50,7 +50,7 @@ const STILL_THEIRS = [
 ];
 
 export async function whatsAppOverview(): Promise<WhatsAppOverview> {
-  const provider = activeBusinessProvider();
+  const provider = activeBusinessProvider('automation');
 
   /*
     One query per question rather than one clever one. These are read by a

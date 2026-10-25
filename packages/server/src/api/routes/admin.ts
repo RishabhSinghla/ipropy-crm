@@ -1105,10 +1105,54 @@ async function keepOneWhatsAppProviderOn(provider: string): Promise<void> {
   if (!ids.includes(provider)) return;
   const summary = await getIntegrationSummary(provider);
   if (!summary?.isActive) return;
+  /*
+    Once an admin has given the cards their two jobs (automation and chat),
+    those two may be live together; they are never on the same conversation
+    because each message goes out by its job. Any third card is still turned off.
+  */
+  const { channelRoles, rolesInUse } = await import('../../integrations/whatsapp/business/channelRoles.js');
+  const kept = rolesInUse()
+    ? [channelRoles().automation, channelRoles().chat].filter((id): id is string => Boolean(id))
+    : [];
+  if (kept.includes(provider)) return;
   for (const other of ids) {
+    if (kept.includes(other)) continue;
     if (other !== provider) await setIntegrationActive(other, false);
   }
 }
+
+const rolesSchema = z.object({
+  automation: z.string().nullable(),
+  chat: z.string().nullable(),
+});
+
+/** Which WhatsApp route sends automatic messages, and which one handles chat. */
+adminRouter.get('/whatsapp/roles', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const { channelRoles } = await import('../../integrations/whatsapp/business/channelRoles.js');
+  const { BUSINESS_PROVIDERS } = await import('../../integrations/whatsapp/business/registry.js');
+  const live = new Set((await listIntegrations()).filter((row) => row.isActive).map((row) => row.provider));
+  res.json({
+    roles: channelRoles(),
+    options: BUSINESS_PROVIDERS.map((entry) => ({ id: entry.id, label: entry.label, active: live.has(entry.id) })),
+  });
+}));
+
+adminRouter.put('/whatsapp/roles', asyncHandler(async (req, res) => {
+  const actor = getUser(req);
+  await assertCapability(actor, 'admin.integrations');
+  const input = rolesSchema.parse(req.body ?? {});
+  const { BUSINESS_PROVIDERS } = await import('../../integrations/whatsapp/business/registry.js');
+  const known = new Set(BUSINESS_PROVIDERS.map((entry) => entry.id));
+  for (const id of [input.automation, input.chat]) {
+    if (id && !known.has(id)) throw new BadRequestError(`'${id}' is not a WhatsApp route.`);
+  }
+  if (input.automation && input.automation === input.chat) {
+    throw new BadRequestError('Pick two different routes, one for automatic messages and one for chat.');
+  }
+  const { saveChannelRoles } = await import('../../integrations/whatsapp/business/channelRoles.js');
+  res.json({ roles: await saveChannelRoles(input) });
+}));
 
 adminRouter.put('/integrations/:provider', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');

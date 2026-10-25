@@ -616,7 +616,7 @@ recordsRouter.get('/:module/:id/timeline', asyncHandler(async (req, res) => {
   if (!(await canAccessRecord(scope, module, id, 'view'))) throw new ForbiddenError();
   const limit = Math.min(200, Number(req.query.limit) || 60);
   const types = typeof req.query.types === 'string' ? req.query.types.split(',') : undefined;
-  res.json(await buildTimeline(id, { limit, types }));
+  res.json(await buildTimeline(id, { limit, types, viewerIsAdmin: getUser(req).isAdmin }));
 }));
 
 recordsRouter.get('/:module/:id/comments', asyncHandler(async (req, res) => {

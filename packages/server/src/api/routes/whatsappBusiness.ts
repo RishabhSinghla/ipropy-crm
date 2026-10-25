@@ -40,6 +40,7 @@ import {
   approveCampaign, campaignRecipients, createCampaign, listCampaigns, previewCampaign,
   setCampaignStatus,
 } from '../../integrations/whatsapp/business/campaigns.js';
+import { redactAutomated, rolesInUse } from '../../integrations/whatsapp/business/channelRoles.js';
 import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.js';
 import { currentLinkHealth, checkOpenWaNow, openWaMetrics } from '../../integrations/whatsapp/business/openwaHealth.js';
 import { createLeadFromChat, loadMessageFile } from '../../integrations/whatsapp/business/openwaChats.js';
@@ -111,6 +112,30 @@ async function assertMayMessageOnLinkedDevice(
 
 export const whatsappBusinessRouter = Router();
 whatsappBusinessRouter.use(requireAuth, blockApiKey);
+
+/*
+  The official API runs in the background, for admins to watch and control.
+  Once channel roles are set, its templates, template tools and campaigns are
+  refused to everyone else here on the server, whatever the screen shows.
+  Staff still see the automatic-message toast and the history line, and every
+  customer reply, none of which pass through these paths.
+*/
+whatsappBusinessRouter.use(
+  ['/templates', '/send-template', '/campaigns', '/overview', '/providers'],
+  (req, _res, next) => {
+    if (rolesInUse() && !getUser(req).isAdmin) {
+      // The composer asks for the template list on every open; an empty list is
+      // the honest answer for somebody who may not use templates, not an error.
+      if (req.method === 'GET' && (req.path === '/templates' || req.path === '/templates/saved')) {
+        _res.json([]);
+        return;
+      }
+      next(new ForbiddenError('The official WhatsApp API is managed by admins only.'));
+      return;
+    }
+    next();
+  },
+);
 
 /**
  * What the CRM can do on WhatsApp right now.
@@ -198,7 +223,7 @@ whatsappBusinessRouter.post('/providers/:id/test', asyncHandler(async (req, res)
 
 /** The approved template list, where the provider hands it back. */
 whatsappBusinessRouter.get('/templates', asyncHandler(async (_req, res) => {
-  const provider = activeBusinessProvider();
+  const provider = activeBusinessProvider('automation');
   if (!provider) { res.json([]); return; }
   if (!provider.capabilities.has('templateSync')) { res.json([]); return; }
   res.json(await provider.listTemplates());
@@ -235,7 +260,10 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
   // CRM. A new one would mean re-granting the team something they have.
   await assertCapability(user, 'whatsapp.send');
   const input = sendSchema.parse(req.body ?? {});
-  if (!activeBusinessProvider()) throw new BadRequestError('No official WhatsApp provider is switched on.');
+  if (input.template && rolesInUse() && !user.isAdmin) {
+    throw new ForbiddenError('Templates are sent automatically by the workflow; only admins can send one by hand.');
+  }
+  if (!activeBusinessProvider(input.template ? 'automation' : 'chat')) throw new BadRequestError('No official WhatsApp provider is switched on.');
   if (input.attachmentId) await assertMaySendFile(req, input.attachmentId);
   await assertMayMessageOnLinkedDevice(req, input);
 
@@ -387,7 +415,7 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
 
   const { rows } = await db.query(
     `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.template_name,
-            m.created_at, m.route,
+            m.created_at, m.route, m.provider,
             -- Why a send failed, so the screen can say it. Without this the
             -- tab paints a refused message the same green as a delivered one
             -- and writes "sent" under it.
@@ -423,7 +451,7 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
       LIMIT 1`,
     [handles],
   ));
-  res.json({ messages: rows, user: user.id, optedOut });
+  res.json({ messages: redactAutomated(rows, user.isAdmin), user: user.id, optedOut });
 }));
 
 /**

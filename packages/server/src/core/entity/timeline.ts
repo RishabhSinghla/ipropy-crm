@@ -17,8 +17,11 @@
 import type { TimelineEntry } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { describeChanges } from './auditChanges.js';
+import { isAutomationOnlyProvider } from '../../integrations/whatsapp/business/channelRoles.js';
 
 export interface TimelineOptions {
+  /** Admins read automatic WhatsApp messages in full; everyone else gets one line. */
+  viewerIsAdmin?: boolean;
   limit?: number;
   before?: string;
   types?: string[];
@@ -64,7 +67,7 @@ export async function buildTimeline(
               thing somebody asks of a message they did not send.
             */
             `SELECT m.id::text, m.direction, m.channel, m.type, m.body, m.status,
-                    m.is_ai_generated, m.created_at, m.sent_by, m.media,
+                    m.is_ai_generated, m.created_at, m.sent_by, m.media, m.provider,
                     trim(u.first_name || ' ' || u.last_name) AS user_name,
                     wa.phone_number AS wa_number,
                     trim(wu.first_name || ' ' || wu.last_name) AS wa_agent
@@ -180,6 +183,18 @@ export async function buildTimeline(
     const via = r.wa_agent || r.wa_number
       ? `${r.wa_agent ?? ''}${r.wa_agent && r.wa_number ? ' ' : ''}${r.wa_number ? `(${r.wa_number})` : ''}`.trim()
       : null;
+    if (!inbound && isAutomationOnlyProvider(r.provider)) {
+      const admin = Boolean(opts.viewerIsAdmin);
+      entries.push({
+        id: `msg-${r.id}`, type: 'message', at: r.created_at,
+        actorId: null, actorName: 'Automation',
+        title: 'WhatsApp message sent automatically',
+        body: admin ? r.body : null,
+        icon: 'message-circle',
+        meta: { direction: r.direction, channel: r.channel, automated: true, ...(admin ? { status: r.status } : {}) },
+      });
+      continue;
+    }
     entries.push({
       id: `msg-${r.id}`, type: 'message', at: r.created_at,
       // An inbound WhatsApp is still attributed to the agent whose phone
@@ -269,7 +284,7 @@ function empty<T>(): Promise<{ rows: T[]; rowCount: number }> {
 // --- row shapes ------------------------------------------------------------
 interface AuditRow { id: string; action: string; changes: unknown[]; created_at: string; source: string; user_id: string | null; user_name: string | null }
 interface CommentRow { id: string; body: string; created_at: string; user_id: string; user_name: string; is_private: boolean; edit_history: { body: string; at: string }[] | null }
-interface MessageRow { id: string; direction: string; channel: string; type: string; body: string | null; status: string; is_ai_generated: boolean; created_at: string; sent_by: string | null; user_name: string | null; media: unknown; wa_number: string | null; wa_agent: string | null }
+interface MessageRow { provider: string | null; id: string; direction: string; channel: string; type: string; body: string | null; status: string; is_ai_generated: boolean; created_at: string; sent_by: string | null; user_name: string | null; media: unknown; wa_number: string | null; wa_agent: string | null }
 interface CallRow { id: string; direction: string; status: string; duration_seconds: number; disposition: string | null; recording_url: string | null; ai_summary: string | null; ai_sentiment: string | null; started_at: string; user_id: string | null; user_name: string | null; from_number: string; to_number: string; transcript: string | null }
 interface EmailRow { id: string; subject: string | null; direction: string; status: string; to_addresses: unknown; opened_at: string | null; open_count: number; created_at: string; sent_by: string | null; user_name: string | null }
 interface AttachmentRow { id: string; file_name: string; mime_type: string; size: number; created_at: string; uploaded_by: string | null; user_name: string | null }

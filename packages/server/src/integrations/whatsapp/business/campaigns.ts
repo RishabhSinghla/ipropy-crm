@@ -226,7 +226,7 @@ export async function approveCampaign(input: {
   if (campaign.status !== 'draft') {
     throw new BadRequestError('Only a draft campaign can be approved.');
   }
-  const live = activeBusinessProvider();
+  const live = activeBusinessProvider('automation');
   if (!live) {
     throw new BadRequestError('No official WhatsApp provider is switched on, so nothing could be sent.');
   }
@@ -338,7 +338,7 @@ export async function setCampaignStatus(campaignId: string, status: 'paused' | '
  * one person who has opted out must not stop the other three hundred.
  */
 export async function sendCampaignBatch(): Promise<{ sent: number; failed: number }> {
-  const live = activeBusinessProvider();
+  const live = activeBusinessProvider('automation');
   // No provider, or a linked device that must never carry a campaign.
   if (!live || live.capabilities.has('linkedDevice')) return { sent: 0, failed: 0 };
 

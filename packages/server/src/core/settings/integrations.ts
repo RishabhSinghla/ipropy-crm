@@ -596,6 +596,10 @@ export async function warmup(): Promise<void> {
   // Absent means on, which is the behaviour that existed before it was a choice.
   allowDisabledProviders = row ? row.value !== false : true;
 
+  // Which WhatsApp route does which job; read here so it can never be older than the cards.
+  const { loadChannelRoles } = await import('../../integrations/whatsapp/business/channelRoles.js');
+  await loadChannelRoles();
+
   /*
     Error reporting follows the stored DSN, so pasting one on the integrations
     page turns it on without a redeploy. The environment variable still wins:

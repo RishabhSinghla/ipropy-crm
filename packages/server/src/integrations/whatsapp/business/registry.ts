@@ -19,6 +19,12 @@ import {
 import { whatsMarketingProvider, WHATSMARKETING_PROVIDER } from './whatsMarketing.js';
 import { openWaProvider, OPENWA_PROVIDER } from './openwa.js';
 import type { WhatsAppBusinessProvider } from './types.js';
+import { channelRoles, rolesInUse } from './channelRoles.js';
+
+export { isAutomationOnlyProvider } from './channelRoles.js';
+
+/** What a send is for: a workflow or template message, or ordinary conversation. */
+export type RouteJob = 'automation' | 'chat';
 
 /** In the order an admin sees them, which is also the order a tie is broken. */
 export const BUSINESS_PROVIDERS: { id: string; label: string; provider: WhatsAppBusinessProvider }[] = [
@@ -37,9 +43,22 @@ export function businessProvider(id: string): WhatsAppBusinessProvider | null {
 }
 
 /** The provider this CRM sends through today, or null when none is switched on. */
-export function activeBusinessProvider(): WhatsAppBusinessProvider | null {
+export function activeBusinessProvider(job?: RouteJob): WhatsAppBusinessProvider | null {
+  if (rolesInUse()) {
+    const roles = channelRoles();
+    const wanted = job === 'automation' ? [roles.automation, roles.chat] : [roles.chat, roles.automation];
+    for (const id of wanted) {
+      if (id && firstActiveIntegration([id])) return byId.get(id) ?? null;
+    }
+    return null;
+  }
   const id = firstActiveIntegration(BUSINESS_PROVIDERS.map((entry) => entry.id));
   return id ? byId.get(id) ?? null : null;
+}
+
+/** The provider that sends workflow messages and approved templates. */
+export function automationProvider(): WhatsAppBusinessProvider | null {
+  return activeBusinessProvider('automation');
 }
 
 /**
@@ -47,7 +66,7 @@ export function activeBusinessProvider(): WhatsAppBusinessProvider | null {
  * not apply, so every screen treats the reply box as always open for it.
  */
 export function replyWindowAlwaysOpen(): boolean {
-  return activeBusinessProvider()?.capabilities.has('linkedDevice') ?? false;
+  return activeBusinessProvider('chat')?.capabilities.has('linkedDevice') ?? false;
 }
 
 /**

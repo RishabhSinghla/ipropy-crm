@@ -21,6 +21,8 @@ import { buildScopeContext } from '../permissions/index.js';
 import { organisationName, resolveTemplate } from '../../integrations/whatsapp/business/templates.js';
 import { sendOnBusinessNumber } from '../../integrations/whatsapp/business/send.js';
 import { activeBusinessProvider } from '../../integrations/whatsapp/business/registry.js';
+import { isAutomationOnlyProvider } from '../../integrations/whatsapp/business/channelRoles.js';
+import { notifyMany } from '../notifications/index.js';
 import type { TaskContext } from './tasks.js';
 
 /** The record's owner, else the first active admin — somebody real to read and send as. */
@@ -54,7 +56,7 @@ async function alreadySent(recordId: string, templateName: string): Promise<bool
 export async function sendWhatsAppTemplate(config: Record<string, unknown>, ctx: TaskContext): Promise<void> {
   const templateId = String(config.templateId ?? '');
   if (!templateId) throw new Error('Choose which WhatsApp template this step sends.');
-  if (!activeBusinessProvider()) throw new Error('No official WhatsApp provider is switched on.');
+  if (!activeBusinessProvider('automation')) throw new Error('No official WhatsApp provider is switched on.');
 
   const senderId = await whoSends(ctx);
   if (!senderId) throw new Error('There is no active user to send this WhatsApp message as.');
@@ -97,5 +99,31 @@ export async function sendWhatsAppTemplate(config: Record<string, unknown>, ctx:
       return;
     }
     throw err;
+  }
+
+  await tellTheTeam(ctx, senderId);
+}
+
+/**
+ * The one thing the rest of the team learns about an automatic message: that it
+ * went, and why. Not its words, not which route, not which template.
+ */
+async function tellTheTeam(ctx: TaskContext, senderId: string): Promise<void> {
+  if (!isAutomationOnlyProvider(activeBusinessProvider('automation')?.name)) return;
+  try {
+    const status = typeof ctx.record.lead_status === 'string' ? ctx.record.lead_status : '';
+    const label = String(ctx.record.name ?? ctx.record.full_name ?? ctx.record.first_name ?? 'this lead');
+    const owner = typeof ctx.record.owner_id === 'string' ? ctx.record.owner_id : null;
+    await notifyMany([owner ?? senderId], {
+      kind: 'whatsapp_auto',
+      title: 'WhatsApp message sent automatically',
+      body: status ? `${label} · status changed to ${status}` : label,
+      link: `/${ctx.module}/${ctx.recordId}`,
+      recordId: ctx.recordId,
+      silent: true,
+    });
+  } catch (err) {
+    // A failed heads-up must not turn a delivered message into a failed workflow step.
+    logger.warn({ err, recordId: ctx.recordId }, 'could not announce the automatic WhatsApp message');
   }
 }

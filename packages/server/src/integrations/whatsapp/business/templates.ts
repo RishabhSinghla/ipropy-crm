@@ -89,7 +89,7 @@ export async function listStoredTemplates(): Promise<StoredTemplate[]> {
  * morning.
  */
 export async function syncTemplates(): Promise<{ added: string[]; updated: string[]; removed: string[]; skipped: string }> {
-  const provider = activeBusinessProvider();
+  const provider = activeBusinessProvider('automation');
   if (!provider) throw new BadRequestError('No official WhatsApp provider is switched on.');
   if (!provider.capabilities.has('templateSync')) {
     return {

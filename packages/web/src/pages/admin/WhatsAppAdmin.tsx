@@ -1,10 +1,11 @@
 import { type JSX } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, ExternalLink, MessageCircle } from 'lucide-react';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/utils';
 import { Badge, Skeleton } from '../../components/ui';
+import { toast } from '../../lib/store';
 
 /**
  * WhatsApp, on one screen, without opening the vendor's dashboard.
@@ -87,6 +88,8 @@ export default function WhatsAppAdmin(): JSX.Element {
           Everything about your WhatsApp number, read from this CRM's own records.
         </p>
       </div>
+
+      <ChannelRoles />
 
       {/* 1. Is it on? */}
       <section className={cn('card flex flex-wrap items-center gap-3 p-4',
@@ -272,5 +275,75 @@ function Tile(
       </p>
       {hint && <p className="text-[11px] text-muted">{hint}</p>}
     </div>
+  );
+}
+
+/**
+ * Which WhatsApp route does which job.
+ *
+ * Automatic: the official API, for workflows ("lead became New"), first
+ * messages and templates. Only admins see anything of it.
+ * Chat: the linked phone, for ordinary conversation once a lead replies.
+ * Left on "not set", the CRM behaves as before: one active route at a time.
+ */
+function ChannelRoles(): JSX.Element | null {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['wa-biz', 'roles'], queryFn: () => api.waBizRoles() });
+  const save = useMutation({
+    mutationFn: (roles: { automation: string | null; chat: string | null }) => api.waBizSetRoles(roles),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['wa-biz'] });
+      toast.success('Saved', 'WhatsApp routes updated.');
+    },
+    onError: (err) => toast.error('Not saved', (err as Error).message),
+  });
+  if (!data) return null;
+
+  const { roles, options } = data;
+  const pick = (job: 'automation' | 'chat', label: string, help: string): JSX.Element => (
+    <label className="block">
+      <span className="text-sm font-medium">{label}</span>
+      <span className="block text-2xs text-muted">{help}</span>
+      <select
+        className="input mt-1 w-full max-w-sm"
+        value={roles[job] ?? ''}
+        disabled={save.isPending}
+        onChange={(e) => save.mutate({ ...roles, [job]: e.target.value || null })}
+      >
+        <option value="">Not set</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>{o.label}{o.active ? '' : ' (switched off)'}</option>
+        ))}
+      </select>
+    </label>
+  );
+
+  const bothSet = Boolean(roles.automation && roles.chat);
+  return (
+    <section className="card space-y-3 p-4">
+      <div>
+        <h2 className="font-semibold">Who sends what</h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
+          Give each WhatsApp route one job. Both can stay switched on together. Until you choose,
+          the CRM keeps using one route at a time, exactly as before.
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {pick('automation', 'Automatic messages', 'Workflows, first messages and templates. Visible to admins only.')}
+        {pick('chat', 'Chat', 'Normal conversation with a lead once they reply.')}
+      </div>
+      {bothSet && (
+        <p className="text-2xs text-muted">
+          The team sees only a small notice that a message went out automatically. Customer replies always show in the lead's chat.
+        </p>
+      )}
+      {roles.automation && roles.chat && (
+        <p className="flex items-start gap-2 rounded bg-amber-50 p-2 text-2xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          If the two routes are different phone numbers, a customer who answers an automatic message
+          writes to the automation number. Keep an eye on that inbox.
+        </p>
+      )}
+    </section>
   );
 }
