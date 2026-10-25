@@ -53,7 +53,7 @@ test('↑↓ walk the answers and ↵ opens the highlighted one', async ({ page 
   const name = await selected.first().locator('span').first().textContent();
 
   await box.press('Enter');
-  await page.waitForURL(/\/(leads|properties|associates|projects|builder_floors)\/[0-9a-f-]{36}/);
+  await page.waitForURL(/\/(archive\/)?(leads|properties|associates|projects|builder_floors)\?.*open=[0-9a-f-]{36}/);
   // The record that opened is the one that was highlighted, not whichever
   // happened to be first — ↵ opening a different row from the one on screen is
   // the whole reason the flat order is derived from the groups.
@@ -74,7 +74,7 @@ test('remembers the last search under an empty box, and the × forgets it', asyn
   // Remembered when it is acted on, never per keystroke.
   await box.press('ArrowDown');
   await box.press('Enter');
-  await page.waitForURL(/\/(leads|properties|associates|projects|builder_floors)\/[0-9a-f-]{36}/);
+  await page.waitForURL(/\/(archive\/)?(leads|properties|associates|projects|builder_floors)\?.*open=[0-9a-f-]{36}/);
 
   await page.goto('/dashboard');
   await page.getByPlaceholder('Search everything…').click();
@@ -123,6 +123,7 @@ test('a mouse click on a result opens that record', async ({ page }) => {
   await expect(first).toBeVisible();
   await first.click();
 
-  await expect(page).toHaveURL(/\/(leads|properties|associates|projects|builder_floors)\/[0-9a-f-]{36}/);
+  // Opens in its own list with the record beside the rows.
+  await expect(page).toHaveURL(/\/(archive\/)?(leads|properties|associates|projects|builder_floors)\?.*open=[0-9a-f-]{36}/);
   await expect(page.locator('#global-search-results')).toHaveCount(0);
 });

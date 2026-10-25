@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from './WhatsAppMedia';
 import { UnsubscribedPanel, UnsubscribeLink } from './WhatsAppConsent';
@@ -27,6 +27,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   mobile: string | null;
 }): JSX.Element {
   const queryClient = useQueryClient();
+  const isAdmin = Boolean(useApp().user?.isAdmin);
   const [draft, setDraft] = useState('');
 
   /*
@@ -63,9 +64,12 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         body: (row.body as string | null) ?? null,
         media: row.media,
         createdAt: String(row.created_at),
-        sentVia: row.route === 'agent'
-          ? (row.sent_by_name as string | null) ?? 'a linked phone'
-          : 'the business number',
+        // An automatic message says so; an admin also sees which route sent it.
+        sentVia: row.automated
+          ? (isAdmin ? 'the WhatsApp API (automatic)' : 'automation')
+          : row.route === 'agent'
+            ? (row.sent_by_name as string | null) ?? 'a linked phone'
+            : 'the business number',
         status: String(row.status ?? ''),
         error: (row.error_message as string | null) ?? null,
       })) };

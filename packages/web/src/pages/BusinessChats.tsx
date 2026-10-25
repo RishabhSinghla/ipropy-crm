@@ -74,7 +74,7 @@ interface BizMessage {
   media: unknown;
 }
 
-export default function BusinessChats(): JSX.Element {
+export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'api' }): JSX.Element {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>('all');
   // Empty means every module. Set from the same dropdown, prefixed so a module
@@ -88,14 +88,14 @@ export default function BusinessChats(): JSX.Element {
   const [shell, shellHeight] = useFillHeight<HTMLDivElement>();
   const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   const { data: conversations, isLoading } = useQuery({
-    queryKey: ['wa-biz', 'conversations', filter, search, moduleFilter],
-    queryFn: () => api.waBizConversations(filter, search, moduleFilter),
+    queryKey: ['wa-biz', 'conversations', filter, search, moduleFilter, route],
+    queryFn: () => api.waBizConversations(filter, search, moduleFilter, route),
     // A customer writing while somebody reads is the point of the screen.
     refetchInterval: 15_000,
   });
   const { data: thread } = useQuery({
-    queryKey: ['wa-biz', 'messages', activeId],
-    queryFn: () => api.waBizMessages(activeId!),
+    queryKey: ['wa-biz', 'messages', activeId, route],
+    queryFn: () => api.waBizMessages(activeId!, route),
     enabled: Boolean(activeId),
     refetchInterval: activeId ? 10_000 : false,
   });

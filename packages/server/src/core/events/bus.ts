@@ -45,6 +45,8 @@ export interface EventMap {
   'record.owner_changed': RecordEventPayload & { previousOwnerId: string | null };
   'message.received': MessageEventPayload;
   'message.sent': MessageEventPayload;
+  /** A delivery or read tick changed on a message we sent. */
+  'message.status': { conversationId: string; messageId: string; status: string };
   'call.started': CallEventPayload;
   'call.ended': CallEventPayload;
   'lead.captured': { recordId: string; source: string; raw: unknown };

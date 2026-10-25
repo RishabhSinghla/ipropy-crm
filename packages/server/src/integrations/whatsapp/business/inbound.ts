@@ -206,6 +206,18 @@ export async function recordSentElsewhere(provider: string, message: {
         WHERE id = $1`,
       [conversation.id, message.sentAt, body?.slice(0, 200) ?? null],
     );
+    // A message typed on the owner's own phone is as live as any other.
+    onCommit(conn, async () => {
+      bus.emit('message.sent', {
+        conversationId: conversation.id,
+        messageId: message.providerMessageId,
+        direction: 'outbound',
+        channel: 'whatsapp',
+        body,
+        handle,
+        recordId,
+      });
+    });
     return true;
   });
 }
@@ -432,8 +444,8 @@ export async function applyStatus(provider: string, update: StatusUpdate): Promi
   return transaction(async (conn): Promise<boolean> => {
     if (!await claimEvent(conn, provider, 'status', `${update.providerMessageId}:${update.state}`)) return false;
 
-    const row = await conn.queryOne<{ id: string; status: string }>(
-      `SELECT id, status FROM ipy_message
+    const row = await conn.queryOne<{ id: string; status: string; conversation_id: string }>(
+      `SELECT id, status, conversation_id FROM ipy_message
         WHERE provider_message_id = $1 AND route = 'business'
         ORDER BY created_at DESC LIMIT 1`,
       [update.providerMessageId],
@@ -452,6 +464,9 @@ export async function applyStatus(provider: string, update: StatusUpdate): Promi
       // later as a delivery report used to show Meta's bare code instead.
       [row.id, update.state, update.at, update.error ? whyItFailed(update.error) : null],
     );
+    onCommit(conn, async () => {
+      bus.emit('message.status', { conversationId: row.conversation_id, messageId: row.id, status: update.state });
+    });
     return true;
   });
 }

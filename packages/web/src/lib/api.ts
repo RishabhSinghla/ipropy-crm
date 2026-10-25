@@ -1597,6 +1597,8 @@ export const api = {
   // --- WhatsApp Business (the official number) -----------------------------
   waBizStatus: () => get<{
     connected: boolean; provider: string | null; capabilities: string[]; businessNumber: string | null;
+    /** Two WhatsApp routes with separate jobs are set up (admins then see two screens). */
+    split?: boolean;
     /** Present only for a linked device (OpenWA): is the phone linked and reachable? */
     link?: { state: 'ready' | 'needs-link' | 'unreachable' | 'unknown'; message: string; checkedAt: string | null } | null;
   }>('/api/whatsapp-business/status'),
@@ -1627,16 +1629,16 @@ export const api = {
     name: string; language: string; category: string; status: string;
     bodyText: string | null; variableCount: number;
   }[]>('/api/whatsapp-business/templates'),
-  waBizConversations: (filter = 'all', search = '', module = '') => get<{
+  waBizConversations: (filter = 'all', search = '', module = '', route = '') => get<{
     id: string; handle: string; contactName: string | null; recordId: string | null;
     recordModule: string | null; recordLabel: string | null; assignedTo: string | null;
     assignedName: string | null; status: string; unreadCount: number;
     lastMessageAt: string | null; lastMessagePreview: string | null; waId: string | null; windowOpen: boolean;
     windowExpiresAt: string | null; optedOut: boolean;
-  }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined })}`),
-  waBizMessages: (conversationId: string) => get<{
+  }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined, route: route || undefined })}`),
+  waBizMessages: (conversationId: string, route = '') => get<{
     messages: Record<string, unknown>[]; alsoViewing: string[];
-  }>(`/api/whatsapp-business/conversations/${conversationId}/messages`),
+  }>(`/api/whatsapp-business/conversations/${conversationId}/messages${qs({ route: route || undefined })}`),
   waBizSend: (data: {
     to: string; text?: string; recordId?: string; attachmentId?: string;
     template?: { name: string; language: string; params: string[] };

@@ -20,7 +20,8 @@ export interface ChannelRoles { automation: string | null; chat: string | null }
 let roles: ChannelRoles = { automation: null, chat: null };
 
 function clean(value: unknown): string | null {
-  return typeof value === 'string' && value.startsWith('whatsapp_') ? value : null;
+  // Letters, digits and underscores only: the id is written into SQL below.
+  return typeof value === 'string' && /^whatsapp_[a-z0-9_]+$/.test(value) ? value : null;
 }
 
 export function parseRoles(value: unknown): ChannelRoles {
@@ -100,4 +101,22 @@ export function redactAutomated<T extends Record<string, unknown>>(rows: T[], is
 /** The route whose outgoing messages stay private to admins, or null when there is none. */
 export function automationOnlyRoute(): string | null {
   return roles.automation && roles.automation !== roles.chat ? roles.automation : null;
+}
+
+export type RouteView = 'chat' | 'api';
+
+/**
+ * A SQL condition on `<alias>.provider` for one admin screen.
+ *
+ * Admins get two WhatsApp screens: "WhatsApp" (the chat route) and "WhatsApp
+ * API" (the automation route), each showing only its own messages. Everyone
+ * else has one screen and sees every row, already redacted by `redactAutomated`.
+ * Without roles in use there is nothing to split, so the answer is always TRUE.
+ */
+export function routeClause(view: RouteView | undefined, isAdmin: boolean, alias = 'm'): string {
+  const auto = automationOnlyRoute();
+  if (!view || !isAdmin || !auto) return 'TRUE';
+  return view === 'api'
+    ? `${alias}.provider = '${auto}'`
+    : `${alias}.provider IS DISTINCT FROM '${auto}'`;
 }

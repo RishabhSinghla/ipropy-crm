@@ -54,6 +54,16 @@ function useFacetCounts(module: string, field: string | undefined): { counts: Ma
     queryFn: () => api.facet(module, field!, undefined, 50, context),
     enabled: Boolean(field),
     staleTime: 60_000,
+    /*
+      Keep the last answer for this same field while the new one loads.
+
+      The key carries the whole current filter, so every tick used to start a
+      new query with no data: each count fell to 0, the choices re-sorted, the
+      panel shrank, and the browser threw the scroll back to the top — the jump
+      the owner met on every advanced filter. The numbers now stay until the
+      fresh ones arrive.
+    */
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === field ? previous : undefined),
     // Edits refresh these (invalidate.ts); a timer on top recounted every open
     // filter for every person every 20 seconds, and that was most of the load.
     refetchInterval: 120_000,
@@ -73,6 +83,10 @@ function useChipCounts<T extends string>(module: string, filters: Array<[T, Filt
       queryKey: ['chip-count', module, key, filter, context],
       queryFn: () => api.list(module, { ...context, filter: { logic: 'AND', conditions: [filter, ...(context.filter ? [context.filter] : [])] }, page: 1, pageSize: 1 }),
       staleTime: 60_000,
+      // Same reason as the facet counts above: no flash to nothing between filters.
+      placeholderData: (previous: Awaited<ReturnType<typeof api.list>> | undefined, previousQuery?: { queryKey: readonly unknown[] }) => (
+        previousQuery?.queryKey[2] === key ? previous : undefined
+      ),
     })),
   });
   const counts: Partial<Record<T, number>> = {};

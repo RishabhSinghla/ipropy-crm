@@ -68,8 +68,10 @@ export function usePeek(): ((target: PeekTarget) => void) | null {
  * mouse.
  */
 export function PeekLink({
-  module, id, label, className, title, children, onNavigate, selected,
+  module, id, label, className, title, children, onNavigate, selected, to,
 }: {
+  /** Where a click goes, when it is not the record's own page (search opens it in its list). */
+  to?: string;
   module: string;
   id: string;
   label: string;
@@ -98,7 +100,7 @@ export function PeekLink({
   return (
     <Link
       {...press}
-      to={`/${module}/${id}`}
+      to={to ?? `/${module}/${id}`}
       title={title}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;

@@ -16,7 +16,14 @@ import { RangeSlider } from './QuickFilterOverlay';
 import { areaSearchRange } from '../lib/areaSearch';
 
 /** Temporary search criteria, not an edit to anybody's saved list. */
-export function SearchOptions({ words, onWordsChange, onOpen }: { words: string; onWordsChange: (value: string) => void; onOpen: () => void }): JSX.Element {
+/** The "Search in" choice that means every module (and the archive), not one list. */
+const EVERYWHERE = '__all__';
+
+export function SearchOptions({ words, onWordsChange, onOpen, onSearchAll }: {
+  words: string; onWordsChange: (value: string) => void; onOpen: () => void;
+  /** Run the words through the global search, which reads every module and the archive. */
+  onSearchAll?: () => void;
+}): JSX.Element {
   const { modules } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
@@ -24,10 +31,11 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
   const current = location.pathname.split('/')[1];
   const [moduleName, setModuleName] = useState('');
   const selected = moduleName || (entities.some((module) => module.name === current) ? current : entities[0]?.name) || '';
+  const everywhere = selected === EVERYWHERE;
   const [filter, setFilter] = useState<FilterGroup>({ logic: 'AND', conditions: [] });
   const [choices, setChoices] = useState<Record<string, unknown>>({});
-  const { data: meta } = useQuery({ queryKey: ['module', selected], queryFn: () => api.module(selected), enabled: Boolean(selected) });
-  const { data: tags } = useQuery({ queryKey: ['tags', selected], queryFn: () => api.tags(selected), enabled: Boolean(selected), staleTime: 60_000 });
+  const { data: meta } = useQuery({ queryKey: ['module', selected], queryFn: () => api.module(selected), enabled: Boolean(selected) && !everywhere });
+  const { data: tags } = useQuery({ queryKey: ['tags', selected], queryFn: () => api.tags(selected), enabled: Boolean(selected) && !everywhere, staleTime: 60_000 });
   const fields = meta?.fields.filter((field) => field.isActive && field.displayType !== 'hidden' && field.config.filterable !== false) ?? [];
   const owner = assignmentField(fields);
   const status = meta ? pipelineFieldOf(meta) : undefined;
@@ -60,6 +68,13 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
   }
   const quickField = (field: FieldMeta | undefined, label: string): JSX.Element | null => field ? <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{label}</span><FieldInput field={{ ...field, config: { ...field.config, placeholder: `Any ${label.toLowerCase()}` }, isReadonly: false, displayType: 'default', isMandatory: false }} value={choices[field.name] ?? null} onChange={(value) => choose(field.name, value)} /></div> : null;
   const apply = (close: () => void, clear = false): void => {
+    // "All": there is no single list to filter, so hand the words to the global
+    // search, which already reads every module and the archive.
+    if (everywhere && !clear) {
+      close();
+      onSearchAll?.();
+      return;
+    }
     const criteria: FilterGroup = clear ? { logic: 'AND', conditions: [] } : { logic: 'AND', conditions: [...quickConditions, ...(filter.conditions.length ? [filter] : [])] };
     const search = clear ? '' : words.trim();
     const params = new URLSearchParams(current === selected ? location.search : '');
@@ -76,7 +91,7 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
     trigger={<button onClick={onOpen} className="rounded-full bg-slate-200/70 p-2 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 group-data-[open=true]/dropdown:!bg-brand-700 group-data-[open=true]/dropdown:!text-white" aria-label="Search options" title="Search options"><SlidersHorizontal className="h-4 w-4" /></button>}>
     {(close) => <div className="space-y-3" role="dialog" aria-label="CRM search options">
       <h2 className="text-base font-semibold">Search options</h2>
-      <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Search in</span><select className="input" value={selected} onChange={(event) => { setModuleName(event.target.value); setChoices({}); setFilter({ logic: 'AND', conditions: [] }); }}>{entities.map((module) => <option key={module.name} value={module.name}>{module.label}</option>)}</select></label>
+      <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Search in</span><select className="input" value={selected} onChange={(event) => { setModuleName(event.target.value); setChoices({}); setFilter({ logic: 'AND', conditions: [] }); }}><option value={EVERYWHERE}>All (every module and the archive)</option>{entities.map((module) => <option key={module.name} value={module.name}>{module.label}</option>)}</select></label>
       <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Has the words</span><input className="input" value={words} onChange={(event) => onWordsChange(event.target.value)} placeholder="Name, phone, property or comma-separated words" /></label>
       <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2" data-testid="default-search-fields">
         {quickField(owner, 'Agent')}{quickField(locationField, 'Location')}{quickField(status, `${meta?.singularLabel ?? 'Record'} status`)}{quickField(contactType, 'Contact type')}
@@ -88,8 +103,8 @@ export function SearchOptions({ words, onWordsChange, onOpen }: { words: string;
         {money && <div className="min-w-0"><span className="text-xs font-medium text-muted">{money.label} range (₹)</span><RangeSlider low={0} high={1_000_000_000} money min={choices.min == null ? undefined : Number(choices.min)} max={choices.max == null ? undefined : Number(choices.max)} onChange={(min, max) => setChoices(previous => ({ ...previous, min, max }))} /></div>}
         {size && <div className="min-w-0"><span className="text-xs font-medium text-muted">{size.label} range (Sq. Yd.)</span><RangeSlider low={0} high={10000} money={false} min={choices.sizeMin == null ? undefined : Number(choices.sizeMin)} max={choices.sizeMax == null ? undefined : Number(choices.sizeMax)} onChange={(sizeMin, sizeMax) => setChoices(previous => ({ ...previous, sizeMin, sizeMax }))} /><p className="text-2xs text-muted">Units with a configured conversion are included.</p></div>}
       </div>
-      <p className="text-xs text-muted">Temporary search only — saved views stay unchanged.</p>
-      {meta && <FilterBuilder compact module={meta} value={filter} onChange={setFilter} />}
+      <p className="text-xs text-muted">{everywhere ? 'Searches every module and the archive for these words.' : 'Temporary search only — saved views stay unchanged.'}</p>
+      {meta && !everywhere && <FilterBuilder compact module={meta} value={filter} onChange={setFilter} />}
       <div className="flex justify-end gap-2"><button className="btn-secondary" onClick={() => apply(close, true)}>Clear search filters</button><button className="btn-primary" onClick={() => apply(close)}>Search</button></div>
     </div>}
   </Dropdown>;
