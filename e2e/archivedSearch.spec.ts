@@ -52,7 +52,8 @@ test('an archived record is found, badged Archived, and listed after the live on
 
     // And it still opens.
     await panel.getByText(`${token} Old`).first().click();
-    await expect(page).toHaveURL(new RegExp(`/leads/${archived.id}`));
+    // Opens in the Archive's own list, beside the rows, not on a page of its own.
+    await expect(page).toHaveURL(new RegExp(`/archive/leads\\?open=${archived.id}`));
   } finally {
     await client.query(`UPDATE ipy_record SET is_deleted = true WHERE id = ANY($1::uuid[])`, [[archived.id, live.id]]);
     await client.end();

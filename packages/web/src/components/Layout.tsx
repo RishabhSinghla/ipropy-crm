@@ -1132,6 +1132,8 @@ function GlobalSearch(): JSX.Element {
                   module={hit.module}
                   id={hit.id}
                   label={hit.label}
+                  // In its own list beside the rows, or the Archive for an archived one.
+                  to={`${hit.archived ? '/archive' : ''}/${hit.module}?open=${hit.id}`}
                   // A modified click opens a background tab and the browser leaves
                   // this page alone — so clearing the box would throw away the
                   // results somebody is deliberately working through one at a time.
