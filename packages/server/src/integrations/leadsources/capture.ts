@@ -229,6 +229,8 @@ async function captureOnce(
       : systemContext();
     const record = await createRecord(ctx, 'leads', values, {
       skipDuplicateCheck: true, workflowInBackground: source === 'facebook',
+      // Never lose a lead over a mandatory field the source cannot answer.
+      skipMandatory: true,
     });
 
     if (source === 'facebook' && normalized.message) {

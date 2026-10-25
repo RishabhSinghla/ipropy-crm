@@ -72,6 +72,12 @@ export interface SaveOptions {
   /** Inbound batches must not wait for remote AI or messaging after the save. */
   workflowInBackground?: boolean;
   skipDuplicateCheck?: boolean;
+  /**
+   * Do not refuse the save over a field an admin made mandatory. For inbound
+   * leads only: a Facebook form cannot answer a question it was never asked,
+   * and a rejected lead is a customer lost. Mobile-or-email is still required.
+   */
+  skipMandatory?: boolean;
   skipAudit?: boolean;
   conn?: Tx;
 }
@@ -768,7 +774,7 @@ export async function createRecord(
     const ownerId = (input.owner_id as string) || ctx.user.id;
     const ownerType = (input.owner_type as string) === 'group' ? 'group' : 'user';
 
-    const prepared = await prepareValues(module, payload, { isCreate: true, conn });
+    const prepared = await prepareValues(module, payload, { isCreate: true, conn, skipMandatory: opts.skipMandatory });
     if (!ctx.system && !opts.retainHistoricalFollowup) assertNextFollowUpIsNotPast(module, prepared.values);
     await assertMobileIdentityAvailable(conn, module, prepared.values);
 
@@ -1260,7 +1266,7 @@ function canonicaliseRecordFields(
 async function prepareValues(
   module: ModuleMeta,
   input: Record<string, unknown>,
-  opts: { isCreate: boolean; conn: Tx; existing?: Record<string, unknown> },
+  opts: { isCreate: boolean; conn: Tx; existing?: Record<string, unknown>; skipMandatory?: boolean },
 ): Promise<PreparedValues> {
   const out: PreparedValues = { values: {}, columns: {}, json: {}, recordNumber: null };
   const fieldMap = new Map(module.fields.map((f) => [f.name, f]));
@@ -1298,7 +1304,11 @@ async function prepareValues(
 
   // 3. validation
   validateRequired(
-    module.fields,
+    // An inbound lead is saved even when it lacks a field the admin made
+    // mandatory; the "mobile or email" rule below still applies to it.
+    opts.skipMandatory
+      ? module.fields.map((f) => ({ ...f, isMandatory: false, config: { ...f.config, requiredWhen: undefined } }))
+      : module.fields,
     opts.isCreate ? out.values : input,
     opts.isCreate,
     { ...(opts.existing ?? {}), ...out.values },
