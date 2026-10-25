@@ -165,13 +165,16 @@ whatsappBusinessRouter.get('/report', asyncHandler(async (req, res) => {
 whatsappBusinessRouter.get('/status', asyncHandler(async (_req, res) => {
   const provider = activeBusinessProvider();
   if (!provider) {
-    res.json({ connected: false, provider: null, capabilities: [], businessNumber: null });
+    res.json({ connected: false, provider: null, capabilities: [], businessNumber: null, split: rolesInUse() });
     return;
   }
   const linked = provider.capabilities.has('linkedDevice');
   res.json({
     connected: await provider.isConfigured(),
     provider: provider.name,
+    // True once an admin has given the two routes their jobs: admins then get
+    // two WhatsApp screens and everybody else keeps the one.
+    split: rolesInUse(),
     capabilities: [...provider.capabilities],
     // Never a network call here: this is asked by every chat screen. The
     // minute timer (and OpenWA's own session webhooks) keep it fresh.
@@ -291,8 +294,10 @@ whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
     // there are two modules today and an admin may add a third with no deploy.
     module: z.string().regex(/^[a-z_][a-z0-9_]*$/i).max(64).optional(),
     search: z.string().max(120).optional(),
+    route: z.enum(['chat', 'api']).optional(),
   }).parse(req.query ?? {});
   res.json(await listConversations({
+    route: query.route,
     userId: user.id,
     isAdmin: user.isAdmin,
     filter: query.filter,
@@ -307,7 +312,7 @@ whatsappBusinessRouter.get('/conversations/:id/messages', asyncHandler(async (re
   // other rather than both typing an answer.
   noteViewing(req.params.id, user.id, user.fullName ?? 'Somebody');
   res.json({
-    messages: await conversationMessages(user.id, user.isAdmin, req.params.id),
+    messages: await conversationMessages(user.id, user.isAdmin, req.params.id, req.query.route === 'api' ? 'api' : req.query.route === 'chat' ? 'chat' : undefined),
     alsoViewing: othersViewing(req.params.id, user.id),
   });
 }));

@@ -85,7 +85,20 @@ export function broadcastModuleChange(module: string): void {
 }
 
 function wireEvents(): void {
+  /*
+    Any WhatsApp change tells every open screen to ask again.
+
+    The event carries nothing: no id, no words. A screen that hears it
+    refetches through the ordinary permission-scoped endpoints, so a rep never
+    learns of a conversation they may not read. Before this, the chat screens
+    were refreshed only by a bell notification sent to one person, so everyone
+    else saw a new message when they next clicked something.
+  */
+  const tellWhatsAppScreens = (): void => { io?.emit('wa:changed'); };
+  bus.on('message.status', tellWhatsAppScreens);
+
   bus.on('message.received', async (p) => {
+    tellWhatsAppScreens();
     emitTo(`conversation:${p.conversationId}`, 'message', { ...p, direction: 'inbound' });
 
     const conv = await db.queryOne<{ assigned_to: string | null; contact_name: string | null }>(
@@ -102,6 +115,7 @@ function wireEvents(): void {
   });
 
   bus.on('message.sent', (p) => {
+    tellWhatsAppScreens();
     emitTo(`conversation:${p.conversationId}`, 'message', { ...p, direction: 'outbound' });
   });
 

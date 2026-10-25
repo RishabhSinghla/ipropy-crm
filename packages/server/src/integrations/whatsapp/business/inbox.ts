@@ -18,7 +18,7 @@ import { db } from '../../../db/pool.js';
 import { BadRequestError, NotFoundError } from '../../../utils/errors.js';
 import { notify } from '../../../core/notifications/index.js';
 import { replyWindowAlwaysOpen } from './registry.js';
-import { redactAutomated } from './channelRoles.js';
+import { redactAutomated, routeClause, type RouteView } from './channelRoles.js';
 
 export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread' | 'unmatched';
 
@@ -116,6 +116,8 @@ export async function listConversations(input: {
   module?: string;
   search?: string;
   limit?: number;
+  /** An admin's WhatsApp screen: only conversations that went through this route. */
+  route?: RouteView;
 }): Promise<InboxConversation[]> {
   const params: unknown[] = [];
   const see = visibility(input.userId, input.isAdmin, params.length + 1);
@@ -127,6 +129,11 @@ export async function listConversations(input: {
     `c.wa_account_id IS NULL`,
     see.clause,
   ];
+
+  const onRoute = routeClause(input.route, input.isAdmin, 'rm');
+  if (onRoute !== 'TRUE') {
+    where.push(`EXISTS (SELECT 1 FROM ipy_message rm WHERE rm.conversation_id = c.id AND ${onRoute})`);
+  }
 
   if (input.filter === 'mine') {
     params.push(input.userId);
@@ -221,7 +228,7 @@ export async function readableConversation(
 }
 
 export async function conversationMessages(
-  userId: string, isAdmin: boolean, conversationId: string,
+  userId: string, isAdmin: boolean, conversationId: string, route?: RouteView,
 ): Promise<Record<string, unknown>[]> {
   await readableConversation(userId, isAdmin, conversationId);
   const { rows } = await db.query(
@@ -230,7 +237,7 @@ export async function conversationMessages(
             trim(u.first_name || ' ' || u.last_name) AS sent_by_name
        FROM ipy_message m
        LEFT JOIN ipy_user u ON u.id = m.sent_by
-      WHERE m.conversation_id = $1
+      WHERE m.conversation_id = $1 AND ${routeClause(route, isAdmin)}
       ORDER BY m.created_at ASC
       LIMIT 500`,
     [conversationId],

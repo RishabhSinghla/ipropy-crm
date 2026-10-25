@@ -476,6 +476,9 @@ function MobileNav({
   onClose: () => void;
 }): JSX.Element {
   const location = useLocation();
+  const { user } = useApp();
+  const isAdmin = Boolean(user?.isAdmin);
+  const { data: waStatus } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus(), enabled: isAdmin });
 
   // Navigating must dismiss the drawer: leaving it open covers the page the
   // user just asked for.
@@ -518,8 +521,9 @@ function MobileNav({
                 `lg:block` and does not exist below 1024px — the rule this
                 repo already learned twice, with Chats and then Reports. */}
             <DrawerLink to="/whatsapp" icon="message-circle" label="WhatsApp" />
+            {isAdmin && waStatus?.split && <DrawerLink to="/whatsapp-api" icon="message-circle" label="WhatsApp API" />}
             <DrawerLink to="/calls" icon="phone" label="Calls" />
-            <DrawerLink to="/market" icon="users" label="Dealer groups" />
+            {isAdmin && <DrawerLink to="/market" icon="users" label="Dealer groups" />}
             <DrawerLink to="/tools" icon="calculator" label="Calculators" />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
@@ -1002,7 +1006,13 @@ function GlobalSearch(): JSX.Element {
     remember(query);
     setOpen(false);
     setQuery('');
-    navigate(`/${hit.module}/${hit.id}`);
+    /*
+      Open the record **in its own list**, beside the rows, not on a page of its
+      own: a lead opens in Leads with the list on the left, an archived record in
+      the Archive. `?open=` is the address the list already understands for a
+      record that is not on its current page.
+    */
+    navigate(`${hit.archived ? '/archive' : ''}/${hit.module}?open=${hit.id}`);
   };
 
   /** Everything this module matched, in its own list, where it can be filtered further. */
@@ -1053,7 +1063,7 @@ function GlobalSearch(): JSX.Element {
         onKeyDown={onBoxKey}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <div id="global-search-filter" className="absolute right-2 top-1/2 -translate-y-1/2"><SearchOptions words={query} onWordsChange={setQuery} onOpen={() => setOpen(false)} /></div>
+      <div id="global-search-filter" className="absolute right-2 top-1/2 -translate-y-1/2"><SearchOptions words={query} onWordsChange={setQuery} onOpen={() => setOpen(false)} onSearchAll={() => { inputRef.current?.focus(); setOpen(true); }} /></div>
       <kbd className="pointer-events-none absolute right-12 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-muted dark:border-slate-700 sm:block">
         ⌘K
       </kbd>

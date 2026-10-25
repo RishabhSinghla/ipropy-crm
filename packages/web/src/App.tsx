@@ -71,6 +71,12 @@ const CallsPage = lazy(() => import('./pages/Calls'));
 const ToolsPage = lazy(() => import('./pages/Tools'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
 
+/** Pages that only an admin has any use for: everybody else lands on the dashboard. */
+function RequireAdminRoute({ children }: { children: JSX.Element }): JSX.Element {
+  const { user } = useApp();
+  return user?.isAdmin ? children : <Navigate to="/dashboard" replace />;
+}
+
 function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
   const { user, loading } = useApp();
   const location = useLocation();
@@ -154,9 +160,11 @@ export default function App(): JSX.Element {
                   works and is what the icon beside a number opens — this moves
                   the door, not the room. */}
               <Route path="whatsapp/*" element={<WhatsAppPage />} />
+              {/* The official API's own screen, for admins. Everyone else is sent home. */}
+              <Route path="whatsapp-api/*" element={<RequireAdminRoute><WhatsAppPage mode="api" /></RequireAdminRoute>} />
               <Route path="calls" element={<CallsPage />} />
               {/* Dealer-group deals. Above `:module`, which would read "market" as a module. */}
-              <Route path="market" element={<MarketFeedPage />} />
+              <Route path="market" element={<RequireAdminRoute><MarketFeedPage /></RequireAdminRoute>} />
               {/* Projects has its own isolated workspace and masters rather than
                   the generic CRM split-view used by ordinary record modules. */}
               <Route path="projects" element={<ProjectsWorkspacePage />} />

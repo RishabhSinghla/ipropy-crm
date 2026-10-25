@@ -78,6 +78,20 @@ export function useRealtime(enabled: boolean): void {
       void qc.invalidateQueries({ queryKey: ['conversations'] });
       void qc.invalidateQueries({ queryKey: ['conversation'] });
     };
+    /*
+      Something changed in WhatsApp: a message in or out, or a tick. The server
+      sends no content, only the nudge, so ask again for everything that shows
+      WhatsApp. Without this a lead's WhatsApp tab waited for its own timer.
+    */
+    let lastWa = 0;
+    const onWhatsApp = (): void => {
+      const now = Date.now();
+      if (now - lastWa < 700) return;
+      lastWa = now;
+      for (const key of ['wa-biz', 'whatsapp', 'timeline', 'conversations', 'conversation']) {
+        void qc.invalidateQueries({ queryKey: [key] });
+      }
+    };
     const onNotification = (note?: LiveNotification): void => {
       void qc.invalidateQueries({ queryKey: ['notifications'] });
       if (isWhatsAppMessage(note)) {
@@ -114,6 +128,7 @@ export function useRealtime(enabled: boolean): void {
     s.on('message', onInbox);
     s.on('inbox:update', onInbox);
     s.on('notification', onNotification);
+    s.on('wa:changed', onWhatsApp);
     s.on('call:incoming', onCall);
     s.on('call:ended', onCall);
     s.on('lead:new', onLead);
@@ -134,6 +149,7 @@ export function useRealtime(enabled: boolean): void {
       s.off('message', onInbox);
       s.off('inbox:update', onInbox);
       s.off('notification', onNotification);
+      s.off('wa:changed', onWhatsApp);
       s.off('call:incoming', onCall);
       s.off('call:ended', onCall);
       s.off('lead:new', onLead);

@@ -151,9 +151,12 @@ export const WHATSAPP_BASE = '/whatsapp';
  * for that once, when pulling `waDigits` out of a component broke an unrelated
  * suite. A rule worth a test has to live where a test can reach it.
  */
-export function tabHref(path: string): string {
-  return `${WHATSAPP_BASE}/${path}`;
+export function tabHref(path: string, base: string = WHATSAPP_BASE): string {
+  return `${base}/${path}`;
 }
+
+/** The admin-only screen for the official API, beside the ordinary WhatsApp one. */
+export const WHATSAPP_API_BASE = '/whatsapp-api';
 
 /**
  * The day a message belongs to, as WhatsApp labels it.

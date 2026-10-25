@@ -4,7 +4,9 @@ import { BarChart3, MessageCircle, Megaphone, MessagesSquare } from 'lucide-reac
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Skeleton } from '../components/ui';
-import { tabHref } from '../lib/whatsapp';
+import { tabHref, WHATSAPP_API_BASE, WHATSAPP_BASE } from '../lib/whatsapp';
+import { api } from '../lib/api';
+import { useQuery } from '@tanstack/react-query';
 
 /**
  * WhatsApp, as one place, because nobody thinks in drawers.
@@ -42,7 +44,14 @@ const WhatsAppTemplatesAdmin = lazy(() => import('./admin/WhatsAppTemplatesAdmin
 const WhatsAppAdmin = lazy(() => import('./admin/WhatsAppAdmin'));
 const Reports = lazy(() => import('./Reports'));
 
+/** Which of an admin's two screens this is. One screen for everyone else. */
+export type WhatsAppMode = 'chat' | 'api';
+
 interface Tab {
+  /** Where the tab shows when two routes have separate jobs; absent means both. */
+  only?: WhatsAppMode;
+  /** Admins only, whatever their capabilities, when two routes have separate jobs. */
+  adminOnly?: boolean;
   path: string;
   label: string;
   icon: typeof MessageCircle;
@@ -59,6 +68,8 @@ const TABS: Tab[] = [
     // Building one is `whatsapp.send`; approving one is `whatsapp.templates`.
     // The screen itself enforces that split — this only decides who sees a tab.
     capability: 'whatsapp.send',
+    only: 'api',
+    adminOnly: true,
     icon: Megaphone,
     element: <CampaignsAdmin />,
   },
@@ -66,6 +77,8 @@ const TABS: Tab[] = [
     path: 'templates',
     label: 'Templates',
     capability: 'whatsapp.templates',
+    only: 'api',
+    adminOnly: true,
     icon: MessageCircle,
     element: <WhatsAppTemplatesAdmin />,
   },
@@ -82,6 +95,7 @@ const TABS: Tab[] = [
       it is recorded here rather than argued with.
     */
     path: 'reports',
+    only: 'chat',
     label: 'Reports',
     /*
       No capability, deliberately. Reports was a header tab everybody could
@@ -102,10 +116,24 @@ const TABS: Tab[] = [
   },
 ];
 
-export default function WhatsAppPage(): JSX.Element {
+export default function WhatsAppPage({ mode = 'chat' }: { mode?: WhatsAppMode }): JSX.Element {
   const { user } = useApp();
   const allowed = useMemo(() => new Set(user?.capabilities ?? []), [user?.capabilities]);
-  const tabs = TABS.filter((t) => !t.capability || allowed.has(t.capability));
+  const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
+  const split = Boolean(status?.split);
+  const base = mode === 'api' ? WHATSAPP_API_BASE : WHATSAPP_BASE;
+  // Chats is the same screen on both, told which route's conversations to list.
+  const route = split && user?.isAdmin ? mode : '';
+
+  // Until the two routes have separate jobs there is only the one screen, with
+  // every tab on it as before. Once they do, the API's tools move to the admin
+  // screen and nobody else sees them at all.
+  const tabs = TABS.filter((t) => {
+    if (t.capability && !allowed.has(t.capability)) return false;
+    if (!split) return true;
+    if (t.adminOnly && !user?.isAdmin) return false;
+    return !t.only || t.only === mode;
+  }).map((t) => (t.path === 'chats' ? { ...t, element: <BusinessChats route={route} /> } : t));
 
   // A rep with only Chats sees no tab strip at all: one tab is not a choice,
   // and a row of one reads as something missing rather than as the whole thing.
@@ -124,7 +152,7 @@ export default function WhatsAppPage(): JSX.Element {
           {tabs.map((tab) => (
             <NavLink
               key={tab.path}
-              to={tabHref(tab.path)}
+              to={tabHref(tab.path, base)}
               className={({ isActive }) => cn(
                 'flex items-center gap-1.5 rounded-t-lg px-3 py-2 text-sm font-medium',
                 isActive
@@ -150,7 +178,7 @@ export default function WhatsAppPage(): JSX.Element {
               redirect here appended to a path it had just been given, so it
               grew on every render rather than settling.
             */}
-            <Route path="*" element={<Navigate to={tabHref(tabs[0]?.path ?? 'chats')} replace />} />
+            <Route path="*" element={<Navigate to={tabHref(tabs[0]?.path ?? 'chats', base)} replace />} />
           </Routes>
         </Suspense>
       </div>

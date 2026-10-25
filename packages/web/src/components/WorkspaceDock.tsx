@@ -21,6 +21,8 @@
  */
 import { type JSX, type ReactNode, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
 import { Archive, Calculator, LayoutDashboard, MessagesSquare, PhoneIncoming, Star, Store, UserRound } from 'lucide-react';
 import { ThreeContacts } from './ThreeContacts';
 import { useApp } from '../lib/store';
@@ -71,7 +73,10 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
 }): JSX.Element {
   const [hovered, setHovered] = useState(false);
   const expanded = !folded || hovered;
-  const { modules } = useApp();
+  const { modules, user } = useApp();
+  const isAdmin = Boolean(user?.isAdmin);
+  const { data: waStatus } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus(), enabled: isAdmin });
+  const split = Boolean(waStatus?.split);
   const here = useLocation().pathname.split('/')[1];
   const favouriteModule = modules.find((module) => module.isEntity && module.name === here)?.name
     ?? modules.find((module) => module.isEntity)?.name ?? 'leads';
@@ -93,9 +98,16 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
       tone: ['leads', 'inventory', 'associates', 'other'][index % 4],
     })),
     { to: '/calls', label: 'Calls', tone: 'calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" />, count: counts?.calls },
-    { to: `/${favouriteModule}?filter=${encodeURIComponent(JSON.stringify({ logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }))}`, label: 'Favourites', tone: 'favourites', icon: <Star className="h-[18px] w-[18px]" />, count: counts?.[`favourites:${favouriteModule}`] },
+    ...(isAdmin ? [
+      { to: `/${favouriteModule}?filter=${encodeURIComponent(JSON.stringify({ logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }))}`, label: 'Favourites', tone: 'favourites', icon: <Star className="h-[18px] w-[18px]" />, count: counts?.[`favourites:${favouriteModule}`] },
+    ] : []),
     { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, count: counts?.whatsapp, tone: 'whatsapp' as const },
-    { to: '/market', label: 'Dealer groups', tone: 'associates', icon: <Store className="h-[18px] w-[18px]" /> },
+    ...(isAdmin && split ? [
+      { to: '/whatsapp-api', label: 'WhatsApp API', icon: <MessagesSquare className="h-[18px] w-[18px]" />, tone: 'whatsapp' as const },
+    ] : []),
+    ...(isAdmin ? [
+      { to: '/market', label: 'Dealer groups', tone: 'associates', icon: <Store className="h-[18px] w-[18px]" /> },
+    ] : []),
   ];
   return (
     <div
