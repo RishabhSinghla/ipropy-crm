@@ -1613,6 +1613,12 @@ export const api = {
     lastWebhookAt: string | null; rejectedWebhooks: number; unresolvedSenders: number;
     sendsToday: number; sendsFailedToday: number;
   }>(`/api/whatsapp-business/openwa/health${fresh ? '?fresh=1' : ''}`),
+  waBizRoles: () => get<{
+    roles: { automation: string | null; chat: string | null };
+    options: { id: string; label: string; active: boolean }[];
+  }>('/api/admin/whatsapp/roles'),
+  waBizSetRoles: (roles: { automation: string | null; chat: string | null }) =>
+    put<{ roles: { automation: string | null; chat: string | null } }>('/api/admin/whatsapp/roles', roles),
   waBizProviders: () => get<{ id: string; label: string; capabilities: string[]; webhookPath: string }[]>(
     '/api/whatsapp-business/providers',
   ),

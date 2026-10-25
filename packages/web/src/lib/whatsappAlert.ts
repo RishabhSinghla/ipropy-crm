@@ -30,7 +30,7 @@ export interface LiveNotification {
 const TOAST_STAYS_MS = 12_000;
 
 export function isWhatsAppMessage(note: LiveNotification | undefined): boolean {
-  return note?.kind === 'whatsapp';
+  return note?.kind === 'whatsapp' || note?.kind === 'whatsapp_auto';
 }
 
 export async function announceWhatsApp(note: LiveNotification): Promise<void> {

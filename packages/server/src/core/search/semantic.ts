@@ -21,6 +21,7 @@
  * them because a vector happened to be close, and the only thing that reliably
  * enforces that is the same path the record page uses.
  */
+import { automationOnlyRoute } from '../../integrations/whatsapp/business/channelRoles.js';
 import { createHash } from 'node:crypto';
 import { embed, isMediaAiAvailable, rerank } from '../../ai/media.js';
 import { modelFor } from '../settings/aiModels.js';
@@ -161,9 +162,10 @@ async function candidates(limit: number, conn: Tx = db): Promise<Candidate[]> {
        JOIN ipy_record r ON r.id = c.record_id
        LEFT JOIN ipy_embedding e ON e.kind = 'message' AND e.source_id = m.id::text
       WHERE e.id IS NULL AND r.is_deleted = false AND m.body IS NOT NULL AND length(m.body) > 12
+        AND (m.provider IS NULL OR $2::text IS NULL OR m.provider <> $2::text OR m.direction <> 'outbound')
       ORDER BY m.created_at DESC
       LIMIT $1`,
-    [limit - out.length],
+    [limit - out.length, automationOnlyRoute()],
   );
   for (const row of messages.rows) {
     // The channel and direction go into the embedded text on purpose: "what did

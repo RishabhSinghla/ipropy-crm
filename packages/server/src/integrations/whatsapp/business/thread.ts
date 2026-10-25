@@ -16,6 +16,7 @@ import { db } from '../../../db/pool.js';
 import { BadRequestError } from '../../../utils/errors.js';
 import { matchKey } from '../matchContact.js';
 import { replyWindowAlwaysOpen } from './registry.js';
+import { redactAutomated } from './channelRoles.js';
 
 export interface NumberThread {
   handle: string;
@@ -33,7 +34,7 @@ export interface NumberThread {
  * Without it the answer still carries the window state, which is enough to
  * choose a control and nothing to read.
  */
-export async function threadForNumber(to: string, withMessages: boolean): Promise<NumberThread> {
+export async function threadForNumber(to: string, withMessages: boolean, isAdmin = false): Promise<NumberThread> {
   const handle = matchKey(to);
   if (!handle) throw new BadRequestError('That is not a number WhatsApp can reach.');
 
@@ -54,14 +55,14 @@ export async function threadForNumber(to: string, withMessages: boolean): Promis
     // The last handful, newest last, so the composer reads like a chat rather
     // than like a report. The whole history is on the contact's own tab.
     const { rows } = await db.query(
-      `SELECT id, direction, type, body, status, template_name, created_at, route
+      `SELECT id, direction, type, body, status, template_name, created_at, route, provider
          FROM ipy_message
         WHERE conversation_id = $1
         ORDER BY created_at DESC
         LIMIT 12`,
       [thread.id],
     );
-    messages = rows.reverse();
+    messages = redactAutomated(rows.reverse(), isAdmin);
   }
 
   return {

@@ -8,6 +8,7 @@ import { assertCapability } from '../../core/permissions/index.js';
 import { sendEmail, sendTemplatedEmail, verifyConnection } from '../../integrations/email/service.js';
 import { suggestReplies, draftMessage } from '../../ai/drafting.js';
 import * as googleRcs from '../../integrations/rcs/google.js';
+import { redactAutomated } from '../../integrations/whatsapp/business/channelRoles.js';
 import { recordService } from '../../core/entity/recordService.js';
 
 export const commsRouter = Router();
@@ -96,7 +97,7 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
 
   const messages = await db.query(
     `SELECT m.id, m.direction, m.channel, m.type, m.body, m.media, m.template_name,
-            m.status, m.error_message, m.is_ai_generated, m.created_at, m.delivered_at, m.read_at,
+            m.status, m.error_message, m.is_ai_generated, m.created_at, m.delivered_at, m.read_at, m.provider,
             trim(u.first_name || ' ' || u.last_name) AS sent_by_name
      FROM ipy_message m LEFT JOIN ipy_user u ON u.id = m.sent_by
      WHERE m.conversation_id = $1
@@ -114,7 +115,7 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
   res.json({
     ...conv,
     windowOpen,
-    messages: messages.rows,
+    messages: redactAutomated(messages.rows, getUser(req).isAdmin),
   });
 }));
 

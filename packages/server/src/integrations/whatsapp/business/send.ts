@@ -27,6 +27,7 @@ import { whyItFailed } from './whyItFailed.js';
 import { templateWording } from './templates.js';
 import { prepareOutgoingMedia } from './media.js';
 import { assertWithinLimits, takeSendSlot } from './openwaGuards.js';
+import { AUTOMATIC_MESSAGE_TEXT, isAutomationOnlyProvider } from './channelRoles.js';
 
 export interface BusinessSendInput {
   userId: string;
@@ -216,7 +217,8 @@ export async function dialableNumber(
 }
 
 export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<BusinessSendResult> {
-  const provider = activeBusinessProvider();
+  // Templates are the official route's job; everything typed by a person is chat.
+  const provider = activeBusinessProvider(input.template ? 'automation' : 'chat');
   if (!provider) throw new BadRequestError('No official WhatsApp provider is switched on.');
 
   const handle = matchKey(input.to);
@@ -376,6 +378,8 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
           })
         : await provider.sendMessage({ accountId: null, to: dialTo, text: input.text ?? '' });
 
+    // What the screens may quote of this message: nothing, when it is automatic.
+    const shown = isAutomationOnlyProvider(provider.name) ? AUTOMATIC_MESSAGE_TEXT : body;
     await transaction(async (conn) => {
       await conn.query(
         `UPDATE ipy_message SET status = $2, provider_message_id = $3 WHERE id = $1`,
@@ -385,7 +389,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
         `UPDATE ipy_conversation
             SET last_message_at = now(), last_message_preview = $2
           WHERE id = $1`,
-        [conversation.id, body.slice(0, 200)],
+        [conversation.id, shown.slice(0, 200)],
       );
       onCommit(conn, async () => {
         bus.emit('message.sent', {
@@ -393,7 +397,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
           messageId: queued!.id,
           direction: 'outbound',
           channel: 'whatsapp',
-          body,
+          body: shown,
           handle,
           recordId: input.recordId ?? null,
         });
