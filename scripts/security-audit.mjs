@@ -57,6 +57,17 @@ const ALLOWED = new Map([
    + '(xlsx/xform/sheet/cf-ext/cf-rule-ext-xform.js), so the vulnerable path is '
    + 'not reachable. Retires when exceljs accepts uuid >=11.1.1 — an npm '
    + '`overrides` entry was tried first and npm keeps resolving 8.3.2.'],
+  ['GHSA-mrhx-c7xc-m3w5',
+   'zod <4.6.6 — a request that validates a very large array or set against '
+   + 'a size limit can use a lot of memory (denial of service, CVSS 7.5). The only '
+   + 'fix is zod 3 to 4, a major upgrade: tried on 25 October 2026 and it gave 79 '
+   + 'type errors in packages/server alone, plus silent behaviour changes (error '
+   + 'message shape, defaults, z.record) that the type checker cannot see, so it '
+   + 'needs its own careful PR rather than a rushed one. Mitigated meanwhile: '
+   + 'every route that parses user input sits behind login or a signed webhook, '
+   + 'and the JSON and form bodies are capped at 5 MB, which bounds how large a '
+   + 'list can be sent. Retires when the CRM moves to zod >=4.6.6 (server and '
+   + 'mcp packages; @modelcontextprotocol/sdk must accept it first).'],
 ]);
 
 let raw;
