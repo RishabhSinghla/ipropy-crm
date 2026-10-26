@@ -57,7 +57,9 @@ export function queueCardFields(fields: FieldMeta[]): CardFields {
  * area's unit is its own field and has to be asked for too.
  */
 export function queueCardColumns(fields: FieldMeta[]): string[] {
-  const names: string[] = [];
+  // The call outcome sits beside the record name in the queue, even if the
+  // current saved view does not include this system field as a visible column.
+  const names: string[] = ['last_call_disposition'];
   for (const field of Object.values(queueCardFields(fields))) {
     names.push(field.name);
     const unitField = field.config.unitField;

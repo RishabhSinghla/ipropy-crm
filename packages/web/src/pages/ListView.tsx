@@ -954,9 +954,9 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const queueTools = (
     <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
       <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
-        <select className="input h-7 min-w-0 max-w-40 flex-1 text-[11px]" aria-label="AI call history filter" value={aiCallFilter ?? ''}
+        <select className="input h-7 min-w-0 max-w-32 flex-1 text-[10px]" aria-label="AI call history filter" value={aiCallFilter ?? ''}
           onChange={(event) => { setAiCallFilter((event.target.value || undefined) as ListQuery['aiCalls']); setPage(1); }}>
-          <option value="">All AI Calls</option><option value="called">AI called</option><option value="not_called">Not AI called</option><option value="unsuccessful">Last AI call unsuccessful</option>
+          <option value="">All AI Calls</option><option value="called">AI called</option><option value="not_called">Not AI called</option><option value="unsuccessful">Unsuccessful call</option>
         </select>
 
         {taskQueuesEnabled && (
@@ -1164,30 +1164,26 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
           data-testid="pipeline-stage-ribbon"
           className="shrink-0 border-b border-slate-200 bg-white px-2 py-1 sm:px-3 dark:border-slate-800 dark:bg-slate-900"
         >
-          <div className="mb-1 flex min-w-0 items-center justify-between gap-2 text-[10px]">
-            <div className="flex min-w-0 items-center gap-1.5 truncate font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              <span className="truncate">{meta.label}</span>
-              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200" aria-label="Selected record count">{activeRecordPosition}</span>
-              <h2 className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{stageField.label || 'Stages'}</h2>
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-0.5" role="group" aria-label="Filter by stage">
+            <div className="flex shrink-0 flex-col justify-center leading-tight text-slate-500 dark:text-slate-400">
+              <h2 className="text-[10px] font-medium uppercase tracking-wide">{stageField.label || 'Stages'}</h2>
+              <span className="text-[10px] font-normal tabular-nums" aria-label="Selected record count">{activeRecordPosition}</span>
             </div>
-            <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
-              {stagePick.length ? `${stagePick.length} selected` : 'All stages'}
-            </span>
-          </div>
-          <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-0.5" role="group" aria-label="Filter by stage">
+            <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="group" aria-label="Filter by stage options">
             <button
               type="button"
               aria-pressed={stagePick.length === 0}
               onClick={() => { setStagePick([]); setPage(1); }}
               className={cn(
-                'flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold transition-colors',
+                'flex h-6 shrink-0 items-center gap-1 rounded-r-md border px-2 text-[10px] font-medium transition-colors',
                 stagePick.length === 0
-                  ? 'border-brand-700 bg-brand-700 text-white shadow-sm'
+                  ? 'border-brand-700 bg-brand-700 text-white'
                   : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200',
               )}
+              style={{ clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)' }}
             >
               <span>All</span>
-              <span className={cn('rounded px-1.5 py-0.5 text-[10px] tabular-nums', stagePick.length === 0 ? 'bg-white/20' : 'bg-white dark:bg-slate-700')}>
+              <span className={cn('px-1 text-[9px] tabular-nums', stagePick.length === 0 ? 'text-white/80' : 'text-slate-500 dark:text-slate-400')}>
                 {stageTotal?.toLocaleString('en-IN') ?? '—'}
               </span>
             </button>
@@ -1207,15 +1203,15 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                     setPage(1);
                   }}
                   className={cn(
-                    'relative flex h-7 shrink-0 items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-semibold transition-colors',
+                    'relative flex h-6 shrink-0 items-center justify-center gap-1 border px-2 text-[10px] font-medium transition-colors',
                     selectedStage
-                      ? 'z-[1] text-white shadow-sm'
+                      ? 'z-[1] text-white'
                       : 'hover:z-[1]',
                   )}
-                  style={{ borderColor: color, backgroundColor: selectedStage ? color : `color-mix(in srgb, ${color} 10%, white)`, color: selectedStage ? 'white' : color }}
+                  style={{ borderColor: color, backgroundColor: selectedStage ? color : `color-mix(in srgb, ${color} 10%, white)`, color: selectedStage ? 'white' : color, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
                 >
                   <span className="max-w-[9rem] truncate">{option.label || option.value}</span>
-                  <span className={cn('rounded px-1 py-0.5 text-[9px] tabular-nums', selectedStage ? 'bg-white/20' : 'bg-white/75')}>
+                  <span className={cn('px-1 text-[9px] tabular-nums', selectedStage ? 'text-white/80' : 'opacity-70')}>
                     {(stageCounts.get(option.value) ?? 0).toLocaleString('en-IN')}
                   </span>
                 </button>
@@ -1231,17 +1227,19 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                 setPage(1);
               }}
               className={cn(
-                'flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition-colors',
+                'flex h-6 shrink-0 items-center gap-1 border px-2 text-[10px] font-medium transition-colors',
                 stagePick.includes(EMPTY_PICK)
-                  ? 'border-brand-700 bg-brand-700 text-white shadow-sm'
+                  ? 'border-brand-700 bg-brand-700 text-white'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
               )}
+              style={{ clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
             >
               <span>Unfilled</span>
-              <span className={cn('rounded px-1 py-0.5 text-[10px] tabular-nums', stagePick.includes(EMPTY_PICK) ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800')}>
+              <span className={cn('px-1 text-[9px] tabular-nums', stagePick.includes(EMPTY_PICK) ? 'text-white/80' : 'opacity-70')}>
                 {stageFacet.data?.blank?.toLocaleString('en-IN') ?? '—'}
               </span>
             </button>
+            </div>
           </div>
         </section>
       )}
