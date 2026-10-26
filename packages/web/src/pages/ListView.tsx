@@ -8,7 +8,7 @@ import {
 import { localDay } from '../lib/followUpDates';
 import { ChoiceChip } from '../components/ChoiceChip';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowLeftRight, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
@@ -31,6 +31,7 @@ import {
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
+import { NO_DISPOSITION_PICK, type DispositionPick, LAST_CALL_DISPOSITION } from '../components/CallDispositionFilter';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
 import SiteCapture from './SiteCapture';
@@ -38,6 +39,7 @@ import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
+import { CallLogFilter } from '../components/CallLogFilter';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 
@@ -86,6 +88,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const [stagePick, setStagePick] = useState<string[]>([]);
   const [agentPick, setAgentPick] = useState<string | null>(null);
   const [tagPick, setTagPick] = useState<string | null>(null);
+  const [dispositionPick, setDispositionPick] = useState<DispositionPick>(NO_DISPOSITION_PICK);
   /*
     What is chosen in the Quick & Live Filters panel's field sections — a
     field's values, a slider's ends, a date. It lives here and not in the panel
@@ -484,10 +487,15 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       // `record_tags` is the builder's own name for the tags on a record; a tag
       // is not a field on the module, so it cannot be resolved as one.
       ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
+      ...(dispositionPick.never
+        ? [{ field: LAST_CALL_DISPOSITION, operator: 'is_empty' as const }]
+        : dispositionPick.outcomes.length
+          ? [{ field: LAST_CALL_DISPOSITION, operator: 'in' as const, value: dispositionPick.outcomes }]
+          : []),
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, dispositionPick]);
 
 
   /*
@@ -558,6 +566,23 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       every switch between Contacts and Inventories).
     */
     placeholderData: (prev, previousQuery) => (previousQuery?.queryKey[1] === moduleName ? prev : undefined),
+  });
+  const aiCallFilterChoices = [
+    ['', 'All AI Calls'],
+    ['called', 'AI called'],
+    ['not_called', 'Not AI called'],
+    ['unsuccessful', 'Unsuccessful call'],
+  ] as const;
+  const aiCallCounts = useQueries({
+    queries: aiCallFilterChoices.map(([value]) => {
+      const countQuery: ListQuery = { ...query, page: 1, pageSize: 1, aiCalls: value || undefined };
+      return {
+        queryKey: ['ai-call-filter-count', moduleName, countQuery],
+        queryFn: () => api.list(moduleName!, countQuery),
+        enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName),
+        staleTime: 30_000,
+      };
+    }),
   });
 
   /*
@@ -946,14 +971,13 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     >
       {(close) => (
         <div className="py-1" role="menu" aria-label="AI call history filter">
-          {([
-            ['', 'All AI Calls'],
-            ['called', 'AI called'],
-            ['not_called', 'Not AI called'],
-            ['unsuccessful', 'Unsuccessful call'],
-          ] as const).map(([value, label]) => (
+          {aiCallFilterChoices.map(([value, label], index) => (
             <DropdownItem key={label} onClick={() => { setAiCallFilter((value || undefined) as ListQuery['aiCalls']); setPage(1); close(); }}>
-              {label}{(aiCallFilter ?? '') === value && <span className="ml-auto text-brand-700">✓</span>}
+              <span>{label}</span>
+              <span className="ml-auto flex items-center gap-2 text-xs tabular-nums text-muted">
+                {(aiCallCounts[index]?.data?.total ?? 0).toLocaleString('en-IN')}
+                {(aiCallFilter ?? '') === value && <span className="text-brand-700">✓</span>}
+              </span>
             </DropdownItem>
           ))}
         </div>
@@ -970,12 +994,36 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         allCount={data?.total ?? 0}
       />
     ) : null;
+  const callLogBaseFilter: FilterGroup = {
+    logic: 'AND',
+    conditions: [
+      ...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions),
+      ...(taskQueue ? taskFilters[taskQueue].conditions : []),
+      ...(stagePick.length && stageField ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }] : []),
+      ...(agentPick && ownerField ? [{ field: ownerField.name, operator: 'equals' as const, value: agentPick }] : []),
+      ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
+    ],
+  };
+  const callLogControl = (
+    <CallLogFilter
+      module={moduleName}
+      view={activeView?.id}
+      search={search || undefined}
+      filter={countConditions(callLogBaseFilter) ? canonicalFilter(callLogBaseFilter) : undefined}
+      agent={agentPick}
+      onAgent={(id) => { setAgentPick(id); setPage(1); }}
+      disposition={dispositionPick}
+      onDisposition={(value) => { setDispositionPick(value); setPage(1); }}
+      count={data?.total ?? 0}
+    />
+  );
   const ribbonControls = (
     <div className="ml-auto flex shrink-0 items-center gap-2" role="group" aria-label="Record list controls">
       {newRecordsControl}
       {aiCallControl}
       {visitControl}
       {taskControl}
+      {callLogControl}
     </div>
   );
   const controlsInRibbon = Boolean(showStageRibbon && stageField);
@@ -992,6 +1040,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
           {aiCallControl}
           {visitControl}
           {taskControl}
+          {callLogControl}
         </div>
       )}
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
@@ -1119,7 +1168,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                     'relative flex h-6 shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-medium transition-colors',
                   selectedStage ? 'z-[1] text-white' : 'text-slate-800 hover:z-[1]',
                   )}
-                  style={{ backgroundColor: selectedStage ? color : `color-mix(in srgb, ${color} 38%, white)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
+                  style={{ backgroundColor: selectedStage ? color : `color-mix(in srgb, ${color} 22%, white)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
                 >
                   <span className="max-w-[9rem] truncate">{option.label || option.value}</span>
                   <span className={cn('px-1 text-[9px] tabular-nums', selectedStage ? 'text-white/80' : 'opacity-70')}>
@@ -1285,7 +1334,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             key={meta.name}
             module={meta}
             rows={rows}
-            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { setAiCallFilter(undefined); setAgentPick(null); setStagePick([]); setTaskQueue(null); setTagPick(null); setFilter(EMPTY_FILTER); setSearchInput(''); setSearch(''); setPage(1); }}>Clear search and filters</button>}
+            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { setAiCallFilter(undefined); setAgentPick(null); setStagePick([]); setTaskQueue(null); setTagPick(null); setDispositionPick(NO_DISPOSITION_PICK); setFilter(EMPTY_FILTER); setSearchInput(''); setSearch(''); setPage(1); }}>Clear search and filters</button>}
             // `?open=` — a record named in the address, from global search, a
             // chat, or Save & Next. It may not be on this page at all.
             openId={searchParams.get('open')}
@@ -1762,7 +1811,7 @@ function SarvamBulkCallButton({
         aria-label={`AI calls · batch ${batchNumber} of ${batchCount}`}
       >
         <PhoneCall className="h-3 w-3 shrink-0" />
-        <span className="truncate">AI calls · batch {batchNumber} of {batchCount}</span>
+        <span>AI Call</span>
       </button>
       <Modal
         open={open}
