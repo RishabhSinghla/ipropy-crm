@@ -277,11 +277,6 @@ export interface UiSettings {
   headerTabs: HeaderTab[] | null;
   /** Where the social icons sit: beside the brand, on the right, or nowhere. */
   socialPosition: 'brand' | 'right' | 'hidden';
-  /**
-   * The Quick & Live Filters panel, per module, as Admin → Quick Filters
-   * arranged it. Null (or a module missing) means the shipped arrangement.
-   */
-  quickFilters: Record<string, QuickFilterSection[]> | null;
   /** The today-task buzzer, as Admin → Settings → Today's tasks sets it. */
   taskBuzzer: TaskBuzzerSettings;
 }
@@ -303,28 +298,16 @@ export interface TaskBuzzerSettings {
   closeAfterSeconds: number;
 }
 
-/**
- * What kind of control a quick filter section is.
- *
- * The first five are the CRM's own questions (who owns it, which saved list,
- * which stage, how the last call went, when it is due); the last three are
- * any field, drawn by its type: a list of its values, a min–max slider, or a
- * date with presets.
- */
+/** Search field group kinds used to organize controls in the main Search panel. */
 export type QuickFilterKind = 'agent' | 'list' | 'tags' | 'stage' | 'calls' | 'task' | 'values' | 'range' | 'date';
 
-/** One section of the Quick & Live Filters panel. */
+/** A group of field controls shown in the main Search panel. */
 export interface QuickFilterSection {
-  /** `agent`, `list`, `tags`, `stage`, `calls`, `task` — or the field's name. */
   key: string;
   kind: QuickFilterKind;
-  /** The admin's own heading; the field's label when absent. */
   label?: string;
-  /** Switched off in the master: not shown in the panel. */
   hidden?: boolean;
-  /** Opens unfolded rather than as a heading to tap. */
   open?: boolean;
-  /** How many values a long list shows before its search box. Default 5. */
   top?: number;
 }
 

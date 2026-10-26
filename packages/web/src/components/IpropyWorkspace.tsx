@@ -173,7 +173,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
 export function IpropyWorkspace({
   module, rows, selected, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
-  queueTools, queueHeaderAction, queueFooter, filterBar, onShowing, emptyAction, onActivePositionChange,
+  queueTools, queueHeaderAction, queueFooter, onShowing, emptyAction, onActivePositionChange,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -217,7 +217,6 @@ export function IpropyWorkspace({
    * the panel itself — drawn inside the right-hand pane, in its exact shape.
    */
   /** The Quick & Live Filters panel, drawn in the right pane; `open` unfolds a folded pane while it shows. */
-  filterBar?: { open: boolean; panel?: ReactNode; onToggle?: () => void };
   /**
    * Which pane a small screen is on — so the page around this one can get out
    * of the way. The list's phone pager is the caller: it belongs to the list,
@@ -698,7 +697,7 @@ export function IpropyWorkspace({
   // A folded pane opens itself while the filters or a call on this record are
   // up — the call deck lives in it (the owner, 3 October 2026: pressing Call
   // should not need the pane opening by hand). It folds back when the call ends.
-  const paneOpen = !paneFolded || Boolean(filterBar?.open) || onCall;
+  const paneOpen = !paneFolded || onCall;
   const allChecked = rows.length > 0 && rows.every((row) => selected.has(row.id));
 
   /*
@@ -1325,11 +1324,10 @@ export function IpropyWorkspace({
             paneOpen ? 'xl:w-[22.5rem]' : 'max-h-11 xl:max-h-none xl:w-11',
           )}
         >
-          {paneOpen && !filterBar?.open && <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-1 dark:border-slate-800">
+          {paneOpen && <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-1 dark:border-slate-800">
             <span className="text-xs font-semibold text-muted">Details</span>
-            <button type="button" disabled={onCall} onClick={() => { if (filterBar?.open) filterBar.onToggle?.(); setDetailsHoverBlocked(true); setPaneFolded(true); }} aria-label="Fold the details pane" aria-expanded title={onCall ? 'The live call deck stays visible during a call' : 'Fold the details away'} className="btn-icon h-7 w-7" data-testid="fold-details"><PanelRightClose className="h-4 w-4" /></button>
+            <button type="button" disabled={onCall} onClick={() => { setDetailsHoverBlocked(true); setPaneFolded(true); }} aria-label="Fold the details pane" aria-expanded title={onCall ? 'The live call deck stays visible during a call' : 'Fold the details away'} className="btn-icon h-7 w-7" data-testid="fold-details"><PanelRightClose className="h-4 w-4" /></button>
           </div>}
-          {filterBar?.panel}
           {/*
             Fold the whole pane away and back — the owner, 3 October 2026:
             *"fold/unfold on the click of a little button … nice transition"*.

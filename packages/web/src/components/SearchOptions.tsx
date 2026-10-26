@@ -12,7 +12,7 @@ import { assignmentField, followUpFieldOf, pipelineFieldOf } from '../lib/fields
 import { followUpFilters, type TaskQueue } from './FollowUpQueue';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { LAST_CALL_DISPOSITION } from './CallDispositionFilter';
-import { RangeSlider } from './QuickFilterOverlay';
+import { RangeSlider } from './RangeSlider';
 import { areaSearchRange } from '../lib/areaSearch';
 
 /** Temporary search criteria, not an edit to anybody's saved list. */

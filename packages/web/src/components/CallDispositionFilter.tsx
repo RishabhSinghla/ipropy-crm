@@ -17,7 +17,7 @@
  *
  * **1 October 2026:** the chip left the toolbar for the Hot chip, on the
  * owner's instruction. The question is still asked from the filter panel
- * (`QuickFilterOverlay`), so only the shape of the pick lives here now.
+ * (the list's Call Log control), so only the shape of the pick lives here now.
  */
 
 /** The filter field, so the list and this button cannot name it differently. */

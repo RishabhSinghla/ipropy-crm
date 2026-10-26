@@ -5,7 +5,7 @@ import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, Blocks, Building2, Database, KeyRound, LayoutTemplate, Link2, MapPin,
   ListTree, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
-  SlidersHorizontal, Filter,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
 import { cn } from '../../lib/utils';
@@ -14,7 +14,6 @@ import { useApp } from '../../lib/store';
 const ModuleBuilder = lazy(() => import('./ModuleBuilder'));
 const ModuleManager = lazy(() => import('./ModuleManager'));
 const LayoutDesigner = lazy(() => import('./LayoutDesigner'));
-const QuickFiltersAdmin = lazy(() => import('./QuickFiltersAdmin'));
 const PicklistManager = lazy(() => import('./PicklistManager'));
 const UsersAdmin = lazy(() => import('./UsersAdmin'));
 const RolesProfiles = lazy(() => import('./RolesProfiles'));
@@ -65,7 +64,6 @@ const SECTIONS = [
       { path: 'modules', capability: 'admin.modules', label: 'Enable / Disable', icon: ToggleLeft, element: <ModuleManager /> },
       { path: 'fields', capability: 'admin.fields', label: 'Modules & Fields', icon: Blocks, element: <ModuleBuilder /> },
       { path: 'layouts', capability: 'admin.layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
-      { path: 'quick-filters', capability: 'admin.layouts', label: 'Quick Filters', icon: Filter, element: <QuickFiltersAdmin /> },
       { path: 'picklists', capability: 'admin.picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
       { path: 'project-masters', capability: 'admin.picklists', label: 'Project Masters', icon: Building2, element: <ProjectMastersAdmin /> },
       { path: 'tags', capability: 'admin.picklists', label: 'Tags', icon: Tag, element: <TagsAdmin /> },

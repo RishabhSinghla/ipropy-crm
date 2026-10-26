@@ -202,8 +202,6 @@ export default function Layout(): JSX.Element {
             {/* A list page puts its New (recently added) chip here. */}
             <div id="global-new-records" className="shrink-0" />
             <GlobalSearch />
-            <div id="global-quick-dashboard" className="shrink-0" />
-            <div id="global-quick-filter" className="shrink-0" />
             <div id="global-list-options" className="shrink-0" />
 
             <div className="flex shrink-0 items-center gap-1">
