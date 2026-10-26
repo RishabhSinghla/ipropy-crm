@@ -1549,6 +1549,7 @@ function QueueCard({
     ? picklistOptionForValue(statusField.options, statusValue)
     : undefined;
   const statusLabel = status?.label ?? (statusValue == null ? '' : String(statusValue));
+  const disposition = String(row.display?.last_call_disposition ?? row.values.last_call_disposition ?? '').trim();
   const price = card.price ? cardPrice(row.values[card.price.name]) : '';
   const areaUnitField = card.area?.config.unitField;
   const area = card.area
@@ -1617,7 +1618,7 @@ function QueueCard({
              the height of Left pane record Height from Auto adjust, even the
              Middle row blank or not."* So the rows are always drawn, an empty
              one as a blank line, and the card never grows or shrinks. */
-          'relative block min-h-[92px] w-full cursor-pointer py-4 pl-[3.75rem] pr-3 text-left transition-colors',
+          'relative block min-h-[76px] w-full cursor-pointer py-2 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1683,12 +1684,20 @@ function QueueCard({
             onDoubleClick={openEditor('name')}
             title={canEdit && nameField ? 'Double-click to rename' : undefined}
             className={cn(
-              'truncate text-sm font-bold tracking-tight',
+              'min-w-0 flex-1 truncate text-sm font-bold tracking-tight',
               active ? 'text-brand-900 dark:text-white' : 'text-slate-900 dark:text-slate-100',
             )}
           >
             {row.label}
           </span>
+          {disposition && (
+            <span
+              title={`${row.label} | ${disposition}`}
+              className={cn('min-w-0 max-w-[42%] shrink truncate text-[10px] font-medium', active ? 'text-brand-800 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400')}
+            >
+              <span aria-hidden="true">| </span>{disposition}
+            </span>
+          )}
           {/* No contact-type chip beside the name since 2 October 2026 —
               *"I don't need to see it there"*. It is in the fields pane. */}
           {/* How stale it is, top right — "13h ago". The palest grey that still
