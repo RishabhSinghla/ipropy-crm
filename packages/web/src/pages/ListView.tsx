@@ -12,7 +12,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowLeftRight, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
-  PhoneCall,
+  PhoneCall, Users,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Sparkles, Tag, Trash2, Upload, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -31,6 +31,7 @@ import {
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
+import { AgentPicker } from '../components/AgentPicker';
 import { NO_DISPOSITION_PICK, type DispositionPick, LAST_CALL_DISPOSITION } from '../components/CallDispositionFilter';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
@@ -428,11 +429,26 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     the column is still there and nothing asks for it.
   */
   const stageField = meta ? pipelineFieldOf(meta) : undefined;
+  const ownerField = meta ? assignmentField(meta.fields) : undefined;
   // One shared facet request supplies exact status totals for the top ribbon.
   const showStageRibbon = !archive && ['leads', 'inventory', 'properties', 'associates'].includes(moduleName ?? '') && Boolean(stageField);
+  const ribbonAgentFilter = useMemo<FilterGroup | undefined>(() => (
+    agentPick && ownerField
+      ? { logic: 'AND', conditions: [{ field: ownerField.name, operator: 'equals', value: agentPick }] }
+      : undefined
+  ), [agentPick, ownerField?.name]);
+  const { data: ribbonAgents = [] } = useQuery({
+    queryKey: ['users', 'filter-agents', moduleName],
+    queryFn: () => api.users(false, false, true, moduleName),
+    enabled: Boolean(showStageRibbon && ownerField),
+    staleTime: 5 * 60_000,
+  });
   const stageFacet = useQuery({
-    queryKey: ['facet', moduleName, stageField?.name, {}],
-    queryFn: () => api.facet(moduleName ?? '', stageField!.name, undefined, 50, {}),
+    queryKey: ['facet', moduleName, stageField?.name, activeView?.id, search, agentPick],
+    queryFn: () => api.facet(moduleName ?? '', stageField!.name, search || undefined, 50, {
+      view: activeView?.id,
+      filter: ribbonAgentFilter,
+    }),
     enabled: showStageRibbon,
     staleTime: 60_000,
     refetchInterval: 120_000,
@@ -441,8 +457,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const stageTotal = stageFacet.data
     ? [...stageCounts.values()].reduce((total, count) => total + count, 0) + (stageFacet.data.blank ?? 0)
     : undefined;
-  const ownerField = meta ? assignmentField(meta.fields) : undefined;
-
   // Next Follow-up is the CRM's task field. These are deliberately not saved
   // views: every person gets the same obvious work queues without an admin
   // having to create or maintain three more views for each module.
@@ -999,6 +1013,40 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const aiCallFilterLabel = aiCallFilter === 'called' ? 'AI called'
     : aiCallFilter === 'not_called' ? 'Not AI called'
       : aiCallFilter === 'unsuccessful' ? 'Unsuccessful call' : 'All AI Calls';
+  const selectedRibbonAgent = (ribbonAgents as { id?: unknown; fullName?: unknown }[])
+    .find((candidate) => String(candidate.id ?? '') === agentPick);
+  const ribbonAgentLabel = agentPick
+    ? String(selectedRibbonAgent?.fullName ?? '').trim().split(/\s+/)[0] || 'Agent'
+    : 'Agent';
+  const ribbonAgentControl = ownerField && (ribbonAgents as unknown[]).length > 1 ? (
+    <Dropdown
+      align="left"
+      className="w-72"
+      trigger={(
+        <button
+          type="button"
+          className={toolbarButton(Boolean(agentPick), 'h-6 shrink-0 px-2 text-[10px]')}
+          aria-label="Filter ribbon by agent"
+          aria-pressed={Boolean(agentPick)}
+          data-testid="ribbon-agent-filter"
+        >
+          <Users className="h-3 w-3" aria-hidden="true" />
+          <span className="max-w-20 truncate">{ribbonAgentLabel}</span>
+          <ChevronDown className="h-3 w-3 opacity-60" aria-hidden="true" />
+        </button>
+      )}
+    >
+      {() => (
+        <div className="px-2 pt-2">
+          <AgentPicker
+            moduleName={moduleName}
+            agent={agentPick}
+            onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
+          />
+        </div>
+      )}
+    </Dropdown>
+  ) : null;
   const aiCallControl = (
     <Dropdown
       align="right"
@@ -1220,6 +1268,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
               );
             })}
             </div>
+            {ribbonAgentControl}
             </div>
             <div aria-hidden="true" className="h-6 w-px shrink-0 bg-slate-300 dark:bg-slate-700" />
             {ribbonControls}
