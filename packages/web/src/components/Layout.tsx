@@ -201,6 +201,7 @@ export default function Layout(): JSX.Element {
             <NewRecordButton modules={menuModules} />
             {/* A list page puts its New (recently added) chip here. */}
             <div id="global-new-records" className="shrink-0" />
+            <div id="global-tags" className="min-w-0 max-w-[18rem] shrink" />
             <GlobalSearch />
             <div id="global-list-options" className="shrink-0" />
 
@@ -1046,11 +1047,11 @@ function GlobalSearch(): JSX.Element {
   const showRecent = open && query.trim().length < 2 && recent.length > 0;
 
   return (
-    <div className="relative ml-auto min-w-0 flex-1 max-w-[48rem]" ref={ref}>
+    <div className="relative ml-auto min-w-[10rem] flex-[1_1_24rem] max-w-[48rem]" ref={ref}>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         ref={inputRef}
-        className="input h-11 rounded-2xl border-[var(--border)] bg-white pl-10 pr-20 text-sm dark:bg-slate-800 dark:focus:bg-slate-900"
+        className="input h-11 w-full rounded-2xl border-[var(--border)] bg-white pl-10 pr-20 text-sm dark:bg-slate-800 dark:focus:bg-slate-900"
         placeholder="Search everything…"
         aria-label="Search everything"
         value={query}

@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { Check } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Dropdown } from './ui';
 
@@ -33,12 +33,16 @@ export function ChoiceChip<T extends string>({
       trigger={(
         <button type="button" className={buttonClass(on)} aria-pressed={on} aria-busy={busy} title={title} data-testid={testId}>
           <span>{chosenLabel ? `${label}: ${chosenLabel}` : label}</span>
-          <span className={countClass(on)}>{count.toLocaleString('en-IN')}</span>
+          <ChevronDown className="h-3 w-3 opacity-60" aria-hidden="true" />
         </button>
       )}
     >
       {(close) => (
         <div className="py-1" role="menu" aria-label={title}>
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-1.5 text-xs text-muted" role="presentation">
+            <span>Matching records</span>
+            <span className={cn('font-semibold tabular-nums', countClass(on))}>{count.toLocaleString('en-IN')}</span>
+          </div>
           {choices.map((choice) => (
             <button
               key={choice.key}

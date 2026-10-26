@@ -31,9 +31,6 @@ import {
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
-import {
-  LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
-} from '../components/CallDispositionFilter';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
 import SiteCapture from './SiteCapture';
@@ -41,7 +38,6 @@ import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
-import { CallLogFilter } from '../components/CallLogFilter';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 
@@ -90,7 +86,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const [stagePick, setStagePick] = useState<string[]>([]);
   const [agentPick, setAgentPick] = useState<string | null>(null);
   const [tagPick, setTagPick] = useState<string | null>(null);
-  const [dispositionPick, setDispositionPick] = useState<DispositionPick>(NO_DISPOSITION_PICK);
   /*
     What is chosen in the Quick & Live Filters panel's field sections — a
     field's values, a slider's ends, a date. It lives here and not in the panel
@@ -109,10 +104,11 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   // every record the current view/filter matches, not just this page's ids.
   const [selectedAll, setSelectedAll] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
-  const [toolbarSlots, setToolbarSlots] = useState<{ options: HTMLElement | null }>({ options: null });
+  const [toolbarSlots, setToolbarSlots] = useState<{ options: HTMLElement | null; tags: HTMLElement | null }>({ options: null, tags: null });
   useEffect(() => {
     setToolbarSlots({
       options: document.getElementById('global-list-options'),
+      tags: document.getElementById('global-tags'),
     });
   }, []);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
@@ -488,21 +484,10 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       // `record_tags` is the builder's own name for the tags on a record; a tag
       // is not a field on the module, so it cannot be resolved as one.
       ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
-      /*
-        How the last call went. `last_call_disposition` is a system field in the
-        query builder, not a column on either module — a disposition lives on
-        `ipy_call`. "Never called" is the absence of one, so it is `is_empty`
-        rather than a value in the list.
-      */
-      ...(dispositionPick.never
-        ? [{ field: LAST_CALL_DISPOSITION, operator: 'is_empty' as const }]
-        : dispositionPick.outcomes.length
-          ? [{ field: LAST_CALL_DISPOSITION, operator: 'in' as const, value: dispositionPick.outcomes }]
-          : []),
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, dispositionPick]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick]);
 
 
   /*
@@ -985,53 +970,36 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         allCount={data?.total ?? 0}
       />
     ) : null;
-  const callLogBaseFilter: FilterGroup = {
-    logic: 'AND',
-    conditions: [
-      ...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions),
-      ...(taskQueue ? taskFilters[taskQueue].conditions : []),
-      ...(stagePick.length && stageField ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }] : []),
-      ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
-    ],
-  };
-  const callLogControl = (
-    <CallLogFilter
-      module={moduleName}
-      view={activeView?.id}
-      search={search || undefined}
-      filter={countConditions(callLogBaseFilter) ? canonicalFilter(callLogBaseFilter) : undefined}
-      agent={agentPick}
-      onAgent={(id) => { setAgentPick(id); setPage(1); }}
-      disposition={dispositionPick}
-      onDisposition={(value) => { setDispositionPick(value); setPage(1); }}
-      count={data?.total ?? 0}
-    />
-  );
   const ribbonControls = (
     <div className="ml-auto flex shrink-0 items-center gap-2" role="group" aria-label="Record list controls">
       {newRecordsControl}
       {aiCallControl}
-      {bulkCallControl}
       {visitControl}
       {taskControl}
-      {callLogControl}
     </div>
   );
   const controlsInRibbon = Boolean(showStageRibbon && stageField);
+  const queueHeaderActions = (
+    <div className="flex shrink-0 items-center gap-1.5">
+      {!controlsInRibbon && newRecordsControl}
+      {bulkCallControl}
+    </div>
+  );
   const queueTools = (
     <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
       {!controlsInRibbon && (
         <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
           {aiCallControl}
-          {bulkCallControl}
           {visitControl}
           {taskControl}
-          {callLogControl}
         </div>
       )}
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
-        {/* Tag counts are the live list's, so they would mislead in the Archive. */}
-        {!archive && <TagCards moduleName={meta.name} owner={agentPick || undefined} />}
+        {/* Tag cards stay in the global header so they remain beside search. */}
+        {!archive && toolbarSlots.tags && createPortal(
+          <TagCards moduleName={meta.name} owner={agentPick || undefined} />,
+          toolbarSlots.tags,
+        )}
         {toolbarSlots.options && createPortal(
             <Dropdown
               trigger={<button className={toolbarIcon('exchange')} aria-label="Import, export and list options" title="Import / Export"><FileUp className={TOOLBAR_ICON_SIZE} /></button>}
@@ -1317,7 +1285,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             key={meta.name}
             module={meta}
             rows={rows}
-            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { setAiCallFilter(undefined); setAgentPick(null); setStagePick([]); setTaskQueue(null); setDispositionPick(NO_DISPOSITION_PICK); setTagPick(null); setFilter(EMPTY_FILTER); setSearchInput(''); setSearch(''); setPage(1); }}>Clear search and filters</button>}
+            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { setAiCallFilter(undefined); setAgentPick(null); setStagePick([]); setTaskQueue(null); setTagPick(null); setFilter(EMPTY_FILTER); setSearchInput(''); setSearch(''); setPage(1); }}>Clear search and filters</button>}
             // `?open=` — a record named in the address, from global search, a
             // chat, or Save & Next. It may not be on this page at all.
             openId={searchParams.get('open')}
@@ -1357,7 +1325,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             queueTools={queueTools}
-            queueHeaderAction={!controlsInRibbon ? newRecordsControl : undefined}
+            queueHeaderAction={queueHeaderActions}
             queueFooter={queueFooter}
             onActivePositionChange={reportActiveRecordPosition}
             onShowing={setPaneShowing}
@@ -1788,13 +1756,13 @@ function SarvamBulkCallButton({
     <>
       <button
         type="button"
-        className={toolbarButton(false, 'h-6 px-2 text-[10px]')}
+        className={cn(toolbarButton(false, 'h-7 max-w-[12rem] min-w-0 px-2 text-[10px]'), 'justify-start')}
         onClick={openBatch}
-        title={finished && offset + batchSize < total ? 'AI call next batch' : allQuery ? 'AI call records in this view' : 'AI call selected records'}
-        aria-label={finished && offset + batchSize < total ? 'AI call next batch' : allQuery ? 'AI call records in this view' : 'AI call selected records'}
+        title={`AI calls · batch ${batchNumber} of ${batchCount}`}
+        aria-label={`AI calls · batch ${batchNumber} of ${batchCount}`}
       >
-        <PhoneCall className="h-3 w-3" />
-        <span>AI Call</span>
+        <PhoneCall className="h-3 w-3 shrink-0" />
+        <span className="truncate">AI calls · batch {batchNumber} of {batchCount}</span>
       </button>
       <Modal
         open={open}
