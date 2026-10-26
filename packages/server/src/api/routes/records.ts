@@ -166,56 +166,6 @@ recordsRouter.get('/:module/facet-range', asyncHandler(async (req, res) => {
   res.json(await fieldRange(scope, req.params.module, field));
 }));
 
-// A small, permission-scoped snapshot, not a download of the record list.
-recordsRouter.post('/:module/quick-dashboard', asyncHandler(async (req, res) => {
-  const scope = getScope(req);
-  const query = listSchema.parse(req.body);
-  await transaction(async tx => {
-    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-    const prepared = await prepareList(scope, req.params.module, query, tx);
-    const { from, params, module } = prepared;
-    const counts = await tx.queryOne<{ total: number; createdToday: number; changedToday: number; tagged: number }>(
-      `SELECT count(*)::int AS total,
-       count(*) FILTER (WHERE (r.created_at AT TIME ZONE $${params.length + 1})::date = (now() AT TIME ZONE $${params.length + 1})::date)::int AS "createdToday",
-       count(*) FILTER (WHERE (r.updated_at AT TIME ZONE $${params.length + 1})::date = (now() AT TIME ZONE $${params.length + 1})::date)::int AS "changedToday",
-       count(*) FILTER (WHERE EXISTS (SELECT 1 FROM ipy_tag_link l WHERE l.record_id=r.id))::int AS tagged ${from}`,
-      [...params.all(), scope.user.timezone || 'Asia/Kolkata']);
-    const permissions = await getFieldPermissions(scope.user, module.name);
-    const status = module.fields.find(f => f.name === module.pipelineField || f.columnName === module.pipelineField);
-    const lost = module.fields.find(f => f.isActive && (f.columnName === 'lost_reason' || f.name === 'lost_reason'));
-    const owner = module.fields.find(f => f.uitype === 'owner');
-    const fields = [
-      { title: 'Status', field: status?.name },
-      { title: 'Call Log', field: 'last_call_disposition' },
-      { title: 'Lost Reason', field: lost?.name },
-      { title: 'Agent', field: owner?.name || 'owner_id' },
-    ];
-    const charts = [];
-    for (const spec of fields) {
-      if (!spec.field || permissions.get(spec.field) === 'hidden') {
-        charts.push({ ...spec, unavailable: true, slices: [] }); continue;
-      }
-      // Facets use the same scoped reporting engine and displayed master labels.
-      const facet = await fieldFacets(scope, module.name, spec.field, { limit: 50, context: query }, tx);
-      const top = facet.values.slice(0, 5).map(v => ({ key: v.value, label: v.label, count: v.count }));
-      if (facet.blank) top.push({ key: '__blank', label: 'Unfilled', count: facet.blank });
-      const remaining = Math.max(0, (counts?.total ?? 0) - top.reduce((sum, s) => sum + s.count, 0));
-      if (remaining) top.push({ key: '__other', label: 'Other', count: remaining });
-      charts.push({ ...spec, unavailable: false, slices: top, options: [
-        ...facet.values.map(v => ({ key: v.value, label: v.label, count: v.count })),
-        ...(facet.blank ? [{ key: '__blank', label: 'Unfilled', count: facet.blank }] : []),
-      ] });
-    }
-    const tags = await tx.query<{ key: string; label: string; count: number }>(
-      `SELECT t.name AS key, t.name AS label, count(*)::int AS count FROM ipy_tag t JOIN ipy_tag_link l ON l.tag_id=t.id
-       JOIN (SELECT r.id ${from}) visible ON visible.id=l.record_id GROUP BY t.name ORDER BY count(*) DESC, t.name`, params.all());
-    charts.splice(3, 0, { title: 'Tags', field: 'record_tags', unavailable: false, slices: tags.rows, options: [
-      ...tags.rows, { key: '__blank', label: 'Untagged', count: (counts?.total ?? 0) - (counts?.tagged ?? 0) },
-    ] });
-    res.json({ ...counts, charts });
-  });
-}));
-
 // ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowLeftRight, ListFilter, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
+  ArrowLeftRight, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
   PhoneCall,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Sparkles, Tag, Trash2, Upload, X,
 } from 'lucide-react';
@@ -41,12 +41,7 @@ import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
-import { QuickFilterOverlay } from '../components/QuickFilterOverlay';
-import { QuickGraphicDashboard } from '../components/QuickGraphicDashboard';
-import {
-  arrangeQuickSections, countActiveQuickFilters, defaultQuickSections, quickPickConditions,
-  type QuickPick, type QuickPicks,
-} from '../lib/quickFilters';
+import { CallLogFilter } from '../components/CallLogFilter';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 
@@ -103,7 +98,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     applied to the rows already on screen would narrow the queue and leave the
     count beside it describing the whole list.
   */
-  const [picks, setPicks] = useState<QuickPicks>({});
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const createdWhen = chosenWhen(filter, CREATED_FIELD, CREATED_CHOICES.map((choice) => choice.key));
@@ -115,11 +109,9 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   // every record the current view/filter matches, not just this page's ids.
   const [selectedAll, setSelectedAll] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
-  const [toolbarSlots, setToolbarSlots] = useState<{ filter: HTMLElement | null; options: HTMLElement | null }>({ filter: null, options: null });
+  const [toolbarSlots, setToolbarSlots] = useState<{ options: HTMLElement | null }>({ options: null });
   useEffect(() => {
     setToolbarSlots({
-      filter: document.getElementById('global-quick-filter'),
       options: document.getElementById('global-list-options'),
     });
   }, []);
@@ -198,9 +190,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     setSortDir(searchParams.get('dir') === 'asc' ? 'asc' : 'desc');
     setColumns([]);
     setViewId(searchParams.get('view') ?? undefined);
-    // A restored filter is already applied — don't pop the panel open on
-    // arrival (dashboard drill-through lands on the records, not the builder).
-    setShowFilters(false);
     setTaskQueue(taskFromAddress(searchParams.get('task')));
     setTagPick(searchParams.get('tag'));
     setHydratedFor(moduleName ?? null);
@@ -478,15 +467,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     () => followUpFilters(taskField?.name ?? 'next_follow_up'),
     [taskField?.name],
   );
-  const fieldsByName = useMemo(() => new Map((meta?.fields ?? []).map((field) => [field.name, field])), [meta?.fields]);
-  /* The panel's sections: the admin's arrangement laid over what this module has. */
-  const quickSections = useMemo(
-    () => (meta
-      ? arrangeQuickSections(user?.ui?.quickFilters?.[meta.name], defaultQuickSections(meta.fields, { ownerField, stageField, taskField }))
-      : []),
-    [meta, user?.ui?.quickFilters, ownerField, stageField, taskField],
-  );
-
   const effectiveFilter = useMemo<FilterGroup>(() => {
     const extra = [
       ...(taskQueue ? taskFilters[taskQueue].conditions : []),
@@ -500,7 +480,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         disagree about the same tick.
       */
       ...(stagePick.length && stageField
-        ? quickPickConditions({ [stageField.name]: { kind: 'values', values: stagePick } }, fieldsByName)
+        ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }]
         : []),
       ...(agentPick && ownerField
         ? [{ field: ownerField.name, operator: 'equals' as const, value: agentPick }]
@@ -508,7 +488,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       // `record_tags` is the builder's own name for the tags on a record; a tag
       // is not a field on the module, so it cannot be resolved as one.
       ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
-      ...quickPickConditions(picks, fieldsByName),
       /*
         How the last call went. `last_call_disposition` is a system field in the
         query builder, not a column on either module — a disposition lives on
@@ -523,7 +502,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, picks, fieldsByName, dispositionPick]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, dispositionPick]);
 
 
   /*
@@ -898,18 +877,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     );
   }
 
-  /*
-    Everything below this point runs only once `meta` has arrived, which is
-    why none of it may be a hook.
-
-    The guards above return early while the module is loading, so a `useMemo`
-    here runs on some renders and not others — React counts hooks per render
-    and throws "Rendered more hooks than during the previous render", which
-    takes the whole list to an error boundary the moment the data lands. Both
-    of these are a filter and a lookup over a list of fields; plain
-    expressions cost nothing and cannot get the order wrong.
-  */
-
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
 
   const canCreate = meta.permissions.create;
@@ -926,11 +893,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     against its button, not drawn in a portal, and a sideways-scrolling row
     would clip the panel it opens.
   */
-  // Every quick and live filter that is on — the badge on the filter button
-  // over the queue, which is the one way into the panel since 3 October 2026.
-  const quickFilterCount = countActiveQuickFilters({
-    filter, stages: stagePick, agent: agentPick, task: taskQueue, disposition: dispositionPick, picks,
-  });
   const newRecordsControl = (
     <ChoiceChip
       label="New"
@@ -1023,13 +985,36 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         allCount={data?.total ?? 0}
       />
     ) : null;
+  const callLogBaseFilter: FilterGroup = {
+    logic: 'AND',
+    conditions: [
+      ...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions),
+      ...(taskQueue ? taskFilters[taskQueue].conditions : []),
+      ...(stagePick.length && stageField ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }] : []),
+      ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
+    ],
+  };
+  const callLogControl = (
+    <CallLogFilter
+      module={moduleName}
+      view={activeView?.id}
+      search={search || undefined}
+      filter={countConditions(callLogBaseFilter) ? canonicalFilter(callLogBaseFilter) : undefined}
+      agent={agentPick}
+      onAgent={(id) => { setAgentPick(id); setPage(1); }}
+      disposition={dispositionPick}
+      onDisposition={(value) => { setDispositionPick(value); setPage(1); }}
+      count={data?.total ?? 0}
+    />
+  );
   const ribbonControls = (
-    <div className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Record list filters">
+    <div className="ml-auto flex shrink-0 items-center gap-2" role="group" aria-label="Record list controls">
       {newRecordsControl}
       {aiCallControl}
       {bulkCallControl}
       {visitControl}
       {taskControl}
+      {callLogControl}
     </div>
   );
   const controlsInRibbon = Boolean(showStageRibbon && stageField);
@@ -1041,27 +1026,12 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
           {bulkCallControl}
           {visitControl}
           {taskControl}
+          {callLogControl}
         </div>
       )}
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
         {/* Tag counts are the live list's, so they would mislead in the Archive. */}
         {!archive && <TagCards moduleName={meta.name} owner={agentPick || undefined} />}
-        {toolbarSlots.filter && createPortal(
-            <button
-              onClick={() => setShowFilters((value) => !value)}
-              className={toolbarIcon('filter', showFilters || quickFilterCount > 0)}
-              aria-label="Quick and live filters"
-              aria-expanded={showFilters}
-              title="Quick and live filters"
-              data-testid="quick-filter-button"
-            >
-              <ListFilter className={TOOLBAR_ICON_SIZE} />
-              {quickFilterCount > 0 && (
-                <span className="absolute -right-1 -top-1 rounded-full bg-blue-600 px-1.5 text-2xs font-bold text-white">{quickFilterCount}</span>
-              )}
-            </button>
-        , toolbarSlots.filter)}
-
         {toolbarSlots.options && createPortal(
             <Dropdown
               trigger={<button className={toolbarIcon('exchange')} aria-label="Import, export and list options" title="Import / Export"><FileUp className={TOOLBAR_ICON_SIZE} /></button>}
@@ -1130,58 +1100,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     </div>
   ) : null;
 
-  /** How many of the quick filters are narrowing the list right now. */
-  const clearQuickFilters = (): void => {
-    setAiCallFilter(undefined);
-    setAgentPick(null);
-    setStagePick([]);
-    setTaskQueue(null);
-    setDispositionPick(NO_DISPOSITION_PICK);
-    setPicks({});
-    setFilter(EMPTY_FILTER);
-    setPage(1);
-  };
-  const pickQuick = (field: string, pick: QuickPick | null): void => {
-    setPicks((current) => {
-      const next = { ...current };
-      if (pick) next[field] = pick; else delete next[field];
-      return next;
-    });
-    setPage(1);
-  };
-
-  const quickFilterPanel = (placement: 'pane' | 'floating'): JSX.Element => (
-    <QuickFilterOverlay
-      open={showFilters}
-      onClose={() => setShowFilters(false)}
-      placement={placement}
-      module={meta}
-      countContext={{ view: query.view, search: query.search, filter: query.filter }}
-      sections={quickSections}
-      count={data?.total}
-      counting={isFetching}
-      views={(views ?? []).map((view) => ({ id: view.id, name: view.name, isDefault: view.isDefault, count: view.count }))}
-      activeViewId={activeView?.id}
-      onChooseView={(id) => { setTagPick(null); chooseView(id); }}
-      ownerField={ownerField}
-      agent={agentPick}
-      onAgent={(id) => { setAgentPick(id); setPage(1); }}
-      stageField={stageField}
-      stages={stagePick}
-      onStages={(values) => { setStagePick(values); setPage(1); }}
-      taskField={taskField}
-      task={taskQueue}
-      onTask={(value) => { setTaskQueue(value); setPage(1); }}
-      disposition={dispositionPick}
-      onDisposition={(value) => { setDispositionPick(value); setPage(1); }}
-      picks={picks}
-      onPick={pickQuick}
-      filter={filter}
-      onFilter={(value) => { setFilter(value); setPage(1); }}
-      onClear={clearQuickFilters}
-    />
-  );
-
   return (
     <div className="flex h-full min-w-0 flex-col">
       {showStageRibbon && stageField && (
@@ -1190,8 +1108,8 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
           data-testid="pipeline-stage-ribbon"
           className="shrink-0 border-b border-slate-200 bg-white px-2 py-1 sm:px-3 dark:border-slate-800 dark:bg-slate-900"
         >
-          <div className="flex min-w-max items-center gap-2 overflow-x-auto pb-0.5" role="group" aria-label="Filter by stage">
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center justify-between gap-3 pb-0.5" role="group" aria-label="Filter by stage">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
             <div className="flex shrink-0 flex-col justify-center leading-tight text-slate-500 dark:text-slate-400">
               <h2 className="text-[10px] font-medium uppercase tracking-wide">{stageField.label || 'Stages'}</h2>
               <span className="text-[10px] font-normal tabular-nums" aria-label="Selected record count">{activeRecordPosition}</span>
@@ -1231,9 +1149,9 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                   }}
                   className={cn(
                     'relative flex h-6 shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-medium transition-colors',
-                    selectedStage ? 'z-[1] text-white' : 'text-white hover:z-[1]',
+                  selectedStage ? 'z-[1] text-white' : 'text-slate-800 hover:z-[1]',
                   )}
-                  style={{ backgroundColor: selectedStage ? '#374151' : `color-mix(in srgb, ${color} 82%, #111827)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
+                  style={{ backgroundColor: selectedStage ? color : `color-mix(in srgb, ${color} 38%, white)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
                 >
                   <span className="max-w-[9rem] truncate">{option.label || option.value}</span>
                   <span className={cn('px-1 text-[9px] tabular-nums', selectedStage ? 'text-white/80' : 'opacity-70')}>
@@ -1243,14 +1161,13 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
               );
             })}
             </div>
+            </div>
             <div aria-hidden="true" className="h-6 w-px shrink-0 bg-slate-300 dark:bg-slate-700" />
             {ribbonControls}
-            </div>
           </div>
         </section>
       )}
 
-      {meta && <QuickGraphicDashboard module={moduleName} label={meta.label} context={query} />}
       {/* Header */}
       {/*
         The toolbar reads as a bar now, not as the top of the page.
@@ -1400,7 +1317,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             key={meta.name}
             module={meta}
             rows={rows}
-            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { clearQuickFilters(); setTagPick(null); setSearchInput(''); setSearch(''); }}>Clear search and filters</button>}
+            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { setAiCallFilter(undefined); setAgentPick(null); setStagePick([]); setTaskQueue(null); setDispositionPick(NO_DISPOSITION_PICK); setTagPick(null); setFilter(EMPTY_FILTER); setSearchInput(''); setSearch(''); setPage(1); }}>Clear search and filters</button>}
             // `?open=` — a record named in the address, from global search, a
             // chat, or Save & Next. It may not be on this page at all.
             openId={searchParams.get('open')}
@@ -1444,14 +1361,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             queueFooter={queueFooter}
             onActivePositionChange={reportActiveRecordPosition}
             onShowing={setPaneShowing}
-            filterBar={{
-              open: showFilters,
-              onToggle: () => setShowFilters((value) => !value),
-              // Drawn inside the right-hand pane, in its exact shape. It is
-              // opened by the filter button over the queue; the pane's own bar
-              // for it went on 3 October 2026 as a duplicate of that button.
-              panel: quickFilterPanel('pane'),
-            }}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
               : undefined}
@@ -1577,10 +1486,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         confirmLabel="Delete view"
         danger
       />
-      {/* With no record open there is no right-hand pane to fill, so the
-          panel sits at the screen's own right edge instead. */}
-      {rows.length === 0 && quickFilterPanel('floating')}
-
       <ExportWizard
         open={showExport}
         onClose={() => setShowExport(false)}
