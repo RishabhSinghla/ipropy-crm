@@ -587,8 +587,14 @@ export function IpropyWorkspace({
       .filter((field) => field.blockId === block.id && field.uitype === 'currency' && field.name.endsWith('_floor_price'))
       .map((field) => field.name);
   }, [builderModule]);
-  const resolvedPhoneField = phoneField ?? module.fields.find((field) =>
-    field.isActive && (field.uitype === 'phone' || /mobile|phone/i.test(`${field.name} ${field.label}`)),
+  const phoneFieldWithValue = (field: FieldMeta | undefined) =>
+    field && active?.values[field.name] != null && String(active.values[field.name]).trim() !== ''
+      ? field
+      : undefined;
+  const resolvedPhoneField = phoneFieldWithValue(phoneField) ?? module.fields.find((field) =>
+    field.isActive
+      && (field.uitype === 'phone' || /mobile|phone/i.test(`${field.name} ${field.label}`))
+      && phoneFieldWithValue(field),
   );
   const phoneValue = active && resolvedPhoneField ? displayOf(active, resolvedPhoneField) : '';
   const emailValue = active && emailField ? displayOf(active, emailField) : '';
