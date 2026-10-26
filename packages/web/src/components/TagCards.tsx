@@ -93,7 +93,7 @@ export function TagCards({ moduleName, owner }: { moduleName?: string; owner?: s
   if (!cards.length) return null;
 
   return (
-    <div className="flex min-w-0 w-full items-center overflow-x-auto rounded-full border border-brand-200 bg-brand-50 divide-x divide-brand-300" data-testid="tag-cards">
+    <div className="flex min-w-0 w-full items-center overflow-x-auto rounded-full border border-slate-200 bg-slate-50 divide-x divide-slate-200" data-testid="tag-cards">
       {cards.map((tag) => {
         const { module } = tag;
         const narrowed = location.pathname.startsWith(`/${module}`)
@@ -131,12 +131,12 @@ export function TagCards({ moduleName, owner }: { moduleName?: string; owner?: s
               in a browser, in dark mode, on the element that has it.
             */
             className={cn(
-              'flex min-w-0 flex-1 items-center justify-center gap-2 border-0 px-2.5 py-1.5 text-left transition hover:brightness-95 first:rounded-l-full last:rounded-r-full',
+              'flex h-7 min-w-0 flex-1 items-center justify-center gap-1 border-0 px-1.5 py-0.5 text-left transition hover:brightness-95 first:rounded-l-full last:rounded-r-full',
               narrowed ? 'bg-brand-700 text-white font-bold' : 'badge-tinted',
             )}
           >
-            <span className="min-w-0 truncate text-[11px] font-bold leading-tight">{tag.name}</span>
-            <span className={cn('shrink-0 rounded-full px-1.5 text-[10px] font-bold leading-[1.1rem] tnum', narrowed ? 'bg-white/20 text-white' : 'badge-solid')}>
+            <span className="min-w-0 truncate text-[10px] font-semibold leading-tight">{tag.name}</span>
+            <span className={cn('shrink-0 rounded-full px-1 text-[9px] font-semibold leading-[0.95rem] tnum', narrowed ? 'bg-white/20 text-white' : 'badge-solid')}>
               {tag.count.toLocaleString('en-IN')}
             </span>
           </button>

@@ -10,7 +10,7 @@ import { Dropdown } from './ui';
  * one to narrow the list, pick it again or "Show all" to undo.
  */
 export function ChoiceChip<T extends string>({
-  label, title, choices, active, count, busy, onPick, buttonClass, countClass, testId,
+  label, title, choices, active, count, choiceCounts, busy, onPick, buttonClass, countClass, testId,
 }: {
   label: string;
   title: string;
@@ -18,6 +18,8 @@ export function ChoiceChip<T extends string>({
   active: T | null;
   /** The number beside the label: the chosen option's, or the first option's when none is chosen. */
   count: number;
+  /** Exact totals for each menu choice, calculated with the other active filters retained. */
+  choiceCounts?: Partial<Record<T, number>>;
   busy?: boolean;
   onPick: (key: T | null) => void;
   buttonClass: (on: boolean) => string;
@@ -58,8 +60,11 @@ export function ChoiceChip<T extends string>({
                 choice.key === active ? 'font-semibold text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-200',
               )}
             >
-              {choice.label}
-              {choice.key === active && <Check className="h-3.5 w-3.5" />}
+              <span>{choice.label}</span>
+              <span className="ml-auto flex items-center gap-2 tabular-nums">
+                <span className="text-xs text-slate-500 dark:text-slate-400">{choiceCounts?.[choice.key]?.toLocaleString('en-IN') ?? '—'}</span>
+                {choice.key === active && <Check className="h-3.5 w-3.5" />}
+              </span>
             </button>
           ))}
           {on && (
