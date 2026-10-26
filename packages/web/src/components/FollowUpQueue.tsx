@@ -1,10 +1,10 @@
 import { type JSX } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Clock3, Sparkles } from 'lucide-react';
+import { ChevronDown, Clock3, Sparkles } from 'lucide-react';
 import type { FieldMeta, FilterGroup, ListQuery } from '@ipropy/shared';
 import { api } from '../lib/api';
-import { filterIcon, toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { filterIcon, toolbarButton } from '../lib/toolbarButton';
 import { cn } from '../lib/utils';
 import { Dropdown } from './ui';
 import { AgentPicker } from './AgentPicker';
@@ -146,11 +146,7 @@ export function FollowUpQueue({
                 1 October. */}
             <Clock3 aria-hidden="true" className={filterIcon('task', Boolean(active))} />
             <span>Task</span>
-            {/* Something overdue stays red on the purple: it is the one count
-                in this row that is a warning rather than a size. */}
-            <span className={toolbarCount(Boolean(active), counts.pending > 0)}>
-              {total.toLocaleString('en-IN')}
-            </span>
+            <ChevronDown aria-hidden="true" className="h-3 w-3 opacity-60" />
           </button>
         }
       >
