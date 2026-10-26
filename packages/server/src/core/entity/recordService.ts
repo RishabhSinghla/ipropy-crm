@@ -351,6 +351,26 @@ export async function listRecords(
     })),
   );
 
+  // `last_call_disposition` is a computed system field, not a column on
+  // ipy_record. The queue explicitly requests it so the left pane can show
+  // Android and CRM-logged call outcomes beside each name. Populate it with
+  // one indexed lookup for the page; selecting `ipy_record.*` alone silently
+  // omitted it, even though the filter and sort grammar knew about the field.
+  if (effectiveColumns?.includes('last_call_disposition') && rows.length) {
+    const latestDispositions = await conn.query<{ record_id: string; disposition: string }>(
+      `SELECT DISTINCT ON (record_id) record_id, disposition
+         FROM ipy_call
+        WHERE record_id = ANY($1::uuid[]) AND disposition IS NOT NULL
+        ORDER BY record_id, started_at DESC, id DESC`,
+      [rows.map((row) => row.id)],
+    );
+    const dispositionByRecord = new Map(latestDispositions.rows.map((call) => [call.record_id, call.disposition]));
+    for (const row of rows) {
+      const disposition = dispositionByRecord.get(row.id);
+      if (disposition) row.values.last_call_disposition = disposition;
+    }
+  }
+
   if (rows.length) {
     const history = await conn.query<{ record_id: string; attempts: number; answered: number; last_at: string; last_status: string }>(
       `SELECT record_id, count(*)::int AS attempts, count(*) FILTER (WHERE status='completed')::int AS answered,

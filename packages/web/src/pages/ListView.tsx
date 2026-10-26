@@ -549,6 +549,46 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const { data: visitRecords } = useQuery({ queryKey: ['visits-today', moduleName, visitsQuery],
     queryFn: () => api.list(moduleName!, visitsQuery), enabled: Boolean(visitField && hydratedFor === moduleName), staleTime: 60_000 });
 
+  // The dropdown totals are independent of the selected date choice, while
+  // retaining search, stage, owner, tag and every other active filter.
+  const createdChoiceCounts = useQueries({
+    queries: CREATED_CHOICES.map(({ key }) => {
+      const countQuery: ListQuery = {
+        ...query, page: 1, pageSize: 1,
+        filter: canonicalFilter(withChoice(
+          withoutChoice(effectiveFilter, CREATED_FIELD),
+          CREATED_FIELD,
+          choiceConditions(CREATED_FIELD, key, localDay(new Date())),
+        )),
+      };
+      return {
+        queryKey: ['records', moduleName, 'new-choice-count', countQuery],
+        queryFn: () => api.list(moduleName!, countQuery),
+        enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName),
+        staleTime: 30_000,
+      };
+    }),
+  });
+  const visitChoiceCounts = useQueries({
+    queries: VISIT_CHOICES.map(({ key }) => {
+      const field = visitField?.name ?? 'created_at';
+      const countQuery: ListQuery = {
+        ...query, page: 1, pageSize: 1,
+        filter: canonicalFilter(withChoice(
+          withoutChoice(effectiveFilter, field),
+          field,
+          choiceConditions(field, key, localDay(new Date())),
+        )),
+      };
+      return {
+        queryKey: ['records', moduleName, 'visit-choice-count', countQuery],
+        queryFn: () => api.list(moduleName!, countQuery),
+        enabled: Boolean(visitField && moduleName && meta && views && hydratedFor === moduleName),
+        staleTime: 30_000,
+      };
+    }),
+  });
+
   // The call deck must resume this *exact* queue after Save & Next. The URL's
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a
   // follow-up queue can supply its own sort even when no sort is named in the
@@ -909,6 +949,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       title="Records added recently"
       choices={CREATED_CHOICES}
       active={createdWhen}
+      choiceCounts={Object.fromEntries(CREATED_CHOICES.map((choice, index) => [choice.key, createdChoiceCounts[index]?.data?.total]))}
       count={createdWhen ? (data?.total ?? 0) : (todayRecords?.total ?? 0)}
       busy={Boolean(createdWhen) && isFetching}
       onPick={(when) => {
@@ -942,6 +983,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       title="Records by planned visit date"
       choices={VISIT_CHOICES}
       active={visitWhen}
+      choiceCounts={Object.fromEntries(VISIT_CHOICES.map((choice, index) => [choice.key, visitChoiceCounts[index]?.data?.total]))}
       count={visitWhen ? (data?.total ?? 0) : (visitRecords?.total ?? 0)}
       onPick={(when) => {
         setFilter(when
@@ -1168,7 +1210,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                     'relative flex h-6 shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-medium transition-colors',
                   selectedStage ? 'z-[1] text-white' : 'text-slate-800 hover:z-[1]',
                   )}
-                  style={{ backgroundColor: selectedStage ? color : `color-mix(in srgb, ${color} 22%, white)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
+                  style={{ backgroundColor: selectedStage ? `color-mix(in srgb, ${color} 78%, #111827)` : `color-mix(in srgb, ${color} 12%, white)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
                 >
                   <span className="max-w-[9rem] truncate">{option.label || option.value}</span>
                   <span className={cn('px-1 text-[9px] tabular-nums', selectedStage ? 'text-white/80' : 'opacity-70')}>
