@@ -45,7 +45,7 @@ import { IpropyWorkspace } from '../components/IpropyWorkspace';
 import { QuickFilterOverlay } from '../components/QuickFilterOverlay';
 import { QuickGraphicDashboard } from '../components/QuickGraphicDashboard';
 import {
-  arrangeQuickSections, countActiveQuickFilters, defaultQuickSections, quickPickConditions,
+  EMPTY_PICK, arrangeQuickSections, countActiveQuickFilters, defaultQuickSections, quickPickConditions,
   type QuickPick, type QuickPicks,
 } from '../lib/quickFilters';
 import { callQueueUrl } from '../lib/callQueueUrl';
@@ -438,6 +438,19 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     the column is still there and nothing asks for it.
   */
   const stageField = meta ? pipelineFieldOf(meta) : undefined;
+  // One shared facet request supplies exact status totals for the top ribbon.
+  const showStageRibbon = !archive && (moduleName === 'leads' || moduleName === 'inventory') && Boolean(stageField);
+  const stageFacet = useQuery({
+    queryKey: ['facet', moduleName, stageField?.name, {}],
+    queryFn: () => api.facet(moduleName ?? '', stageField!.name, undefined, 50, {}),
+    enabled: showStageRibbon,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+  const stageCounts = new Map((stageFacet.data?.values ?? []).map((row) => [row.value, row.count]));
+  const stageTotal = stageFacet.data
+    ? [...stageCounts.values()].reduce((total, count) => total + count, 0) + (stageFacet.data.blank ?? 0)
+    : undefined;
   const ownerField = meta ? assignmentField(meta.fields) : undefined;
 
   // Next Follow-up is the CRM's task field. These are deliberately not saved
@@ -1230,6 +1243,96 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
 
   return (
     <div className="flex h-full min-w-0 flex-col">
+      {showStageRibbon && stageField && (
+        <section
+          aria-label={`${meta?.label ?? 'Record'} stages`}
+          data-testid="pipeline-stage-ribbon"
+          className="shrink-0 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-5 dark:border-slate-800 dark:bg-slate-900"
+        >
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+              {stageField.label || 'Stages'}
+            </h2>
+            <span className="text-[11px] text-slate-400 dark:text-slate-500">
+              {stagePick.length ? `${stagePick.length} selected` : 'All stages'}
+            </span>
+          </div>
+          <div className="flex min-w-0 items-stretch gap-1 overflow-x-auto pb-0.5" role="group" aria-label="Filter by stage">
+            <button
+              type="button"
+              aria-pressed={stagePick.length === 0}
+              onClick={() => { setStagePick([]); setPage(1); }}
+              className={cn(
+                'flex min-h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-xs font-semibold transition-colors',
+                stagePick.length === 0
+                  ? 'border-brand-700 bg-brand-700 text-white shadow-sm'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200',
+              )}
+            >
+              <span>All</span>
+              <span className={cn('rounded px-1.5 py-0.5 text-[10px] tabular-nums', stagePick.length === 0 ? 'bg-white/20' : 'bg-white dark:bg-slate-700')}>
+                {stageTotal?.toLocaleString('en-IN') ?? '—'}
+              </span>
+            </button>
+            {(stageField.options ?? []).map((option, index) => {
+              const selectedStage = stagePick.includes(option.value);
+              const color = option.color || 'var(--brand-600)';
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={selectedStage}
+                  title={`${option.label || option.value}: ${(stageCounts.get(option.value) ?? 0).toLocaleString('en-IN')} records`}
+                  onClick={() => {
+                    setStagePick((current) => selectedStage
+                      ? current.filter((value) => value !== option.value)
+                      : [...current, option.value]);
+                    setPage(1);
+                  }}
+                  className={cn(
+                    'relative flex min-h-10 min-w-[7rem] shrink-0 items-center justify-center gap-1.5 border px-3 text-xs font-semibold transition-colors',
+                    index === 0 ? 'rounded-l-md' : '-ml-1.5',
+                    selectedStage
+                      ? 'z-[1] border-brand-700 bg-brand-700 text-white shadow-sm'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:z-[1] hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200',
+                  )}
+                  style={{ clipPath: index === 0
+                    ? 'polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%)'
+                    : 'polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%)' }}
+                >
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: selectedStage ? 'white' : color }} />
+                  <span className="max-w-[9rem] truncate">{option.label || option.value}</span>
+                  <span className={cn('rounded px-1 py-0.5 text-[10px] tabular-nums', selectedStage ? 'bg-white/20' : 'bg-white dark:bg-slate-700')}>
+                    {(stageCounts.get(option.value) ?? 0).toLocaleString('en-IN')}
+                  </span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-pressed={stagePick.includes(EMPTY_PICK)}
+              onClick={() => {
+                setStagePick((current) => current.includes(EMPTY_PICK)
+                  ? current.filter((value) => value !== EMPTY_PICK)
+                  : [...current, EMPTY_PICK]);
+                setPage(1);
+              }}
+              className={cn(
+                'flex min-h-10 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors',
+                stagePick.includes(EMPTY_PICK)
+                  ? 'border-brand-700 bg-brand-700 text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
+              )}
+            >
+              <span>Unfilled</span>
+              <span className={cn('rounded px-1 py-0.5 text-[10px] tabular-nums', stagePick.includes(EMPTY_PICK) ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800')}>
+                {stageFacet.data?.blank?.toLocaleString('en-IN') ?? '—'}
+              </span>
+            </button>
+          </div>
+        </section>
+      )}
+
       {meta && <QuickGraphicDashboard module={moduleName} label={meta.label} context={query} />}
       {/* Header */}
       {/*
