@@ -44,7 +44,7 @@ import { IpropyWorkspace } from '../components/IpropyWorkspace';
 import { QuickFilterOverlay } from '../components/QuickFilterOverlay';
 import { QuickGraphicDashboard } from '../components/QuickGraphicDashboard';
 import {
-  EMPTY_PICK, arrangeQuickSections, countActiveQuickFilters, defaultQuickSections, quickPickConditions,
+  arrangeQuickSections, countActiveQuickFilters, defaultQuickSections, quickPickConditions,
   type QuickPick, type QuickPicks,
 } from '../lib/quickFilters';
 import { callQueueUrl } from '../lib/callQueueUrl';
@@ -945,81 +945,107 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
           : withoutChoice(filter, CREATED_FIELD));
         setPage(1);
       }}
-      buttonClass={(on) => cn('flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-[11px] font-semibold transition-colors',
-        on ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-400 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200')}
-      countClass={(on) => cn('rounded-full px-1.5 text-[10px] tabular-nums', on ? 'bg-white/20 text-white' : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200')}
+      buttonClass={(on) => toolbarButton(on, 'h-6 px-2 text-[10px]')}
+      countClass={(on) => toolbarCount(on)}
       testId="new-records-chip"
     />
   );
+  const taskControl = taskQueuesEnabled ? (
+    <FollowUpQueue
+      moduleName={moduleName}
+      fieldName={taskField!.name}
+      viewId={activeView?.id}
+      fieldMap={fieldMap}
+      active={taskQueue}
+      onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
+      archive={archive}
+      ownerField={ownerField?.name ?? null}
+      agent={agentPick}
+      onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
+    />
+  ) : null;
+  const visitControl = visitField ? (
+    <ChoiceChip
+      label="Visits"
+      title="Records by planned visit date"
+      choices={VISIT_CHOICES}
+      active={visitWhen}
+      count={visitWhen ? (data?.total ?? 0) : (visitRecords?.total ?? 0)}
+      onPick={(when) => {
+        setFilter(when
+          ? withChoice(filter, visitField.name, choiceConditions(visitField.name, when, localDay(new Date())))
+          : withoutChoice(filter, visitField.name));
+        setPage(1);
+      }}
+      buttonClass={(on) => toolbarButton(on, 'h-6 px-2 text-[10px]')}
+      countClass={(on) => toolbarCount(on)}
+      testId="visits-chip"
+    />
+  ) : null;
+  const aiCallFilterLabel = aiCallFilter === 'called' ? 'AI called'
+    : aiCallFilter === 'not_called' ? 'Not AI called'
+      : aiCallFilter === 'unsuccessful' ? 'Unsuccessful call' : 'All AI Calls';
+  const aiCallControl = (
+    <Dropdown
+      align="right"
+      className="w-44"
+      trigger={(
+        <button type="button" className={toolbarButton(Boolean(aiCallFilter), 'h-6 px-2 text-[10px]')} aria-label="AI call history filter" data-testid="ai-call-history-filter">
+          <PhoneCall className="h-3 w-3" />
+          <span>{aiCallFilterLabel}</span>
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div className="py-1" role="menu" aria-label="AI call history filter">
+          {([
+            ['', 'All AI Calls'],
+            ['called', 'AI called'],
+            ['not_called', 'Not AI called'],
+            ['unsuccessful', 'Unsuccessful call'],
+          ] as const).map(([value, label]) => (
+            <DropdownItem key={label} onClick={() => { setAiCallFilter((value || undefined) as ListQuery['aiCalls']); setPage(1); close(); }}>
+              {label}{(aiCallFilter ?? '') === value && <span className="ml-auto text-brand-700">✓</span>}
+            </DropdownItem>
+          ))}
+        </div>
+      )}
+    </Dropdown>
+  );
+  const bulkCallControl = meta.fields.some((field) => field.uitype === 'phone' && field.isActive)
+    && selected.size === 0 && !selectedAll ? (
+      <SarvamBulkCallButton
+        module={moduleName}
+        fieldMap={fieldMap}
+        ids={[]}
+        allQuery={query}
+        allCount={data?.total ?? 0}
+      />
+    ) : null;
+  const ribbonControls = (
+    <div className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Record list filters">
+      {newRecordsControl}
+      {aiCallControl}
+      {bulkCallControl}
+      {visitControl}
+      {taskControl}
+    </div>
+  );
+  const controlsInRibbon = Boolean(showStageRibbon && stageField);
   const queueTools = (
     <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
-      <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
-        <select className="input h-7 min-w-0 max-w-32 flex-1 text-[10px]" aria-label="AI call history filter" value={aiCallFilter ?? ''}
-          onChange={(event) => { setAiCallFilter((event.target.value || undefined) as ListQuery['aiCalls']); setPage(1); }}>
-          <option value="">All AI Calls</option><option value="called">AI called</option><option value="not_called">Not AI called</option><option value="unsuccessful">Unsuccessful call</option>
-        </select>
-
-        {taskQueuesEnabled && (
-          <FollowUpQueue
-            moduleName={moduleName}
-            fieldName={taskField!.name}
-            viewId={activeView?.id}
-            fieldMap={fieldMap}
-            active={taskQueue}
-            onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
-            archive={archive}
-            ownerField={ownerField?.name ?? null}
-            agent={agentPick}
-            onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
-          />
-        )}
-
-        {/*
-          **Visits opens a list now** — the owner, 10 October 2026: *"Rename
-          Today Visits into Visits, also Build Dropdown filter for today,
-          Overdue, Upcoming, tomorrow in same Button/Chip"*. The number is
-          today's until a choice is made, then the list's own total.
-        */}
-        {visitField && (
-          <ChoiceChip
-            label="Visits"
-            title="Records by planned visit date"
-            choices={VISIT_CHOICES}
-            active={visitWhen}
-            count={visitWhen ? (data?.total ?? 0) : (visitRecords?.total ?? 0)}
-            onPick={(when) => {
-              setFilter(when
-                ? withChoice(filter, visitField.name, choiceConditions(visitField.name, when, localDay(new Date())))
-                : withoutChoice(filter, visitField.name));
-              setPage(1);
-            }}
-            buttonClass={(on) => toolbarButton(on)}
-            countClass={(on) => toolbarCount(on)}
-            testId="visits-chip"
-          />
-        )}
-        {/*
-          **The Hot chip left this row on 3 October 2026** — the owner: *"Now i
-          need to remove hot tag/Icon from Left Record Pane after the List and
-          Task Icons."* Tags are on the main toolbar beside the company name
-          now (`TagCards`), so a third pill here was the same question asked in
-          two places; and the button on the left of this row still says the
-          tag's name whenever one is narrowing the list.
-        */}
-
-      </div>
+      {!controlsInRibbon && (
+        <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
+          {aiCallControl}
+          {bulkCallControl}
+          {visitControl}
+          {taskControl}
+        </div>
+      )}
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
         {/* Tag counts are the live list's, so they would mislead in the Archive. */}
         {!archive && <TagCards moduleName={meta.name} owner={agentPick || undefined} />}
-        {meta.fields.some((field) => field.uitype === 'phone' && field.isActive) && selected.size === 0 && !selectedAll && (
-          <SarvamBulkCallButton
-            module={moduleName}
-            fieldMap={fieldMap}
-            ids={[]}
-            allQuery={query}
-            allCount={data?.total ?? 0}
-          />
-        )}
         {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}
@@ -1164,21 +1190,22 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
           data-testid="pipeline-stage-ribbon"
           className="shrink-0 border-b border-slate-200 bg-white px-2 py-1 sm:px-3 dark:border-slate-800 dark:bg-slate-900"
         >
-          <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-0.5" role="group" aria-label="Filter by stage">
+          <div className="flex min-w-max items-center gap-2 overflow-x-auto pb-0.5" role="group" aria-label="Filter by stage">
+            <div className="flex min-w-0 items-center gap-2">
             <div className="flex shrink-0 flex-col justify-center leading-tight text-slate-500 dark:text-slate-400">
               <h2 className="text-[10px] font-medium uppercase tracking-wide">{stageField.label || 'Stages'}</h2>
               <span className="text-[10px] font-normal tabular-nums" aria-label="Selected record count">{activeRecordPosition}</span>
             </div>
-            <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="group" aria-label="Filter by stage options">
+            <div className="flex min-w-0 items-center gap-0 overflow-x-auto" role="group" aria-label="Filter by stage options">
             <button
               type="button"
               aria-pressed={stagePick.length === 0}
               onClick={() => { setStagePick([]); setPage(1); }}
               className={cn(
-                'flex h-6 shrink-0 items-center gap-1 rounded-r-md border px-2 text-[10px] font-medium transition-colors',
+                'flex h-6 shrink-0 items-center gap-1 px-2 text-[10px] font-medium transition-colors',
                 stagePick.length === 0
-                  ? 'border-brand-700 bg-brand-700 text-white'
-                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200',
+                  ? 'bg-slate-700 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300',
               )}
               style={{ clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)' }}
             >
@@ -1203,12 +1230,10 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                     setPage(1);
                   }}
                   className={cn(
-                    'relative flex h-6 shrink-0 items-center justify-center gap-1 border px-2 text-[10px] font-medium transition-colors',
-                    selectedStage
-                      ? 'z-[1] text-white'
-                      : 'hover:z-[1]',
+                    'relative flex h-6 shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-medium transition-colors',
+                    selectedStage ? 'z-[1] text-white' : 'text-white hover:z-[1]',
                   )}
-                  style={{ borderColor: color, backgroundColor: selectedStage ? color : `color-mix(in srgb, ${color} 10%, white)`, color: selectedStage ? 'white' : color, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
+                  style={{ backgroundColor: selectedStage ? '#374151' : `color-mix(in srgb, ${color} 82%, #111827)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
                 >
                   <span className="max-w-[9rem] truncate">{option.label || option.value}</span>
                   <span className={cn('px-1 text-[9px] tabular-nums', selectedStage ? 'text-white/80' : 'opacity-70')}>
@@ -1217,28 +1242,9 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                 </button>
               );
             })}
-            <button
-              type="button"
-              aria-pressed={stagePick.includes(EMPTY_PICK)}
-              onClick={() => {
-                setStagePick((current) => current.includes(EMPTY_PICK)
-                  ? current.filter((value) => value !== EMPTY_PICK)
-                  : [...current, EMPTY_PICK]);
-                setPage(1);
-              }}
-              className={cn(
-                'flex h-6 shrink-0 items-center gap-1 border px-2 text-[10px] font-medium transition-colors',
-                stagePick.includes(EMPTY_PICK)
-                  ? 'border-brand-700 bg-brand-700 text-white'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
-              )}
-              style={{ clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
-            >
-              <span>Unfilled</span>
-              <span className={cn('px-1 text-[9px] tabular-nums', stagePick.includes(EMPTY_PICK) ? 'text-white/80' : 'opacity-70')}>
-                {stageFacet.data?.blank?.toLocaleString('en-IN') ?? '—'}
-              </span>
-            </button>
+            </div>
+            <div aria-hidden="true" className="h-6 w-px shrink-0 bg-slate-300 dark:bg-slate-700" />
+            {ribbonControls}
             </div>
           </div>
         </section>
@@ -1434,7 +1440,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             queueTools={queueTools}
-            queueHeaderAction={newRecordsControl}
+            queueHeaderAction={!controlsInRibbon ? newRecordsControl : undefined}
             queueFooter={queueFooter}
             onActivePositionChange={reportActiveRecordPosition}
             onShowing={setPaneShowing}
@@ -1877,12 +1883,13 @@ function SarvamBulkCallButton({
     <>
       <button
         type="button"
-        className="btn-secondary btn-sm h-8 w-8 justify-center px-0 text-violet-700 dark:text-violet-300"
+        className={toolbarButton(false, 'h-6 px-2 text-[10px]')}
         onClick={openBatch}
         title={finished && offset + batchSize < total ? 'AI call next batch' : allQuery ? 'AI call records in this view' : 'AI call selected records'}
         aria-label={finished && offset + batchSize < total ? 'AI call next batch' : allQuery ? 'AI call records in this view' : 'AI call selected records'}
       >
-        <PhoneCall className="h-4 w-4" />
+        <PhoneCall className="h-3 w-3" />
+        <span>AI Call</span>
       </button>
       <Modal
         open={open}
