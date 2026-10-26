@@ -414,14 +414,11 @@ function Choice({ option, checked, onClick }: { option: Option; checked: boolean
 function StageChoices({ module, field, ticked, top, onTick }: {
   module: string; field: FieldMeta; ticked: string[]; top: number; onTick: (value: string) => void;
 }): JSX.Element {
-  const { counts, blank, loading } = useFacetCounts(module, field.name);
+  const { counts, loading } = useFacetCounts(module, field.name);
   const options: Option[] = (field.options ?? []).map((option) => ({
     value: option.value, label: option.label || option.value, color: option.color, count: loading ? undefined : counts.get(option.value) ?? 0,
   }));
-  // A record with no stage at all is a real thing to go looking for, so the
-  // stage list offers the same "Not filled in" row every other dropdown does.
-  const notFilled = { value: EMPTY_PICK, label: 'Unfilled', count: loading ? undefined : blank ?? 0 };
-  return <ChoiceList options={options} ticked={ticked} top={top} onTick={onTick} always={notFilled} />;
+  return <ChoiceList options={options} ticked={ticked} top={top} onTick={onTick} />;
 }
 
 function AgentSection({ section, title, top, module, ownerField, agent, onAgent }: {
