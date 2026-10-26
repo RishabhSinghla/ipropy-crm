@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TagCards } from '../components/TagCards';
 import { canonicalFilter, withCreatedToday } from '../lib/newRecordsQuery';
@@ -30,7 +30,6 @@ import {
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
-import { ListPicker } from '../components/ListPicker';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import {
   LAST_CALL_DISPOSITION, NO_DISPOSITION_PICK, type DispositionPick,
@@ -69,6 +68,10 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
 
 
   const [page, setPage] = useState(1);
+  const [activeRecordPosition, setActiveRecordPosition] = useState('—');
+  const reportActiveRecordPosition = useCallback((position: string) => {
+    setActiveRecordPosition((current) => current === position ? current : position);
+  }, []);
   /** Which pane the split view is showing on a phone — see `onShowing`. */
   const [paneShowing, setPaneShowing] = useState<'list' | 'record'>('list');
   // Keep the page editor separate from the committed page. A controlled
@@ -113,12 +116,11 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const [selectedAll, setSelectedAll] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
-  const [toolbarSlots, setToolbarSlots] = useState<{ filter: HTMLElement | null; options: HTMLElement | null; created: HTMLElement | null }>({ filter: null, options: null, created: null });
+  const [toolbarSlots, setToolbarSlots] = useState<{ filter: HTMLElement | null; options: HTMLElement | null }>({ filter: null, options: null });
   useEffect(() => {
     setToolbarSlots({
       filter: document.getElementById('global-quick-filter'),
       options: document.getElementById('global-list-options'),
-      created: document.getElementById('global-new-records'),
     });
   }, []);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
@@ -439,7 +441,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   */
   const stageField = meta ? pipelineFieldOf(meta) : undefined;
   // One shared facet request supplies exact status totals for the top ribbon.
-  const showStageRibbon = !archive && (moduleName === 'leads' || moduleName === 'inventory') && Boolean(stageField);
+  const showStageRibbon = !archive && ['leads', 'inventory', 'properties', 'associates'].includes(moduleName ?? '') && Boolean(stageField);
   const stageFacet = useQuery({
     queryKey: ['facet', moduleName, stageField?.name, {}],
     queryFn: () => api.facet(moduleName ?? '', stageField!.name, undefined, 50, {}),
@@ -929,87 +931,32 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const quickFilterCount = countActiveQuickFilters({
     filter, stages: stagePick, agent: agentPick, task: taskQueue, disposition: dispositionPick, picks,
   });
+  const newRecordsControl = (
+    <ChoiceChip
+      label="New"
+      title="Records added recently"
+      choices={CREATED_CHOICES}
+      active={createdWhen}
+      count={createdWhen ? (data?.total ?? 0) : (todayRecords?.total ?? 0)}
+      busy={Boolean(createdWhen) && isFetching}
+      onPick={(when) => {
+        setFilter(when
+          ? withChoice(filter, CREATED_FIELD, choiceConditions(CREATED_FIELD, when, localDay(new Date())))
+          : withoutChoice(filter, CREATED_FIELD));
+        setPage(1);
+      }}
+      buttonClass={(on) => cn('flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-[11px] font-semibold transition-colors',
+        on ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-400 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200')}
+      countClass={(on) => cn('rounded-full px-1.5 text-[10px] tabular-nums', on ? 'bg-white/20 text-white' : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200')}
+      testId="new-records-chip"
+    />
+  );
   const queueTools = (
     <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
-      <div className="flex flex-wrap items-center gap-1 bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
-          <Dropdown
-          align="left"
-          className="min-w-[18rem]"
-          trigger={(
-            <button
-              /* "On" means this button is narrowing the list. The module's
-                 own All-Leads view is a system view and narrows nothing, so
-                 it must not sit lit from the moment the page opens. */
-              className={toolbarButton(Boolean(!tagPick && activeView && !activeView.isSystem), 'max-w-[14rem]')}
-              aria-label="Choose or manage list views"
-              title={activeView?.name ?? `All ${meta.label}`}
-            >
-              {/*
-                One button, two of his four colours — it picks a **list or a
-                tag**, so it says which: red when a tag is narrowing the list,
-                blue when a saved list is.
-              */}
-              {/* No chevron — *"remove arrow key from all Buttons, so that
-                  we can See neet and clean Toolbar"* (28 September 2026).
-                  The icon on the left already says what this opens. */}
-              {/*
-                **The name is back on the button** — *"Also Show the name of all
-                icons 'All Leads/Inventory, Followup, Tag Name (hot)' in the
-                record left pane"* (3 October 2026), reversing the icons-only
-                row of 1 October. It truncates rather than wraps, and the button
-                has its own ceiling, so a long list name cannot push Task off
-                the row.
-              */}
-              <span className="min-w-0 truncate">{activeView?.name ?? `All ${meta.label}`}</span>
-              <span className={toolbarCount(Boolean(!tagPick && activeView && !activeView.isSystem))}>
-                {(data?.total ?? 0).toLocaleString('en-IN')}
-              </span>
-            </button>
-          )}
-        >
-          {(close) => (
-            <ListPicker
-              views={(views ?? []).map((v) => ({
-                id: v.id, name: v.name, isSystem: v.isSystem, isPublic: v.isPublic,
-                isDefault: v.isDefault, ownerId: v.ownerId,
-                isOverride: (v as { isOverride?: boolean }).isOverride,
-                count: (v as { count?: number }).count,
-              }))}
-              activeViewId={activeView?.id ?? null}
-              activeTag={tagPick}
-              userId={user?.id}
-              isAdmin={Boolean(user?.isAdmin)}
-              moduleLabel={meta.label}
-              onChooseView={(id) => { setTagPick(null); chooseView(id); close(); }}
-              onNew={() => { setEditingView(blankView(moduleName)); close(); }}
-              onEdit={(id) => {
-                const full = (views ?? []).find((v) => v.id === id);
-                if (full) setEditingView(full as SavedView);
-                close();
-              }}
-              onDuplicate={(id) => { duplicateView.mutate(id); close(); }}
-              onShare={(id) => { shareView.mutate(id); close(); }}
-              onSetDefault={(id) => { setDefaultView.mutate(id); close(); }}
-              onDelete={(id) => {
-                const full = (views ?? []).find((v) => v.id === id);
-                if (full) setConfirmDeleteView(full);
-                close();
-              }}
-            />
-          )}
-        </Dropdown>
-
-        {/*
-          **The stage button left this row on 3 October 2026** — the owner:
-          *"Please remove the status chip/button from left record pane, bcoz it
-          is already in the Quick Filter."* Only the button went: `stagePick` is
-          still the list's state and the Quick & Live Filters panel still sets
-          it, so a saved link that names a stage still narrows the list.
-        */}
-
-        <select className="input h-8 max-w-40 text-xs" aria-label="AI call history filter" value={aiCallFilter ?? ''}
+      <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
+        <select className="input h-7 min-w-0 max-w-40 flex-1 text-[11px]" aria-label="AI call history filter" value={aiCallFilter ?? ''}
           onChange={(event) => { setAiCallFilter((event.target.value || undefined) as ListQuery['aiCalls']); setPage(1); }}>
-          <option value="">AI calls: all records</option><option value="called">AI called</option><option value="not_called">Not AI called</option><option value="unsuccessful">Last AI call unsuccessful</option>
+          <option value="">All AI Calls</option><option value="called">AI called</option><option value="not_called">Not AI called</option><option value="unsuccessful">Last AI call unsuccessful</option>
         </select>
 
         {taskQueuesEnabled && (
@@ -1073,38 +1020,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             allCount={data?.total ?? 0}
           />
         )}
-        {/*
-          **New moved to the main toolbar** — the owner, 10 October 2026:
-          *"Move 'New' … from Left record pane to main Toolbar between Add +New
-          … and Search toolbar and built dropdown filter of Yesterday, This
-          Week, This Month in same Button/Chip"*. It still narrows this list,
-          so it is drawn here and placed there, like the filter button below.
-        */}
-        {toolbarSlots.created && createPortal(
-          <ChoiceChip
-            label="New"
-            title="Records added recently"
-            choices={CREATED_CHOICES}
-            active={createdWhen}
-            count={createdWhen ? (data?.total ?? 0) : (todayRecords?.total ?? 0)}
-            busy={Boolean(createdWhen) && isFetching}
-            onPick={(when) => {
-              setFilter(when
-                ? withChoice(filter, CREATED_FIELD, choiceConditions(CREATED_FIELD, when, localDay(new Date())))
-                : withoutChoice(filter, CREATED_FIELD));
-              setPage(1);
-            }}
-            /* A green square, the owner, 10 October 2026: *"next button of
-               Today Lead/Inventory button background colour should Green in
-               Square Box"*. emerald-700 rather than 600 so white on it clears
-               AA; chosen, it goes a step darker and gains a ring. */
-            buttonClass={(on) => cn('flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-white',
-              on ? 'bg-emerald-800 ring-2 ring-white/70' : 'bg-emerald-700 hover:bg-emerald-800')}
-            countClass={() => 'rounded bg-emerald-950 px-1.5 text-white'}
-            testId="new-records-chip"
-          />
-        , toolbarSlots.created)}
-
         {toolbarSlots.filter && createPortal(
             <button
               onClick={() => setShowFilters((value) => !value)}
@@ -1247,23 +1162,25 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         <section
           aria-label={`${meta?.label ?? 'Record'} stages`}
           data-testid="pipeline-stage-ribbon"
-          className="shrink-0 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-5 dark:border-slate-800 dark:bg-slate-900"
+          className="shrink-0 border-b border-slate-200 bg-white px-2 py-1 sm:px-3 dark:border-slate-800 dark:bg-slate-900"
         >
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-              {stageField.label || 'Stages'}
-            </h2>
-            <span className="text-[11px] text-slate-400 dark:text-slate-500">
+          <div className="mb-1 flex min-w-0 items-center justify-between gap-2 text-[10px]">
+            <div className="flex min-w-0 items-center gap-1.5 truncate font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <span className="truncate">{meta.label}</span>
+              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200" aria-label="Selected record count">{activeRecordPosition}</span>
+              <h2 className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{stageField.label || 'Stages'}</h2>
+            </div>
+            <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
               {stagePick.length ? `${stagePick.length} selected` : 'All stages'}
             </span>
           </div>
-          <div className="flex min-w-0 items-stretch gap-1 overflow-x-auto pb-0.5" role="group" aria-label="Filter by stage">
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-0.5" role="group" aria-label="Filter by stage">
             <button
               type="button"
               aria-pressed={stagePick.length === 0}
               onClick={() => { setStagePick([]); setPage(1); }}
               className={cn(
-                'flex min-h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-xs font-semibold transition-colors',
+                'flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold transition-colors',
                 stagePick.length === 0
                   ? 'border-brand-700 bg-brand-700 text-white shadow-sm'
                   : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200',
@@ -1274,7 +1191,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                 {stageTotal?.toLocaleString('en-IN') ?? '—'}
               </span>
             </button>
-            {(stageField.options ?? []).map((option, index) => {
+            {(stageField.options ?? []).map((option) => {
               const selectedStage = stagePick.includes(option.value);
               const color = option.color || 'var(--brand-600)';
               return (
@@ -1290,19 +1207,15 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                     setPage(1);
                   }}
                   className={cn(
-                    'relative flex min-h-10 min-w-[7rem] shrink-0 items-center justify-center gap-1.5 border px-3 text-xs font-semibold transition-colors',
-                    index === 0 ? 'rounded-l-md' : '-ml-1.5',
+                    'relative flex h-7 shrink-0 items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-semibold transition-colors',
                     selectedStage
-                      ? 'z-[1] border-brand-700 bg-brand-700 text-white shadow-sm'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:z-[1] hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200',
+                      ? 'z-[1] text-white shadow-sm'
+                      : 'hover:z-[1]',
                   )}
-                  style={{ clipPath: index === 0
-                    ? 'polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%)'
-                    : 'polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%)' }}
+                  style={{ borderColor: color, backgroundColor: selectedStage ? color : `color-mix(in srgb, ${color} 10%, white)`, color: selectedStage ? 'white' : color }}
                 >
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: selectedStage ? 'white' : color }} />
                   <span className="max-w-[9rem] truncate">{option.label || option.value}</span>
-                  <span className={cn('rounded px-1 py-0.5 text-[10px] tabular-nums', selectedStage ? 'bg-white/20' : 'bg-white dark:bg-slate-700')}>
+                  <span className={cn('rounded px-1 py-0.5 text-[9px] tabular-nums', selectedStage ? 'bg-white/20' : 'bg-white/75')}>
                     {(stageCounts.get(option.value) ?? 0).toLocaleString('en-IN')}
                   </span>
                 </button>
@@ -1318,7 +1231,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                 setPage(1);
               }}
               className={cn(
-                'flex min-h-10 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors',
+                'flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition-colors',
                 stagePick.includes(EMPTY_PICK)
                   ? 'border-brand-700 bg-brand-700 text-white shadow-sm'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
@@ -1523,7 +1436,9 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             queueTools={queueTools}
+            queueHeaderAction={newRecordsControl}
             queueFooter={queueFooter}
+            onActivePositionChange={reportActiveRecordPosition}
             onShowing={setPaneShowing}
             filterBar={{
               open: showFilters,

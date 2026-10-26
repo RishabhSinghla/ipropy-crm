@@ -173,7 +173,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
 export function IpropyWorkspace({
   module, rows, selected, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
-  queueTools, queueFooter, filterBar, onShowing, emptyAction,
+  queueTools, queueHeaderAction, queueFooter, filterBar, onShowing, emptyAction, onActivePositionChange,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -205,6 +205,10 @@ export function IpropyWorkspace({
    * sends — and this pane only gives them a place.
    */
   queueTools?: ReactNode;
+  /** A compact module action beside the queue title. */
+  queueHeaderAction?: ReactNode;
+  /** The visible row position, lifted to the stage ribbon. */
+  onActivePositionChange?: (position: string) => void;
   /** The record range and the page arrows, at the foot of the queue. */
   queueFooter?: ReactNode;
   emptyAction?: ReactNode;
@@ -385,6 +389,14 @@ export function IpropyWorkspace({
     enabled: Boolean(activeId),
     staleTime: 15_000,
   });
+  useEffect(() => {
+    if (!active || groupField) {
+      onActivePositionChange?.('—');
+      return;
+    }
+    const index = rows.findIndex((row) => row.id === active.id);
+    onActivePositionChange?.(index >= 0 ? `${index + 1} / ${rows.length}` : '—');
+  }, [active?.id, rows, groupField, onActivePositionChange]);
   const navigate = useNavigate();
   const openRecord = useCallback((id: string) => {
     setActiveId(id);
@@ -575,7 +587,10 @@ export function IpropyWorkspace({
       .filter((field) => field.blockId === block.id && field.uitype === 'currency' && field.name.endsWith('_floor_price'))
       .map((field) => field.name);
   }, [builderModule]);
-  const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
+  const resolvedPhoneField = phoneField ?? module.fields.find((field) =>
+    field.isActive && (field.uitype === 'phone' || /mobile|phone/i.test(`${field.name} ${field.label}`)),
+  );
+  const phoneValue = active && resolvedPhoneField ? displayOf(active, resolvedPhoneField) : '';
   const emailValue = active && emailField ? displayOf(active, emailField) : '';
   const { data: matchingCount } = useQuery({
     queryKey: ['workspace-matching-count', module.name, active?.id],
@@ -763,11 +778,6 @@ export function IpropyWorkspace({
               <ModuleIcon name={module.icon} className="h-3 w-3 shrink-0 text-slate-400" />
               <span className="truncate">{module.label}</span>
               {groupField && <span className="shrink-0 font-normal text-muted">({localityGroups.length} localities)</span>}
-              {active && !groupField && rows.some((row) => row.id === active.id) && <span className="flex shrink-0 items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-800 normal-case tracking-normal dark:bg-blue-950 dark:text-blue-200" aria-label="Selected record on this page">
-                <button type="button" aria-label="Previous record in list" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="p-0.5 disabled:opacity-30"><ChevronLeft className="h-3 w-3" /></button>
-                {rows.findIndex((row) => row.id === active.id) + 1} / {rows.length}
-                <button type="button" aria-label="Next record in list" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="p-0.5 disabled:opacity-30"><ChevronRight className="h-3 w-3" /></button>
-              </span>}
             </span>
           </span>
           {/*
@@ -775,6 +785,8 @@ export function IpropyWorkspace({
             *"its no use to us at all"*, the owner. Filtering by any field,
             that one included, is the Quick & Live Filters panel's job.
           */}
+          <div className="flex shrink-0 items-center gap-1.5">
+          {queueHeaderAction}
           {onSort && !groupField && (
             <Dropdown
               align="right"
@@ -833,6 +845,7 @@ export function IpropyWorkspace({
               )}
             </Dropdown>
           )}
+          </div>
         </div>
         {queueTools}
         {/* Flush, because each row draws its own hairline — one separator
@@ -1068,7 +1081,7 @@ export function IpropyWorkspace({
                   pane"* (3 October 2026) — immediately after the `3 / 22,988`,
                   inside the same group, so the two cannot drift apart when the
                   header wraps on a phone. */}
-              {phoneValue && <span className="ml-1 shrink-0"><CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} /></span>}
+              {phoneValue && <span className="ml-1 shrink-0" data-testid="middle-header-call-actions"><CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} /></span>}
               <button type="button" aria-label={active.starred ? 'Remove from starred' : 'Star this record'} title="Favourite" onClick={() => star.mutate(active)} className="p-1 text-slate-500 hover:text-amber-500"><Star className={cn('h-4 w-4', active.starred && 'fill-amber-500 text-amber-500')} /></button>
               {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
               {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
