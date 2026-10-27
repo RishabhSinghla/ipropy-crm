@@ -94,6 +94,8 @@ const MODULES: ModuleDef[] = [
           // code painted in front of a value that already carries one reads as
           // +91 +91.
           F.phone('whatsapp_number', 'WhatsApp Number', { help: 'Defaults to mobile if left blank' }),
+          // Filled by Admin → WhatsApp → Group sync → number check, from the name the person set on their own WhatsApp.
+          F.text('whatsapp_name', 'Whatsapp Name', { help: 'The name this person uses on WhatsApp' }),
           /*
             One pipeline, one field. `lifecycle_stage` was a second
             relationship axis that nobody filled in by hand and every report

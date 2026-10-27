@@ -1507,3 +1507,17 @@ device of the company number, so a message written in a dealer group now reaches
   on group feeds once however many deliveries; switching off drops what was waiting; history fills in and is repeatable)
   and `tests/openwa.test.ts`. **Not proved:** a real group message from a real number — no number is linked yet, and the
   group name/author fields in OpenWA's live payload are read from its source and docs.
+
+### WhatsApp name and photo checker (27 October 2026)
+
+Admin → WhatsApp → Group sync → *WhatsApp name and photo*. `integrations/whatsapp/business/numberCheck.ts`.
+For each contact with a mobile it asks OpenWA whether the number is on WhatsApp, reads the **name the person set for
+themselves** (`pushName`; never the company's own address-book `name`, which is our data coming back) and their profile
+picture, and writes the name into the new **Whatsapp Name** field and the picture as the record's `avatar` attachment.
+
+* **Never overwrites** a name or a photo somebody already set. A number not on WhatsApp keeps only that fact (`ipy_wa_lookup`, migration `222`).
+* **Slow on purpose** — bulk checking is what gets a number restricted: admin starts it by hand, one number every 8–20 s
+  (random), a daily cap (default 150, max 500) counted from `ipy_wa_lookup`, resumable (a checked contact is skipped; a
+  failure retries after a day), stops by itself if OpenWA is unreachable or unlinked.
+* **Photos are fetched only from `whatsapp.net` / `fbcdn.net` over https** (the address comes from outside the CRM), max 2 MB.
+* Admin-only on the server (rep gets 403). **Not proved against a real number**; tests use the pretend OpenWA.

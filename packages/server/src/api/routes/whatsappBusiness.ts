@@ -45,6 +45,7 @@ import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.
 import {
   enableAllGroups, historyJobStatus, listWaGroups, refreshGroupList, setGroupEnabled, startHistoryImport,
 } from '../../core/market/liveGroups.js';
+import { numberCheckStatus, startNumberCheck, stopNumberCheck } from '../../integrations/whatsapp/business/numberCheck.js';
 import { currentLinkHealth, checkOpenWaNow, openWaMetrics } from '../../integrations/whatsapp/business/openwaHealth.js';
 import { createLeadFromChat, loadMessageFile } from '../../integrations/whatsapp/business/openwaChats.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
@@ -834,4 +835,25 @@ whatsappBusinessRouter.post('/groups/import-history', blockApiKey, asyncHandler(
   await assertGroupAdmin(req);
   const { groupId } = z.object({ groupId: z.string().max(100).optional() }).parse(req.body ?? {});
   res.json(startHistoryImport(groupId));
+}));
+
+// ---------------------------------------------------------------------------
+// The WhatsApp name and photo checker. Administrators only, started by hand, slow on purpose.
+// ---------------------------------------------------------------------------
+
+whatsappBusinessRouter.get('/number-check', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  res.json(await numberCheckStatus());
+}));
+
+whatsappBusinessRouter.post('/number-check/start', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  const { dailyCap } = z.object({ dailyCap: z.number().int().optional() }).parse(req.body ?? {});
+  res.json(startNumberCheck(dailyCap));
+}));
+
+whatsappBusinessRouter.post('/number-check/stop', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  stopNumberCheck();
+  res.json({ ok: true });
 }));

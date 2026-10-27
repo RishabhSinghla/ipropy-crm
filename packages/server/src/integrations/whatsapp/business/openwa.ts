@@ -506,6 +506,34 @@ export async function openWaGroupHistory(groupId: string, limit: number, deep = 
   return lines;
 }
 
+/** Is this number on WhatsApp? One outbound query about a third party: call it slowly (see `numberCheck.ts`). */
+export async function openWaCheckNumber(digits: string): Promise<{ exists: boolean; waId: string | null }> {
+  const row = await onSession<{ exists?: unknown; whatsappId?: unknown }>(
+    (sid) => `/api/sessions/${sid}/contacts/check/${encodeURIComponent(digits)}`,
+  );
+  return { exists: row.exists === true, waId: typeof row.whatsappId === 'string' ? row.whatsappId : null };
+}
+
+/**
+ * The name this person set for themselves on WhatsApp. Deliberately **not** `name`, which is what the company's
+ * own address book calls them: that is the CRM's own data coming back, not a fact about the person.
+ */
+export async function openWaPushName(waId: string): Promise<string | null> {
+  try {
+    const row = await onSession<{ pushName?: unknown }>((sid) => `/api/sessions/${sid}/contacts/${encodeURIComponent(waId)}`);
+    return typeof row.pushName === 'string' && row.pushName.trim() ? row.pushName.trim().slice(0, 120) : null;
+  } catch (err) {
+    if (err instanceof OpenWaError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+/** The address of the person's profile picture, or null when they have none or hide it. */
+export async function openWaProfilePictureUrl(waId: string): Promise<string | null> {
+  const row = await onSession<{ url?: unknown }>((sid) => `/api/sessions/${sid}/contacts/${encodeURIComponent(waId)}/profile-picture`);
+  return typeof row.url === 'string' && row.url ? row.url : null;
+}
+
 /** `+91 ••••• ••123` — enough to recognise the number, not enough to copy it. */
 export function maskPhone(digits: string | null): string | null {
   if (!digits) return null;
