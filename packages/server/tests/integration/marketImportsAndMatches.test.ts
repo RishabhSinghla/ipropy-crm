@@ -23,9 +23,31 @@ import { db } from '../../src/db/pool.js';
 import { signIn } from './fixtures.js';
 import { importGroupExport } from '../../src/core/market/feed.js';
 import { findCrossMatches, recordOutcome } from '../../src/core/market/crossMatch.js';
+import { ZipArchive } from 'archiver';
 import { marketWork, verifyPairs } from '../../src/core/market/enrich.js';
 
-const ZIP = Buffer.from('UEsDBBQAAAAIAKKMTF0621G4jwAAAMsAAAAvAAAAV2hhdHNBcHAgQ2hhdCAtIFpJUE1BUksgQWxwaGEgRGVhbGVycy9fY2hhdC50eHRdzbsOgkAUhOGep5gHUDl7AA10aGNip5V2B1hxdbm4LhY+vSRGEu0mU/yf4lBRyMTLGdKMCNJgjpOukNv+IhnypxgrhdU4dw4PGUeE9XYH0+KgSz+eqcLL9I24G9SCsXEoxVqkK1IcxQmpQP0qyUc5SvtV9vo+GDeqnBBquaK3nZ/6PPWLoaq1R4zyH+HgDVBLAwQUAAAACACijExdYpOK1lgAAABeAAAAKwAAAFdoYXRzQXBwIENoYXQgd2l0aCBaSVBNQVJLIEJldGEgRGVhbGVycy50eHQNyDsOgCAQBcDeU7wDaFgWP8HSK9jYbggaFYUglafXbjKalSbFxH0NTSMR5EKDxd+YfJER/NcmB1KIBWvMeCR4zN6V39bg3dMl+YSBy3ASAuxAmk3bkak+UEsBAhQDFAAAAAgAooxMXTrbUbiPAAAAywAAAC8AAAAAAAAAAAAAAIABAAAAAFdoYXRzQXBwIENoYXQgLSBaSVBNQVJLIEFscGhhIERlYWxlcnMvX2NoYXQudHh0UEsBAhQDFAAAAAgAooxMXWKTitZYAAAAXgAAACsAAAAAAAAAAAAAAIAB3AAAAFdoYXRzQXBwIENoYXQgd2l0aCBaSVBNQVJLIEJldGEgRGVhbGVycy50eHRQSwUGAAAAAAIAAgC2AAAAfQEAAAAA', 'base64');
+/*
+  Built at run time with today's date. It used to be a fixed archive dated 12/10/2026; the feed keeps only the last
+  15 days, so the day that file aged out the test started failing with no code change behind it.
+*/
+let ZIP: Buffer;
+async function buildZip(date: string): Promise<Buffer> {
+  const zip = new ZipArchive();
+  const chunks: Buffer[] = [];
+  zip.on('data', (c: Buffer) => chunks.push(c));
+  const finished = new Promise<void>((resolve, reject) => { zip.on('end', resolve); zip.on('error', reject); });
+  zip.append(
+    `${date}, 9:00 am - Zed Alpha: Available for sale 3 BHK in Sector 91 zipmark 1.2 Cr call 9701234501
+${date}, 9:05 am - Yan Alpha: Required 250 gaj plot Sector 92 zipmark budget 4 cr call 9701234502
+`,
+    { name: 'WhatsApp Chat - ZIPMARK Alpha Dealers/_chat.txt' },
+  );
+  zip.append(`${date}, 10:00 am - Xen Beta: 200 gaj plot for sale Sector 93 zipmark 3 cr call 9701234503
+`, { name: 'WhatsApp Chat with ZIPMARK Beta Dealers.txt' });
+  await zip.finalize();
+  await finished;
+  return Buffer.concat(chunks);
+}
 
 let app: Express;
 let adminToken = '';
@@ -41,6 +63,7 @@ const phone = (n: number): string => `96${runDigits}${n}`.slice(0, 10);
 
 beforeAll(async () => {
   await registry.warmup();
+  ZIP = await buildZip(day);
   app = createApp();
   adminToken = await signIn(app, 'admin@ipropy.com');
   adminId = (await db.queryOne<{ id: string }>(`SELECT id FROM ipy_user WHERE email = 'admin@ipropy.com'`))!.id;
