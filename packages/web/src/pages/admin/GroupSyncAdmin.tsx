@@ -123,11 +123,18 @@ export default function GroupSyncAdmin(): JSX.Element {
           >
             Switch on all groups
           </button>
-          <button className="btn-primary btn-sm" disabled={job.running || on === 0 || history.isPending} onClick={() => history.mutate(undefined)}>
+          <button className="btn-primary btn-sm" disabled={job.running || on === 0 || history.isPending || job.supported === false} onClick={() => history.mutate(undefined)}>
             Read earlier messages of all switched-on groups
           </button>
           <span className="text-xs text-muted">{on} of {groups.length} groups on</span>
         </div>
+        {job.supported === false && (
+          <p className="mt-2 text-sm" role="status">
+            This WhatsApp connection cannot fetch old messages — WhatsApp does not hand them to a linked device. New messages
+            arrive live from now on. To bring in older ones, export the chat from your phone and drop the file on{' '}
+            <a className="underline" href="/market">Dealer Groups</a>.
+          </p>
+        )}
         {job.running && (
           <p className="mt-2 text-sm" role="status">
             Reading earlier messages… {job.done} of {job.total} groups done. This is deliberately slow, to keep the number safe.
@@ -167,20 +174,23 @@ export default function GroupSyncAdmin(): JSX.Element {
                   {g.enabled ? `${g.messagesSeen.toLocaleString('en-IN')}${g.lastMessageAt ? ` · last ${new Date(g.lastMessageAt).toLocaleString('en-IN')}` : ''}` : <span className="text-muted">off</span>}
                 </td>
                 <td className="px-3 py-2">
-                  {g.historyState === 'done' && (
+                  {job.supported === false ? (
+                    <span className="text-xs text-muted">Live only — use a chat export for older messages</span>
+                  ) : null}
+                  {job.supported !== false && g.historyState === 'done' && (
                     <>
                       <Badge>Done</Badge>
                       <button className="btn-secondary btn-sm ml-2" disabled={job.running} onClick={() => history.mutate(g.id)}>Read again</button>
                     </>
                   )}
-                  {g.historyState === 'running' && <Badge>Reading…</Badge>}
-                  {g.historyState === 'failed' && (
+                  {job.supported !== false && g.historyState === 'running' && <Badge>Reading…</Badge>}
+                  {job.supported !== false && g.historyState === 'failed' && (
                     <>
                       <span className="text-negative" title={g.historyNote ?? ''}>Failed — {g.historyNote}</span>
                       <button className="btn-secondary btn-sm ml-2" disabled={job.running} onClick={() => history.mutate(g.id)}>Read again</button>
                     </>
                   )}
-                  {g.historyState === 'none' && g.enabled && (
+                  {job.supported !== false && g.historyState === 'none' && g.enabled && (
                     <button className="btn-secondary btn-sm" disabled={job.running} onClick={() => history.mutate(g.id)}>Read earlier messages</button>
                   )}
                   {g.historyNote && g.historyState === 'done' && <span className="ml-2 text-xs text-muted">{g.historyNote}</span>}

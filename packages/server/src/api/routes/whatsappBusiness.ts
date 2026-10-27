@@ -43,7 +43,7 @@ import {
 import { redactAutomated, rolesInUse } from '../../integrations/whatsapp/business/channelRoles.js';
 import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.js';
 import {
-  enableAllGroups, historyJobStatus, listWaGroups, refreshGroupList, setGroupEnabled, startHistoryImport,
+  enableAllGroups, historyJobStatus, historySupported, listWaGroups, refreshGroupList, setGroupEnabled, startHistoryImport,
 } from '../../core/market/liveGroups.js';
 import { numberCheckStatus, startNumberCheck, stopNumberCheck } from '../../integrations/whatsapp/business/numberCheck.js';
 import { currentLinkHealth, checkOpenWaNow, openWaMetrics } from '../../integrations/whatsapp/business/openwaHealth.js';
@@ -799,7 +799,7 @@ async function assertGroupAdmin(req: Parameters<typeof getUser>[0]): Promise<voi
 
 whatsappBusinessRouter.get('/groups', blockApiKey, asyncHandler(async (req, res) => {
   await assertGroupAdmin(req);
-  res.json({ groups: await listWaGroups(), history: historyJobStatus() });
+  res.json({ groups: await listWaGroups(), history: { ...historyJobStatus(), supported: await historySupported() } });
 }));
 
 /** Asks OpenWA for the groups the number is in. Switched-off by default; nothing is read from them. */
@@ -834,7 +834,7 @@ whatsappBusinessRouter.put('/groups/:id', blockApiKey, asyncHandler(async (req, 
 whatsappBusinessRouter.post('/groups/import-history', blockApiKey, asyncHandler(async (req, res) => {
   await assertGroupAdmin(req);
   const { groupId } = z.object({ groupId: z.string().max(100).optional() }).parse(req.body ?? {});
-  res.json(startHistoryImport(groupId));
+  res.json(await startHistoryImport(groupId));
 }));
 
 // ---------------------------------------------------------------------------

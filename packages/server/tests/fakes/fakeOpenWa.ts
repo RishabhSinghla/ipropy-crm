@@ -44,6 +44,8 @@ export interface FakeOpenWa {
   groups: { id: string; name: string }[];
   groupHistory: Map<string, Record<string, unknown>[]>;
   /** Numbers that are on WhatsApp, by digits, with the name they set and a picture address (if any). */
+  /** True plays the Baileys engine: old messages cannot be fetched on demand (HTTP 501). */
+  historyUnsupported: boolean;
   onWhatsApp: Map<string, { pushName?: string; photoUrl?: string }>;
   close(): Promise<void>;
   /** Post a signed webhook to the CRM, the way OpenWA does. */
@@ -78,6 +80,7 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
     groups: [],
     groupHistory: new Map(),
     onWhatsApp: new Map(),
+    historyUnsupported: false,
     close: async () => undefined,
     deliver: async () => { throw new Error('not started'); },
   };
@@ -122,6 +125,7 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
     const listed = /^\/api\/sessions\/([^/]+)\/groups$/.exec(url.pathname);
     if (req.method === 'GET' && listed) { json(res, 200, fake.groups); return; }
     const history = /^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/history$/.exec(url.pathname);
+    if (req.method === 'GET' && history && fake.historyUnsupported) { json(res, 501, { statusCode: 501, message: 'Operation not supported by the active engine: getChatHistory' }); return; }
     if (req.method === 'GET' && history) { json(res, 200, fake.groupHistory.get(decodeURIComponent(history[2]!)) ?? []); return; }
 
     const send = /^\/api\/sessions\/([^/]+)\/messages\/(send-text|send-image|send-video|send-audio|send-document)$/.exec(url.pathname);

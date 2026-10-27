@@ -12,7 +12,7 @@ import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { invalidate as reloadIntegrations, saveIntegration } from '../../src/core/settings/integrations.js';
 import { __resetOpenWaCaches, OPENWA_PROVIDER } from '../../src/integrations/whatsapp/business/openwa.js';
-import { flush, historyJobStatus } from '../../src/core/market/liveGroups.js';
+import { flush, forgetHistorySupport, historyJobStatus } from '../../src/core/market/liveGroups.js';
 import { SEEDED, adminToken, signIn } from './fixtures.js';
 import { startFakeOpenWa, type FakeOpenWa } from '../fakes/fakeOpenWa.js';
 
@@ -188,5 +188,20 @@ describe('a group renamed in WhatsApp', () => {
     await request(app).post('/api/whatsapp-business/groups/refresh').set('Authorization', `Bearer ${admin}`);
     const row = await db.queryOne<{ name: string; feed_name: string }>(`SELECT name, feed_name FROM ipy_wa_group WHERE id = $1`, [DEALER_GROUP]);
     expect(row).toMatchObject({ name: `${DEALER_NAME} RENAMED`, feed_name: DEALER_NAME });
+  });
+});
+
+describe('an OpenWA that cannot read old messages (the Baileys engine)', () => {
+  it('says so instead of offering a button that fails, and refuses the import with the way round it', async () => {
+    fake.historyUnsupported = true;
+    forgetHistorySupport();
+    const list = await request(app).get('/api/whatsapp-business/groups').set('Authorization', `Bearer ${admin}`);
+    expect(list.body.history.supported).toBe(false);
+
+    const started = await request(app).post('/api/whatsapp-business/groups/import-history').set('Authorization', `Bearer ${admin}`).send({});
+    expect(started.body.started).toBe(false);
+    expect(started.body.reason).toMatch(/export the chat/i);
+    fake.historyUnsupported = false;
+    forgetHistorySupport();
   });
 });

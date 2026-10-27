@@ -488,10 +488,10 @@ export interface OpenWaHistoryLine { id: string; sender: string; text: string; s
  * The newest messages of one group, read live from WhatsApp, oldest first. `deep` reaches further back
  * (up to 2,000) and is slower and riskier for the number, so the history job asks for it once per group.
  */
-export async function openWaGroupHistory(groupId: string, limit: number, deep = false): Promise<OpenWaHistoryLine[]> {
+export async function openWaGroupHistory(groupId: string, limit: number, deep = false, timeoutMs = 120_000): Promise<OpenWaHistoryLine[]> {
   const rows = await onSession<Record<string, unknown>[]>(
     (sid) => `/api/sessions/${sid}/messages/${encodeURIComponent(groupId)}/history?limit=${limit}${deep ? '&deep=true' : ''}`,
-    120_000,
+    timeoutMs,
   );
   const lines: OpenWaHistoryLine[] = [];
   for (const row of Array.isArray(rows) ? rows : []) {

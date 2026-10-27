@@ -1890,7 +1890,7 @@ export interface WaGroup {
 }
 export interface WaGroupsResponse {
   groups: WaGroup[];
-  history: { running: boolean; done: number; total: number; current: string | null; startedAt: string | null };
+  history: { running: boolean; done: number; total: number; current: string | null; startedAt: string | null; supported: boolean | null };
 }
 
 export interface WaNumberCheck {
