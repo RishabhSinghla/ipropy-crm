@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { picklistOptionForValue, recordStrength, type FieldMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, ChevronLeft, ChevronRight, Copy, Eye, GripVertical, Mail, Pencil, Search, Send, Sparkles, Star, Tag, Trash2, X, CalendarDays, PanelRightClose, PanelRightOpen,
+  ArrowRightLeft, ArrowUpDown, Bot, Check, ChevronLeft, ChevronRight, Copy, Eye, GripVertical, Mail, Pencil, Search, Send, Sparkles, Star, Tag, Trash2, X, CalendarDays, PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
@@ -62,7 +62,7 @@ import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
   thing a rep has to learn twice.
 */
 const STREAM_LABEL: Record<'comment' | 'message' | 'audit', string> = {
-  comment: 'Notes',
+  comment: 'Summary',
   message: 'Messages',
   audit: 'Changes',
 };
@@ -173,7 +173,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
 export function IpropyWorkspace({
   module, rows, selected, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
-  queueTools, queueHeaderAction, queueFooter, onShowing, emptyAction, onActivePositionChange,
+  queueTools, queueHeaderAction, queuePosition, queueFooter, onShowing, emptyAction, onActivePositionChange,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -207,6 +207,8 @@ export function IpropyWorkspace({
   queueTools?: ReactNode;
   /** A compact module action beside the queue title. */
   queueHeaderAction?: ReactNode;
+  /** The current record position, displayed in the compact queue header. */
+  queuePosition?: string;
   /** The visible row position, lifted to the stage ribbon. */
   onActivePositionChange?: (position: string) => void;
   /** The record range and the page arrows, at the foot of the queue. */
@@ -479,8 +481,7 @@ export function IpropyWorkspace({
     starts clean. The old stored key is left alone: nothing reads it, so
     bringing this back is code rather than data recovery.
   */
-  const [paneFolded, setPaneFoldedState] = useState(true);
-  const [detailsHoverBlocked, setDetailsHoverBlocked] = useState(false);
+  const [paneFolded, setPaneFoldedState] = useState(false);
   const setPaneFolded = useCallback((folded: boolean) => setPaneFoldedState(folded), []);
 
   const resize = useCallback((delta: number) => {
@@ -671,6 +672,7 @@ export function IpropyWorkspace({
     components rather than copies: one Share-with-team panel, one confirm.
   */
   const [summarising, setSummarising] = useState(false);
+  const [startingAiCall, setStartingAiCall] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | 'associates' | null>(null);
 
@@ -765,7 +767,7 @@ export function IpropyWorkspace({
           showing === 'record' ? 'hidden' : 'flex',
         )}
       >
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
+        <div className="flex shrink-0 items-center justify-between gap-1.5 border-b border-slate-100 bg-slate-50/70 px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-800/40">
           <span className="flex min-w-0 items-center gap-1.5">
             {/* Beside the module's own name, because that is what it selects:
                 everything on this page, for the bulk-edit bar the list already
@@ -785,6 +787,7 @@ export function IpropyWorkspace({
               {groupField && <span className="shrink-0 font-normal text-muted">({localityGroups.length} localities)</span>}
             </span>
           </span>
+          {queuePosition && queuePosition !== '—' && <span className="shrink-0 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-brand-700" aria-label="Selected record position">{queuePosition}</span>}
           {/*
             A Contact Type filter button stood here until 1 October 2026 —
             *"its no use to us at all"*, the owner. Filtering by any field,
@@ -1086,7 +1089,24 @@ export function IpropyWorkspace({
                   pane"* (3 October 2026) — immediately after the `3 / 22,988`,
                   inside the same group, so the two cannot drift apart when the
                   header wraps on a phone. */}
-              {phoneValue && <span className="ml-1 shrink-0" data-testid="middle-header-call-actions"><CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} /></span>}
+              {phoneValue && <span className="ml-1 inline-flex shrink-0 items-center gap-1" data-testid="middle-header-call-actions">
+              <WhatsAppButton to={phoneValue} iconOnly plain />
+                <button type="button" aria-label="Start AI call" title="Start AI call" disabled={startingAiCall || onCall}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-violet-600 transition hover:bg-violet-50 disabled:opacity-50 dark:text-violet-300 dark:hover:bg-slate-800"
+                  onClick={() => {
+                    setStartingAiCall(true);
+                    void api.createSarvamQueue(module.name, [active.id])
+                      .then(async (queue) => {
+                        window.dispatchEvent(new CustomEvent('sarvam-control-open', { detail: queue.id }));
+                        await api.sarvamQueueAction(queue.id, 'resume');
+                        toast.success('AI call queued', 'The saved calling rules will decide when it can dial.');
+                      })
+                      .catch((error: Error) => toast.error('Could not start AI call', error.message))
+                      .finally(() => setStartingAiCall(false));
+                  }}
+                >{startingAiCall ? <Spinner className="h-4 w-4" /> : <Bot className="h-4 w-4" />}</button>
+                <CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} />
+              </span>}
               <button type="button" aria-label={active.starred ? 'Remove from starred' : 'Star this record'} title="Favourite" onClick={() => star.mutate(active)} className="p-1 text-slate-500 hover:text-amber-500"><Star className={cn('h-4 w-4', active.starred && 'fill-amber-500 text-amber-500')} /></button>
               {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
               {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
@@ -1240,13 +1260,13 @@ export function IpropyWorkspace({
           learns to trust neither. There is no SMS row because this CRM cannot
           send one — an action that can only apologise is worse than none.
         */}
-        <RecordMenuAction
+        {!onTheStream && <RecordMenuAction
           shown={shownKey}
-          onStream={onTheStream}
+          onStream={false}
           phone={phoneValue}
           recordId={active.id}
           module={module.name}
-        />
+        />}
 
         {/*
           **One scroll area, never two stacked.** The WhatsApp tab has its own
@@ -1273,8 +1293,8 @@ export function IpropyWorkspace({
                 row named Calls and Files a second time, two rows apart,
                 meaning something different each time.
               */}
-              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} find={findText} filter={streamKind ?? 'all'} />
-              <NoteComposer module={module.name} recordId={active.id} look="dock" whatsAppTo={phoneValue || undefined} />
+              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} find={findText} filter={shownKey === 'comment' ? undefined : streamKind ?? 'all'} />
+              <NoteComposer module={module.name} recordId={active.id} look="dock" />
             </>
           )}
           {shownKey === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
@@ -1326,7 +1346,7 @@ export function IpropyWorkspace({
         >
           {paneOpen && <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-1 dark:border-slate-800">
             <span className="text-xs font-semibold text-muted">Details</span>
-            <button type="button" disabled={onCall} onClick={() => { setDetailsHoverBlocked(true); setPaneFolded(true); }} aria-label="Fold the details pane" aria-expanded title={onCall ? 'The live call deck stays visible during a call' : 'Fold the details away'} className="btn-icon h-7 w-7" data-testid="fold-details"><PanelRightClose className="h-4 w-4" /></button>
+            <button type="button" disabled={onCall} onClick={() => setPaneFolded(true)} aria-label="Fold the details pane" aria-expanded title={onCall ? 'The live call deck stays visible during a call' : 'Fold the details away'} className="btn-icon h-7 w-7" data-testid="fold-details"><PanelRightClose className="h-4 w-4" /></button>
           </div>}
           {/*
             Fold the whole pane away and back — the owner, 3 October 2026:
@@ -1340,9 +1360,7 @@ export function IpropyWorkspace({
           {!paneOpen && (
             <button
               type="button"
-              onClick={() => { setDetailsHoverBlocked(false); setPaneFolded(false); }}
-              onMouseEnter={() => { if (!detailsHoverBlocked) setPaneFolded(false); }}
-              onMouseLeave={() => setDetailsHoverBlocked(false)}
+              onClick={() => setPaneFolded(false)}
               title="Show the details"
               aria-label="Show the details pane"
               aria-expanded={false}
@@ -1691,7 +1709,7 @@ function QueueCard({
           {disposition && (
             <span
               title={`${row.label} | ${disposition}`}
-              className={cn('min-w-0 max-w-[42%] shrink truncate text-[10px] font-medium', active ? 'text-brand-800 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400')}
+              className={cn('ml-1 min-w-0 max-w-[35%] shrink truncate text-[10px] font-medium', active ? 'text-brand-800 dark:text-brand-100' : 'text-slate-500 dark:text-slate-400')}
             >
               <span aria-hidden="true">| </span>{disposition}
             </span>

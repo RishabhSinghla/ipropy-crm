@@ -285,12 +285,12 @@ miscRouter.get('/notifications', asyncHandler(async (req, res) => {
   const rows = await db.query(
     `SELECT id, kind, title, body, link, record_id, is_read, created_at
      FROM ipy_notification
-     WHERE user_id = $1 ${unreadOnly ? 'AND is_read = false' : ''}
+     WHERE user_id = $1 AND title IS DISTINCT FROM 'Some of your records need filling in' ${unreadOnly ? 'AND is_read = false' : ''}
      ORDER BY created_at DESC LIMIT 60`,
     [getUser(req).id],
   );
   const unread = await db.queryOne<{ count: number }>(
-    `SELECT COUNT(*)::int AS count FROM ipy_notification WHERE user_id = $1 AND is_read = false`,
+    `SELECT COUNT(*)::int AS count FROM ipy_notification WHERE user_id = $1 AND is_read = false AND title IS DISTINCT FROM 'Some of your records need filling in'`,
     [getUser(req).id],
   );
   res.json({ notifications: rows.rows, unreadCount: unread?.count ?? 0 });

@@ -12,7 +12,6 @@ import { api, authedFileUrl, type AccessRequest, type ModuleSummary, type Search
 import { useRealtime } from '../lib/realtime';
 import { notificationTone } from '../lib/notificationTone';
 import { LiveCallDeck } from './LiveCallDeck';
-import { TaskBuzzer } from './TaskBuzzer';
 import { useDockFolded, WorkspaceDock } from './WorkspaceDock';
 import { AiBubble } from './AiBubble';
 import { cn } from '../lib/utils';
@@ -115,7 +114,7 @@ export default function Layout(): JSX.Element {
             toolbar comes later in the page and painted over every menu that
             drops out of this bar — the "+ New" list was hidden under it
             (10 October 2026). */}
-        <header data-main-toolbar className="relative z-50 flex h-14 shrink-0 items-center gap-1.5 border-b border-slate-200 bg-white px-3 text-slate-800 shadow-sm sm:px-4">
+        <header data-main-toolbar className="relative z-50 flex h-14 shrink-0 items-center gap-1.5 border-b border-slate-200 bg-white px-3 text-slate-800 shadow-[0_2px_5px_rgba(15,23,42,0.08)] sm:px-4">
           {/*
             One hamburger, two jobs, and the job is whichever navigation this
             screen has — *"the toolbar also have hamburg function before ipropy
@@ -198,16 +197,15 @@ export default function Layout(): JSX.Element {
 
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-0.5">
-            <NewRecordButton modules={menuModules} />
             {/* A list page puts its New (recently added) chip here. */}
             <div id="global-new-records" className="shrink-0" />
-            <div id="global-tags" className="min-w-0 max-w-[28rem] flex-[0_1_28rem]" />
+            <div id="global-tags" className="min-w-0 max-w-[17rem] flex-[0_1_17rem]" />
             <GlobalSearch />
             <div id="global-list-options" className="shrink-0" />
 
             <div className="flex shrink-0 items-center gap-1">
               <NotificationBell />
-
+              <NewRecordButton modules={menuModules} />
               <UserMenu />
             </div>
           </div>
@@ -223,9 +221,6 @@ export default function Layout(): JSX.Element {
 
         <LiveCallDeck />
         <SarvamControl />
-
-        {/* Today's follow-ups, popping up one after another with a buzzer. */}
-        <TaskBuzzer />
 
         {/* The bottom tab bar is fixed, so without this the last 64px of every
             page — a form's Save button included — sits behind it. */}
@@ -279,7 +274,6 @@ export default function Layout(): JSX.Element {
  * "+ New" is blue — the owner, 10 October 2026: *"the button colour should be
  * Blue"*. Blue-600 under white is 5.2:1, so the word still clears AA.
  */
-const NEW_BUTTON = 'btn btn-sm shrink-0 gap-1 bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800';
 
 function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element | null {
   const creatable = modules.filter((m) => m.permissions.create);
@@ -340,11 +334,11 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
         <button
           type="button"
           onClick={() => setCreating(only)}
-          className={NEW_BUTTON}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-brand-700"
           title={`New ${only.singularLabel}`}
+          aria-label={`New ${only.singularLabel}`}
         >
-          <Plus className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">New</span>
+          <Plus className="h-4 w-4" />
         </button>
         {createModal}
       </>
@@ -360,10 +354,8 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
            the accessible name falls back to this — and "Create a new record"
            collided with every form's own Create button in the mobile suite,
            which is the kind of failure a name chosen for prose causes. */
-        <button className={NEW_BUTTON} title="New record" aria-label="New record" data-testid="global-create">
-          <Plus className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">New</span>
-          <ChevronDown className="h-3 w-3 opacity-80" />
+        <button className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-brand-700" title="New record" aria-label="New record" data-testid="global-create">
+          <Plus className="h-4 w-4" />
         </button>
       )}
     >

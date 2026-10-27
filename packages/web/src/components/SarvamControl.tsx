@@ -66,7 +66,7 @@ export function SarvamControl(): JSX.Element {
   const matches = (status: string): boolean => filter === 'all' || (filter === 'retry' ? RETRY.has(status) : filter === 'pending' ? status === 'pending' : status === filter);
   return <>
     <button type="button" onClick={() => setOpen(true)} aria-label="Open Sarvam AI call control"
-      className="fixed bottom-20 left-3 z-40 flex items-center gap-2 rounded-full border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-800 shadow-lg dark:border-violet-700 dark:bg-slate-900 dark:text-violet-200 md:bottom-4">
+      className="fixed bottom-20 left-28 z-40 flex items-center gap-2 rounded-full border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 shadow-lg dark:border-violet-700 dark:bg-slate-900 dark:text-violet-200 md:bottom-20">
       <Activity className={`h-4 w-4 ${awaiting || running.length ? 'animate-pulse' : ''}`} />
       AI calls {awaiting ? `· ${awaiting} awaiting result` : running.length ? data?.policy && !data.policy.callingAllowed ? '· scheduled' : '· dialing' : ''}
     </button>

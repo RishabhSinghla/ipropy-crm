@@ -65,8 +65,10 @@ export function WhatsAppIconButton({ to, className }: { to: string; className?: 
  * rather than a plain link, because `window.open` returns null inside the phone
  * app and nothing happens.
  */
-export function WhatsAppButton({ to, iconOnly = false, round = false, textOnly = false }: {
+export function WhatsAppButton({ to, iconOnly = false, round = false, plain = false, textOnly = false }: {
   to: string; iconOnly?: boolean; round?: boolean;
+  /** An unframed header icon with no button border or circular background. */
+  plain?: boolean;
   /** The word and no icon — the record's menu bar is words only (10 October 2026). */
   textOnly?: boolean;
 }): JSX.Element | null {
@@ -82,14 +84,16 @@ export function WhatsAppButton({ to, iconOnly = false, round = false, textOnly =
       // record's action strip, neutral at rest — four tinted circles in a
       // line read as four warnings — and filling with its own colour under
       // the cursor, so it says what it is exactly when that matters.
-      className={round
+      className={plain
+        ? 'inline-flex h-8 w-8 items-center justify-center rounded p-1 text-emerald-600 transition hover:text-emerald-700'
+        : round
         ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:border-transparent hover:text-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:bg-emerald-600'
         : cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
       title={`WhatsApp ${to}`}
       aria-label={`WhatsApp ${to}`}
       onClick={() => void openExternal(`https://api.whatsapp.com/send/?phone=${digits}`)}
     >
-      {!textOnly && <MessageCircle className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-emerald-600'} />}
+      {!textOnly && <MessageCircle className={round ? 'h-4 w-4' : 'h-4 w-4 text-emerald-600'} />}
       {textOnly ? 'WhatsApp' : !iconOnly && !round && <span className="hidden sm:inline">WhatsApp</span>}
     </button>
   );

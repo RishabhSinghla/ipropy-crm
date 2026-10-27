@@ -12,7 +12,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowLeftRight, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
-  PhoneCall, Users,
+  Bot, PhoneCall, Users,
   Pencil, PhoneForwarded, Plus, RefreshCw, Save, Search, Settings2, Sparkles, Tag, Trash2, Upload, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -1217,17 +1217,14 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         >
           <div className="flex min-w-0 items-center justify-between gap-3 pb-0.5" role="group" aria-label="Filter by stage">
             <div className="flex min-w-0 flex-1 items-center gap-2">
-            <div className="flex shrink-0 flex-col justify-center leading-tight text-slate-500 dark:text-slate-400">
-              <h2 className="text-[10px] font-medium uppercase tracking-wide">{stageField.label || 'Stages'}</h2>
-              <span className="text-[10px] font-normal tabular-nums" aria-label="Selected record count">{activeRecordPosition}</span>
-            </div>
+            {ribbonAgentControl}
             <div className="flex min-w-0 items-center gap-0 overflow-x-auto" role="group" aria-label="Filter by stage options">
             <button
               type="button"
               aria-pressed={stagePick.length === 0}
               onClick={() => { setStagePick([]); setPage(1); }}
               className={cn(
-                'flex h-6 shrink-0 items-center gap-1 px-2 text-[10px] font-medium transition-colors',
+                'flex h-6 shrink-0 items-center gap-1 px-2 text-[10px] font-semibold transition-colors',
                 stagePick.length === 0
                   ? 'bg-slate-700 text-white'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300',
@@ -1255,7 +1252,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                     setPage(1);
                   }}
                   className={cn(
-                    'relative flex h-6 shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-medium transition-colors',
+                    'relative flex h-6 shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-semibold transition-colors',
                   selectedStage ? 'z-[1] text-white' : 'text-slate-800 hover:z-[1]',
                   )}
                   style={{ backgroundColor: selectedStage ? `color-mix(in srgb, ${color} 78%, #111827)` : `color-mix(in srgb, ${color} 12%, white)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
@@ -1268,7 +1265,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
               );
             })}
             </div>
-            {ribbonAgentControl}
             </div>
             <div aria-hidden="true" className="h-6 w-px shrink-0 bg-slate-300 dark:bg-slate-700" />
             {ribbonControls}
@@ -1466,6 +1462,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             queueTools={queueTools}
             queueHeaderAction={queueHeaderActions}
+            queuePosition={activeRecordPosition}
             queueFooter={queueFooter}
             onActivePositionChange={reportActiveRecordPosition}
             onShowing={setPaneShowing}
@@ -1896,13 +1893,12 @@ function SarvamBulkCallButton({
     <>
       <button
         type="button"
-        className={cn(toolbarButton(false, 'h-7 max-w-[12rem] min-w-0 px-2 text-[10px]'), 'justify-start')}
+        className={toolbarButton(false, 'h-7 w-7 justify-center p-0')}
         onClick={openBatch}
         title={`AI calls · batch ${batchNumber} of ${batchCount}`}
         aria-label={`AI calls · batch ${batchNumber} of ${batchCount}`}
       >
-        <PhoneCall className="h-3 w-3 shrink-0" />
-        <span>AI Call</span>
+        <Bot className="h-3.5 w-3.5" />
       </button>
       <Modal
         open={open}

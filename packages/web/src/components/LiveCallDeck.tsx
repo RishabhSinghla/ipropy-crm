@@ -12,7 +12,7 @@ import { useLiveCall } from '../lib/liveCall';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { saveNextUrl } from '../lib/saveNextUrl';
 import {
-  callBar, deckStatus, followUpFor, minutesFrom, nobodyAnswered, reportMatchesCall, type CallBar, type PhoneCallReport,
+  callBar, deckStatus, minutesFrom, nobodyAnswered, reportMatchesCall, type CallBar, type PhoneCallReport,
 } from '../lib/callConsole';
 import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
@@ -245,14 +245,9 @@ export function useCallDeckState(): CallDeckState {
         disposition: outcome,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       });
-      /*
-        A date the rep picked on the panel wins — they were on the call. With
-        nothing picked the outcome chases them for you, and still never argues
-        with a date somebody has already put in the future.
-      */
-      const chaseOn = !followUpField ? null : chaseOverride !== undefined
-        ? chaseOverride
-        : followUpFor(outcome, (record?.values?.[followUpField.name] as string | null | undefined) ?? null, new Date());
+      // A logged outcome must not silently alter Next Follow-up. Keep the
+      // explicit date picker as the only way to update that field.
+      const chaseOn = chaseOverride ?? null;
       if (chaseOn && followUpField) await api.update(call.module, call.recordId, { [followUpField.name]: chaseOn });
 
       // Logging updates the current record's timestamp, which can move it in

@@ -22,16 +22,14 @@ import { toast, useApp } from '../lib/store';
 import { cn, looksLikeHtml, sanitiseRichText } from '../lib/utils';
 import { Avatar, Skeleton } from './ui';
 
-/** The chips above the stream. `all` asks the server for every kind at once. */
+/** The Summary timeline filters. `all` asks the server for every kind at once. */
 const FEED_FILTERS = [
   { key: 'all', label: 'All' },
-  { key: 'comment', label: 'Notes' },
-  { key: 'message', label: 'Messages' },
+  { key: 'comment', label: 'Comments' },
   { key: 'call', label: 'Calls' },
-  { key: 'audit', label: 'Changes' },
-  { key: 'attachment', label: 'Files' },
+  { key: 'audit', label: 'Status changes' },
 ] as const;
-type FeedFilter = typeof FEED_FILTERS[number]['key'];
+type FeedFilter = typeof FEED_FILTERS[number]['key'] | 'message' | 'attachment';
 
 /** The server's page of history. More than this reads as "60+" on the tab. */
 export const FEED_LIMIT = 60;
@@ -53,15 +51,7 @@ export function ActivityFeed({ module, recordId, customerName, find = '', filter
   customerName: string;
   /** Words typed into the header's search: only entries that mention them. */
   find?: string;
-  /**
-   * Which kind to show, decided by the caller.
-   *
-   * **2 October 2026, the owner:** *"all tab of activity move/merge in to menu
-   * bar."* The record's menu bar owns that choice now, so the chip row below is
-   * drawn only where nothing else offers one — the record page's own tab, which
-   * has no merged bar. Two rows naming Calls and Files, two rows apart, meaning
-   * different things each time, is what this replaced.
-   */
+  /** When set, show one kind without drawing the Summary tab's filter chips. */
   filter?: FeedFilter;
 }): JSX.Element {
   const [ownFilter, setFilter] = useState<FeedFilter>('all');
@@ -79,9 +69,9 @@ export function ActivityFeed({ module, recordId, customerName, find = '', filter
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }); }, [entries.length, recordId, filter]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="activity-feed">
+    <div className="flex min-h-0 flex-1 flex-col bg-white" data-testid="activity-feed">
       {given === undefined && (
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border)] bg-white px-3 py-1.5 no-scrollbar dark:bg-slate-900" role="group" aria-label="Show in the timeline">
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border)] bg-white px-3 py-1.5 no-scrollbar" role="group" aria-label="Show in the timeline">
         {FEED_FILTERS.map((option) => (
           <button
             key={option.key}
@@ -103,7 +93,7 @@ export function ActivityFeed({ module, recordId, customerName, find = '', filter
 
       {/* Focusable, so the stream can be scrolled from the keyboard — a region
           that scrolls and cannot be reached is one a keyboard user cannot read. */}
-      <div className="workspace-activity-canvas min-h-0 flex-1 space-y-3 overflow-y-auto p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400" tabIndex={0} role="log" aria-label="Activity">
+      <div className="workspace-activity-canvas min-h-0 flex-1 space-y-3 overflow-y-auto bg-white p-4 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400" tabIndex={0} role="log" aria-label="Activity">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-14 w-2/3" />)
         ) : isError ? (
@@ -146,7 +136,7 @@ function FeedItem({ entry, customerName, module, recordId }: { entry: TimelineEn
           who={inbound ? customerName : entry.actorName}
           time={time}
           ticks={inbound ? null : status === 'read' ? 'read' : status === 'delivered' ? 'delivered' : 'sent'}
-          label={entry.type === 'email' ? <><Mail className="h-3 w-3" /> {entry.title}</> : null}
+          label={entry.type === 'email' ? <><Mail className="h-3 w-3" /> Email</> : <><MessageSquare className="h-3 w-3" /> Message</>}
         >
           {entry.body || entry.title}
         </Bubble>
@@ -164,14 +154,18 @@ function FeedItem({ entry, customerName, module, recordId }: { entry: TimelineEn
       );
     default:
       return (
-        <SystemLine>
-          <RefreshCw className="h-3 w-3 shrink-0 text-brand-600" />
-          <span>
-            {entry.body ? <><strong>{entry.title}</strong> · {entry.body}</> : <strong>{entry.title}</strong>}
-            {entry.actorName && <> by <strong>{entry.actorName}</strong></>}
-            <span className="ml-1 text-muted">· {time}</span>
-          </span>
-        </SystemLine>
+        <div className="flex w-full items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-700 shadow-xs">
+          <Avatar name={entry.actorName ?? 'System'} size={28} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 border-b border-[var(--border)] pb-1.5 text-[11px]">
+              <RefreshCw className="h-3 w-3 shrink-0 text-brand-600" />
+              <strong className="truncate">{entry.actorName ?? 'System'}</strong>
+              <span className="text-muted">changed the record</span>
+              <span className="ml-auto shrink-0 text-muted">{time}</span>
+            </p>
+            <p className="mt-2 break-words">{entry.body ? <><strong>{entry.title}</strong> · {entry.body}</> : <strong>{entry.title}</strong>}</p>
+          </div>
+        </div>
       );
   }
 }
@@ -186,14 +180,11 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
   children: ReactNode;
 }): JSX.Element {
   return (
-    <div className={cn('flex items-end gap-2', side === 'right' ? 'justify-end' : 'justify-start')}>
-      {side === 'left' && <Avatar name={who ?? '?'} size={28} className="shrink-0" />}
+    <div className="flex items-start justify-start gap-2">
+      <Avatar name={who ?? '?'} size={28} className="shrink-0" />
       <div className={cn(
-        'min-w-0 max-w-[34rem] rounded-2xl border p-2.5 text-xs text-slate-800 shadow-xs dark:text-slate-100',
-        side === 'left' ? 'rounded-bl-none' : 'rounded-br-none',
-        tone === 'in' && 'border-slate-200/70 bg-white dark:border-slate-700 dark:bg-slate-800',
-        // WhatsApp's own "sent" green, which is what makes the stream read as a chat.
-        tone === 'out' && 'border-emerald-200/80 bg-[#d9fdd3] dark:border-emerald-900 dark:bg-emerald-950',
+        'min-w-0 max-w-full flex-1 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800 shadow-xs',
+
         /*
           **A note is a plain white card** — the owner, 3 October 2026: *"We
           Want to Highlight comments/Note in the box with rich white
@@ -202,7 +193,6 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
           was cream on a cream canvas, which is the one combination that makes
           a card stop reading as a card.
         */
-        tone === 'note' && 'border-[var(--border)] bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800',
       )}>
         {/*
           Who and when, on one line above the words — for a note, where the
@@ -210,23 +200,16 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
           day. A chat bubble keeps its clock in the corner, where every chat
           app puts it.
         */}
-        {tone === 'note' ? (
-          <p className="mb-1.5 flex items-center gap-1.5 border-b border-[var(--border)] pb-1.5 text-[11px]">
-            <span className="flex items-center gap-1 text-brand-700 dark:text-brand-300">{label}</span>
-            {who && <span className="min-w-0 truncate font-bold text-slate-900 dark:text-white">{who}</span>}
-            <span className="ml-auto shrink-0 font-medium text-muted">{time}</span>
-          </p>
-        ) : (label || (tone !== 'in' && who)) && (
-          <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
-            {label}
-            {tone !== 'in' && who && <span className="truncate">{label ? '· ' : ''}{who}</span>}
-          </p>
-        )}
+        <p className="mb-1.5 flex min-w-0 items-center gap-1.5 border-b border-[var(--border)] pb-1.5 text-[11px]">
+          {label && <span className="flex shrink-0 items-center gap-1 text-brand-700">{label}</span>}
+          {who && <span className="min-w-0 truncate font-bold text-slate-900">{who}</span>}
+          {tone === 'note' && <span className="shrink-0 text-muted">commented</span>}
+          <span className="ml-auto shrink-0 font-medium text-muted">{time}</span>
+        </p>
         {/* `break-words`: a long number or link with no spaces would otherwise run off the bubble. */}
         <p className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]">{children}</p>
         {tone !== 'note' && (
           <p className="mt-1 flex items-center justify-end gap-1 text-[10px] text-slate-500 dark:text-slate-400">
-            {time}
             {ticks === 'sent' && <Check className="h-3 w-3" aria-label="Sent" />}
             {ticks === 'delivered' && <CheckCheck className="h-3 w-3" aria-label="Delivered" />}
             {ticks === 'read' && <CheckCheck className="h-3 w-3 text-sky-600" aria-label="Read" />}
@@ -325,7 +308,7 @@ function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry
 
   const label = (
     <>
-      <MessageSquare className="h-3 w-3" /> Note
+      <MessageSquare className="h-3 w-3" /> Comment
       {history.length > 0 && <EditedMarker history={history} current={entry.body ?? ''} />}
     </>
   );
@@ -435,8 +418,9 @@ function CallCard({ entry, time }: { entry: TimelineEntry; time: string }): JSX.
   const callId = typeof entry.meta.callId === 'string' ? entry.meta.callId : null;
   const hasRecording = Boolean(entry.meta.recordingUrl) && callId;
   return (
-    <div className="mx-auto max-w-md rounded-xl border border-indigo-100 bg-white p-2.5 shadow-xs dark:border-indigo-900 dark:bg-slate-800">
-      <div className="flex items-center gap-3">
+    <div className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xs">
+      <div className="flex items-start gap-3">
+        <Avatar name={String(entry.actorName ?? 'Call')} size={28} className="shrink-0" />
         <span className={cn(
           'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
           direction === 'missed' ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300' : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300',
@@ -444,10 +428,13 @@ function CallCard({ entry, time }: { entry: TimelineEntry; time: string }): JSX.
           <Icon className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-100">{entry.title}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-xs">
+            <strong className="min-w-0 truncate text-slate-900">{entry.actorName ?? 'Team member'}</strong>
+            <span className="shrink-0 text-muted">· {entry.title}</span>
+            <span className="ml-auto shrink-0 text-muted">{time}</span>
+          </span>
           {entry.body && <span className="block truncate text-[11px] text-slate-600 dark:text-slate-300">{entry.body}</span>}
         </span>
-        <span className="shrink-0 text-[10px] text-slate-500 dark:text-slate-400">{time}</span>
       </div>
       {/* Loaded only when somebody presses play — a day of recordings is megabytes. */}
       {hasRecording && <audio className="mt-2 h-8 w-full" controls preload="none" src={api.recordingUrl(callId!)} />}
@@ -457,8 +444,8 @@ function CallCard({ entry, time }: { entry: TimelineEntry; time: string }): JSX.
 
 function SystemLine({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <div className="flex justify-center">
-      <p className="flex max-w-[90%] items-center gap-1.5 rounded-md border border-slate-300 bg-slate-100 px-3 py-1 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+    <div className="flex justify-start">
+      <p className="flex max-w-full items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 shadow-xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
         {children}
       </p>
     </div>
@@ -466,7 +453,7 @@ function SystemLine({ children }: { children: ReactNode }): JSX.Element {
 }
 
 /**
- * When this happened — **the day and the time, in the card itself**.
+ * When this happened — relative time in the card header.
  *
  * **4 October 2026, the owner, with a screenshot of the stream:** *"the Note
  * date are separate from comment/note box, we want to see note/comment date in
@@ -481,9 +468,5 @@ function SystemLine({ children }: { children: ReactNode }): JSX.Element {
  * Every entry carries its complete date, including today's date and year.
  */
 function clock(at: string): string {
-  const when = new Date(at);
-  if (Number.isNaN(when.getTime())) return relativeTime(at);
-  const time = when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-  const day = when.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-  return `${day}, ${time}`;
+  return relativeTime(at);
 }
