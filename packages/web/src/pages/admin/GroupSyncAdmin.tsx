@@ -127,9 +127,19 @@ export default function GroupSyncAdmin(): JSX.Element {
                   {g.enabled ? `${g.messagesSeen.toLocaleString('en-IN')}${g.lastMessageAt ? ` · last ${new Date(g.lastMessageAt).toLocaleString('en-IN')}` : ''}` : <span className="text-muted">off</span>}
                 </td>
                 <td className="px-3 py-2">
-                  {g.historyState === 'done' && <Badge>Done</Badge>}
+                  {g.historyState === 'done' && (
+                    <>
+                      <Badge>Done</Badge>
+                      <button className="btn-secondary btn-sm ml-2" disabled={job.running} onClick={() => history.mutate(g.id)}>Read again</button>
+                    </>
+                  )}
                   {g.historyState === 'running' && <Badge>Reading…</Badge>}
-                  {g.historyState === 'failed' && <span className="text-negative" title={g.historyNote ?? ''}>Failed — {g.historyNote}</span>}
+                  {g.historyState === 'failed' && (
+                    <>
+                      <span className="text-negative" title={g.historyNote ?? ''}>Failed — {g.historyNote}</span>
+                      <button className="btn-secondary btn-sm ml-2" disabled={job.running} onClick={() => history.mutate(g.id)}>Read again</button>
+                    </>
+                  )}
                   {g.historyState === 'none' && g.enabled && (
                     <button className="btn-secondary btn-sm" disabled={job.running} onClick={() => history.mutate(g.id)}>Read earlier messages</button>
                   )}

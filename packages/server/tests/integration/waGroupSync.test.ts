@@ -181,3 +181,12 @@ describe('reading history', () => {
     expect((await posts()).rows).toHaveLength(before + 2);
   });
 });
+
+describe('a group renamed in WhatsApp', () => {
+  it('keeps filing under the name the feed already knows, so it is never split in two', async () => {
+    fake.groups = [{ id: DEALER_GROUP, name: `${DEALER_NAME} RENAMED` }, { id: FAMILY_GROUP, name: FAMILY_NAME }];
+    await request(app).post('/api/whatsapp-business/groups/refresh').set('Authorization', `Bearer ${admin}`);
+    const row = await db.queryOne<{ name: string; feed_name: string }>(`SELECT name, feed_name FROM ipy_wa_group WHERE id = $1`, [DEALER_GROUP]);
+    expect(row).toMatchObject({ name: `${DEALER_NAME} RENAMED`, feed_name: DEALER_NAME });
+  });
+});

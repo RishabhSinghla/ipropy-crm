@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS ipy_wa_group (
   id               TEXT PRIMARY KEY,             -- WhatsApp's id, 1203…@g.us
   name             TEXT NOT NULL DEFAULT '',
+  feed_name        TEXT NOT NULL DEFAULT '',     -- the name posts are filed under in Dealer Groups; set once, so a rename in WhatsApp never splits a group
   enabled          BOOLEAN NOT NULL DEFAULT false,
   first_seen_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_message_at  TIMESTAMPTZ,

@@ -32,7 +32,7 @@ export interface WaGroupRow {
 }
 
 /** A burst of messages is imported together, this long after the last one. */
-const FLUSH_AFTER_MS = 8_000;
+const FLUSH_AFTER_MS = 2_000;
 const FLUSH_AT_COUNT = 50;
 
 const waiting = new Map<string, { messages: ChatMessage[]; timer: NodeJS.Timeout | null }>();
@@ -69,8 +69,10 @@ export async function refreshGroupList(): Promise<{ total: number; added: number
   let added = 0;
   for (const group of groups) {
     const result = await db.queryOne<{ inserted: boolean }>(
-      `INSERT INTO ipy_wa_group (id, name) VALUES ($1, $2)
-       ON CONFLICT (id) DO UPDATE SET name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE ipy_wa_group.name END
+      `INSERT INTO ipy_wa_group (id, name, feed_name) VALUES ($1, $2, $2)
+       ON CONFLICT (id) DO UPDATE SET
+         name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE ipy_wa_group.name END,
+         feed_name = CASE WHEN ipy_wa_group.feed_name <> '' THEN ipy_wa_group.feed_name ELSE EXCLUDED.name END
        RETURNING (xmax = 0) AS inserted`,
       [group.id, group.name],
     );
@@ -82,7 +84,7 @@ export async function refreshGroupList(): Promise<{ total: number; added: number
 export async function setGroupEnabled(id: string, enabled: boolean): Promise<WaGroupRow | null> {
   const row = await db.queryOne<Record<string, unknown>>(`SELECT * FROM ipy_wa_group WHERE id = $1`, [id]);
   if (!row) return null;
-  if (enabled && !String(row.name ?? '').trim()) {
+  if (enabled && !String(row.feed_name ?? '').trim()) {
     // A group is filed in the feed under its name; with none, a later rename would split it into two groups.
     throw new Error('This group has no name yet. Refresh the list from WhatsApp first.');
   }
@@ -109,9 +111,11 @@ function dropWaiting(id: string): void {
 export async function noteGroupMessages(incoming: GroupMessage[]): Promise<void> {
   for (const message of incoming) {
     const known = await db.queryOne<{ name: string; enabled: boolean }>(
-      `INSERT INTO ipy_wa_group (id, name) VALUES ($1, $2)
-       ON CONFLICT (id) DO UPDATE SET name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE ipy_wa_group.name END
-       RETURNING name, enabled`,
+      `INSERT INTO ipy_wa_group (id, name, feed_name) VALUES ($1, $2, $2)
+       ON CONFLICT (id) DO UPDATE SET
+         name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE ipy_wa_group.name END,
+         feed_name = CASE WHEN ipy_wa_group.feed_name <> '' THEN ipy_wa_group.feed_name ELSE EXCLUDED.name END
+       RETURNING feed_name AS name, enabled`,
       [message.groupId, message.groupName ?? ''],
     );
     if (!known?.enabled || !known.name.trim()) continue;
@@ -143,11 +147,13 @@ export async function flush(groupId: string): Promise<void> {
   waiting.delete(groupId);
   if (!entry.messages.length) return;
   try {
-    const group = await db.queryOne<{ name: string; enabled: boolean }>(`SELECT name, enabled FROM ipy_wa_group WHERE id = $1`, [groupId]);
+    const group = await db.queryOne<{ name: string; enabled: boolean }>(`SELECT feed_name AS name, enabled FROM ipy_wa_group WHERE id = $1`, [groupId]);
     const userId = await importer();
     // Switched off while the messages waited: they go nowhere.
     if (!group?.enabled || !userId) return;
-    const outcome = await importGroupMessages(group.name, entry.messages, userId);
+    // ignoreMark: the "read up to" mark belongs to file exports. A live message that arrives after a newer one
+    // must still be kept; the fingerprints already stop any repeat.
+    const outcome = await importGroupMessages(group.name, entry.messages, userId, { ignoreMark: true });
     if (outcome.newDeals) void afterImport(group.name);
     logger.info({ group: group.name, ...outcome }, 'dealer groups: live messages imported');
   } catch (err) {
@@ -168,7 +174,7 @@ export function historyJobStatus(): HistoryJob { return { ...job }; }
 export const PAUSE_BETWEEN_GROUPS_MS = { min: 4_000, max: 9_000 };
 
 async function oneGroupHistory(id: string): Promise<void> {
-  const group = await db.queryOne<{ name: string; enabled: boolean }>(`SELECT name, enabled FROM ipy_wa_group WHERE id = $1`, [id]);
+  const group = await db.queryOne<{ name: string; enabled: boolean }>(`SELECT feed_name AS name, enabled FROM ipy_wa_group WHERE id = $1`, [id]);
   if (!group?.enabled) return;
   await db.query(`UPDATE ipy_wa_group SET history_state = 'running', history_note = NULL WHERE id = $1`, [id]);
   try {
@@ -176,12 +182,23 @@ async function oneGroupHistory(id: string): Promise<void> {
     if (!userId) throw new Error('There is no active admin to record the import against.');
     const lines = await openWaGroupHistory(id, 2000, true);
     const messages = lines.map((line) => ({ postedAt: line.sentAt, sender: line.sender, body: tidyBody(line.text) }));
+    // The admin may have switched the group off while OpenWA was still fetching: that opt-out wins.
+    const still = await db.queryOne<{ enabled: boolean }>(`SELECT enabled FROM ipy_wa_group WHERE id = $1`, [id]);
+    if (!still?.enabled) {
+      await db.query(`UPDATE ipy_wa_group SET history_state = 'none', history_note = 'Switched off before the import; nothing was kept.' WHERE id = $1`, [id]);
+      return;
+    }
     // ignoreMark: live messages may already have moved the "read up to" mark past older history.
     const outcome = await importGroupMessages(group.name, messages, userId, { ignoreMark: true });
     await afterImport(group.name);
+    // A message the database refused is not "done": leave the group retryable and say how many.
+    const state = outcome.refused > 0 ? 'failed' : 'done';
+    const note = outcome.refused > 0
+      ? `${outcome.refused} messages could not be saved. Press "Read again" to retry.`
+      : `${outcome.messages} messages read, ${outcome.newDeals} new deals`;
     await db.query(
-      `UPDATE ipy_wa_group SET history_state = 'done', history_at = now(), history_note = $2 WHERE id = $1`,
-      [id, `${outcome.messages} messages read, ${outcome.newDeals} new deals`],
+      `UPDATE ipy_wa_group SET history_state = $3, history_at = now(), history_note = $2 WHERE id = $1`,
+      [id, note, state],
     );
   } catch (err) {
     await db.query(
