@@ -62,7 +62,7 @@ import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
   thing a rep has to learn twice.
 */
 const STREAM_LABEL: Record<'comment' | 'message' | 'audit', string> = {
-  comment: 'Summary',
+  comment: 'Comments',
   message: 'Messages',
   audit: 'Changes',
 };
@@ -173,7 +173,7 @@ function SplitHandle({ label, width, onDrag }: { label: string; width: number; o
 export function IpropyWorkspace({
   module, rows, selected, onToggleSelect, onToggleAll, onDelete,
   openId, sortBy, sortDir, neighbourContext, callQueueUrl, onSort,
-  queueTools, queueHeaderAction, queuePosition, queueFooter, onShowing, emptyAction, onActivePositionChange,
+  queueTools, queueHeaderAction, queueFooter, onShowing, emptyAction,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -207,10 +207,6 @@ export function IpropyWorkspace({
   queueTools?: ReactNode;
   /** A compact module action beside the queue title. */
   queueHeaderAction?: ReactNode;
-  /** The current record position, displayed in the compact queue header. */
-  queuePosition?: string;
-  /** The visible row position, lifted to the stage ribbon. */
-  onActivePositionChange?: (position: string) => void;
   /** The record range and the page arrows, at the foot of the queue. */
   queueFooter?: ReactNode;
   emptyAction?: ReactNode;
@@ -390,14 +386,6 @@ export function IpropyWorkspace({
     enabled: Boolean(activeId),
     staleTime: 15_000,
   });
-  useEffect(() => {
-    if (!active || groupField) {
-      onActivePositionChange?.('—');
-      return;
-    }
-    const index = rows.findIndex((row) => row.id === active.id);
-    onActivePositionChange?.(index >= 0 ? `${index + 1} / ${rows.length}` : '—');
-  }, [active?.id, rows, groupField, onActivePositionChange]);
   const navigate = useNavigate();
   const openRecord = useCallback((id: string) => {
     setActiveId(id);
@@ -787,7 +775,15 @@ export function IpropyWorkspace({
               {groupField && <span className="shrink-0 font-normal text-muted">({localityGroups.length} localities)</span>}
             </span>
           </span>
-          {queuePosition && queuePosition !== '—' && <span className="shrink-0 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-brand-700" aria-label="Selected record position">{queuePosition}</span>}
+          {groupField ? <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-semibold tabular-nums text-slate-600" aria-label="Locality navigation">
+            <button type="button" aria-label="Previous locality" disabled={localityGroups.findIndex((group) => group.key === groupKey) <= 0} onClick={() => { const at = localityGroups.findIndex((group) => group.key === groupKey); if (at > 0) { setSelectedGroup(localityGroups[at - 1]!.key); setMenuPick('builders'); } }} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700"><ChevronLeft className="h-3.5 w-3.5" /></button>
+            <span aria-live="polite">{Math.max(0, localityGroups.findIndex((group) => group.key === groupKey) + 1)} / {localityGroups.length}</span>
+            <button type="button" aria-label="Next locality" disabled={localityGroups.findIndex((group) => group.key === groupKey) >= localityGroups.length - 1} onClick={() => { const at = localityGroups.findIndex((group) => group.key === groupKey); if (at < localityGroups.length - 1) { setSelectedGroup(localityGroups[at + 1]!.key); setMenuPick('builders'); } }} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700"><ChevronRight className="h-3.5 w-3.5" /></button>
+          </span> : active && <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-semibold tabular-nums text-slate-600" aria-label="Record navigation">
+            <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700"><ChevronLeft className="h-3.5 w-3.5" /></button>
+            <span aria-live="polite">{neighbours?.position && neighbours.total ? `${neighbours.position} / ${neighbours.total.toLocaleString('en-IN')}` : '—'}</span>
+            <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700"><ChevronRight className="h-3.5 w-3.5" /></button>
+          </span>}
           {/*
             A Contact Type filter button stood here until 1 October 2026 —
             *"its no use to us at all"*, the owner. Filtering by any field,
@@ -1071,50 +1067,12 @@ export function IpropyWorkspace({
             {(active.tags?.length ?? 0) > 0 && (
               <TagChips module={module.name} tags={active.tags} className="flex shrink-0 items-center justify-center overflow-hidden" />
             )}
-            {groupField ? <span className="mr-1 inline-flex shrink-0 items-center gap-1 text-xs" aria-label="Locality navigation">
-              <button type="button" aria-label="Previous locality" disabled={localityGroups.findIndex((group) => group.key === groupKey) <= 0} onClick={() => { const at = localityGroups.findIndex((group) => group.key === groupKey); setSelectedGroup(localityGroups[at - 1]!.key); setMenuPick('builders'); }}><ChevronLeft className="h-3.5 w-3.5" /></button>
-              <span>{localityGroups.findIndex((group) => group.key === groupKey) + 1} / {localityGroups.length}</span>
-              <button type="button" aria-label="Next locality" disabled={localityGroups.findIndex((group) => group.key === groupKey) >= localityGroups.length - 1} onClick={() => { const at = localityGroups.findIndex((group) => group.key === groupKey); setSelectedGroup(localityGroups[at + 1]!.key); setMenuPick('builders'); }}><ChevronRight className="h-3.5 w-3.5" /></button>
-            </span> : <span className="mr-1 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-slate-500" aria-label="Record navigation">
-              <button type="button" aria-label="Previous record" title="Previous record" disabled={!neighbours?.prevId} onClick={() => neighbours?.prevId && openNeighbour(neighbours.prevId, Math.max(1, (neighbours.position ?? 2) - 1))} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-              <span className="px-0.5 text-[11px] font-semibold tabular-nums text-slate-700 dark:text-slate-200" aria-live="polite">
-                {neighbours?.position && neighbours.total ? `${neighbours.position} / ${neighbours.total.toLocaleString('en-IN')}` : '—'}
-              </span>
-              <button type="button" aria-label="Next record" title="Next record" disabled={!neighbours?.nextId} onClick={() => neighbours?.nextId && openNeighbour(neighbours.nextId, (neighbours.position ?? 0) + 1)} className="rounded p-0.5 transition hover:bg-slate-100 hover:text-brand-700 disabled:opacity-30 dark:hover:bg-slate-700">
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-              {/* *"Move the call icon after record number in Middle header
-                  pane"* (3 October 2026) — immediately after the `3 / 22,988`,
-                  inside the same group, so the two cannot drift apart when the
-                  header wraps on a phone. */}
-              {phoneValue && <span className="ml-1 inline-flex shrink-0 items-center gap-1" data-testid="middle-header-call-actions">
+            {phoneValue && <span className="ml-1 inline-flex shrink-0 items-center gap-1" data-testid="middle-header-call-actions">
               <WhatsAppButton to={phoneValue} iconOnly plain />
-                <button type="button" aria-label="Start AI call" title="Start AI call" disabled={startingAiCall || onCall}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-violet-600 transition hover:bg-violet-50 disabled:opacity-50 dark:text-violet-300 dark:hover:bg-slate-800"
-                  onClick={() => {
-                    setStartingAiCall(true);
-                    void api.createSarvamQueue(module.name, [active.id])
-                      .then(async (queue) => {
-                        window.dispatchEvent(new CustomEvent('sarvam-control-open', { detail: queue.id }));
-                        await api.sarvamQueueAction(queue.id, 'resume');
-                        toast.success('AI call queued', 'The saved calling rules will decide when it can dial.');
-                      })
-                      .catch((error: Error) => toast.error('Could not start AI call', error.message))
-                      .finally(() => setStartingAiCall(false));
-                  }}
-                >{startingAiCall ? <Spinner className="h-4 w-4" /> : <Bot className="h-4 w-4" />}</button>
-                <CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} />
-              </span>}
-              <button type="button" aria-label={active.starred ? 'Remove from starred' : 'Star this record'} title="Favourite" onClick={() => star.mutate(active)} className="p-1 text-slate-500 hover:text-amber-500"><Star className={cn('h-4 w-4', active.starred && 'fill-amber-500 text-amber-500')} /></button>
-              {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
-              {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
-              <button type="button" aria-label="Summarise with AI" title="Summarise with AI" disabled={summarising} className="p-1 text-slate-500 hover:text-brand-600 disabled:opacity-50" onClick={() => {
-                setSummarising(true);
-                void api.summarise(module.name, active.id).then((result) => setSummary(result.summary)).catch((err: Error) => toast.error('Summary failed', err.message)).finally(() => setSummarising(false));
-              }}>{summarising ? <Spinner className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}</button>
+              <CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} />
             </span>}
+            {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
+            {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
               {/*
                 Search within this record. **The icon left this bar on
                 3 October 2026** — *"remove the whatsapp icon and Search icon
@@ -1186,6 +1144,41 @@ export function IpropyWorkspace({
         <RecordMenuBar
           actions={(close) => (
             <>
+              <DropdownItem
+                icon={<Star className={cn('h-3.5 w-3.5', active.starred && 'fill-amber-500 text-amber-500')} />}
+                onClick={() => { star.mutate(active); close(); }}
+              >
+                {active.starred ? 'Remove favourite' : 'Add favourite'}
+              </DropdownItem>
+              {phoneValue && <DropdownItem
+                icon={<Bot className="h-3.5 w-3.5" />}
+                disabled={startingAiCall || onCall}
+                onClick={() => {
+                  setStartingAiCall(true);
+                  void api.createSarvamQueue(module.name, [active.id])
+                    .then(async (queue) => {
+                      window.dispatchEvent(new CustomEvent('sarvam-control-open', { detail: queue.id }));
+                      await api.sarvamQueueAction(queue.id, 'resume');
+                      toast.success('AI call queued', 'The saved calling rules will decide when it can dial.');
+                    })
+                    .catch((error: Error) => toast.error('Could not start AI call', error.message))
+                    .finally(() => setStartingAiCall(false));
+                  close();
+                }}
+              >{startingAiCall ? 'Starting AI call…' : 'Start AI call'}</DropdownItem>}
+              <DropdownItem
+                icon={<Sparkles className="h-3.5 w-3.5" />}
+                disabled={summarising}
+                onClick={() => {
+                  setSummarising(true);
+                  void api.summarise(module.name, active.id)
+                    .then((result) => setSummary(result.summary))
+                    .catch((err: Error) => toast.error('Summary failed', err.message))
+                    .finally(() => setSummarising(false));
+                  close();
+                }}
+              >{summarising ? 'Summarising…' : 'Summarise with AI'}</DropdownItem>
+              <div className="my-1 border-t border-[var(--border)]" />
               {/*
                 Write to them — *"Move email icons from Middle heade pane to
                 Menu bar more tab"* (3 October 2026). It was a circle on the
@@ -1292,7 +1285,7 @@ export function IpropyWorkspace({
                 row named Calls and Files a second time, two rows apart,
                 meaning something different each time.
               */}
-              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} find={findText} filter={shownKey === 'comment' ? undefined : streamKind ?? 'all'} />
+              <ActivityFeed module={module.name} recordId={active.id} customerName={active.label} find={findText} filter={streamKind ?? 'all'} />
               <NoteComposer module={module.name} recordId={active.id} look="dock" />
             </>
           )}

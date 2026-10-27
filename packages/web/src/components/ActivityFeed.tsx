@@ -180,10 +180,11 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
   children: ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex items-start justify-start gap-2">
-      <Avatar name={who ?? '?'} size={28} className="shrink-0" />
+    <div className={cn('flex w-full items-start gap-2', side === 'right' ? 'justify-end' : 'justify-start')}>
+      {side === 'left' && <Avatar name={who ?? '?'} size={28} className="shrink-0" />}
       <div className={cn(
-        'min-w-0 max-w-full flex-1 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800 shadow-xs',
+        'min-w-0 max-w-[min(85%,48rem)] rounded-2xl border p-3 text-xs shadow-xs',
+        side === 'right' ? 'rounded-tr-md border-emerald-200 bg-emerald-50/70 text-slate-800' : 'rounded-tl-md border-slate-200 bg-white text-slate-800',
 
         /*
           **A note is a plain white card** — the owner, 3 October 2026: *"We
@@ -216,6 +217,7 @@ function Bubble({ side, tone, who, time, ticks = null, label, children }: {
           </p>
         )}
       </div>
+      {side === 'right' && <Avatar name={who ?? '?'} size={28} className="shrink-0" />}
     </div>
   );
 }
@@ -258,6 +260,7 @@ function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry
   const mayDelete = Boolean(commentId && me && (me.isAdmin || me.capabilities?.includes('comments.delete')));
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const incoming = String(entry.meta.direction ?? '').toLocaleLowerCase() === 'inbound';
 
   const save = async (): Promise<void> => {
     if (!commentId || draft === null || !draft.trim()) return;
@@ -315,7 +318,7 @@ function CommentBubble({ entry, time, module, recordId }: { entry: TimelineEntry
 
   return (
     <div className="group/comment relative">
-      <Bubble side="right" tone="note" who={entry.actorName} time={time} label={label}>
+      <Bubble side={incoming ? 'left' : 'right'} tone="note" who={entry.actorName} time={time} label={label}>
         {draft === null ? <NoteWords text={entry.body || entry.title} /> : (
           <span className="block">
             <textarea

@@ -62,10 +62,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
 
 
   const [page, setPage] = useState(1);
-  const [activeRecordPosition, setActiveRecordPosition] = useState('—');
-  const reportActiveRecordPosition = useCallback((position: string) => {
-    setActiveRecordPosition((current) => current === position ? current : position);
-  }, []);
   /** Which pane the split view is showing on a phone — see `onShowing`. */
   const [paneShowing, setPaneShowing] = useState<'list' | 'record'>('list');
   // Keep the page editor separate from the committed page. A controlled
@@ -1025,7 +1021,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       trigger={(
         <button
           type="button"
-          className={toolbarButton(Boolean(agentPick), 'h-6 shrink-0 px-2 text-[10px]')}
+          className={cn(toolbarButton(Boolean(agentPick), 'h-6 shrink-0 px-2 text-[10px]'), 'rounded-md')}
           aria-label="Filter ribbon by agent"
           aria-pressed={Boolean(agentPick)}
           data-testid="ribbon-agent-filter"
@@ -1462,9 +1458,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
             queueTools={queueTools}
             queueHeaderAction={queueHeaderActions}
-            queuePosition={activeRecordPosition}
             queueFooter={queueFooter}
-            onActivePositionChange={reportActiveRecordPosition}
             onShowing={setPaneShowing}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
