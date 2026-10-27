@@ -177,12 +177,14 @@ export function historyJobStatus(): HistoryJob { return { ...job }; }
  */
 let supportCache: { at: number; supported: boolean | null } | null = null;
 export async function historySupported(): Promise<boolean | null> {
-  if (supportCache && Date.now() - supportCache.at < 10 * 60_000) return supportCache.supported;
+  // A definite answer is remembered for ten minutes; "could not tell" only for one, so a slow moment is retried soon.
+  if (supportCache && Date.now() - supportCache.at < (supportCache.supported === null ? 60_000 : 10 * 60_000)) return supportCache.supported;
   const any = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_wa_group ORDER BY enabled DESC, id LIMIT 1`);
   let supported: boolean | null = null;
   if (any) {
     try {
-      await openWaGroupHistory(any.id, 1);
+      // Short timeout: this runs while the admin page loads, and must never hold it for the full history timeout.
+      await openWaGroupHistory(any.id, 1, false, 8_000);
       supported = true;
     } catch (err) {
       supported = err instanceof OpenWaError && err.status === 501 ? false : null;
