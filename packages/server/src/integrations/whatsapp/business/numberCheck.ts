@@ -55,14 +55,19 @@ const job: CheckJob = { running: false, cap: DEFAULT_DAILY_CAP, checkedThisRun: 
 
 const TODAY = `checked_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
 
+/** The number the CRM actually uses for WhatsApp: the explicit WhatsApp Number, else the mobile. Digits only. */
+const NUMBER_DIGITS = `regexp_replace(coalesce(nullif(l.whatsapp_number, ''), l.mobile, ''), '\\D', '', 'g')`;
+
 /** Contacts that could still be checked: a mobile, not deleted or archived, no answer yet (or a failure over a day old). */
 const CANDIDATES = `
   FROM ipy_record r
   JOIN ipy_e_leads l ON l.record_id = r.id
   LEFT JOIN ipy_wa_lookup w ON w.record_id = r.id
  WHERE r.is_deleted = false AND r.archived_at IS NULL
-   AND coalesce(l.mobile, '') <> ''
-   AND (w.record_id IS NULL OR (w.status = 'failed' AND w.checked_at < now() - interval '1 day'))`;
+   AND ${NUMBER_DIGITS} <> ''
+   AND (w.record_id IS NULL
+        OR w.number IS DISTINCT FROM ${NUMBER_DIGITS}
+        OR (w.status = 'failed' AND w.checked_at < now() - interval '1 day'))`;
 
 export async function numberCheckStatus(): Promise<CheckJob & { checkedToday: number; remaining: number; found: number; notOnWhatsApp: number }> {
   const today = await db.queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM ipy_wa_lookup WHERE ${TODAY}`);
@@ -93,30 +98,34 @@ async function saveAvatar(recordId: string, url: string): Promise<'saved' | 'ski
   const name = `whatsapp-profile${ext}`;
   const key = await buildStorageKey({ recordId, originalName: name, ext });
   await (await getDriver()).save(key, data, type);
-  await db.query(
+  // Checked again inside the insert: a rep may have uploaded their own photo while this one downloaded.
+  const inserted = await db.query(
     `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key, url, category)
-     VALUES ($1,$2,$3,$4,$5,$6,'avatar')`,
+     SELECT $1,$2,$3,$4,$5,$6,'avatar'
+      WHERE NOT EXISTS (SELECT 1 FROM ipy_attachment WHERE record_id = $1 AND category = 'avatar')`,
     [recordId, name, type, data.byteLength, key, `/api/files/${key}`],
   );
+  if (!inserted.rowCount) return 'skipped';
   return 'saved';
 }
 
-async function remember(recordId: string, status: string, pushName: string | null, photo: string, note: string | null): Promise<void> {
+async function remember(row: { id: string; mobile: string }, status: string, pushName: string | null, photo: string, note: string | null): Promise<void> {
   await db.query(
-    `INSERT INTO ipy_wa_lookup (record_id, status, push_name, photo, note, checked_at) VALUES ($1,$2,$3,$4,$5, now())
-     ON CONFLICT (record_id) DO UPDATE SET status = EXCLUDED.status, push_name = EXCLUDED.push_name,
+    `INSERT INTO ipy_wa_lookup (record_id, number, status, push_name, photo, note, checked_at) VALUES ($1,$6,$2,$3,$4,$5, now())
+     ON CONFLICT (record_id) DO UPDATE SET number = EXCLUDED.number, status = EXCLUDED.status, push_name = EXCLUDED.push_name,
        photo = EXCLUDED.photo, note = EXCLUDED.note, checked_at = now()`,
-    [recordId, status, pushName, photo, note],
+    [row.id, status, pushName, photo, note, row.mobile],
   );
 }
 
 /** One contact. Exported for the test; the job calls it in a loop. */
 export async function checkOne(row: { id: string; mobile: string }): Promise<void> {
-  const number = await dialableNumber(null, row.mobile, row.id);
-  if (!number) { await remember(row.id, 'failed', null, 'none', 'No country code, so the number is not certain'); return; }
+  // An explicit WhatsApp Number carries its own country code (11+ digits); a plain mobile is completed from the record.
+  const number = row.mobile.length > 10 ? row.mobile : await dialableNumber(null, row.mobile, row.id);
+  if (!number) { await remember(row, 'failed', null, 'none', 'No country code, so the number is not certain'); return; }
 
   const found = await openWaCheckNumber(number);
-  if (!found.exists || !found.waId) { await remember(row.id, 'not_on_whatsapp', null, 'none', null); return; }
+  if (!found.exists || !found.waId) { await remember(row, 'not_on_whatsapp', null, 'none', null); return; }
 
   const pushName = await openWaPushName(found.waId);
   let photo: 'saved' | 'skipped' | 'none' = 'none';
@@ -135,7 +144,7 @@ export async function checkOne(row: { id: string; mobile: string }): Promise<voi
       await updateRecord(await writeContext(), 'leads', row.id, { whatsapp_name: pushName }, { skipWorkflow: true });
     }
   }
-  await remember(row.id, 'on_whatsapp', pushName, photo, null);
+  await remember(row, 'on_whatsapp', pushName, photo, null);
 }
 
 export function stopNumberCheck(): void { job.stopRequested = true; }
@@ -154,16 +163,16 @@ export function startNumberCheck(asked?: unknown): { started: boolean; reason?: 
         if (job.stopRequested) { job.note = 'Stopped.'; break; }
         const today = await db.queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM ipy_wa_lookup WHERE ${TODAY}`);
         if ((today?.n ?? 0) >= job.cap) { job.note = `Today's limit of ${job.cap} is reached. Press start again tomorrow.`; break; }
-        const next = await db.queryOne<{ id: string; mobile: string }>(`SELECT r.id, l.mobile ${CANDIDATES} ORDER BY r.updated_at DESC LIMIT 1`);
+        const next = await db.queryOne<{ id: string; mobile: string }>(`SELECT r.id, ${NUMBER_DIGITS} AS mobile ${CANDIDATES} ORDER BY r.updated_at DESC LIMIT 1`);
         if (!next) { job.note = 'Every contact with a mobile has been checked.'; break; }
         try {
           await checkOne(next);
         } catch (err) {
-          if (err instanceof OpenWaError && (err.code === 'UNREACHABLE' || err.status === 400 || err.status === 409 || err.status === 401)) {
+          if (err instanceof OpenWaError && (err.code === 'UNREACHABLE' || err.status === 400 || err.status === 404 || err.status === 409 || err.status === 401)) {
             job.note = `Stopped: ${err.message}`;
             break;
           }
-          await remember(next.id, 'failed', null, 'none', (err as Error).message.slice(0, 200));
+          await remember(next, 'failed', null, 'none', (err as Error).message.slice(0, 200));
         }
         job.checkedThisRun += 1;
         const { min, max } = PAUSE_BETWEEN_CHECKS_MS;

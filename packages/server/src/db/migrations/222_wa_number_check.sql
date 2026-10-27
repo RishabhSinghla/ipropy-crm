@@ -4,6 +4,7 @@
 -- Additive. To undo: DROP TABLE ipy_wa_lookup;
 CREATE TABLE IF NOT EXISTS ipy_wa_lookup (
   record_id   UUID PRIMARY KEY REFERENCES ipy_record(id) ON DELETE CASCADE,
+  number      TEXT,                       -- the digits that were checked; a changed number is checked again
   status      TEXT NOT NULL,              -- on_whatsapp | not_on_whatsapp | failed
   push_name   TEXT,
   photo       TEXT NOT NULL DEFAULT 'none', -- none | saved | skipped

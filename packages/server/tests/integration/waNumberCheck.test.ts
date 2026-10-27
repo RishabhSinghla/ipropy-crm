@@ -6,7 +6,7 @@ import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { invalidate as reloadIntegrations, saveIntegration } from '../../src/core/settings/integrations.js';
 import { __resetOpenWaCaches, OPENWA_PROVIDER } from '../../src/integrations/whatsapp/business/openwa.js';
-import { checkOne } from '../../src/integrations/whatsapp/business/numberCheck.js';
+import { checkOne, numberCheckStatus } from '../../src/integrations/whatsapp/business/numberCheck.js';
 import { SEEDED, adminContext, adminToken, leadInput, signIn } from './fixtures.js';
 import { startFakeOpenWa, type FakeOpenWa } from '../fakes/fakeOpenWa.js';
 
@@ -80,6 +80,14 @@ describe('checking one contact', () => {
   it('never overwrites a name somebody typed', async () => {
     await checkOne({ id: ids.named!, mobile: HAS_NAME });
     expect(await valueOf(ids.named!)).toBe('Typed By A Rep');
+  });
+});
+
+describe('a contact whose number changes', () => {
+  it('is checked again, because the old answer was about a different number', async () => {
+    const before = (await numberCheckStatus()).remaining;
+    await db.query(`UPDATE ipy_e_leads SET mobile = $2 WHERE record_id = $1`, [ids.on, `95${stamp}9`.slice(0, 10)]);
+    expect((await numberCheckStatus()).remaining).toBe(before + 1);
   });
 });
 
