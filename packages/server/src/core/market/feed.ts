@@ -10,7 +10,7 @@ import { db } from '../../db/pool.js';
 import { notify } from '../notifications/index.js';
 import { logger } from '../../utils/logger.js';
 import { invalidateMarketMatches } from './crossMatch.js';
-import { fingerprintOf, looksLikeADeal, looksLikeANotice, parseWhatsAppExport, placeKeysOf, readPost, tidyBody } from './readPost.js';
+import { type ChatMessage, fingerprintOf, looksLikeADeal, looksLikeANotice, parseWhatsAppExport, placeKeysOf, readPost, tidyBody } from './readPost.js';
 import { saveListings, splitListings, worthAnAiRead } from './listings.js';
 import { matchDeal, type DealMatch } from './matchDeal.js';
 import { jevIsAvailable } from './jev.js';
@@ -80,15 +80,27 @@ export function groupKey(name: string): string {
  * groups" on the screen reads.
  */
 export async function importGroupExport(rawGroupName: string, text: string, userId: string): Promise<ImportOutcome> {
+  return importGroupMessages(rawGroupName, parseWhatsAppExport(text), userId);
+}
+
+/**
+ * The same import for messages that are already parsed — a live feed from the linked phone hands them over
+ * directly, so a message read live and the same message read later from an uploaded export are one deal.
+ */
+export async function importGroupMessages(
+  rawGroupName: string, messages: ChatMessage[], userId: string,
+  /** A history backfill may reach back before the mark live messages have already moved forward; the fingerprints still stop any repeat. */
+  options: { ignoreMark?: boolean } = {},
+): Promise<ImportOutcome> {
   const groupName = groupKey(rawGroupName);
   const localities = await knownLocalities();
-  const messages = parseWhatsAppExport(text);
   const outcome: ImportOutcome = { messages: messages.length, deals: 0, newDeals: 0, repeats: 0, skippedOld: 0, refused: 0, listings: 0, alerted: 0 };
   const fresh: string[] = [];
 
   const mark = await db.queryOne<{ read_up_to: Date | null }>(`SELECT read_up_to FROM ipy_market_group WHERE name = $1`, [groupName]);
-  const readUpTo = mark?.read_up_to ?? null;
-  let newest: Date | null = readUpTo;
+  const readUpTo = options.ignoreMark ? null : (mark?.read_up_to ?? null);
+  const previousMark = mark?.read_up_to ?? null;
+  let newest: Date | null = previousMark;
 
   const storeMessage = async (message: (typeof messages)[number]): Promise<void> => {
     const reading = readPost(message.body, localities);

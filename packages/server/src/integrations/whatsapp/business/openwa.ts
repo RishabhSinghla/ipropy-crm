@@ -32,7 +32,7 @@ import {
   type WhatsAppConnectionStatus,
 } from '../providers/types.js';
 import type {
-  InboundMessage, MediaBytes, MediaRef, SendMediaByIdRequest, WebhookBatch,
+  GroupMessage, InboundMessage, MediaBytes, MediaRef, SendMediaByIdRequest, WebhookBatch,
   WebhookRequest, WebhookVerification, WhatsAppBusinessProvider,
 } from './types.js';
 
@@ -161,6 +161,31 @@ function asDate(epochSeconds: unknown): Date {
 }
 
 /**
+ * A written message in a group, in the dealer feed's words. Photos, voice notes and the like carry no words to
+ * read, so they are dropped here. `message.sent` (the company's own number writing in the group) is kept: the
+ * feed wants what the group said, whoever said it.
+ */
+export function groupMessageFrom(data: Record<string, unknown>, chatId: string): GroupMessage | null {
+  const groupId = chatId || String(data.from ?? '');
+  const text = typeof data.body === 'string' ? data.body.trim() : '';
+  const id = normaliseMessageId(data.id);
+  if (!/@g\.us$/.test(groupId) || !text || !id || data.media) return null;
+  const contact = (data.contact ?? {}) as { name?: unknown; pushName?: unknown };
+  const named = [contact.name, contact.pushName].find((v) => typeof v === 'string' && v.trim()) as string | undefined;
+  const number = phoneFromJid(typeof data.author === 'string' ? data.author : data.senderPhone) ?? null;
+  const chat = (data.chat ?? {}) as { name?: unknown };
+  const groupName = [data.groupName, data.chatName, chat.name].find((v) => typeof v === 'string' && v.trim()) as string | undefined;
+  return {
+    providerMessageId: id,
+    groupId,
+    groupName: groupName?.trim() ?? null,
+    sender: (named ?? number ?? 'Unknown').trim(),
+    text,
+    sentAt: asDate(data.timestamp),
+  };
+}
+
+/**
  * One OpenWA delivery, in the CRM's own words.
  *
  * Groups, channels, status posts and broadcast lists are skipped on purpose:
@@ -202,6 +227,11 @@ export function parseOpenWaWebhook(body: unknown): WebhookBatch {
 
   const kind = String(data.kind ?? 'individual');
   const chatId = String(data.chatId ?? '');
+  if (data.isGroup || kind === 'group' || /@g\.us$/.test(chatId)) {
+    const group = groupMessageFrom(data, chatId);
+    if (group) batch.groupMessages = [group];
+    return batch;
+  }
   if (data.isGroup || (kind !== 'individual' && kind !== 'unknown')
     || /@(g\.us|broadcast|newsletter)$/.test(chatId) || chatId === 'status@broadcast') {
     return batch;
@@ -434,6 +464,46 @@ export async function openWaSession({ fresh = false } = {}): Promise<OpenWaSessi
   const session = readSession(row);
   sessionCache = { key, at: Date.now(), session };
   return session;
+}
+
+/** One call to the linked session, with the session's id filled in. Reads only — nothing here sends. */
+async function onSession<T>(path: (sessionId: string) => string, timeoutMs = 20_000): Promise<T> {
+  const c = conf();
+  if (!c) throw notSet();
+  const session = await openWaSession();
+  return api<T>(c, path(session.id), { timeoutMs });
+}
+
+/** Every group the company number is in. */
+export async function openWaGroups(): Promise<{ id: string; name: string }[]> {
+  const rows = await onSession<{ id?: unknown; name?: unknown }[]>((sid) => `/api/sessions/${sid}/groups?limit=1000`, 30_000);
+  return (Array.isArray(rows) ? rows : [])
+    .filter((g) => typeof g.id === 'string' && /@g\.us$/.test(g.id))
+    .map((g) => ({ id: String(g.id), name: typeof g.name === 'string' ? g.name.trim() : '' }));
+}
+
+export interface OpenWaHistoryLine { id: string; sender: string; text: string; sentAt: Date }
+
+/**
+ * The newest messages of one group, read live from WhatsApp, oldest first. `deep` reaches further back
+ * (up to 2,000) and is slower and riskier for the number, so the history job asks for it once per group.
+ */
+export async function openWaGroupHistory(groupId: string, limit: number, deep = false): Promise<OpenWaHistoryLine[]> {
+  const rows = await onSession<Record<string, unknown>[]>(
+    (sid) => `/api/sessions/${sid}/messages/${encodeURIComponent(groupId)}/history?limit=${limit}${deep ? '&deep=true' : ''}`,
+    120_000,
+  );
+  const lines: OpenWaHistoryLine[] = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const text = typeof row.body === 'string' ? row.body.trim() : '';
+    const id = normaliseMessageId(row.id);
+    if (!text || !id || messageType(row.type) !== 'text') continue;
+    const contact = (row.contact ?? {}) as { name?: unknown; pushName?: unknown };
+    const named = [contact.name, contact.pushName].find((v) => typeof v === 'string' && v.trim()) as string | undefined;
+    const number = phoneFromJid(typeof row.author === 'string' ? row.author : row.from);
+    lines.push({ id, sender: (named ?? number ?? 'Unknown').trim(), text, sentAt: asDate(row.timestamp) });
+  }
+  return lines;
 }
 
 /** `+91 ••••• ••123` — enough to recognise the number, not enough to copy it. */

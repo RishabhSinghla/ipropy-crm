@@ -43,6 +43,7 @@ const CampaignsAdmin = lazy(() => import('./admin/CampaignsAdmin'));
 const WhatsAppTemplatesAdmin = lazy(() => import('./admin/WhatsAppTemplatesAdmin'));
 const WhatsAppAdmin = lazy(() => import('./admin/WhatsAppAdmin'));
 const Reports = lazy(() => import('./Reports'));
+const GroupSyncAdmin = lazy(() => import('./admin/GroupSyncAdmin'));
 
 /** Which of an admin's two screens this is. One screen for everyone else. */
 export type WhatsAppMode = 'chat' | 'api';
@@ -106,6 +107,16 @@ const TABS: Tab[] = [
     */
     icon: BarChart3,
     element: <Reports />,
+  },
+  {
+    // Which WhatsApp groups the company number may read into Dealer Groups. Server-enforced admin-only.
+    path: 'groups',
+    label: 'Group sync',
+    capability: 'admin.integrations',
+    only: 'chat',
+    adminOnly: true,
+    icon: MessagesSquare,
+    element: <GroupSyncAdmin />,
   },
   {
     path: 'health',

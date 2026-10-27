@@ -1479,3 +1479,31 @@ What is different from every other adapter, and why:
 at the real local OpenWA (session list and status only). **Not proved:** a real WhatsApp message in either direction, a
 message sent from the phone arriving as `message.sent`/`fromMe` (the shape comes from OpenWA's docs), and what WhatsApp
 does to a number over weeks.
+
+## Dealer groups, read live from the linked number (27 October 2026)
+
+**Rishabh's instruction:** no more exporting a group's chat and uploading the file. OpenWA is already a linked
+device of the company number, so a message written in a dealer group now reaches Dealer Groups by itself.
+
+* **The same pipeline, not a copy.** A group message from OpenWA's webhook becomes a `ChatMessage` and goes through
+  `importGroupMessages` in `core/market/feed.ts` — the function `importGroupExport` (the file upload) now calls too.
+  So a deal read live and the same deal read later from an export are one deal: fingerprints and the
+  `ipy_market_post_seen` rows stop any repeat. `core/market/liveGroups.ts` is the only new logic.
+* **A group is OFF until an admin switches it on** (`ipy_wa_group.enabled`, migration `221`). The company number may sit
+  in family or personal groups; those appear in the list as a name and nothing else, and a message that arrives for a
+  switched-off group is dropped before anything is stored. Admin → WhatsApp → **Group sync** (admin-only, enforced on the
+  server in `whatsappBusiness.ts`, rep gets 403 on every route).
+* **Parsing:** `parseOpenWaWebhook` used to throw groups away. It now puts a written group message in
+  `batch.groupMessages` and still never makes a chat or a contact from it. Photos/voice notes are dropped there.
+  The group's name is read from the delivery if OpenWA sends one; otherwise the **Load my groups** button fills it in
+  from `GET /api/sessions/:id/groups`, and a group with no name cannot be switched on (a later rename would split it in two).
+* **A burst is imported together** (8 seconds after the last message, or 50 messages), so a busy group costs one import,
+  not one per line.
+* **Read earlier messages** (`POST /groups/import-history`): one group at a time, a random 4–9 second pause between
+  groups, reading OpenWA's `…/messages/:chatId/history?deep=true`. It re-reads from before the live "read up to" mark
+  (`ignoreMark`), because live messages move that mark forward and would otherwise hide older history. Pressing it again
+  skips finished groups, so it resumes after a stop or a failure.
+* **Proved** by `tests/integration/waGroupSync.test.ts` (rep refused on every route; an off group keeps nothing; an
+  on group feeds once however many deliveries; switching off drops what was waiting; history fills in and is repeatable)
+  and `tests/openwa.test.ts`. **Not proved:** a real group message from a real number — no number is linked yet, and the
+  group name/author fields in OpenWA's live payload are read from its source and docs.

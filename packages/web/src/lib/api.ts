@@ -1614,6 +1614,13 @@ export const api = {
     lastWebhookAt: string | null; rejectedWebhooks: number; unresolvedSenders: number;
     sendsToday: number; sendsFailedToday: number;
   }>(`/api/whatsapp-business/openwa/health${fresh ? '?fresh=1' : ''}`),
+  waGroups: () => get<WaGroupsResponse>('/api/whatsapp-business/groups'),
+  waGroupsRefresh: () => post<{ total: number; added: number }>('/api/whatsapp-business/groups/refresh', {}),
+  waGroupsEnableAll: () => post<{ enabled: number }>('/api/whatsapp-business/groups/enable-all', {}),
+  waGroupSet: (id: string, enabled: boolean) => put<WaGroup>(`/api/whatsapp-business/groups/${encodeURIComponent(id)}`, { enabled }),
+  waGroupsHistory: (groupId?: string) => post<{ started: boolean; reason?: string }>(
+    '/api/whatsapp-business/groups/import-history', groupId ? { groupId } : {},
+  ),
   waBizRoles: () => get<{
     roles: { automation: string | null; chat: string | null };
     options: { id: string; label: string; active: boolean }[];
@@ -1872,4 +1879,13 @@ export interface SarvamControl {
   batches: { attempt_count: number; id: string; module: string; user_id: string; status: string; message: string | null; created_at: string }[];
   items: { id: string; batch_id: string; record_id: string; label: string; phone: string; status: string; attempt_id: string | null; error: string | null; updated_at: string }[];
   calls: { direction: string; batch_id: string | null; id: string; record_id: string | null; record_module: string | null; label: string | null; phone: string; status: string; started_at: string; duration_seconds: number; notes: string | null }[];
+}
+
+export interface WaGroup {
+  id: string; name: string; enabled: boolean; messagesSeen: number; lastMessageAt: string | null;
+  historyState: 'none' | 'running' | 'done' | 'failed'; historyAt: string | null; historyNote: string | null;
+}
+export interface WaGroupsResponse {
+  groups: WaGroup[];
+  history: { running: boolean; done: number; total: number; current: string | null; startedAt: string | null };
 }

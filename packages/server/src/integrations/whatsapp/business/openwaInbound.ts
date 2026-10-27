@@ -12,6 +12,7 @@ import { recordSentElsewhere } from './inbound.js';
 import { OPENWA_PROVIDER } from './openwa.js';
 import { rememberSessionStatus } from './openwaHealth.js';
 import type { WebhookBatch } from './types.js';
+import { noteGroupMessages } from '../../../core/market/liveGroups.js';
 
 /**
  * A message the CRM itself just sent is announced by OpenWA a moment before
@@ -26,6 +27,15 @@ export async function handleOpenWaExtras(provider: string, batch: WebhookBatch):
   if (provider !== OPENWA_PROVIDER) return;
 
   if (batch.session) rememberSessionStatus(batch.session.status);
+
+  if (batch.groupMessages?.length) {
+    try {
+      await noteGroupMessages(batch.groupMessages);
+    } catch (err) {
+      // Group reading is a side job; a failure here must never make OpenWA retry a customer's message.
+      logger.error({ err, provider }, 'could not note group messages');
+    }
+  }
 
   for (const sent of batch.sentElsewhere ?? []) {
     const age = Date.now() - sent.sentAt.getTime();
