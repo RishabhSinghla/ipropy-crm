@@ -42,6 +42,9 @@ import {
 } from '../../integrations/whatsapp/business/campaigns.js';
 import { redactAutomated, rolesInUse } from '../../integrations/whatsapp/business/channelRoles.js';
 import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.js';
+import {
+  enableAllGroups, historyJobStatus, listWaGroups, refreshGroupList, setGroupEnabled, startHistoryImport,
+} from '../../core/market/liveGroups.js';
 import { currentLinkHealth, checkOpenWaNow, openWaMetrics } from '../../integrations/whatsapp/business/openwaHealth.js';
 import { createLeadFromChat, loadMessageFile } from '../../integrations/whatsapp/business/openwaChats.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
@@ -780,4 +783,55 @@ whatsappBusinessRouter.get('/campaigns/:id/recipients', asyncHandler(async (req,
   await assertCapability(getUser(req), 'whatsapp.send');
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
   res.json(await campaignRecipients(req.params.id!, status));
+}));
+
+// ---------------------------------------------------------------------------
+// Dealer groups, read live from the linked number. Administrators only: choosing
+// which groups the CRM may read is a privacy decision, and so is reading history.
+// ---------------------------------------------------------------------------
+
+async function assertGroupAdmin(req: Parameters<typeof getUser>[0]): Promise<void> {
+  const user = getUser(req);
+  if (!user.isAdmin) throw new ForbiddenError('Only an administrator can manage group sync.');
+  await assertCapability(user, 'admin.integrations');
+}
+
+whatsappBusinessRouter.get('/groups', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  res.json({ groups: await listWaGroups(), history: historyJobStatus() });
+}));
+
+/** Asks OpenWA for the groups the number is in. Switched-off by default; nothing is read from them. */
+whatsappBusinessRouter.post('/groups/refresh', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  try {
+    res.json(await refreshGroupList());
+  } catch (err) {
+    throw new BadRequestError((err as Error).message);
+  }
+}));
+
+whatsappBusinessRouter.post('/groups/enable-all', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  res.json({ enabled: await enableAllGroups() });
+}));
+
+whatsappBusinessRouter.put('/groups/:id', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body ?? {});
+  try {
+    const row = await setGroupEnabled(decodeURIComponent(req.params.id!), enabled);
+    if (!row) throw new NotFoundError('That group is not in the list.');
+    res.json(row);
+  } catch (err) {
+    if (err instanceof NotFoundError) throw err;
+    throw new BadRequestError((err as Error).message);
+  }
+}));
+
+/** Reads what the switched-on groups said before today, slowly. `groupId` limits it to one group. */
+whatsappBusinessRouter.post('/groups/import-history', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  const { groupId } = z.object({ groupId: z.string().max(100).optional() }).parse(req.body ?? {});
+  res.json(startHistoryImport(groupId));
 }));

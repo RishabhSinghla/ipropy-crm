@@ -40,6 +40,9 @@ export interface FakeOpenWa {
   /** Files served from the media route, by message id. */
   media: Map<string, { mimeType: string; data: Buffer }>;
   requests: { method: string; url: string }[];
+  /** Groups the pretend number is in, and what each one said before the CRM was listening. */
+  groups: { id: string; name: string }[];
+  groupHistory: Map<string, Record<string, unknown>[]>;
   close(): Promise<void>;
   /** Post a signed webhook to the CRM, the way OpenWA does. */
   deliver(url: string, secret: string, event: string, data: Record<string, unknown>, opts?: {
@@ -70,6 +73,8 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
     pacingRetryAfter: null,
     media: new Map(),
     requests: [],
+    groups: [],
+    groupHistory: new Map(),
     close: async () => undefined,
     deliver: async () => { throw new Error('not started'); },
   };
@@ -95,6 +100,11 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
       json(res, 200, rows);
       return;
     }
+
+    const listed = /^\/api\/sessions\/([^/]+)\/groups$/.exec(url.pathname);
+    if (req.method === 'GET' && listed) { json(res, 200, fake.groups); return; }
+    const history = /^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/history$/.exec(url.pathname);
+    if (req.method === 'GET' && history) { json(res, 200, fake.groupHistory.get(decodeURIComponent(history[2]!)) ?? []); return; }
 
     const send = /^\/api\/sessions\/([^/]+)\/messages\/(send-text|send-image|send-video|send-audio|send-document)$/.exec(url.pathname);
     if (req.method === 'POST' && send) {

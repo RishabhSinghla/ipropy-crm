@@ -114,9 +114,10 @@ async function tellTheTeam(ctx: TaskContext, senderId: string): Promise<void> {
     const status = typeof ctx.record.lead_status === 'string' ? ctx.record.lead_status : '';
     const label = String(ctx.record.name ?? ctx.record.full_name ?? ctx.record.first_name ?? 'this lead');
     const owner = typeof ctx.record.owner_id === 'string' ? ctx.record.owner_id : null;
-    await notifyMany([owner ?? senderId], {
+    // The agent who changed the status sees the toast too, not only the lead's owner.
+    await notifyMany([owner ?? senderId, ...(ctx.user ? [ctx.user.id] : [])], {
       kind: 'whatsapp_auto',
-      title: 'WhatsApp message sent automatically',
+      title: 'WhatsApp message sent via WhatsApp API',
       body: status ? `${label} · status changed to ${status}` : label,
       link: `/${ctx.module}/${ctx.recordId}`,
       recordId: ctx.recordId,

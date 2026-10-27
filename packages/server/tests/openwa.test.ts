@@ -115,6 +115,23 @@ describe('parsing an OpenWA delivery', () => {
     expect(batch.sentElsewhere![0]).toMatchObject({ to: '919891222206', text: 'hello' });
     expect(parseOpenWaWebhook(received({}, 'message.sent')).sentElsewhere).toHaveLength(1);
   });
+  it('hands a written group message to the dealer feed, never to the chats', () => {
+    const batch = parseOpenWaWebhook(received({
+      isGroup: true, kind: 'group', chatId: '1203@g.us', body: '3 BHK available in Greenfields', groupName: 'FEAWA Members',
+      author: '919811111111@c.us', contact: { pushName: 'Ramesh Dealer' },
+    }));
+    expect(batch.messages).toHaveLength(0);
+    expect(batch.groupMessages).toHaveLength(1);
+    expect(batch.groupMessages![0]).toMatchObject({
+      groupId: '1203@g.us', groupName: 'FEAWA Members', sender: 'Ramesh Dealer', text: '3 BHK available in Greenfields',
+    });
+  });
+  it('falls back to the sender\'s number, and drops group photos and empty messages', () => {
+    const named = parseOpenWaWebhook(received({ isGroup: true, kind: 'group', chatId: '1203@g.us', author: '919811111111@c.us', body: 'hi', contact: {} }));
+    expect(named.groupMessages![0]!.sender).toBe('919811111111');
+    expect(parseOpenWaWebhook(received({ isGroup: true, kind: 'group', chatId: '1203@g.us', media: { mimetype: 'image/jpeg' } })).groupMessages).toBeUndefined();
+    expect(parseOpenWaWebhook(received({ isGroup: true, kind: 'group', chatId: '1203@g.us', body: '  ' })).groupMessages).toBeUndefined();
+  });
   it('skips groups, channels and status posts', () => {
     expect(parseOpenWaWebhook(received({ isGroup: true, kind: 'group', chatId: '1203@g.us' })).messages).toHaveLength(0);
     expect(parseOpenWaWebhook(received({ kind: 'status', chatId: 'status@broadcast' })).messages).toHaveLength(0);

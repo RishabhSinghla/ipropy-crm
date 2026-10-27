@@ -145,7 +145,7 @@ All in code, all checked **before** anything reaches OpenWA, all visible on the 
 * **Refuses when the phone is not linked**, before writing anything.
 * **Plain-language errors**, including OpenWA's own rate limit ("try again in about 30 seconds").
 * **Attribution:** every CRM-sent message carries the CRM user who sent it.
-* **Privacy:** only one-to-one chats are stored (groups, channels and status posts are ignored); photos and files are
+* **Privacy:** only one-to-one chats are stored (channels and status posts are ignored; groups never become chats and only reach Dealer Groups when an admin switches that group on); photos and files are
   stored as a name and size only and fetched from OpenWA when someone presses **Load**; the API key is encrypted and never
   returned to the browser; a webhook with a bad signature, no signature, or older than 30 minutes is refused.
 
@@ -159,5 +159,7 @@ All in code, all checked **before** anything reaches OpenWA, all visible on the 
 * Webhook replay window: `webhookMaxAgeMinutes` on the card (default 30, max 24 h). OpenWA retries a failed delivery
   with the *same* body, so a CRM outage longer than the window makes OpenWA's later retries refuse; widening it is safe
   because message ids are de-duplicated anyway.
+* **Dealer groups:** group messages are not chats. They go to the Dealer Groups feed, only for groups an admin
+  switched on (Admin → WhatsApp → Group sync). See `WHATSAPP.md`, *Dealer groups, read live*.
 * Tests: `tests/openwa*.test.ts` (pure rules), `tests/integration/openwaBridge.test.ts` (API + database against
   `tests/fakes/fakeOpenWa.ts`), `e2e/openwaChat.spec.ts` (browser against the same fake).

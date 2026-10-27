@@ -48,6 +48,18 @@ export interface StatusUpdate {
 }
 
 /** What one webhook delivery amounts to once the vendor's shape is stripped off. */
+export interface GroupMessage {
+  providerMessageId: string;
+  /** WhatsApp's id for the group (`1203…@g.us`). */
+  groupId: string;
+  /** The group's name when the delivery carried it; the list from OpenWA fills it in otherwise. */
+  groupName: string | null;
+  /** The person's own WhatsApp name, else their number. */
+  sender: string;
+  text: string;
+  sentAt: Date;
+}
+
 export interface WebhookBatch {
   messages: InboundMessage[];
   statuses: StatusUpdate[];
@@ -61,6 +73,11 @@ export interface WebhookBatch {
   }[];
   /** The linked session changed state (ready, disconnected, qr_ready…). */
   session?: { status: string };
+  /**
+   * Messages written in WhatsApp groups. Never turned into chats or contacts: the CRM only hands them to the
+   * dealer-groups feed, and only for groups an admin switched on.
+   */
+  groupMessages?: GroupMessage[];
   /** Messages skipped because the sender could not be turned into a phone number. */
   unresolvedSenders?: number;
 }
