@@ -1260,9 +1260,8 @@ export function IpropyWorkspace({
           learns to trust neither. There is no SMS row because this CRM cannot
           send one — an action that can only apologise is worse than none.
         */}
-        {!onTheStream && <RecordMenuAction
+        {shownKey === 'calls' && <RecordMenuAction
           shown={shownKey}
-          onStream={false}
           phone={phoneValue}
           recordId={active.id}
           module={module.name}
@@ -2116,31 +2115,8 @@ function RecordMenuBar({ order, shown, onPick, onReorder, label, count, actions 
  * only apologise is worse than no control, which is the rule the dead End
  * button on the call console already answers to.
  */
-/**
- * Put the cursor in this record's note box, opening the dock first if it is
- * folded.
- *
- * Since 3 October 2026 the box at the foot of the record draws one line until
- * the mouse is over it, so on a click there is often **no box to focus yet** —
- * the button looked like it did nothing. Pressing the dock's own handle is what
- * opens it, and React renders on the next frame, which is what the retry waits
- * for. The handle is pressed once and once only: clicking it on every retry
- * would fold the dock again the moment it opened.
- */
-function putTheCursorInTheNoteBox(recordId: string, framesLeft = 10, opened = false): void {
-  const box = document.querySelector<HTMLTextAreaElement>(`[data-testid="note-box"][data-record="${recordId}"]`);
-  if (box) {
-    box.focus();
-    box.scrollIntoView({ block: 'nearest' });
-    return;
-  }
-  if (!opened) document.querySelector<HTMLButtonElement>('[data-testid="note-dock-handle"]')?.click();
-  if (framesLeft > 0) requestAnimationFrame(() => putTheCursorInTheNoteBox(recordId, framesLeft - 1, true));
-}
-
-function RecordMenuAction({ shown, onStream, phone, recordId, module }: {
+function RecordMenuAction({ shown, phone, recordId, module }: {
   shown: MenuKey;
-  onStream: boolean;
   phone: string;
   recordId: string;
   module: string;
@@ -2152,24 +2128,7 @@ function RecordMenuAction({ shown, onStream, phone, recordId, module }: {
       </div>
     ) : null;
   }
-  if (!onStream) return null;
-  return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900" data-testid="record-menu-action">
-      {/*
-        The note box is already at the foot of the stream, so this puts the
-        cursor in it rather than opening a second one somewhere else — two
-        places to type a comment is two drafts to lose.
-      */}
-      <button
-        type="button"
-        className="btn-secondary btn-sm"
-        onClick={() => putTheCursorInTheNoteBox(recordId)}
-      >
-        Write a note
-      </button>
-      {phone && <WhatsAppButton to={phone} textOnly />}
-    </div>
-  );
+  return null;
 }
 
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
