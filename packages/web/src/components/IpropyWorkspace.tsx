@@ -1692,7 +1692,7 @@ function QueueCard({
             onDoubleClick={openEditor('name')}
             title={canEdit && nameField ? 'Double-click to rename' : undefined}
             className={cn(
-              'min-w-0 flex-1 truncate text-sm font-bold tracking-tight',
+              'min-w-0 max-w-[55%] truncate text-sm font-bold tracking-tight',
               active ? 'text-brand-900 dark:text-white' : 'text-slate-900 dark:text-slate-100',
             )}
           >

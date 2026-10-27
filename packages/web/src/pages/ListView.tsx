@@ -1892,7 +1892,7 @@ function SarvamBulkCallButton({
         title={`AI calls · batch ${batchNumber} of ${batchCount}`}
         aria-label={`AI calls · batch ${batchNumber} of ${batchCount}`}
       >
-        <Bot className="h-3.5 w-3.5" />
+        <Bot className="h-5 w-5" />
       </button>
       <Modal
         open={open}
