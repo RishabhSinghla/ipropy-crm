@@ -17,7 +17,7 @@ import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { afterImport, importGroupMessages } from './feed.js';
 import { tidyBody, type ChatMessage } from './readPost.js';
-import { openWaGroupHistory, openWaGroups } from '../../integrations/whatsapp/business/openwa.js';
+import { OpenWaError, openWaGroupHistory, openWaGroups } from '../../integrations/whatsapp/business/openwa.js';
 import type { GroupMessage } from '../../integrations/whatsapp/business/types.js';
 
 export interface WaGroupRow {
@@ -170,6 +170,29 @@ export interface HistoryJob { running: boolean; done: number; total: number; cur
 const job: HistoryJob = { running: false, done: 0, total: 0, current: null, startedAt: null };
 export function historyJobStatus(): HistoryJob { return { ...job }; }
 
+/**
+ * Can this OpenWA read a group's old messages? The Baileys engine cannot (WhatsApp does not hand a linked device
+ * its old chats on request; OpenWA answers HTTP 501), the Chromium engine can. Asked once with a one-message read
+ * and remembered for ten minutes. `null` means "could not tell", which is treated as "maybe": the button stays.
+ */
+let supportCache: { at: number; supported: boolean | null } | null = null;
+export async function historySupported(): Promise<boolean | null> {
+  if (supportCache && Date.now() - supportCache.at < 10 * 60_000) return supportCache.supported;
+  const any = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_wa_group ORDER BY enabled DESC, id LIMIT 1`);
+  let supported: boolean | null = null;
+  if (any) {
+    try {
+      await openWaGroupHistory(any.id, 1);
+      supported = true;
+    } catch (err) {
+      supported = err instanceof OpenWaError && err.status === 501 ? false : null;
+    }
+    supportCache = { at: Date.now(), supported };
+  }
+  return supported;
+}
+export function forgetHistorySupport(): void { supportCache = null; }
+
 /** A pause between groups, long and uneven on purpose: this is reading from the company's own number. */
 export const PAUSE_BETWEEN_GROUPS_MS = { min: 4_000, max: 9_000 };
 
@@ -214,7 +237,12 @@ async function oneGroupHistory(id: string): Promise<void> {
  * random pause between them. It is safe to press again: a finished group is skipped, so it resumes where it stopped.
  * Returns at once; progress is `historyJobStatus()` and each group's own state in the list.
  */
-export function startHistoryImport(only?: string): { started: boolean; reason?: string } {
+export const NO_HISTORY_REASON =
+  'This WhatsApp connection cannot fetch old messages (WhatsApp does not hand them to a linked device). New messages arrive live. '
+  + 'To bring in older ones, export the chat from your phone and drop the file on Dealer Groups.';
+
+export async function startHistoryImport(only?: string): Promise<{ started: boolean; reason?: string }> {
+  if (await historySupported() === false) return { started: false, reason: NO_HISTORY_REASON };
   if (job.running) return { started: false, reason: 'A history import is already running.' };
   job.running = true;
   job.startedAt = new Date().toISOString();
