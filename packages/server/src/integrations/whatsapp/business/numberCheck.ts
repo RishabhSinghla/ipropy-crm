@@ -18,6 +18,7 @@ import { logger } from '../../../utils/logger.js';
 import { loadUser } from '../../../middleware/auth.js';
 import { buildScopeContext } from '../../../core/permissions/index.js';
 import { updateRecord } from '../../../core/entity/recordService.js';
+import { columnsOf, fieldText } from '../../../core/entity/payloadColumns.js';
 import { getDriver } from '../../../core/storage/index.js';
 import { buildStorageKey } from '../../../core/storage/keys.js';
 import { OpenWaError, openWaCheckNumber, openWaProfilePictureUrl, openWaPushName } from './openwa.js';
@@ -55,23 +56,32 @@ const job: CheckJob = { running: false, cap: DEFAULT_DAILY_CAP, checkedThisRun: 
 
 const TODAY = `checked_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
 
-/** The number the CRM actually uses for WhatsApp: the explicit WhatsApp Number, else the mobile. Digits only. */
-const NUMBER_DIGITS = `regexp_replace(coalesce(nullif(l.whatsapp_number, ''), l.mobile, ''), '\\D', '', 'g')`;
-
-/** Contacts that could still be checked: a mobile, not deleted or archived, no answer yet (or a failure over a day old). */
-const CANDIDATES = `
+/**
+ * The contacts that could still be checked, and the digits of the number the CRM uses for WhatsApp for each: the
+ * explicit WhatsApp Number, else the mobile. Built per call because an administrator can delete either field, and a
+ * query naming a deleted column is a 42703 (`fieldText` answers NULL for a column that is gone).
+ *
+ * A contact is a candidate when it has a number and either was never checked, was checked under a different number,
+ * or failed more than a day ago. Not deleted, not archived.
+ */
+async function candidates(): Promise<{ digits: string; from: string }> {
+  const present = await columnsOf('ipy_e_leads');
+  const digits = `regexp_replace(coalesce(nullif(${fieldText(present, 'l', 'whatsapp_number')}, ''), ${fieldText(present, 'l', 'mobile')}, ''), '\\D', '', 'g')`;
+  const from = `
   FROM ipy_record r
   JOIN ipy_e_leads l ON l.record_id = r.id
   LEFT JOIN ipy_wa_lookup w ON w.record_id = r.id
  WHERE r.is_deleted = false AND r.archived_at IS NULL
-   AND ${NUMBER_DIGITS} <> ''
+   AND ${digits} <> ''
    AND (w.record_id IS NULL
-        OR w.number IS DISTINCT FROM ${NUMBER_DIGITS}
+        OR w.number IS DISTINCT FROM ${digits}
         OR (w.status = 'failed' AND w.checked_at < now() - interval '1 day'))`;
+  return { digits, from };
+}
 
 export async function numberCheckStatus(): Promise<CheckJob & { checkedToday: number; remaining: number; found: number; notOnWhatsApp: number }> {
   const today = await db.queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM ipy_wa_lookup WHERE ${TODAY}`);
-  const remaining = await db.queryOne<{ n: number }>(`SELECT count(*)::int AS n ${CANDIDATES}`);
+  const remaining = await db.queryOne<{ n: number }>(`SELECT count(*)::int AS n ${(await candidates()).from}`);
   const totals = await db.queryOne<{ found: number; not_on: number }>(
     `SELECT count(*) FILTER (WHERE status = 'on_whatsapp')::int AS found,
             count(*) FILTER (WHERE status = 'not_on_whatsapp')::int AS not_on FROM ipy_wa_lookup`);
@@ -139,7 +149,8 @@ export async function checkOne(row: { id: string; mobile: string }): Promise<voi
   }
 
   if (pushName) {
-    const current = await db.queryOne<{ v: string | null }>(`SELECT l.whatsapp_name AS v FROM ipy_e_leads l WHERE l.record_id = $1`, [row.id]);
+    const present = await columnsOf('ipy_e_leads');
+    const current = await db.queryOne<{ v: string | null }>(`SELECT ${fieldText(present, 'l', 'whatsapp_name')} AS v FROM ipy_e_leads l WHERE l.record_id = $1`, [row.id]);
     if (!current?.v?.trim()) {
       await updateRecord(await writeContext(), 'leads', row.id, { whatsapp_name: pushName }, { skipWorkflow: true });
     }
@@ -163,7 +174,8 @@ export function startNumberCheck(asked?: unknown): { started: boolean; reason?: 
         if (job.stopRequested) { job.note = 'Stopped.'; break; }
         const today = await db.queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM ipy_wa_lookup WHERE ${TODAY}`);
         if ((today?.n ?? 0) >= job.cap) { job.note = `Today's limit of ${job.cap} is reached. Press start again tomorrow.`; break; }
-        const next = await db.queryOne<{ id: string; mobile: string }>(`SELECT r.id, ${NUMBER_DIGITS} AS mobile ${CANDIDATES} ORDER BY r.updated_at DESC LIMIT 1`);
+        const pick = await candidates();
+        const next = await db.queryOne<{ id: string; mobile: string }>(`SELECT r.id, ${pick.digits} AS mobile ${pick.from} ORDER BY r.updated_at DESC LIMIT 1`);
         if (!next) { job.note = 'Every contact with a mobile has been checked.'; break; }
         try {
           await checkOne(next);
