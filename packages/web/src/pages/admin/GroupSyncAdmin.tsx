@@ -13,6 +13,45 @@ import { toast } from '../../lib/store';
  * arrive by themselves, no export, no upload). "Read earlier messages" fetches
  * what the group said before today, slowly, one group at a time.
  */
+/** The WhatsApp name and photo checker: slow, capped, started by hand. */
+function NumberCheckCard(): JSX.Element | null {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ['wa-biz', 'number-check'],
+    queryFn: () => api.waNumberCheck(),
+    refetchInterval: (q) => (q.state.data?.running ? 5_000 : 30_000),
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ['wa-biz', 'number-check'] });
+  const start = useMutation({
+    mutationFn: () => api.waNumberCheckStart(),
+    onSuccess: (r) => { if (!r.started) toast.error('Not started', r.reason ?? ''); void refresh(); },
+    onError: (err) => toast.error('Number check', err instanceof Error ? err.message : 'Something went wrong'),
+  });
+  const stop = useMutation({ mutationFn: () => api.waNumberCheckStop(), onSuccess: () => void refresh() });
+  if (!data) return null;
+  return (
+    <div className="card p-4">
+      <h2 className="text-base font-semibold">WhatsApp name and photo</h2>
+      <p className="mt-1 text-sm text-muted">
+        Checks which contacts are on WhatsApp and fills <strong>Whatsapp Name</strong> and the profile photo — only where the
+        contact has none. It goes slowly on purpose (one number every 8–20 seconds, at most {data.cap} a day) so the
+        number stays safe. It stops by itself when the phone is not linked, and carries on where it stopped.
+      </p>
+      <p className="mt-2 text-sm">
+        {data.found.toLocaleString('en-IN')} found on WhatsApp · {data.notOnWhatsApp.toLocaleString('en-IN')} not on WhatsApp ·{' '}
+        {data.remaining.toLocaleString('en-IN')} still to check · {data.checkedToday} checked today
+      </p>
+      {data.note && <p className="mt-1 text-sm text-muted" role="status">{data.note}</p>}
+      <div className="mt-3 flex gap-2">
+        {data.running
+          ? <button className="btn-secondary btn-sm" onClick={() => stop.mutate()}>Stop</button>
+          : <button className="btn-primary btn-sm" disabled={start.isPending || data.remaining === 0} onClick={() => start.mutate()}>Start checking</button>}
+        {data.running && <span className="text-sm text-muted">Running… {data.checkedThisRun} this run</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function GroupSyncAdmin(): JSX.Element {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({
@@ -65,6 +104,7 @@ export default function GroupSyncAdmin(): JSX.Element {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
+      <NumberCheckCard />
       <div className="card p-4">
         <h2 className="text-base font-semibold">Dealer groups from WhatsApp</h2>
         <p className="mt-1 text-sm text-muted">

@@ -43,6 +43,8 @@ export interface FakeOpenWa {
   /** Groups the pretend number is in, and what each one said before the CRM was listening. */
   groups: { id: string; name: string }[];
   groupHistory: Map<string, Record<string, unknown>[]>;
+  /** Numbers that are on WhatsApp, by digits, with the name they set and a picture address (if any). */
+  onWhatsApp: Map<string, { pushName?: string; photoUrl?: string }>;
   close(): Promise<void>;
   /** Post a signed webhook to the CRM, the way OpenWA does. */
   deliver(url: string, secret: string, event: string, data: Record<string, unknown>, opts?: {
@@ -75,6 +77,7 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
     requests: [],
     groups: [],
     groupHistory: new Map(),
+    onWhatsApp: new Map(),
     close: async () => undefined,
     deliver: async () => { throw new Error('not started'); },
   };
@@ -101,6 +104,21 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
       return;
     }
 
+    const check = /^\/api\/sessions\/([^/]+)\/contacts\/check\/(\d+)$/.exec(url.pathname);
+    if (req.method === 'GET' && check) {
+      const there = fake.onWhatsApp.has(check[2]!);
+      json(res, 200, { number: check[2], exists: there, whatsappId: there ? `${check[2]}@c.us` : null });
+      return;
+    }
+    const picture = /^\/api\/sessions\/([^/]+)\/contacts\/(\d+)(?:@|%40)c\.us\/profile-picture$/.exec(url.pathname);
+    if (req.method === 'GET' && picture) { json(res, 200, { url: fake.onWhatsApp.get(picture[2]!)?.photoUrl ?? null }); return; }
+    const contact = /^\/api\/sessions\/([^/]+)\/contacts\/(\d+)(?:@|%40)c\.us$/.exec(url.pathname);
+    if (req.method === 'GET' && contact) {
+      const c = fake.onWhatsApp.get(contact[2]!);
+      if (!c) { json(res, 404, { statusCode: 404, message: 'Contact not found' }); return; }
+      json(res, 200, { id: `${contact[2]}@c.us`, number: contact[2], pushName: c.pushName, name: 'Saved Name In Company Book' });
+      return;
+    }
     const listed = /^\/api\/sessions\/([^/]+)\/groups$/.exec(url.pathname);
     if (req.method === 'GET' && listed) { json(res, 200, fake.groups); return; }
     const history = /^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/history$/.exec(url.pathname);

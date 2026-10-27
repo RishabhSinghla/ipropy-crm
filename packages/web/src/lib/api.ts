@@ -1614,6 +1614,9 @@ export const api = {
     lastWebhookAt: string | null; rejectedWebhooks: number; unresolvedSenders: number;
     sendsToday: number; sendsFailedToday: number;
   }>(`/api/whatsapp-business/openwa/health${fresh ? '?fresh=1' : ''}`),
+  waNumberCheck: () => get<WaNumberCheck>('/api/whatsapp-business/number-check'),
+  waNumberCheckStart: (dailyCap?: number) => post<{ started: boolean; reason?: string }>('/api/whatsapp-business/number-check/start', dailyCap ? { dailyCap } : {}),
+  waNumberCheckStop: () => post<{ ok: boolean }>('/api/whatsapp-business/number-check/stop', {}),
   waGroups: () => get<WaGroupsResponse>('/api/whatsapp-business/groups'),
   waGroupsRefresh: () => post<{ total: number; added: number }>('/api/whatsapp-business/groups/refresh', {}),
   waGroupsEnableAll: () => post<{ enabled: number }>('/api/whatsapp-business/groups/enable-all', {}),
@@ -1888,4 +1891,9 @@ export interface WaGroup {
 export interface WaGroupsResponse {
   groups: WaGroup[];
   history: { running: boolean; done: number; total: number; current: string | null; startedAt: string | null };
+}
+
+export interface WaNumberCheck {
+  running: boolean; cap: number; checkedThisRun: number; note: string | null; stopRequested: boolean;
+  checkedToday: number; remaining: number; found: number; notOnWhatsApp: number;
 }
