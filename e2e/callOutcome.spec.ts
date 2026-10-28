@@ -123,7 +123,8 @@ test('the outcome list follows the admin, not the bundle', async ({ page }) => {
   // whole reason the list stopped being a constant in the bundle.
   const value = `QA Outcome ${Date.now()}`;
   await page.goto('/admin/picklists');
-  await waitForRecords(page).catch(() => undefined);
+  // The admin screen has no record count to wait for; the token only needs the app to have loaded.
+  await page.waitForLoadState('domcontentloaded');
 
   const added = await page.evaluate(async (newValue) => {
     const token = localStorage.getItem('ipropy.token');
