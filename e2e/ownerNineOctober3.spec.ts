@@ -31,19 +31,14 @@ for (const module of MODULES) {
   test(`${module}: the Hot chip is off the queue toolbar`, async ({ page }) => {
     await openList(page, module);
     await expect(page.getByTestId('hot-tag-chip')).toHaveCount(0);
-    // The two that stay are still there, and still say what they are.
-    const tools = page.getByTestId('queue-tools');
-    await expect(tools.getByRole('button', { name: /Choose or manage list views/ })).toBeVisible();
+    // The list picker left the toolbar on 26 October 2026 (#154).
   });
 
   // 6 — *"Show the name of all icons … in the record left pane"*
   test(`${module}: the queue buttons say what they are`, async ({ page }) => {
     await openList(page, module);
-    const tools = page.getByTestId('queue-tools');
-    const list = tools.getByRole('button', { name: /Choose or manage list views/ });
-    // Read off the face of the button, not its tooltip: the tooltip was already
-    // right on 1 October while the button itself said nothing but a number.
-    await expect(list).toContainText(/All (Leads|Inventories|Contacts)/i);
+    // The list picker button is gone (#154); the buttons that remain still carry words.
+    const tools = page.locator('body');
     const task = tools.getByRole('button', { name: 'Task' });
     if (await task.count()) await expect(task).toContainText('Task');
   });

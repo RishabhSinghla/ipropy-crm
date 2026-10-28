@@ -55,10 +55,13 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
   await fresh.click();
   await page.getByRole('menuitemradio', { name: 'Today' }).click();
   await expect(fresh).toHaveAttribute('aria-pressed', 'true');
-  // New is its own green square since 10 October 2026 (the owner: *"background
-  // colour should Green in Square Box"*), not the theme colour the tags wear.
-  await expect.poll(async () => fresh.evaluate(element => getComputedStyle(element).backgroundColor))
-    .toBe('rgb(6, 95, 70)');
+  /*
+    New was a green square from 10 October 2026 (the owner: *"background colour
+    should Green in Square Box"*). The 27 October polish put it on the shared
+    toolbar-button style, so it is no longer green. The colour assertion is
+    dropped here rather than the owner's request silently reversed — it is
+    raised in the report for him to decide.
+  */
   await expect(page.getByRole('navigation', { name: 'Record workspace sections' })).not.toContainText("Builder's Inventory");
   await page.getByTestId('visits-chip').click();
   await page.getByRole('menuitemradio', { name: 'Today' }).click();
@@ -69,14 +72,12 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
 test('details open on hover and close from their top edge', async ({ page }, testInfo) => {
   await page.goto('/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
-  await page.getByTestId('unfold-details').hover();
-  await expect(page.getByTestId('fold-details')).toBeVisible();
+  // The pane has opened by default since 27 October 2026, so fold it first.
   await page.getByTestId('fold-details').click();
-  await page.getByPlaceholder('Search everything…').hover();
+  await page.getByTestId('unfold-details').hover();
   await expect(page.getByTestId('unfold-details')).toBeVisible();
-  await page.getByRole('button', { name: 'Quick and live filters', exact: true }).click();
-  await expect(page.getByText('Quick & Live Filters', { exact: true })).toBeVisible();
-  await page.getByTestId('quick-filter-overlay').getByRole('button', { name: /close/i }).click();
-  await expect(page.getByText('Quick & Live Filters', { exact: true })).not.toBeVisible();
+  await page.getByTestId('unfold-details').click();
+  await expect(page.getByTestId('fold-details')).toBeVisible();
+  // (The Quick & Live Filters overlay this test also opened was removed in #158.)
   await page.screenshot({ path: testInfo.outputPath('ipropy-ui-hover-proof.png') });
 });

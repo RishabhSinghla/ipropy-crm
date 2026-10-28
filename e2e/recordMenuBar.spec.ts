@@ -78,19 +78,19 @@ for (const module of MODULES) {
     // time, two rows apart, meaning something different each time.
     await expect(page.getByRole('group', { name: 'Show in the timeline' })).toHaveCount(0);
     // Comments is on the bar, and choosing it still shows the stream.
-    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Notes/ }).click();
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Comments/ }).click();
     await expect(page.getByTestId('activity-feed')).toBeVisible();
   });
 
-  test(`${module}: the bar offers what the section lets you start`, async ({ page }) => {
+  test(`${module}: the note box is one move away from the Comments section`, async ({ page }) => {
     await openFirstRecord(page, module);
-    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Notes/ }).click();
-    const action = page.getByTestId('record-menu-action');
-    await expect(action).toBeVisible();
-    await action.getByRole('button', { name: 'Write a note' }).click();
-    // It puts the cursor in the note box that is already there rather than
-    // opening a second one: two places to type is two drafts to lose.
-    await expect(page.locator('[data-testid="note-box"]:focus')).toHaveCount(1);
+    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Comments/ }).click();
+    // The bar's own "Write a note" button was replaced by the folded
+    // "Write a note…" bar under the timeline (27 October 2026), which opens on
+    // hover or a tap. One box, so there are not two places to type.
+    await page.getByRole('button', { name: 'Write a note…', exact: true }).click();
+    await expect(page.getByTestId('note-box')).toHaveCount(1);
+    await expect(page.getByTestId('note-box')).toBeVisible();
   });
 
   test(`${module}: an arrangement sticks`, async ({ page }) => {
@@ -109,13 +109,14 @@ for (const module of MODULES) {
     expect(reloaded[0]).toBe(after[0]);
   });
 
-  test(`${module}: star and tag actions are available in the record header`, async ({ page }) => {
+  test(`${module}: the tag button is in the header and the favourite star is in More`, async ({ page }) => {
     await openFirstRecord(page, module);
     const header = page.getByTestId('ipropy-workspace');
-    await expect(header.getByRole('button', { name: /Star this record|Remove from starred/ })).toBeVisible();
     await expect(header.getByRole('button', { name: 'Edit record tags', exact: true })).toBeVisible();
-    // The actions moved out of More; do not leave duplicate menu controls.
+    // The favourite action moved into More (27 October 2026); tags stay out of it,
+    // so there are no duplicate menu controls.
     await page.getByTestId('record-menu-more').click();
+    await expect(page.getByRole('button', { name: /Add favourite|Remove favourite/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Add a tag|^Tags \(/ })).toHaveCount(0);
   });
 }

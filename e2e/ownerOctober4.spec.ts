@@ -10,11 +10,11 @@ for (const module of ['leads', 'properties', 'associates']) {
     await page.getByRole('menuitemradio', { name: 'Today' }).click();
     await expect(chip).toHaveAttribute('aria-pressed', 'true');
     await expect(page).toHaveURL(/created_at/);
-    const count = Number((await chip.innerText()).replace(/\D/g, ''));
-    if (count === 0) {
-      await expect(page.getByTestId('empty-workspace')).toBeVisible();
-      await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
-    }
+    // The chip reads "New: Today" with no count since 27 October 2026, so what is
+    // asserted is that the screen holds together either way: a queue, or the
+    // empty workspace with its controls.
+    await expect(page.getByTestId('queue-card').first().or(page.getByTestId('empty-workspace'))).toBeVisible();
+    await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
     await chip.click();
     await page.getByRole('button', { name: 'Show all' }).click();
     await expect(chip).toHaveAttribute('aria-pressed', 'false');

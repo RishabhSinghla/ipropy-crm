@@ -11,7 +11,7 @@
  * reads exactly like the preference failing to stick.
  */
 import { expect, test } from '@playwright/test';
-import { fieldEditor } from './helpers';
+import { fieldEditor, openDetailsPane } from './helpers';
 
 test.use({ viewport: { width: 1600, height: 900 } });
 
@@ -105,7 +105,7 @@ test('a value is typed in where it stands, and the change sticks', async ({ page
     typed into, which is the point; this spec is about editing in place, so it
     opens the pane the way a rep would.
   */
-  await page.getByTestId('unfold-details').click();
+  await openDetailsPane(page);
 
   // Company is free text, optional, and on no list this suite asserts against.
   const marker = `Split edit ${Date.now()}`;
@@ -261,7 +261,9 @@ test('the face, the name and the controls share one row', async ({ page }) => {
     A measurement anchored to something optional reports the record it landed
     on rather than the layout.
   */
-  const lastControl = header.locator('button[aria-label="Next record"]').first();
+  // The record counter and Next button left this header with the 27 October polish;
+  // the tag button is the last control it carries now.
+  const lastControl = header.getByRole('button', { name: 'Edit record tags', exact: true });
   const faceBox = (await header.getByTestId('split-hero-avatar').boundingBox())!;
   const nameBox = (await name.boundingBox())!;
   const controlBox = (await lastControl.boundingBox())!;
@@ -381,10 +383,9 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
 
   const chip = header.getByText(name, { exact: true }).first();
   await expect(chip).toBeVisible({ timeout: 10_000 });
-  // The icon strip's own right edge: the chips must sit left of it. The
-  // record navigation is what that strip is guaranteed to carry since the
-  // star, the tag and the three-dot circle all left it.
-  const icons = header.locator('button[aria-label="Next record"]').first();
+  // The icon strip: the chips must sit left of its first control (the
+  // WhatsApp button, which every record with a number carries).
+  const icons = header.getByRole('button', { name: /^WhatsApp/ }).first();
   const chipBox = (await chip.boundingBox())!;
   const iconsBox = (await icons.boundingBox())!;
   expect(chipBox.x, 'the tag chip is not before the icons').toBeLessThan(iconsBox.x);
@@ -396,31 +397,8 @@ test('a record\'s tags read as chips, before the icons', async ({ page }) => {
   await expect(chip).toHaveCount(0, { timeout: 10_000 });
 });
 
-/**
- * A quick filter narrows the whole list on the server, and says by how much.
- *
- * The Contact Type button that stood beside the record count went on 1 October
- * 2026; every field's filter is the Quick & Live Filters panel now, which
- * carries the live count in its own header. The thing worth pinning is still
- * that the **total moves** — only the server can change it.
- */
-test('a quick filter narrows the whole list, not just the page', async ({ page }) => {
-  await page.goto('/leads');
-  await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId('queue-type-filter')).toHaveCount(0);
-
-  await page.getByTestId('quick-filter-button').click();
-  const panel = page.getByTestId('quick-filter-overlay');
-  const count = panel.getByTestId('quick-filter-count');
-  await expect(count).toHaveText(/^[\d,]+ records$/, { timeout: 20_000 });
-  const before = await count.innerText();
-
-  // The stage section, by the word every module's heading ends in; its first
-  // stage is whichever the module lists first — no value is named here.
-  await panel.getByRole('button', { name: / wise$/ }).filter({ hasText: /Status/ }).first().click();
-  await panel.locator('button[aria-pressed="false"]').first().click();
-  await expect(count, 'ticking a value left the total where it was').not.toHaveText(before, { timeout: 20_000 });
-
-  await panel.getByRole('button', { name: 'Clear all' }).click();
-  await expect(count).toHaveText(before, { timeout: 20_000 });
-});
+/*
+  "A quick filter narrows the whole list, not just the page" lived here until
+  27 October 2026: the Quick & Live Filters panel it drove was removed (#158).
+  The same promise for the stage ribbon that replaced it is in stageRibbon.spec.ts.
+*/
