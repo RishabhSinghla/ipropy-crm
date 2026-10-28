@@ -45,6 +45,25 @@ async function importer(): Promise<string | null> {
   return row?.id ?? null;
 }
 
+/**
+ * The name a group is filed under in Dealer Groups. A chat export is named after its file, and a file name cannot
+ * hold a slash, so an exported "G/F Builder Dealers" is stored as "G_F Builder Dealers". If the feed already holds
+ * the underscore spelling, the live feed files under that one, or the same group would show up twice.
+ */
+async function feedNameFor(name: string, groupId: string): Promise<string> {
+  if (!name.includes('/')) return name;
+  // Never when another WhatsApp group really is called by the underscore spelling: the conversion is not unique, so
+  // "A/B" and "A_B" can be two different groups, and a deal must not be filed under the wrong one.
+  const existing = await db.queryOne<{ name: string }>(
+    `SELECT m.name FROM ipy_market_group m
+      WHERE m.name = replace($1, '/', '_')
+        AND NOT EXISTS (SELECT 1 FROM ipy_wa_group w WHERE w.id <> $2 AND (w.name = m.name OR w.feed_name = m.name))
+      LIMIT 1`,
+    [name, groupId],
+  );
+  return existing?.name ?? name;
+}
+
 function toRow(r: Record<string, unknown>): WaGroupRow {
   return {
     id: String(r.id),
@@ -69,14 +88,21 @@ export async function refreshGroupList(): Promise<{ total: number; added: number
   let added = 0;
   for (const group of groups) {
     const result = await db.queryOne<{ inserted: boolean }>(
-      `INSERT INTO ipy_wa_group (id, name, feed_name) VALUES ($1, $2, $2)
+      `INSERT INTO ipy_wa_group (id, name, feed_name) VALUES ($1, $2, $3)
        ON CONFLICT (id) DO UPDATE SET
          name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE ipy_wa_group.name END,
-         feed_name = CASE WHEN ipy_wa_group.feed_name <> '' THEN ipy_wa_group.feed_name ELSE EXCLUDED.name END
+         feed_name = CASE WHEN ipy_wa_group.feed_name <> '' THEN ipy_wa_group.feed_name ELSE EXCLUDED.feed_name END
        RETURNING (xmax = 0) AS inserted`,
-      [group.id, group.name],
+      [group.id, group.name, group.name],
     );
     if (result?.inserted) added += 1;
+  }
+  // Second pass, once every group is recorded: whether a slash name may take the export's underscore spelling depends
+  // on no other WhatsApp group really having that name, which is only knowable with the whole list in. It also
+  // catches a chat export that appeared after the group was first seen.
+  for (const group of groups) {
+    const wanted = await feedNameFor(group.name, group.id);
+    await db.query(`UPDATE ipy_wa_group SET feed_name = $2 WHERE id = $1 AND feed_name = name AND feed_name <> $2`, [group.id, wanted]);
   }
   return { total: groups.length, added };
 }
@@ -111,12 +137,12 @@ function dropWaiting(id: string): void {
 export async function noteGroupMessages(incoming: GroupMessage[]): Promise<void> {
   for (const message of incoming) {
     const known = await db.queryOne<{ name: string; enabled: boolean }>(
-      `INSERT INTO ipy_wa_group (id, name, feed_name) VALUES ($1, $2, $2)
+      `INSERT INTO ipy_wa_group (id, name, feed_name) VALUES ($1, $2, $3)
        ON CONFLICT (id) DO UPDATE SET
          name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE ipy_wa_group.name END,
-         feed_name = CASE WHEN ipy_wa_group.feed_name <> '' THEN ipy_wa_group.feed_name ELSE EXCLUDED.name END
+         feed_name = CASE WHEN ipy_wa_group.feed_name <> '' THEN ipy_wa_group.feed_name ELSE EXCLUDED.feed_name END
        RETURNING feed_name AS name, enabled`,
-      [message.groupId, message.groupName ?? ''],
+      [message.groupId, message.groupName ?? '', await feedNameFor(message.groupName ?? '', message.groupId)],
     );
     if (!known?.enabled || !known.name.trim()) continue;
 
