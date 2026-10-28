@@ -205,3 +205,17 @@ describe('an OpenWA that cannot read old messages (the Baileys engine)', () => {
     forgetHistorySupport();
   });
 });
+
+describe('a group named with a slash', () => {
+  it('is filed under the underscore name a chat export already gave it', async () => {
+    const slashId = `1203${String(Date.now()).slice(-9)}03@g.us`;
+    const slashName = `Slash ${marker}/Dealers`;
+    await db.query(`INSERT INTO ipy_market_group (name) VALUES ($1) ON CONFLICT DO NOTHING`, [`Slash ${marker}_Dealers`]);
+    fake.groups = [{ id: slashId, name: slashName }];
+    await request(app).post('/api/whatsapp-business/groups/refresh').set('Authorization', `Bearer ${admin}`);
+    const row = await db.queryOne<{ name: string; feed_name: string }>(`SELECT name, feed_name FROM ipy_wa_group WHERE id = $1`, [slashId]);
+    expect(row).toMatchObject({ name: slashName, feed_name: `Slash ${marker}_Dealers` });
+    await db.query(`DELETE FROM ipy_wa_group WHERE id = $1`, [slashId]);
+    await db.query(`DELETE FROM ipy_market_group WHERE name = $1`, [`Slash ${marker}_Dealers`]);
+  });
+});
