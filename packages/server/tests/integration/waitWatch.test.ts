@@ -5,10 +5,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { runWaitWatchOnce } from '../../src/integrations/whatsapp/business/waitWatch.js';
-import { SEEDED, authUser } from './fixtures.js';
+import { recordService } from '../../src/core/entity/recordService.js';
+import { SEEDED, adminContext, authUser, leadInput } from './fixtures.js';
 
 const stamp = String(Date.now()).slice(-7);
 let repId = '';
+let ownRecordId = '';
 const created: string[] = [];
 let savedHours: unknown = null;
 let savedSettings: Record<string, unknown> = {};
@@ -46,6 +48,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.query(`DELETE FROM ipy_notification WHERE kind = 'whatsapp_wait' AND title LIKE $1`, [`WW % ${stamp} is waiting%`]);
   await db.query(`DELETE FROM ipy_conversation WHERE id = ANY($1)`, [created]);
+  if (ownRecordId) await db.query(`DELETE FROM ipy_record WHERE id = $1`, [ownRecordId]);
   if (savedHours !== null) await db.query(`UPDATE ipy_setting SET value = $1::jsonb WHERE key = 'business_hours'`, [JSON.stringify(savedHours)]);
   for (const [key, value] of Object.entries(savedSettings)) await db.query(`UPDATE ipy_setting SET value = $2::jsonb WHERE key = $1`, [key, JSON.stringify(value)]);
 });
@@ -114,7 +117,9 @@ describe('a chat nobody holds, and the second limit', () => {
 
 describe('the alert opens the right kind of record', () => {
   it('links by the record\'s own module, not always leads', async () => {
-    const some = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_record WHERE is_deleted = false LIMIT 1`);
+    // Its own record, not whichever one happens to come first: the module label is what the link is built from.
+    const some = await recordService.createRecord(await adminContext(), 'leads', leadInput({ full_name: `WW record ${stamp}`, mobile: `95${stamp}8`.slice(0, 10) }));
+    ownRecordId = some.id;
     const c = await chat('linked', { minutesAgo: 20, assignedTo: repId });
     await db.query(`UPDATE ipy_conversation SET record_id = $2, record_module = 'properties' WHERE id = $1`, [c.id, some!.id]);
     await runWaitWatchOnce();
