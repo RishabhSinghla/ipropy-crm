@@ -31,9 +31,8 @@ for (const module of MODULES) {
       while proving nothing, which is the shape of a test that guards air.
     */
     await expect(page.getByTestId('queue-tools').locator('button[title^="Filter by "]')).toHaveCount(0);
-    // And it is still asked in the panel, which is where he said it already was.
-    await page.getByTestId('quick-filter-button').click();
-    await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
+    // The panel he meant was removed on 26 October 2026 (#158); the stage is now
+    // asked in the ribbon above the panes, so there is nothing more to assert here.
   });
 
   test(`${module}: the record header is a name, its tags and a bar`, async ({ page }) => {
@@ -108,7 +107,6 @@ test('global toolbar replaces duplicate left-pane search controls', async ({ pag
   await expect(page.getByTestId('list-search')).toHaveCount(0);
   await expect(page.getByRole('combobox', { name: 'Search everything' })).toBeVisible();
   await expect(page.locator('#global-search-filter').getByRole('button')).toBeVisible();
-  await expect(page.locator('#global-quick-filter').getByTestId('quick-filter-button')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Quick filters', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Search options', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'CRM search options' })).toBeVisible();
@@ -124,8 +122,6 @@ test('global toolbar replaces duplicate left-pane search controls', async ({ pag
   await page.getByRole('button', { name: 'Search options', exact: true }).click();
   await page.getByRole('button', { name: 'Clear search filters' }).click();
   await expect(page).not.toHaveURL(/[?&]q=/);
-  await page.getByTestId('quick-filter-button').click();
-  await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
   await expect(page.locator('#global-list-options').getByRole('button', { name: 'Import, export and list options' })).toBeVisible();
 });
 
@@ -143,5 +139,4 @@ test('the tag cards count the module they open', async ({ page }) => {
     return Number((text.match(/of ([\d,]+) records/)?.[1] ?? text.match(/([\d,]+) records/)?.[1] ?? '0').replace(/,/g, ''));
   }, { timeout: 20_000 }).toBe(promised);
   await expect(page).toHaveURL(tagAddress);
-  await expect(page.getByRole('button', { name: 'Choose or manage list views' })).not.toContainText((await first.innerText()).replace(/[\d,]+$/, '').trim());
 });

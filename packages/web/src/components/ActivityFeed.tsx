@@ -456,7 +456,7 @@ function SystemLine({ children }: { children: ReactNode }): JSX.Element {
 }
 
 /**
- * When this happened — relative time in the card header.
+ * When this happened — the full date, in the card header.
  *
  * **4 October 2026, the owner, with a screenshot of the stream:** *"the Note
  * date are separate from comment/note box, we want to see note/comment date in
@@ -471,5 +471,9 @@ function SystemLine({ children }: { children: ReactNode }): JSX.Element {
  * Every entry carries its complete date, including today's date and year.
  */
 function clock(at: string): string {
-  return relativeTime(at);
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return relativeTime(at);
+  const time = when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  const day = when.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return `${day}, ${time}`;
 }

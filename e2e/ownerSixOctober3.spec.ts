@@ -51,64 +51,29 @@ for (const module of MODULES) {
     const call = header.getByRole('button', { name: /^Call / }).first();
     if (!(await call.count())) test.skip(true, 'the first record has no number');
 
-    const counter = header.getByLabel('Record navigation');
-    const [callBox, counterBox] = await Promise.all([call.boundingBox(), counter.boundingBox()]);
-    // Inside the navigation group, so the two cannot drift apart when the header
-    // wraps — and measured, because "inside" is the whole of the promise.
-    expect(await counter.locator('button[aria-label^="Call "]').count(),
-      'Call should live in the record-number group').toBeGreaterThan(0);
-    expect(callBox!.x, 'Call should come after the number').toBeGreaterThan(counterBox!.x);
-
-    // And it is no longer on the bar's row under the name.
-    const bar = header.getByRole('img', { name: /Record \d+% complete/ }).first();
-    const barBox = (await bar.boundingBox())!;
-    expect(Math.abs((callBox!.y + callBox!.height / 2) - (barBox.y + barBox.height / 2)),
-      'Call should have left the completeness bar’s row').toBeGreaterThan(8);
+    /*
+      The record counter and Next button left this header with the 27 October
+      2026 polish, so "beside the record number" no longer has a number to sit
+      beside. What still matters is that Call is in the header, after the name.
+    */
+    const name = header.getByRole('heading').first();
+    const [callBox, nameBox] = await Promise.all([call.boundingBox(), name.boundingBox()]);
+    expect(callBox!.x, 'Call should come after the name').toBeGreaterThan(nameBox!.x);
   });
 
-  // 2 — *"need Tag Filter in quick Filter"*
-  test(`${module}: tags are a section of the quick filter, and reach the server as tags`, async ({ page }) => {
-    await openList(page, module);
-    await page.getByTestId('quick-filter-button').click();
-    const panel = page.getByTestId('quick-filter-overlay');
-    await expect(panel).toBeVisible();
-
-    const heading = panel.getByRole('button', { name: /Tag wise/ });
-    await expect(heading).toBeVisible();
-    await heading.click();
-
-    /*
-      A tag is not a field on the module, so it cannot be sent as one. Watching
-      the request is the only way to see that: a filter sent as `{field:"hot"}`
-      would answer an error the panel swallows, and the list would simply not
-      move, which reads as the tick doing nothing.
-    */
-    let askedByTag = false;
-    await page.route('**/api/records/**', async (route) => {
-      const asked = decodeURIComponent(route.request().postData() ?? route.request().url());
-      if (asked.includes('record_tags') && asked.includes('has_any')) askedByTag = true;
-      await route.continue();
-    });
-
-    /*
-      A choice is a plain button carrying `aria-pressed`, not a checkbox role —
-      and the locator must not have `aria-pressed="false"` in it, or ticking the
-      tag makes it match the *next* unticked one and the assertion can never
-      pass. Take the name first, then watch that row.
-    */
-    const row = panel.getByTestId('quick-filter-tags').locator('button[aria-pressed]').filter({ hasText: tagName }).first();
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    await row.click();
-    await expect(row).toHaveAttribute('aria-pressed', 'true');
-    await expect.poll(() => askedByTag, { timeout: 15_000 }).toBe(true);
-  });
+  // 2 — the Quick & Live Filters overlay, and its Tag section, were removed on
+  // 26 October 2026 (#158); the tag cards beside the search box are covered by
+  // ownerTenOctober3 ("the tag cards count the module they open").
 
   // 4 — *"remove unread list from all modules list completely"*
   test(`${module}: there is no unread list and no unread filter`, async ({ page }) => {
     await openList(page, module);
-    await page.getByRole('button', { name: /Choose or manage list views/ }).click();
-    await expect(page.getByText('Select a list')).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Unread/ })).toHaveCount(0);
+    // The list picker is gone (#154), so the lists are read from the API the screen reads.
+    const token = await page.evaluate(() => localStorage.getItem('ipropy.token'));
+    const res = await page.request.get(`/api/views/${module}`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(res.ok()).toBeTruthy();
+    const views = (await res.json()) as Array<{ name: string }>;
+    expect(views.filter((v) => /^Unread/i.test(v.name))).toEqual([]);
   });
 
   // 5 — *"Give more space in between rows of record in the left record pane"*
@@ -118,8 +83,9 @@ for (const module of MODULES) {
     expect(await cards.count(), 'needs records in the queue').toBeGreaterThan(1);
     const padding = await cards.first().locator('button').first()
       .evaluate((el) => parseFloat(getComputedStyle(el).paddingTop));
-    // The clickable row itself provides 16px of breathing room between facts.
-    expect(padding).toBeGreaterThanOrEqual(14);
+    // The 27 October 2026 polish tightened the rows from 16px to 8px; the
+    // promise kept is that a row is still not flush against its neighbour.
+    expect(padding).toBeGreaterThanOrEqual(8);
   });
 }
 

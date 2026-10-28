@@ -12,6 +12,7 @@ import { api, authedFileUrl, type AccessRequest, type ModuleSummary, type Search
 import { useRealtime } from '../lib/realtime';
 import { notificationTone } from '../lib/notificationTone';
 import { LiveCallDeck } from './LiveCallDeck';
+import { TaskBuzzer } from './TaskBuzzer';
 import { useDockFolded, WorkspaceDock } from './WorkspaceDock';
 import { AiBubble } from './AiBubble';
 import { cn } from '../lib/utils';
@@ -221,6 +222,9 @@ export default function Layout(): JSX.Element {
 
         <LiveCallDeck />
         <SarvamControl />
+
+        {/* Today's follow-ups, popping up one after another with a buzzer. */}
+        <TaskBuzzer />
 
         {/* The bottom tab bar is fixed, so without this the last 64px of every
             page — a form's Save button included — sits behind it. */}

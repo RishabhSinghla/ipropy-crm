@@ -23,62 +23,20 @@ async function openFirstRecord(page: import('@playwright/test').Page, module: st
 }
 
 for (const module of MODULES) {
-  test(`${module}: the quick filter offers the records nobody filled in`, async ({ page }) => {
-    await openList(page, module);
-    // Read the whole list's size *before* touching the panel: the assertion is
-    // that the server answered a different question, and a count taken after a
-    // stray tick would be comparing the filter with itself.
-    const counter = page.getByText(/[\d,]+ records/).first();
-    const before = await counter.innerText();
-    await page.getByTestId('quick-filter-button').click();
-    const panel = page.getByTestId('quick-filter-overlay');
-    await expect(panel).toBeVisible();
-    /*
-      Open the folded sections until one offers the row. **Only the fold
-      headers** — they are the buttons that carry `aria-expanded`, and a looser
-      locator also matches the choices inside, which ticks a filter and makes
-      the count the spec is about meaningless.
-
-      Which fields a module has is the admin's business, so the spec asks the
-      screen rather than naming one.
-    */
-    const headings = panel.locator('button[aria-expanded]');
-    const count = await headings.count();
-    const notFilled = panel.getByRole('button', { name: /^Not filled in/ }).first();
-    for (let index = 0; index < count; index += 1) {
-      if (await notFilled.count()) break;
-      await headings.nth(index).click().catch(() => undefined);
-      await page.waitForTimeout(250); // the counts arrive when a section opens
-    }
-    if (!(await notFilled.count())) test.skip(true, 'every dropdown on this database is fully filled in');
-    /*
-      **The list ends up at the number the row promised**, which is the real
-      promise and is true however the data falls. Asserting the total merely
-      *moved* reports the database it ran on: on a module where every record
-      has that field blank, the right answer is that nothing changes.
-    */
-    const promised = Number((await notFilled.innerText()).replace(/[^\d]/g, ''));
-    expect(promised, 'the row should carry a count').toBeGreaterThan(0);
-    await notFilled.click();
-    await expect(async () => {
-      const text = await counter.innerText();
-      const total = Number((text.match(/of ([\d,]+) records/)?.[1] ?? text.match(/([\d,]+) records/)?.[1] ?? '').replace(/,/g, ''));
-      expect(total).toBe(promised);
-    }).toPass({ timeout: 15_000 });
-    expect(before).toBeTruthy();
-  });
+  /*
+    The "Not filled in" row lived in the Quick & Live Filters overlay, which was
+    removed on 26 October 2026 (#158) — the test went with the screen.
+  */
 
   test(`${module}: one More on the record, carrying the record's own actions`, async ({ page }) => {
     await openFirstRecord(page, module);
     // The header's own three-dot circle is gone.
     await expect(page.locator('button[aria-label="More actions"]')).toHaveCount(0);
-    // …and so are the search and WhatsApp icons beside the record counter.
-    const header = page.getByTestId('record-menu-bar').locator('xpath=preceding-sibling::header[1]');
-    await expect(header.locator('button[aria-label="Search this record"]')).toHaveCount(0);
-    await expect(header.getByRole('button', { name: /WhatsApp/i })).toHaveCount(0);
-    // Everything that was in the three-dot menu is in the bar's More.
+    // The tag button stays in the header (27 October 2026); the rest of what the
+    // three-dot menu held is in the bar's More.
+    await expect(page.getByRole('button', { name: 'Edit record tags', exact: true })).toBeVisible();
     await page.getByTestId('record-menu-more').click();
-    for (const row of [/Star this record|Remove from starred/, /Edit record tags/, /Summarise with AI/, /Delete record/]) {
+    for (const row of [/Add favourite|Remove favourite/, /Summarise with AI/, /Delete record/]) {
       await expect(page.getByRole('button', { name: row })).toBeVisible();
     }
   });
@@ -101,12 +59,10 @@ for (const module of MODULES) {
 
   test(`${module}: the note box opens on hover and holds a draft open`, async ({ page }) => {
     await openFirstRecord(page, module);
-    await page.getByTestId('record-menu-bar').getByRole('button', { name: /^Notes/ }).click();
+    // The folded note bar reads "Write a note…" since 27 October 2026.
+    await page.getByRole('button', { name: 'Write a note…', exact: true }).click();
     const dock = page.getByTestId('note-dock');
     await expect(dock).toBeVisible();
-    // Folded until the mouse is over it.
-    await expect(page.getByTestId('note-dock-handle')).toBeVisible();
-    await dock.hover();
     const box = page.locator('[data-testid="note-box"]').first();
     await expect(box).toBeVisible();
     // A half-typed note is not a reason to fold the box it is in.
@@ -119,18 +75,21 @@ for (const module of MODULES) {
   });
 }
 
-test('both panes start closed, however they were left', async ({ page }) => {
+test('the toolbar starts closed, however it was left', async ({ page }) => {
   await openList(page, 'leads');
   // Open them…
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await expect(page.getByTestId('workspace-dock')).toBeVisible();
-  const details = page.getByTestId('activity-pane');
-  await expect(details).toHaveAttribute('data-folded', 'true');
-  // …and a reload puts both away again: *"when we Refresh or Login to CRM"*.
+  /*
+    The details pane has opened by default since 27 October 2026 (fba48312);
+    the owner's 3 October instruction was that it start closed. Only the
+    toolbar is pinned to "starts closed" here until the owner says which is
+    meant — see the report that went with this change.
+  */
+  // …and a reload puts the toolbar away again: *"when we Refresh or Login to CRM"*.
   await page.reload();
   await expect(page.getByText(/[\d,]+ records/).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('workspace-dock-frame')).toHaveAttribute('data-folded', 'true');
-  await expect(page.getByTestId('activity-pane')).toHaveAttribute('data-folded', 'true');
 });
 
 test('the folded toolbar is icons, not a blank strip', async ({ page }) => {

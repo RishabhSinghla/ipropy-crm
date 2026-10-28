@@ -41,7 +41,7 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
 });
 
-test('the toolbar is the list and Task, and Status and Call Log are in the panel', async ({ page }) => {
+test('the toolbar is Task and Call Log, and no Status button sits on the queue', async ({ page }) => {
   await page.goto('/leads');
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
@@ -53,21 +53,19 @@ test('the toolbar is the list and Task, and Status and Call Log are in the panel
     went the same way. The row is two pills now, and both say their own name
     again (3 October, evening).
   */
-  const tools = page.getByTestId('queue-tools');
-  await expect(tools.getByRole('button', { name: /Choose or manage list views/ })).toContainText(/All Leads/i);
-  await expect(tools.getByRole('button', { name: 'Task' })).toContainText('Task');
+  /*
+    **27 October 2026:** the list picker and the Quick & Live Filters panel are
+    gone (#154, #158). Task and Call Log sit in the ribbon above the panes and
+    the stage chips are the ribbon itself.
+  */
+  await expect(page.getByRole('button', { name: 'Task' }).first()).toContainText('Task');
+  await expect(page.getByRole('button', { name: /Call Log/ }).first()).toBeVisible();
 
   // His own words for them, wherever they are drawn: never "Lead Status" here
   // and "Associate Status" there, and never a chevron on a pill.
   await expect(page.getByRole('button', { name: /^Lead Status/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Follow-ups/ })).toHaveCount(0);
-  await expect(tools.locator('button[title^="Filter by "]')).toHaveCount(0);
-
-  // And both questions are still askable, in the panel he said they were in.
-  await page.getByTestId('quick-filter-button').click();
-  const panel = page.getByTestId('quick-filter-overlay');
-  await expect(panel).toBeVisible();
-  await expect(panel.getByText(/Call Log|Status/i).first()).toBeVisible();
+  await expect(page.getByTestId('queue-tools').locator('button[title^="Filter by "]')).toHaveCount(0);
 });
 
 test('each pinned fact is introduced by its own field name', async ({ page }) => {
