@@ -66,7 +66,7 @@ export function SearchOptions({ words, onWordsChange, onOpen, onSearchAll }: {
       choices.sizeMax == null || choices.sizeMax === '' ? undefined : Number(choices.sizeMax));
     if (range) quickConditions.push(range);
   }
-  const quickField = (field: FieldMeta | undefined, label: string): JSX.Element | null => field ? <div className="min-w-0 space-y-1"><span className="text-xs font-medium text-muted">{label}</span><FieldInput field={{ ...field, config: { ...field.config, placeholder: `Any ${label.toLowerCase()}` }, isReadonly: false, displayType: 'default', isMandatory: false }} value={choices[field.name] ?? null} onChange={(value) => choose(field.name, value)} /></div> : null;
+  const quickField = (field: FieldMeta | undefined, label: string): JSX.Element | null => field ? <div className="min-w-0 space-y-1"><label htmlFor={`search-option-${field.name}`} className="block text-xs font-medium text-muted">{label}</label><FieldInput id={`search-option-${field.name}`} field={{ ...field, config: { ...field.config, placeholder: `Any ${label.toLowerCase()}` }, isReadonly: false, displayType: 'default', isMandatory: false }} value={choices[field.name] ?? null} onChange={(value) => choose(field.name, value)} /></div> : null;
   const apply = (close: () => void, clear = false): void => {
     // "All": there is no single list to filter, so hand the words to the global
     // search, which already reads every module and the archive.

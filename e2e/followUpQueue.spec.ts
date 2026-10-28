@@ -37,9 +37,13 @@ test('the three cards add up to the number on the button', async ({ page }) => {
   await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const trigger = page.getByRole('button', { name: /^Task/ });
-  // The count is a chip beside the word now, not "(981)" in the label.
-  const total = Number((/([\d,]+)\s*$/.exec((await trigger.innerText()).trim())?.[1] ?? '').replace(/,/g, ''));
+  // The button carries only the word since #159; the total it used to show is
+  // the panel's own header, so it is read there.
   await trigger.click();
+  const heading = page.getByRole('heading', { name: 'Follow-up Queue' });
+  await expect(heading).toBeVisible();
+  const totalText = await page.getByText(/^[\d,]+ total$/).first().innerText();
+  const total = Number(totalText.replace(/[^\d]/g, ''));
 
   const cards = page.getByRole('button', { name: /^(Overdue|Due Today|Tomorrow)/ });
   const numbers = await cards.evaluateAll((els) =>

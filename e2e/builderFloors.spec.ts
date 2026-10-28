@@ -173,15 +173,21 @@ test('Sold is a list of its own, and the default list is the floors on the marke
   await page.goto('/builder_floors');
   await expect(page.getByTestId(QUEUE_READY).first()).toBeVisible({ timeout: 30_000 });
 
-  const picker = page.getByRole('button', { name: /Choose or manage list views/i }).first();
-  await expect(picker).toBeVisible({ timeout: 20_000 });
-  // The default is already the narrowed list, before anybody chooses.
-  await expect(picker).toContainText(/On the Market/i);
-
-  await picker.click();
+  /*
+    The list picker button was taken off the screen in #154, so the lists are
+    read from the API the screen itself reads rather than from a dropdown.
+  */
+  const token = await page.evaluate(() => localStorage.getItem('ipropy.token'));
+  expect(token, 'signed-in session should carry a token').toBeTruthy();
+  const res = await page.request.get('/api/views/builder_floors', { headers: { Authorization: `Bearer ${token}` } });
+  expect(res.ok()).toBeTruthy();
+  const views = (await res.json()) as Array<{ name: string; isDefault?: boolean }>;
+  const names = views.map((v) => v.name);
   for (const name of [/On the Market/i, /^Sold$/i, /All Builder Floors/i]) {
-    await expect(page.getByText(name).first()).toBeVisible({ timeout: 15_000 });
+    expect(names.some((n) => name.test(n)), `a "${name}" list should exist`).toBeTruthy();
   }
+  // The default is already the narrowed list, before anybody chooses.
+  expect(views.find((v) => v.isDefault)?.name).toMatch(/On the Market/i);
 });
 
 /*
