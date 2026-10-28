@@ -18,7 +18,9 @@ import { HOLDER, OPTED_OUT } from './inbox.js';
 /** Older than this and a chat is not alerted about: first switch-on, or a long outage, must not flood anybody. */
 export const WAIT_FLOOR_MINUTES = 360;
 const MAX_PER_TICK = 50;
-const CANDIDATE_LIMIT = 200;
+// Large on purpose: the SQL below already removes everything too fresh to count, so this is only a runaway guard,
+// not a slice that recent traffic could fill and hide older waiting chats behind.
+const CANDIDATE_LIMIT = 2000;
 const TICK_MS = 60_000;
 
 // ---------------------------------------------------------------------------
@@ -154,6 +156,7 @@ export interface WaitingChat {
   name: string;
   waitedMinutes: number;
   recordId: string | null;
+  recordModule: string | null;
   holder: string | null;
   /** The exact text of `last_inbound_seen_at`, passed back untouched: a JS Date would drop microseconds and the claim would never match. */
   seenText: string;
@@ -178,10 +181,10 @@ export async function findWaitingChats(opts: { firstMinutes: number; excludeClai
          OR (c.wait_nudge_2_at IS NULL OR c.wait_nudge_2_at < c.last_inbound_seen_at))`
     : '';
   const { rows } = await db.query<{
-    id: string; contact_name: string | null; handle: string; record_id: string | null; holder: string | null;
+    id: string; contact_name: string | null; handle: string; record_id: string | null; record_module: string | null; holder: string | null;
     seen_text: string; seen_iso: string; n1: boolean; n2: boolean;
   }>(
-    `SELECT c.id, c.contact_name, c.handle, c.record_id, ${HOLDER} AS holder,
+    `SELECT c.id, c.contact_name, c.handle, c.record_id, c.record_module, ${HOLDER} AS holder,
             c.last_inbound_seen_at::text AS seen_text,
             to_char(c.last_inbound_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS seen_iso,
             (c.wait_nudge_1_at IS NOT NULL AND c.wait_nudge_1_at >= c.last_inbound_seen_at) AS n1,
@@ -190,6 +193,8 @@ export async function findWaitingChats(opts: { firstMinutes: number; excludeClai
       WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL
         AND c.last_inbound_seen_at IS NOT NULL
         AND c.last_inbound_at > now() - interval '7 days'
+        -- Working minutes can never exceed wall-clock minutes, so a message younger than the limit cannot qualify yet.
+        AND c.last_inbound_seen_at < now() - ($2 || ' minutes')::interval
         AND (c.status IN ('open', 'pending')
              OR (c.status = 'snoozed' AND c.snoozed_until IS NOT NULL AND c.snoozed_until < now()))
         AND NOT ${OPTED_OUT}
@@ -197,7 +202,7 @@ export async function findWaitingChats(opts: { firstMinutes: number; excludeClai
         ${claimed}
       ORDER BY c.last_inbound_at DESC
       LIMIT $1`,
-    [CANDIDATE_LIMIT],
+    [CANDIDATE_LIMIT, String(opts.firstMinutes)],
   );
   const hours = await loadHours();
   const now = opts.now ?? new Date();
@@ -206,7 +211,7 @@ export async function findWaitingChats(opts: { firstMinutes: number; excludeClai
     const waited = waitedMinutes(new Date(r.seen_iso), now, hours);
     if (waited <= opts.firstMinutes || waited > WAIT_FLOOR_MINUTES) continue;
     found.push({
-      conversationId: r.id, name: r.contact_name || r.handle, waitedMinutes: waited, recordId: r.record_id,
+      conversationId: r.id, name: r.contact_name || r.handle, waitedMinutes: waited, recordId: r.record_id, recordModule: r.record_module,
       holder: r.holder, seenText: r.seen_text, nudge1Claimed: r.n1, nudge2Claimed: r.n2,
     });
     if (opts.limit && found.length >= opts.limit) break;
@@ -222,7 +227,7 @@ export async function findWaitingChats(opts: { firstMinutes: number; excludeClai
 async function claim(chat: WaitingChat, level: 1 | 2): Promise<boolean> {
   const column = level === 1 ? 'wait_nudge_1_at' : 'wait_nudge_2_at';
   const row = await db.queryOne<{ id: string }>(
-    `UPDATE ipy_conversation c SET ${column} = now()
+    `UPDATE ipy_conversation c SET ${column} = clock_timestamp()
       WHERE c.id = $1 AND c.last_inbound_seen_at = $2::timestamptz
         AND (c.${column} IS NULL OR c.${column} < c.last_inbound_seen_at)
         AND ${NO_REPLY}
@@ -244,7 +249,7 @@ async function activeHolder(id: string | null): Promise<string | null> {
 }
 
 async function alert(chat: WaitingChat, level: 1 | 2): Promise<void> {
-  const link = chat.recordId ? `/leads/${chat.recordId}` : '/chats';
+  const link = chat.recordId ? `/${chat.recordModule || 'leads'}/${chat.recordId}` : '/chats';
   const base = {
     kind: 'whatsapp_wait',
     // Name and wait only: a lock screen shows this, and the message itself is not ours to put there.

@@ -296,8 +296,8 @@ export async function receiveInbound(
           SET last_message_at = $2::timestamptz,
               last_message_preview = COALESCE($3, last_message_preview),
               last_inbound_at = $2::timestamptz,
-              -- Our own clock, for the waiting-for-reply alerts: a provider clock ahead of ours must not make a real reply sort before the message it answers.
-              last_inbound_seen_at = now(),
+              -- clock_timestamp(), not now(): now() is the moment this transaction began, which can be earlier than an alert stamped meanwhile. Our own clock, for the waiting-for-reply alerts: a provider clock ahead of ours must not make a real reply sort before the message it answers.
+              last_inbound_seen_at = clock_timestamp(),
               unread_count = unread_count + 1,
               -- The 24-hour service window reopens on every inbound message.
               -- Outside it only an approved template may be sent, and this is
