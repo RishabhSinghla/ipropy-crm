@@ -112,6 +112,17 @@ describe('a chat nobody holds, and the second limit', () => {
   });
 });
 
+describe('the alert opens the right kind of record', () => {
+  it('links by the record\'s own module, not always leads', async () => {
+    const some = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_record WHERE is_deleted = false LIMIT 1`);
+    const c = await chat('linked', { minutesAgo: 20, assignedTo: repId });
+    await db.query(`UPDATE ipy_conversation SET record_id = $2, record_module = 'properties' WHERE id = $1`, [c.id, some!.id]);
+    await runWaitWatchOnce();
+    const link = (await db.queryOne<{ link: string }>(`SELECT link FROM ipy_notification WHERE kind = 'whatsapp_wait' AND title = $1 LIMIT 1`, [`${c.name} is waiting for a reply`]))?.link;
+    expect(link).toBe(`/properties/${some!.id}`);
+  });
+});
+
 describe('it can be switched off', () => {
   it('does nothing while disabled', async () => {
     await db.query(`UPDATE ipy_setting SET value = 'false'::jsonb WHERE key = 'whatsapp.wait_watch.enabled'`);
