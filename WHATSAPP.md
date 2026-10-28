@@ -1521,3 +1521,17 @@ picture, and writes the name into the new **Whatsapp Name** field and the pictur
   failure retries after a day), stops by itself if OpenWA is unreachable or unlinked.
 * **Photos are fetched only from `whatsapp.net` / `fbcdn.net` over https** (the address comes from outside the CRM), max 2 MB.
 * Admin-only on the server (rep gets 403). **Not proved against a real number**; tests use the pretend OpenWA.
+
+## Waiting-for-reply alerts (28 October 2026)
+
+Design: `docs/designs/whatsapp-unanswered-chat-watch.md`. Code: `integrations/whatsapp/business/waitWatch.ts`, migration `223`.
+A customer wrote on the company number and nobody has answered: after the admin's limit (default 15 working minutes) the
+person who **holds the chat** (`HOLDER`, the record's owner) gets one alert; after the second limit (default 60) the admins
+do. A chat nobody holds goes to the admins. Admin → Settings → WhatsApp holds the switch and both limits; **it ships off.**
+
+* **There is no send path.** It reads conversations and writes notifications (`whatsapp_wait`). No auto-reply, nothing to a customer.
+* **Once per message, however often it runs:** one guarded `UPDATE` (pinned to the exact `last_inbound_seen_at` and still-unanswered) decides who alerts, so overlapping ticks, restarts and several servers cannot double up. A failed notification is not retried: one lost alert is the price of never alerting twice.
+* **Our clock, not the provider's:** a reply is an outbound row with `received_at` (database insert time) after the customer's `last_inbound_seen_at` — a provider clock ahead of ours cannot make a real reply look older than the message.
+* **Working minutes** inside the `business_hours` setting (a 22:00 message starts counting at opening time); missing or malformed hours mean always open, with one warning.
+* **A floor of 360 minutes:** a chat older than that is not alerted, so switching on (or a long outage) cannot flood anybody. 50 chats per tick.
+* The admin Health page shows "N customers are waiting" even while alerts are off.

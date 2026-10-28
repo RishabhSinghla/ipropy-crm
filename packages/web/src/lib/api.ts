@@ -1699,6 +1699,7 @@ export const api = {
     conversations: { total: number; windowOpen: number; unlinked: number; unread: number };
     messages: { inboundToday: number; outboundToday: number; failedToday: number; deliveredToday: number };
     templates: { total: number; approved: number; unmapped: number };
+    waiting: { count: number; longestMinutes: number; alertsOn: boolean };
     stillTheirs: string[];
     openwa: {
       state: string; message: string; checkedAt: string | null; status: string | null; phoneMasked: string | null;

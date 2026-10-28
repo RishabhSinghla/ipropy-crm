@@ -25,6 +25,7 @@ import { db } from '../../../db/pool.js';
 import { getIntegrationConfig } from '../../../core/settings/integrations.js';
 import { activeBusinessProvider } from './registry.js';
 import { openWaMetrics } from './openwaHealth.js';
+import { findWaitingChats } from './waitWatch.js';
 
 export interface WhatsAppOverview {
   provider: string | null;
@@ -36,6 +37,8 @@ export interface WhatsAppOverview {
   conversations: { total: number; windowOpen: number; unlinked: number; unread: number };
   messages: { inboundToday: number; outboundToday: number; failedToday: number; deliveredToday: number };
   templates: { total: number; approved: number; unmapped: number };
+  /** Chats whose customer has waited past the first alert limit, working minutes. Shown even while the alerts are off. */
+  waiting: { count: number; longestMinutes: number; alertsOn: boolean };
   /** What still needs their dashboard, so nobody goes looking for it here. */
   stillTheirs: string[];
   /** Present only while OpenWA (a linked device) is the connection. */
@@ -105,6 +108,12 @@ export async function whatsAppOverview(): Promise<WhatsAppOverview> {
   );
   const raw = (poll?.value ?? null) as { at?: string; ok?: boolean; detail?: string } | null;
 
+  const settingRows = await db.query<{ key: string; value: unknown }>(`SELECT key, value FROM ipy_setting WHERE key LIKE 'whatsapp.wait_watch.%'`);
+  const setting = Object.fromEntries(settingRows.rows.map((r) => [r.key.replace('whatsapp.wait_watch.', ''), r.value]));
+  const { readWatchSettings } = await import('./waitWatch.js');
+  const watch = readWatchSettings({ enabled: setting.enabled, first: setting.first_minutes, second: setting.second_minutes });
+  const waiting = await findWaitingChats({ firstMinutes: watch.firstMinutes });
+
   return {
     provider: provider?.name ?? null,
     connected: provider ? await provider.isConfigured() : false,
@@ -114,6 +123,11 @@ export async function whatsAppOverview(): Promise<WhatsAppOverview> {
       // card — the number is still worth showing while somebody fixes the
       // switch. `?? {}` because the config may be absent entirely.
       : ((getIntegrationConfig('whatsapp_whatsmarketing') ?? {}).businessNumber ?? null),
+    waiting: {
+      count: waiting.length,
+      longestMinutes: waiting.reduce((most, chat) => Math.max(most, chat.waitedMinutes), 0),
+      alertsOn: watch.enabled,
+    },
     capabilities: provider ? [...provider.capabilities] : [],
     lastCheck: raw?.at ? { at: raw.at, ok: Boolean(raw.ok), detail: String(raw.detail ?? '') } : null,
     conversations: {

@@ -178,6 +178,18 @@ export default function WhatsAppAdmin(): JSX.Element {
         </section>
       )}
 
+      {/* Customers waiting for a reply right now. The alerts themselves are switched in Admin → Settings → WhatsApp. */}
+      <div className="card p-3 text-sm" role="status">
+        {data.waiting.count === 0
+          ? 'Nobody is waiting for a reply.'
+          : `${data.waiting.count} ${data.waiting.count === 1 ? 'customer is' : 'customers are'} waiting for a reply — the longest for ${data.waiting.longestMinutes} working minutes.`}
+        {' '}
+        <span className="text-muted">
+          Alerts to the person who holds the chat are {data.waiting.alertsOn ? 'on' : 'off'}.{' '}
+          <Link className="underline" to="/admin/settings">Change in Settings</Link>
+        </span>
+      </div>
+
       {/* 3. The numbers, in the order somebody asks for them. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Tile label="Conversations" value={data.conversations.total} hint="people who have ever written" />
