@@ -160,25 +160,26 @@ test.describe('accessibility', () => {
   });
 
   /*
-    **This scanned the stage breakdown's own panel until 3 October 2026**, when
-    the owner took that button off the queue — *"it is already in the Quick
-    Filter"*. The question it asked is now a section of the Quick & Live Filters
-    panel, so that is what gets scanned: the panel, not the button that is gone.
+    **The Quick & Live Filters panel and the list picker were taken off the
+    list** (26 October 2026, #154 and #158): the ribbon above the queue carries
+    the stages and the agent, and the search box has its own options panel. The
+    two panels that stand in their place are scanned instead, so a floating
+    list on this screen is still never left unchecked.
   */
-  test('the quick and live filters panel has no violations', async ({ page }) => {
+  test('the search options panel has no violations', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
-    await page.getByTestId('quick-filter-button').click();
-    await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
+    await page.getByRole('button', { name: 'Search options' }).click();
+    await expect(page.getByRole('dialog', { name: 'CRM search options' })).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
   });
 
-  test('the list picker has no violations', async ({ page }) => {
+  test('the agent picker has no violations', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
-    await page.getByRole('button', { name: /Choose or manage list views/ }).click();
-    await expect(page.getByText('Select a list')).toBeVisible();
+    await page.getByTestId('ribbon-agent-filter').click();
+    await expect(page.getByText('Filter by agent')).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
   });

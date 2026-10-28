@@ -31,11 +31,13 @@ test('the four panes are there, in order, left to right', async ({ page }) => {
 test('the list chips sit inside the record pane, above the cards', async ({ page }) => {
   await page.goto('/leads');
   await waitForRecords(page);
-  const tools = page.getByTestId('queue-tools');
-  await expect(tools.getByTitle('The follow-ups waiting on you').or(tools.getByRole('button', { name: /Status/ })).first()).toBeVisible();
-  const toolsBox = await tools.boundingBox();
+  // The chips (Task, Call Log, AI calls…) moved up into the stage ribbon above
+  // the panes on 26 October 2026; what still holds is that they are above the cards.
+  const task = page.getByTitle('The follow-ups waiting on you');
+  await expect(task).toBeVisible();
+  const taskBox = await task.boundingBox();
   const firstCard = await page.getByTestId('queue-card').first().boundingBox();
-  expect(toolsBox!.y + toolsBox!.height).toBeLessThanOrEqual(firstCard!.y + 1);
+  expect(taskBox!.y + taskBox!.height).toBeLessThanOrEqual(firstCard!.y + 1);
 });
 
 test('a note written in the box under the timeline appears in it', async ({ page }) => {
@@ -48,25 +50,27 @@ test('a note written in the box under the timeline appears in it', async ({ page
   await expect(page.getByTestId('activity-feed').getByText(text)).toBeVisible({ timeout: 15_000 });
 });
 
-test('the tabs have accessible names, and Notes replaces duplicate Activity', async ({ page }) => {
+test('the tabs have accessible names, and Comments replaces duplicate Activity', async ({ page }) => {
   await page.goto('/leads');
   await waitForRecords(page);
   const nav = page.getByRole('navigation', { name: 'Record workspace sections' });
-  await expect(nav.getByRole('button').first()).toHaveAccessibleName(/^Notes/);
+  await expect(nav.getByRole('button').first()).toHaveAccessibleName(/^Comments/);
   await expect(nav.getByRole('button', { name: /^Activity/ })).toHaveCount(0);
   await nav.getByRole('button', { name: /^Files/ }).click();
   await expect(page.getByTestId('activity-feed')).toHaveCount(0);
-  await nav.getByRole('button', { name: /^Notes/ }).click();
+  await nav.getByRole('button', { name: /^Comments/ }).click();
   await expect(page.getByTestId('activity-feed')).toBeVisible();
 });
 
-test('the quick filters open from the button over the queue and close on Escape', async ({ page }) => {
+test('the search options open from the button beside the search box and close on Escape', async ({ page }) => {
+  // The Quick & Live Filters overlay was replaced by this panel (#158).
   await page.goto('/leads');
   await waitForRecords(page);
-  await page.getByTestId('quick-filter-button').click();
-  await expect(page.getByTestId('quick-filter-overlay')).toBeVisible();
+  await page.getByRole('button', { name: 'Search options' }).click();
+  const panel = page.getByRole('dialog', { name: 'CRM search options' });
+  await expect(panel).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('quick-filter-overlay')).toHaveCount(0);
+  await expect(panel).toHaveCount(0);
 });
 
 test('an open chip panel draws over the record, not under it', async ({ page }) => {
