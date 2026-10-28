@@ -218,4 +218,31 @@ describe('a group named with a slash', () => {
     await db.query(`DELETE FROM ipy_wa_group WHERE id = $1`, [slashId]);
     await db.query(`DELETE FROM ipy_market_group WHERE name = $1`, [`Slash ${marker}_Dealers`]);
   });
+
+  it('is re-pointed when the export appears after the group was first seen', async () => {
+    const id = `1203${String(Date.now()).slice(-9)}04@g.us`;
+    const name = `Late ${marker}/Dealers`;
+    fake.groups = [{ id, name }];
+    await request(app).post('/api/whatsapp-business/groups/refresh').set('Authorization', `Bearer ${admin}`);
+    expect((await db.queryOne<{ feed_name: string }>(`SELECT feed_name FROM ipy_wa_group WHERE id = $1`, [id]))?.feed_name).toBe(name);
+    await db.query(`INSERT INTO ipy_market_group (name) VALUES ($1) ON CONFLICT DO NOTHING`, [`Late ${marker}_Dealers`]);
+    await request(app).post('/api/whatsapp-business/groups/refresh').set('Authorization', `Bearer ${admin}`);
+    expect((await db.queryOne<{ feed_name: string }>(`SELECT feed_name FROM ipy_wa_group WHERE id = $1`, [id]))?.feed_name).toBe(`Late ${marker}_Dealers`);
+    await db.query(`DELETE FROM ipy_wa_group WHERE id = $1`, [id]);
+    await db.query(`DELETE FROM ipy_market_group WHERE name = $1`, [`Late ${marker}_Dealers`]);
+  });
+
+  it('never merges two different WhatsApp groups called A/B and A_B', async () => {
+    const slash = `1203${String(Date.now()).slice(-9)}05@g.us`;
+    const under = `1203${String(Date.now()).slice(-9)}06@g.us`;
+    fake.groups = [{ id: slash, name: `Twin ${marker}/X` }, { id: under, name: `Twin ${marker}_X` }];
+    await db.query(`INSERT INTO ipy_market_group (name) VALUES ($1) ON CONFLICT DO NOTHING`, [`Twin ${marker}_X`]);
+    await request(app).post('/api/whatsapp-business/groups/refresh').set('Authorization', `Bearer ${admin}`);
+    const rows = await db.query<{ id: string; feed_name: string }>(`SELECT id, feed_name FROM ipy_wa_group WHERE id = ANY($1)`, [[slash, under]]);
+    const feed = Object.fromEntries(rows.rows.map((r) => [r.id, r.feed_name]));
+    expect(feed[slash]).toBe(`Twin ${marker}/X`);
+    expect(feed[under]).toBe(`Twin ${marker}_X`);
+    await db.query(`DELETE FROM ipy_wa_group WHERE id = ANY($1)`, [[slash, under]]);
+    await db.query(`DELETE FROM ipy_market_group WHERE name = $1`, [`Twin ${marker}_X`]);
+  });
 });

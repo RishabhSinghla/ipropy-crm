@@ -3,4 +3,5 @@
 -- stored under the slash spelling keep their label; only where new messages go changes.
 UPDATE ipy_wa_group g SET feed_name = m.name
   FROM ipy_market_group m
- WHERE m.name = replace(g.name, '/', '_') AND m.name <> g.name AND g.feed_name = g.name;
+ WHERE m.name = replace(g.name, '/', '_') AND m.name <> g.name AND g.feed_name = g.name
+   AND NOT EXISTS (SELECT 1 FROM ipy_wa_group o WHERE o.id <> g.id AND (o.name = m.name OR o.feed_name = m.name));
