@@ -59,9 +59,10 @@ for (const module of MODULES) {
     await openFirstRecord(page, module);
     const bar = page.getByTestId('record-menu-bar');
     const wide = await bar.locator('button').count();
-    // At 900px the responsive queue collapses, giving the menu more room.
-    // Use a phone-width window to actually exercise menu overflow.
-    await page.setViewportSize({ width: 600, height: 900 });
+    // A phone-width window to actually exercise menu overflow. 600px stopped
+    // being narrow enough on 29 October 2026, when the separate WhatsApp tab
+    // folded into Messages and the bar lost an entry.
+    await page.setViewportSize({ width: 360, height: 900 });
     // Measured, not read off a number: narrow the window and the bar gives
     // something up.
     await expect(async () => {

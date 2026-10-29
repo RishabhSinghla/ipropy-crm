@@ -29,7 +29,8 @@ test('a sales rep sees one WhatsApp and none of the admin-only pages', async ({ 
     const dock = repPage.getByTestId('workspace-dock');
     await expect(dock).toBeVisible();
     const rows = (await dock.locator('a').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') || e.getAttribute('title') || (e.textContent ?? '').trim()))).filter(Boolean);
-    expect(rows.filter((row) => /^WhatsApp/.test(row))).toEqual(['WhatsApp']);
+    // One chat inbox, plus the Lookup tool added on 29 October 2026 (#178); no admin WhatsApp pages.
+    expect(rows.filter((row) => /^WhatsApp/.test(row))).toEqual(['WhatsApp', 'WhatsApp Lookup']);
     expect(rows.join('|')).not.toMatch(/Dealer groups|Favourites|WhatsApp API/);
 
     await repPage.goto('/market');
