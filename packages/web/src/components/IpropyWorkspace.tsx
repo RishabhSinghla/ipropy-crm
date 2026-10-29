@@ -84,14 +84,17 @@ function LeadChat({ module, recordId, mobile }: { module: string; recordId: stri
           </button>
         ))}
       </div>
-      {mode === 'chat'
-        ? <WhatsAppTab module={module} recordId={recordId} mobile={mobile} />
-        : (
-          <>
-            <ActivityFeed module={module} recordId={recordId} customerName="" find="" filter="comment" />
-            <NoteComposer module={module} recordId={recordId} look="dock" />
-          </>
-        )}
+      {/*
+        Both stay mounted and the unused one is only hidden: each keeps its own unsent text, and switching to look at
+        a note must never throw away a half-written message (or the other way round).
+      */}
+      <div className={cn('flex min-h-0 flex-1 flex-col', mode !== 'chat' && 'hidden')}>
+        <WhatsAppTab module={module} recordId={recordId} mobile={mobile} />
+      </div>
+      <div className={cn('flex min-h-0 flex-1 flex-col', mode !== 'note' && 'hidden')}>
+        <ActivityFeed module={module} recordId={recordId} customerName="" find="" filter="comment" />
+        <NoteComposer module={module} recordId={recordId} look="dock" />
+      </div>
     </div>
   );
 }
@@ -1307,7 +1310,7 @@ export function IpropyWorkspace({
         */}
         <div className={cn(
           'flex min-h-0 min-w-0 flex-1 flex-col',
-          onTheStream || shownKey === 'whatsapp'
+          onTheStream || shownKey === 'whatsapp' || shownKey === 'message'
             ? 'overflow-hidden'
             // `xl:overflow-y-auto`, not `overflow-y-auto`: on a phone the whole
             // record column scrolls as one page, and a scroller inside a

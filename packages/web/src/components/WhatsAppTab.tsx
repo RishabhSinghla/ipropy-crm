@@ -65,7 +65,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         media: row.media,
         createdAt: String(row.created_at),
         // Which route it used. Told to administrators only (the server drops it for everybody else).
-        channel: (row.channel as string | undefined) ?? null,
+        channel: (row.via as string | undefined) ?? null,
         // An automatic message says so; an admin also sees which route sent it.
         sentVia: row.automated
           ? (isAdmin ? 'the WhatsApp API (automatic)' : 'automation')
@@ -367,7 +367,8 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         </div>
       )}
 
-      {!optedOut && onBusiness && mobile && (
+      {/* Only for a free-text reply: a template goes out on the automation number, which is not what `sendingOn` names. */}
+      {!optedOut && onBusiness && mobile && mode === 'text' && (
         <p className="border-t border-[var(--border)] bg-white px-3 pt-2 text-2xs text-muted dark:bg-slate-900" data-testid="send-channel">
           Sending on <strong>{sendingOn}</strong> to {mobile}
         </p>
