@@ -431,6 +431,8 @@ async function tellSomebody(stored: StoredInbound, message: InboundMessage): Pro
     body: (message.text ?? `[${message.type}]`).slice(0, 140),
     link: stored.recordId ? `/${MODULE}/${stored.recordId}` : '/chats',
     recordId: stored.recordId,
+    // For the live card in the corner: who to answer, and in which thread.
+    live: { conversationId: stored.conversationId, handle: stored.handle, contactName: who, module: MODULE, messageId: stored.messageId },
   });
 }
 

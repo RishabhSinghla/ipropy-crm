@@ -15,6 +15,8 @@ import { invalidateRecordQueries } from './invalidate';
 import { limitBursts } from './burstLimiter';
 import { apiBase, isNative } from './native';
 import { takePendingDial } from './dialWatch';
+import { chime, claimOnce, desktopNotice, nextCallCard, useLiveCards, type CallCard } from './liveCards';
+import type { LiveCallState } from './api';
 import { announceWhatsApp, askForDesktopNotificationsOnFirstClick, isWhatsAppMessage, type LiveNotification } from './whatsappAlert';
 
 let socket: Socket | null = null;
@@ -96,8 +98,17 @@ export function useRealtime(enabled: boolean): void {
       void qc.invalidateQueries({ queryKey: ['notifications'] });
       if (isWhatsAppMessage(note)) {
         void qc.invalidateQueries({ queryKey: ['wa-biz'] });
-        void announceWhatsApp(note!);
+        // The corner card replaces the plain toast when the server sent the thread details.
+        if (note?.conversationId) announceInCorner(note);
+        else void announceWhatsApp(note!);
       }
+    };
+    const onPhone = (live: LiveCallState): void => {
+      const next = nextCallCard(currentCallCard(), live, Date.now());
+      if (!next.changed) { if (next.card) useLiveCards.getState().patchCall({ canDecline: next.card.canDecline }); return; }
+      useLiveCards.getState().setCall(next.card);
+      if (next.card?.phase === 'ringing') void desktopNotice(`call-${next.card.number}`, 'Incoming call', next.card.number, '/calls');
+      if (next.card?.phase === 'missed') void desktopNotice(`missed-${next.card.number}-${next.card.touched}`, 'Missed call', next.card.number, '/calls');
     };
     const onCall = (): void => {
       void qc.invalidateQueries({ queryKey: ['calls'] });
@@ -129,6 +140,7 @@ export function useRealtime(enabled: boolean): void {
     s.on('inbox:update', onInbox);
     s.on('notification', onNotification);
     s.on('wa:changed', onWhatsApp);
+    s.on('phone:call', onPhone);
     s.on('call:incoming', onCall);
     s.on('call:ended', onCall);
     s.on('lead:new', onLead);
@@ -150,6 +162,7 @@ export function useRealtime(enabled: boolean): void {
       s.off('inbox:update', onInbox);
       s.off('notification', onNotification);
       s.off('wa:changed', onWhatsApp);
+      s.off('phone:call', onPhone);
       s.off('call:incoming', onCall);
       s.off('call:ended', onCall);
       s.off('lead:new', onLead);
@@ -203,4 +216,19 @@ export function useWatchRecord(recordId: string | undefined): void {
       s.emit('unwatch:record', recordId);
     };
   }, [recordId]);
+}
+
+function currentCallCard(): CallCard | null {
+  return (useLiveCards.getState().cards.find((c) => c.kind === 'call') as CallCard | undefined) ?? null;
+}
+
+/** A WhatsApp message as a card in the corner, a soft chime, and a desktop notice if the tab is hidden. */
+function announceInCorner(note: LiveNotification): void {
+  const shown = useLiveCards.getState().pushWhatsApp({
+    id: note.id, body: note.body, recordId: note.recordId, conversationId: note.conversationId,
+    handle: note.handle, contactName: note.contactName, module: note.module,
+  });
+  if (!shown) return;
+  if (claimOnce(`c-${note.id}`)) chime('message');
+  void desktopNotice(note.id ?? note.conversationId ?? 'wa', note.title ?? 'New WhatsApp message', note.body ?? '', note.recordId ? `/${note.module ?? 'leads'}?open=${note.recordId}&stream=message` : '/chats');
 }

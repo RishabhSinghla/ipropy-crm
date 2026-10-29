@@ -314,6 +314,8 @@ export function IpropyWorkspace({
   });
   // Somebody arriving on a link that names a record: open that one.
   useEffect(() => { if (openId) setActiveId(openId); }, [openId]);
+  // A live WhatsApp card's "Open chat" lands on the record's WhatsApp tab.
+  useEffect(() => { if (openId && new URLSearchParams(location.search).get('stream') === 'message') setMenuPick('message'); }, [openId, location.search]);
   /*
     Keep the open record when the queue changes under it — **including one that
     is not in the queue at all.** A record reached from global search or from a

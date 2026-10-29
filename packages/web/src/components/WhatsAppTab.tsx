@@ -1,3 +1,4 @@
+import { useLiveCards } from '../lib/liveCards';
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Paperclip, Send } from 'lucide-react';
@@ -95,6 +96,11 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     onError: (err: Error) => toast.error('Could not change that', err.message),
   });
 
+  // Tell the corner cards this chat is on screen, so they do not pop up over it.
+  useEffect(() => {
+    useLiveCards.getState().setOpenChat(recordId);
+    return () => { if (useLiveCards.getState().openChatRecordId === recordId) useLiveCards.getState().setOpenChat(null); };
+  }, [recordId]);
   const contactKey = ['whatsapp', 'contact', module, recordId];
   const send = useMutation({
     mutationFn: (text: string) => api.waBizSend({ to: mobile!, text, recordId }).then(() => undefined),
