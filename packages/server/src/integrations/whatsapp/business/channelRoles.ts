@@ -83,8 +83,10 @@ export function redactAutomated<T extends Record<string, unknown>>(rows: T[], is
   return rows.map((row) => {
     const { provider, ...rest } = row;
     const automated = row.direction === 'outbound' && isAutomationOnlyProvider(provider as string | null);
-    if (!automated) return rest;
-    if (isAdmin) return { ...rest, automated: true };
+    // Which route a message used is for administrators. A rep sees chat and automatic messages, never which provider.
+    const channel = typeof provider === 'string' && provider ? (provider === 'whatsapp_openwa' ? 'openwa' : 'api') : null;
+    if (!automated) return isAdmin && channel ? { ...rest, channel } : rest;
+    if (isAdmin) return { ...rest, automated: true, ...(channel ? { channel } : {}) };
     return {
       ...rest,
       automated: true,
