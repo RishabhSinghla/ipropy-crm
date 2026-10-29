@@ -27,6 +27,7 @@ import {
 import { recordConsent } from '../../core/consent/index.js';
 import { tellWhatsMarketingAboutConsent } from '../../integrations/whatsapp/business/consentSync.js';
 import { db } from '../../db/pool.js';
+import { emitToUser, pushNotification } from '../../realtime.js';
 import {
   listStoredTemplates, organisationName, resolveTemplate, saveMapping, syncTemplates,
 } from '../../integrations/whatsapp/business/templates.js';
@@ -857,6 +858,37 @@ whatsappBusinessRouter.post('/number-check/stop', blockApiKey, asyncHandler(asyn
   await assertGroupAdmin(req);
   stopNumberCheck();
   res.json({ ok: true });
+}));
+
+/*
+  "Send me a test card": pushes the very same events a real WhatsApp message or a
+  ringing phone would, to the administrator who pressed it and nobody else. It
+  lets the corner cards be checked any time without a customer writing in.
+  A message card uses Rishabh's own thread when one exists for the number given
+  (so Reply really works), otherwise a throwaway id.
+*/
+whatsappBusinessRouter.post('/test-card', blockApiKey, asyncHandler(async (req, res) => {
+  await assertGroupAdmin(req);
+  const user = getUser(req);
+  const kind = z.object({ kind: z.enum(['whatsapp', 'call']), number: z.string().max(20).optional() }).parse(req.body ?? {});
+  const number = (kind.number ?? '').replace(/\D/g, '').slice(-10) || '9891222206';
+  if (kind.kind === 'call') {
+    const base = { number, direction: 'incoming', speaker: false, muted: false, connectedSecondsAgo: null, updatedSecondsAgo: 0, canControlCall: false, canEndCall: false };
+    emitToUser(user.id, 'phone:call', { ...base, state: 'ringing', talkedSeconds: null });
+    // Unanswered after a while becomes "Missed call", like a real one.
+    setTimeout(() => emitToUser(user.id, 'phone:call', { ...base, state: 'ended', talkedSeconds: 0 }), 15_000);
+    res.json({ sent: true });
+    return;
+  }
+  const convo = await db.queryOne<{ id: string; record_id: string | null; contact_name: string | null }>(
+    `SELECT id, record_id, contact_name FROM ipy_conversation WHERE handle = $1 AND channel = 'whatsapp' ORDER BY last_message_at DESC NULLS LAST LIMIT 1`, [number],
+  );
+  pushNotification(user.id, {
+    id: `test-${Date.now()}`, kind: 'whatsapp', title: 'WhatsApp from test', body: 'This is a test card. Try Reply, Open chat or Dismiss.',
+    link: null, recordId: convo?.record_id ?? null, conversationId: convo?.id ?? `test-${Date.now()}`, handle: number,
+    contactName: convo?.contact_name ?? 'Test contact', module: 'leads',
+  });
+  res.json({ sent: true, realThread: Boolean(convo) });
 }));
 
 // ---------------------------------------------------------------------------
