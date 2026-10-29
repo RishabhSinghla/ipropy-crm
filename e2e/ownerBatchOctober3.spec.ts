@@ -49,7 +49,7 @@ for (const module of MODULES) {
     // did — measured, not read off a number written into the spec.
     // The queue collapses at tablet width, freeing menu space. A phone-width
     // viewport genuinely constrains the bar and exercises its overflow.
-    await page.setViewportSize({ width: 600, height: 900 });
+    await page.setViewportSize({ width: 360, height: 900 });
     await expect(async () => {
       expect(await bar.locator('button').count()).toBeLessThan(wide);
     }).toPass({ timeout: 10_000 });
@@ -98,7 +98,7 @@ test('the folded toolbar is icons, not a blank strip', async ({ page }) => {
   await expect(folded).toBeVisible();
   // One row per destination, each reachable by name even with no words drawn.
   await expect(folded.getByRole('link', { name: 'Dashboard' })).toBeVisible();
-  await expect(folded.getByRole('link', { name: 'WhatsApp' })).toBeVisible();
+  await expect(folded.getByRole('link', { name: 'WhatsApp', exact: true })).toBeVisible();
   // Opening it brings the names back.
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await expect(page.getByTestId('workspace-dock').getByText('Dashboard', { exact: true })).toBeVisible();
