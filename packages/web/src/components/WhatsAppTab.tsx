@@ -29,6 +29,8 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   const queryClient = useQueryClient();
   const isAdmin = Boolean(useApp().user?.isAdmin);
   const [draft, setDraft] = useState('');
+  /** The text of a message on its way: shown at once as a bubble that says Sending, so pressing Send feels instant. */
+  const [pending, setPending] = useState<string | null>(null);
 
   /*
     A contact messaged on the business number last week and from a rep's own
@@ -93,16 +95,26 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     onError: (err: Error) => toast.error('Could not change that', err.message),
   });
 
+  const contactKey = ['whatsapp', 'contact', module, recordId];
   const send = useMutation({
     mutationFn: (text: string) => api.waBizSend({ to: mobile!, text, recordId }).then(() => undefined),
-    onSuccess: () => {
+    onMutate: (text: string) => {
+      setPending(text);
       setDraft('');
-      void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
     },
-    onError: (err: Error) => {
-      // The refused message is a row too ("NOT delivered", with the reason),
-      // so refresh and let the thread show it beside the toast.
-      void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
+    onSuccess: async () => {
+      // The real row replaces the Sending bubble in the same breath, so nothing blinks out and back.
+      await queryClient.invalidateQueries({ queryKey: contactKey });
+      setPending(null);
+    },
+    onError: async (err: Error, text: string) => {
+      setPending(null);
+      // A refused send is a row too ("NOT delivered", with the reason). If the server wrote none (it refused before
+      // writing, e.g. a daily limit), the text goes back into the box instead of being lost.
+      await queryClient.refetchQueries({ queryKey: contactKey });
+      const rows = (queryClient.getQueryData(contactKey) as { messages: Array<{ direction: string; status: string; body: string | null; createdAt: string }> } | undefined)?.messages ?? [];
+      const shown = rows.some((m) => m.direction === 'outbound' && m.status === 'failed' && m.body === text && Date.now() - Date.parse(m.createdAt) < 60_000);
+      if (!shown) setDraft(text);
       toast.error('Could not send', err.message);
     },
   });
@@ -195,9 +207,29 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     if (list) list.scrollTop = list.scrollHeight;
   }, [messages?.length]);
 
+  /*
+    Opening the chat is reading it: the newest customer message marks the conversation read, so the unread badge in
+    the inbox does not outlive somebody looking at the message. Quiet on failure — a rep who may read the thread on
+    this record but not the inbox simply keeps their own unread count.
+  */
+  const lastInboundId = [...(messages ?? [])].reverse().find((m) => m.direction === 'inbound')?.id;
+  const conversationId = thread?.conversationId ?? null;
+  useEffect(() => {
+    if (!conversationId || !lastInboundId || document.visibilityState !== 'visible') return;
+    void api.waBizRead(conversationId)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['wa-biz'] }))
+      .catch(() => undefined);
+  }, [conversationId, lastInboundId, queryClient]);
+
   if (isLoading) return <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
 
-  const conversation = messages ?? [];
+  const conversation = [
+    ...(messages ?? []),
+    ...(pending !== null ? [{
+      id: 'pending', direction: 'outbound' as const, body: pending, media: null, createdAt: new Date().toISOString(),
+      channel: null, sentVia: null, status: 'sending', error: null,
+    }] : []),
+  ];
 
 
   return (
@@ -291,6 +323,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
               <p className={cn('mt-1 flex items-center gap-1 text-[10px]', m.direction === 'outbound' ? 'text-white/80' : 'text-muted')}>
                 {bubbleTime(m.createdAt)}
                 {isAdmin && m.channel && <span className="rounded bg-black/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide">{m.channel === 'openwa' ? 'Chat' : 'API'}</span>}
+                {m.status === 'sending' && <span className="flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden /> Sending…</span>}
                 {m.direction === 'outbound' && ticks(m.status).marks && (
                   ticks(m.status).marks === '✓'
                     ? <Check className="h-3 w-3" aria-label="sent" />
@@ -306,6 +339,16 @@ export function WhatsAppTab({ module, recordId, mobile }: {
                 sends somebody hunting; "outside the 24-hour window" is a thing
                 a person can act on in ten seconds.
               */}
+              {m.direction === 'outbound' && m.status === 'failed' && m.body && !readMessageMedia(m.media) && !readRemoteFile(m.media) && (
+                <button
+                  type="button"
+                  className="mt-1 rounded bg-white/25 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-white/35 disabled:opacity-50"
+                  disabled={send.isPending || !linked}
+                  onClick={() => send.mutate(m.body!)}
+                >
+                  Retry
+                </button>
+              )}
               {m.direction === 'outbound' && m.status === 'failed' && (
                 <p className="mt-1 rounded bg-white/15 px-1.5 py-1 text-[10px] leading-snug text-white">
                   <strong>Not delivered.</strong> {m.error ?? 'WhatsApp gave no reason.'}
