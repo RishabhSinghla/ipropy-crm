@@ -45,6 +45,7 @@ import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.
 import {
   enableAllGroups, historyJobStatus, historySupported, listWaGroups, refreshGroupList, setGroupEnabled, startHistoryImport,
 } from '../../core/market/liveGroups.js';
+import { lookupNumber, recordsWithNumber, saveLookupToRecord } from '../../integrations/whatsapp/business/lookup.js';
 import { numberCheckStatus, startNumberCheck, stopNumberCheck } from '../../integrations/whatsapp/business/numberCheck.js';
 import { currentLinkHealth, checkOpenWaNow, openWaMetrics } from '../../integrations/whatsapp/business/openwaHealth.js';
 import { createLeadFromChat, loadMessageFile } from '../../integrations/whatsapp/business/openwaChats.js';
@@ -856,4 +857,41 @@ whatsappBusinessRouter.post('/number-check/stop', blockApiKey, asyncHandler(asyn
   await assertGroupAdmin(req);
   stopNumberCheck();
   res.json({ ok: true });
+}));
+
+// ---------------------------------------------------------------------------
+// WhatsApp Lookup: who is this number on WhatsApp. Everybody signed in may use it, one number at a time;
+// the limits live in `lookup.ts`. Saving to a record is the person's own edit permission, not an admin one.
+// ---------------------------------------------------------------------------
+
+whatsappBusinessRouter.post('/lookup', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const { number } = z.object({ number: z.string().min(1).max(40) }).parse(req.body ?? {});
+  const outcome = await lookupNumber(user.id, number);
+  // Which of the CRM's contacts hold it — only ones this person may open.
+  const matches = outcome.number ? await recordsWithNumber(getScope(req), outcome.number) : [];
+  res.json({ ...outcome, matches });
+}));
+
+whatsappBusinessRouter.post('/lookup/save', asyncHandler(async (req, res) => {
+  const { number, recordId } = z.object({ number: z.string().min(1).max(40), recordId: z.string().uuid() }).parse(req.body ?? {});
+  const digits = number.replace(/\D/g, '');
+  try {
+    res.json(await saveLookupToRecord(getScope(req), digits, recordId));
+  } catch (err) {
+    if (err instanceof ForbiddenError || err instanceof NotFoundError) throw err;
+    throw new BadRequestError((err as Error).message);
+  }
+}));
+
+/** Who looked up what, for administrators. */
+whatsappBusinessRouter.get('/lookup/log', asyncHandler(async (req, res) => {
+  if (!getUser(req).isAdmin) throw new ForbiddenError('Only an administrator can read the lookup log.');
+  const { rows } = await db.query(
+    `SELECT l.created_at, l.number, l.result, l.push_name, l.from_cache,
+            trim(u.first_name || ' ' || u.last_name) AS user_name
+       FROM ipy_wa_lookup_log l LEFT JOIN ipy_user u ON u.id = l.user_id
+      ORDER BY l.created_at DESC LIMIT 100`,
+  );
+  res.json({ rows });
 }));

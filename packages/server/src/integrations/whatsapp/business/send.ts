@@ -163,8 +163,8 @@ async function conversationFor(handle: string, recordId: string | null, userId: 
  * assuming +91. A silent Indian default sends an NRI buyer's message to a
  * stranger, and `toInternational`'s own comment says so.
  */
-export /** The organisation's own default, or nothing. Never a code invented here. */
-async function defaultCountryCode(): Promise<string> {
+/** The organisation's own default, or nothing. Never a code invented here. */
+export async function defaultCountryCode(): Promise<string> {
   const row = await db.queryOne<{ value: unknown }>(
     `SELECT value FROM ipy_setting WHERE key = 'org.country_code'`,
   );

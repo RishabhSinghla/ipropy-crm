@@ -516,6 +516,7 @@ function MobileNav({
                 `lg:block` and does not exist below 1024px — the rule this
                 repo already learned twice, with Chats and then Reports. */}
             <DrawerLink to="/whatsapp" icon="message-circle" label="WhatsApp" />
+            <DrawerLink to="/whatsapp-lookup" icon="message-circle" label="WhatsApp Lookup" />
             {isAdmin && waStatus?.split && <DrawerLink to="/whatsapp-api" icon="message-circle" label="WhatsApp API" />}
             <DrawerLink to="/calls" icon="phone" label="Calls" />
             {isAdmin && <DrawerLink to="/market" icon="users" label="Dealer groups" />}
