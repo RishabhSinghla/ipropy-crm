@@ -9,6 +9,7 @@ import { Dropdown } from './ui';
 import { FilterBuilder } from './FilterBuilder';
 import { FieldInput } from './FieldRenderer';
 import { assignmentField, followUpFieldOf, pipelineFieldOf } from '../lib/fields';
+import { categorySearchField } from '../lib/categorySearch';
 import { followUpFilters, type TaskQueue } from './FollowUpQueue';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { LAST_CALL_DISPOSITION } from './CallDispositionFilter';
@@ -42,13 +43,15 @@ export function SearchOptions({ words, onWordsChange, onOpen, onSearchAll }: {
   const due = followUpFieldOf(fields);
   const locationField = fields.find((field) => field.config.picklist === 'locality' || field.columnName === 'locality');
   const contactType = fields.find((field) => field.config.picklist === 'contact_type' || field.columnName === 'contact_type');
+  // Hidden where a module has no category field, so nothing is filtered by a name it lacks.
+  const category = categorySearchField(fields);
   const money = fields.find((field) => field.uitype === 'currency' && /budget|demand|asking|price/i.test(`${field.name} ${field.label}`)) ?? fields.find((field) => field.uitype === 'currency');
   const size = fields.find((field) => ['area', 'number', 'decimal', 'integer'].includes(field.uitype) && /size|area/i.test(`${field.name} ${field.label}`));
   const dispositions = useCallDispositionOptions();
   const lostReason = fields.find((field) => /lost_reason/.test(`${field.name} ${field.config.picklist ?? ''}`));
   const choose = (key: string, value: unknown): void => setChoices((previous) => ({ ...previous, [key]: value }));
   const quickConditions: Array<FilterCondition | FilterGroup> = [];
-  for (const field of [owner, status, locationField, contactType, lostReason]) {
+  for (const field of [owner, status, locationField, contactType, category, lostReason]) {
     const value = field && choices[field.name];
     if (field && value !== undefined && value !== null && value !== '') quickConditions.push({ field: field.name, operator: Array.isArray(value) ? 'has_any' : 'equals', value });
   }
@@ -94,7 +97,7 @@ export function SearchOptions({ words, onWordsChange, onOpen, onSearchAll }: {
       <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Search in</span><select className="input" value={selected} onChange={(event) => { setModuleName(event.target.value); setChoices({}); setFilter({ logic: 'AND', conditions: [] }); }}><option value={EVERYWHERE}>All (every module and the archive)</option>{entities.map((module) => <option key={module.name} value={module.name}>{module.label}</option>)}</select></label>
       <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Has the words</span><input className="input" value={words} onChange={(event) => onWordsChange(event.target.value)} placeholder="Name, phone, property or comma-separated words" /></label>
       <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2" data-testid="default-search-fields">
-        {quickField(owner, 'Agent')}{quickField(locationField, 'Location')}{quickField(status, `${meta?.singularLabel ?? 'Record'} status`)}{quickField(contactType, 'Contact type')}
+        {quickField(owner, 'Agent')}{quickField(locationField, 'Location')}{quickField(status, `${meta?.singularLabel ?? 'Record'} status`)}{quickField(contactType, 'Contact type')}{quickField(category, 'Category')}
         {due && <label className="space-y-1 text-xs font-medium text-muted">Task wise<select className="input" value={String(choices.task ?? '')} onChange={(event) => choose('task', event.target.value)}><option value="">Any task</option><option value="pending">Overdue</option><option value="today">Today</option><option value="tomorrow">Tomorrow</option><option value="upcoming">Upcoming</option></select></label>}
         <label className="space-y-1 text-xs font-medium text-muted">Created date<select aria-label="Created date" className="input" value={String(choices.created ?? '')} onChange={(event) => choose('created', event.target.value)}><option value="">Any date</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="this_week">This week</option><option value="this_month">This month</option></select></label>
         <label className="space-y-1 text-xs font-medium text-muted">Tag wise<select className="input" value={String(choices.tag ?? '')} onChange={(event) => choose('tag', event.target.value)}><option value="">Any tag</option>{tags?.map((tag) => <option key={tag.id} value={tag.name}>{tag.name}</option>)}</select></label>
