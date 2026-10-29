@@ -25,6 +25,7 @@ import { touchActivity } from '../../../core/entity/recordService.js';
 import { db, onCommit, transaction, type Tx } from '../../../db/pool.js';
 import { bus } from '../../../core/events/bus.js';
 import { logger } from '../../../utils/logger.js';
+import { pushNotification } from '../../../realtime.js';
 import { notifyMany } from '../../../core/notifications/index.js';
 import { matchContact, matchKey } from '../matchContact.js';
 import { businessProvider } from './registry.js';
@@ -425,14 +426,30 @@ async function tellSomebody(stored: StoredInbound, message: InboundMessage): Pro
   if (!recipients.length) return;
 
   const who = conversation?.contact_name || message.profileName || stored.handle;
+  const body = (message.text ?? `[${message.type}]`).slice(0, 140);
+  const live = { conversationId: stored.conversationId, handle: stored.handle, contactName: who, module: MODULE, messageId: stored.messageId };
+  /*
+    Administrators see the corner card for every thread, not only the unowned
+    ones. Socket only: no bell row and no web push, so a busy team does not bury
+    them in notifications they never asked for, yet an admin at the desk still
+    sees who is writing.
+  */
+  const admins = await db.query<{ id: string }>(`SELECT id FROM ipy_user WHERE is_admin = true AND is_active = true`);
+  for (const { id } of admins.rows) {
+    if (recipients.includes(id)) continue;
+    pushNotification(id, {
+      id: `${stored.messageId}:${id}`, kind: 'whatsapp', title: `WhatsApp from ${who}`, body,
+      link: null, recordId: stored.recordId, ...live,
+    });
+  }
   await notifyMany(recipients, {
     kind: 'whatsapp',
     title: `WhatsApp from ${who}`,
-    body: (message.text ?? `[${message.type}]`).slice(0, 140),
+    body,
     link: stored.recordId ? `/${MODULE}/${stored.recordId}` : '/chats',
     recordId: stored.recordId,
     // For the live card in the corner: who to answer, and in which thread.
-    live: { conversationId: stored.conversationId, handle: stored.handle, contactName: who, module: MODULE, messageId: stored.messageId },
+    live,
   });
 }
 
