@@ -90,6 +90,7 @@ export default function WhatsAppAdmin(): JSX.Element {
       </div>
 
       <ChannelRoles />
+      <TestCards />
 
       {/* 1. Is it on? */}
       <section className={cn('card flex flex-wrap items-center gap-3 p-4',
@@ -274,6 +275,23 @@ function label(provider: string): string {
     whatsapp_openwa: 'OpenWA',
   };
   return names[provider] ?? provider;
+}
+
+/** Sends the administrator a pretend WhatsApp message and a pretend ringing call, to see the corner cards. */
+function TestCards(): JSX.Element {
+  const send = (kind: 'whatsapp' | 'call'): void => {
+    void api.waTestCard(kind).then(() => toast.success('Sent', 'Look at the bottom-right corner.')).catch((error: unknown) => toast.error('Could not send', error instanceof Error ? error.message : 'Try again'));
+  };
+  return (
+    <div className="card p-4">
+      <h2 className="text-base font-semibold">Corner cards</h2>
+      <p className="mt-1 text-sm text-muted">Shows you the notice a rep gets when a customer writes or the phone rings. Only you see these.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button className="btn-secondary btn-sm" onClick={() => send('whatsapp')}>Send me a test WhatsApp card</button>
+        <button className="btn-secondary btn-sm" onClick={() => send('call')}>Send me a test ringing call</button>
+      </div>
+    </div>
+  );
 }
 
 function Tile(

@@ -1619,6 +1619,7 @@ export const api = {
   waLookupLog: () => get<{ rows: Array<{ created_at: string; number: string; result: string; push_name: string | null; from_cache: boolean; user_name: string | null }> }>('/api/whatsapp-business/lookup/log'),
   waNumberCheck: () => get<WaNumberCheck>('/api/whatsapp-business/number-check'),
   waNumberCheckStart: (dailyCap?: number) => post<{ started: boolean; reason?: string }>('/api/whatsapp-business/number-check/start', dailyCap ? { dailyCap } : {}),
+  waTestCard: (kind: 'whatsapp' | 'call') => post<{ sent: boolean; realThread?: boolean }>('/api/whatsapp-business/test-card', { kind }),
   waNumberCheckStop: () => post<{ ok: boolean }>('/api/whatsapp-business/number-check/stop', {}),
   waGroups: () => get<WaGroupsResponse>('/api/whatsapp-business/groups'),
   waGroupsRefresh: () => post<{ total: number; added: number }>('/api/whatsapp-business/groups/refresh', {}),
