@@ -29,7 +29,7 @@
     "vtiger:migrate": "tsx src/scripts/vtiger/migrate.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.123.0",
+    "@anthropic-ai/sdk": "^1.1.0",
     "@aws-sdk/client-s3": "^3.1126.0",
     "@ipropy/mcp": "*",
     "@ipropy/shared": "*",
