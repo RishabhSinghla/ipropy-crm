@@ -1614,6 +1614,9 @@ export const api = {
     lastWebhookAt: string | null; rejectedWebhooks: number; unresolvedSenders: number;
     sendsToday: number; sendsFailedToday: number;
   }>(`/api/whatsapp-business/openwa/health${fresh ? '?fresh=1' : ''}`),
+  waLookup: (number: string) => post<WaLookupResult>('/api/whatsapp-business/lookup', { number }),
+  waLookupSave: (number: string, recordId: string) => post<{ savedName: boolean; savedPhoto: boolean }>('/api/whatsapp-business/lookup/save', { number, recordId }),
+  waLookupLog: () => get<{ rows: Array<{ created_at: string; number: string; result: string; push_name: string | null; from_cache: boolean; user_name: string | null }> }>('/api/whatsapp-business/lookup/log'),
   waNumberCheck: () => get<WaNumberCheck>('/api/whatsapp-business/number-check'),
   waNumberCheckStart: (dailyCap?: number) => post<{ started: boolean; reason?: string }>('/api/whatsapp-business/number-check/start', dailyCap ? { dailyCap } : {}),
   waNumberCheckStop: () => post<{ ok: boolean }>('/api/whatsapp-business/number-check/stop', {}),
@@ -1897,4 +1900,10 @@ export interface WaGroupsResponse {
 export interface WaNumberCheck {
   running: boolean; cap: number; checkedThisRun: number; note: string | null; stopRequested: boolean;
   checkedToday: number; remaining: number; found: number; notOnWhatsApp: number;
+}
+
+export interface WaLookupResult {
+  status: 'on_whatsapp' | 'not_on_whatsapp' | 'disconnected' | 'rate_limited' | 'invalid';
+  message: string; number: string | null; pushName: string | null; avatar: string | null; fromCache: boolean;
+  matches: Array<{ id: string; module: string; name: string }>;
 }

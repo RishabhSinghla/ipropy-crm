@@ -107,6 +107,7 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
       return;
     }
 
+    if (/\/contacts\//.test(url.pathname) && fake.status !== 'ready') { json(res, 409, { statusCode: 409, message: 'Session is not ready' }); return; }
     const check = /^\/api\/sessions\/([^/]+)\/contacts\/check\/(\d+)$/.exec(url.pathname);
     if (req.method === 'GET' && check) {
       const there = fake.onWhatsApp.has(check[2]!);

@@ -21,6 +21,7 @@ const MobileShell = lazy(() => import('./mobile/Shell'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const AskPage = lazy(() => import('./pages/AskPage'));
 const MarketFeedPage = lazy(() => import('./pages/MarketFeed'));
+const WhatsAppLookupPage = lazy(() => import('./pages/WhatsAppLookup'));
 const ProjectsWorkspacePage = lazy(() => import('./pages/ProjectsWorkspace'));
 
 /** chat.ipropy.com is this same app; on that address the front door is the assistant. */
@@ -163,6 +164,7 @@ export default function App(): JSX.Element {
               {/* The official API's own screen, for admins. Everyone else is sent home. */}
               <Route path="whatsapp-api/*" element={<RequireAdminRoute><WhatsAppPage mode="api" /></RequireAdminRoute>} />
               <Route path="calls" element={<CallsPage />} />
+              <Route path="whatsapp-lookup" element={<WhatsAppLookupPage />} />
               {/* Dealer-group deals. Above `:module`, which would read "market" as a module. */}
               <Route path="market" element={<RequireAdminRoute><MarketFeedPage /></RequireAdminRoute>} />
               {/* Projects has its own isolated workspace and masters rather than

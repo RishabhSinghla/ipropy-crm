@@ -95,28 +95,43 @@ async function writeContext() {
   return { ...(await buildScopeContext(user)), system: true, source: 'whatsapp_number_check' };
 }
 
-async function saveAvatar(recordId: string, url: string): Promise<'saved' | 'skipped'> {
-  if (!isWhatsAppPhotoHost(url)) return 'skipped';
-  const has = await db.queryOne<{ one: number }>(`SELECT 1 AS one FROM ipy_attachment WHERE record_id = $1 AND category = 'avatar' LIMIT 1`, [recordId]);
-  if (has) return 'skipped'; // a photo somebody chose themselves is never replaced
-  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+/** A profile picture fetched from WhatsApp's own CDN, or null: wrong host, not an image, empty, or too big. */
+export async function downloadProfilePhoto(url: string): Promise<{ data: Buffer; type: string } | null> {
+  if (!isWhatsAppPhotoHost(url)) return null;
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   const type = (res.headers.get('content-type') ?? '').split(';')[0]!.trim();
-  if (!res.ok || !type.startsWith('image/')) return 'skipped';
+  if (!res.ok || !type.startsWith('image/')) return null;
   const data = Buffer.from(await res.arrayBuffer());
-  if (!data.byteLength || data.byteLength > MAX_PHOTO_BYTES) return 'skipped';
-  const ext = type === 'image/png' ? '.png' : '.jpg';
+  if (!data.byteLength || data.byteLength > MAX_PHOTO_BYTES) return null;
+  return { data, type };
+}
+
+/**
+ * Files a picture as the record's avatar (the newest `avatar` attachment is the one shown).
+ * `replace: false` — the checker — never replaces a photo somebody already chose, checked again inside the insert
+ * because a rep may upload their own while this one downloads. `replace: true` is a person pressing Save.
+ */
+export async function storeAvatar(recordId: string, photo: { data: Buffer; type: string }, opts: { replace: boolean }): Promise<'saved' | 'skipped'> {
+  if (!opts.replace) {
+    const has = await db.queryOne<{ one: number }>(`SELECT 1 AS one FROM ipy_attachment WHERE record_id = $1 AND category = 'avatar' LIMIT 1`, [recordId]);
+    if (has) return 'skipped';
+  }
+  const ext = photo.type === 'image/png' ? '.png' : '.jpg';
   const name = `whatsapp-profile${ext}`;
   const key = await buildStorageKey({ recordId, originalName: name, ext });
-  await (await getDriver()).save(key, data, type);
-  // Checked again inside the insert: a rep may have uploaded their own photo while this one downloaded.
+  await (await getDriver()).save(key, photo.data, photo.type);
   const inserted = await db.query(
     `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key, url, category)
      SELECT $1,$2,$3,$4,$5,$6,'avatar'
-      WHERE NOT EXISTS (SELECT 1 FROM ipy_attachment WHERE record_id = $1 AND category = 'avatar')`,
-    [recordId, name, type, data.byteLength, key, `/api/files/${key}`],
+      WHERE $7::boolean OR NOT EXISTS (SELECT 1 FROM ipy_attachment WHERE record_id = $1 AND category = 'avatar')`,
+    [recordId, name, photo.type, photo.data.byteLength, key, `/api/files/${key}`, opts.replace],
   );
-  if (!inserted.rowCount) return 'skipped';
-  return 'saved';
+  return inserted.rowCount ? 'saved' : 'skipped';
+}
+
+async function saveAvatar(recordId: string, url: string): Promise<'saved' | 'skipped'> {
+  const photo = await downloadProfilePhoto(url);
+  return photo ? storeAvatar(recordId, photo, { replace: false }) : 'skipped';
 }
 
 async function remember(row: { id: string; mobile: string }, status: string, pushName: string | null, photo: string, note: string | null): Promise<void> {
