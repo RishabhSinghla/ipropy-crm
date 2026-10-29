@@ -2728,8 +2728,8 @@ function MentionTextarea({
  *
  * Cloud telephony, the companion Android app and manually logged calls all land
  * in the same table, so a rep sees one history rather than having to know which
- * system a call came through. Recording playback and the outcome sit here too,
- * because "what happened on the last call" is the question this tab exists to
+ * system a call came through. The outcome sits here (recordings do not: the owner took
+ * them out of this tab on 29 October 2026), because "what happened on the last call" is the question this tab exists to
  * answer.
  */
 export function CallsTab({ recordId }: { recordId: string }): JSX.Element {
@@ -2823,15 +2823,6 @@ export function CallsTab({ recordId }: { recordId: string }): JSX.Element {
           </div>
 
           {call.notes && <p className="mt-1.5 text-sm text-muted">{call.notes}</p>}
-
-          {call.recording_url && (
-            <audio
-              controls
-              preload="none"
-              src={api.recordingUrl(call.id)}
-              className="mt-2 h-8 w-full max-w-md"
-            />
-          )}
 
           <div className="mt-1 flex items-center gap-2 text-2xs text-muted">
             {call.agent_name && <span>{call.agent_name}</span>}

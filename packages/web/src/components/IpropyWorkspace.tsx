@@ -62,39 +62,14 @@ import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
   thing a rep has to learn twice.
 */
 /**
- * The "WhatsApp" tab of a record: the real chat with the contact, and a Note toggle so writing a note about them
- * (never sent to anybody) is one tap away instead of lost. The chat is `WhatsAppTab` — the same component the
+ * The "WhatsApp" tab of a record: the real chat with the contact and nothing else. Notes live in the Comments tab
+ * (the owner, 29 October 2026, took the Note toggle out of here). The chat is `WhatsAppTab` — the same component the
  * record page uses — so the two cannot drift.
  */
 function LeadChat({ module, recordId, mobile }: { module: string; recordId: string; mobile: string | null }): JSX.Element {
-  const [mode, setMode] = useState<'chat' | 'note'>('chat');
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 gap-1 border-b border-[var(--border)] bg-white p-2 dark:bg-slate-900" role="tablist" aria-label="Write to the customer, or a note for the team">
-        {([['chat', 'WhatsApp message'], ['note', 'Note (team only)']] as const).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={mode === key}
-            onClick={() => setMode(key)}
-            className={cn('rounded-full px-3 py-1 text-xs font-semibold transition-colors', mode === key ? 'bg-brand-600 text-white' : 'text-muted hover:bg-slate-100 dark:hover:bg-slate-800')}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {/*
-        Both stay mounted and the unused one is only hidden: each keeps its own unsent text, and switching to look at
-        a note must never throw away a half-written message (or the other way round).
-      */}
-      <div className={cn('flex min-h-0 flex-1 flex-col', mode !== 'chat' && 'hidden')}>
-        <WhatsAppTab module={module} recordId={recordId} mobile={mobile} />
-      </div>
-      <div className={cn('flex min-h-0 flex-1 flex-col', mode !== 'note' && 'hidden')}>
-        <ActivityFeed module={module} recordId={recordId} customerName="" find="" filter="comment" />
-        <NoteComposer module={module} recordId={recordId} look="dock" />
-      </div>
+      <WhatsAppTab module={module} recordId={recordId} mobile={mobile} />
     </div>
   );
 }
