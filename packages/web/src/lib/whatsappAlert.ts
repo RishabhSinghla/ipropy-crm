@@ -25,6 +25,11 @@ export interface LiveNotification {
   title?: string;
   body?: string | null;
   link?: string | null;
+  recordId?: string | null;
+  conversationId?: string;
+  handle?: string;
+  contactName?: string;
+  module?: string;
 }
 
 const TOAST_STAYS_MS = 12_000;

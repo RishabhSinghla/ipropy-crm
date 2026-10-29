@@ -1,3 +1,4 @@
+import { LiveCards } from './components/LiveCards';
 import { type JSX, lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from './lib/store';
@@ -197,6 +198,7 @@ export default function App(): JSX.Element {
         </Suspense>
       </ErrorBoundary>
       <ToastHost />
+      <LiveCards />
     </>
   );
 }

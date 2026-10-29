@@ -1535,3 +1535,13 @@ do. A chat nobody holds goes to the admins. Admin → Settings → WhatsApp hold
 * **Working minutes** inside the `business_hours` setting (a 22:00 message starts counting at opening time); missing or malformed hours mean always open, with one warning.
 * **A floor of 360 minutes:** a chat older than that is not alerted, so switching on (or a long outage) cannot flood anybody. 50 chats per tick.
 * The admin Health page shows "N customers are waiting" even while alerts are off.
+
+## Live cards in the bottom-right corner (29 October 2026)
+
+A customer writing, or the rep's phone ringing, shows a card in the corner of the CRM (`components/LiveCards.tsx`, decisions in `lib/liveCards.ts`).
+
+* **Who is told is the server's decision, not the screen's.** The WhatsApp card rides the existing `notification` socket event, which `tellSomebody` sends only to the lead's owner (every admin when nobody owns it). The card needs the thread, so `notify()` takes an optional `live` object that is pushed to the open screen and **never stored**. The ringing card rides `phone:call`, which only reaches the rep whose phone it is.
+* **One card per person**, newest three lines, at most four cards, gone after 8 seconds unless hovered, focused or being replied to. Not shown when that very chat is open and focused (`WhatsAppTab` tells `useLiveCards` which record it is showing).
+* **Reply sends through the normal path** (`POST /api/whatsapp-business/send`, `to` = the conversation handle plus the record id, so `dialableNumber` still prefers WhatsApp's own id).
+* **A browser cannot answer a phone call.** The call card offers Decline only when the phone reports it can end a call, otherwise Open record; after a missed call it offers Call back, which rings the rep's own phone.
+* **Several tabs make one noise.** `claimOnce` (localStorage) lets one tab play the chime and show the desktop notice; dismissing in one tab clears the others (BroadcastChannel). Sound has a mute switch kept in the browser; desktop notices need the permission the app already asks for once.

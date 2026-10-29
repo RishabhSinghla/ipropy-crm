@@ -32,6 +32,8 @@ export interface NotifyInput {
   recordId?: string | null;
   /** skip the browser push for low-value chatter; the row is still written */
   silent?: boolean;
+  /** Extra facts for the open screen only (never stored): what a live card needs to reply. */
+  live?: Record<string, unknown>;
 }
 
 export async function notify(input: NotifyInput, conn: Tx = db): Promise<void> {
@@ -45,6 +47,7 @@ export async function notify(input: NotifyInput, conn: Tx = db): Promise<void> {
   pushNotification(input.userId, {
     id: row.id, kind: input.kind, title: input.title,
     body: input.body ?? null, link: input.link ?? null, createdAt: row.created_at,
+    recordId: input.recordId ?? null, ...input.live,
   });
 
   if (!input.silent) {
