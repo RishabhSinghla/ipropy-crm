@@ -449,7 +449,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           placeholder={
             !mobile ? 'This contact has no mobile number'
               : !onBusiness ? 'No WhatsApp Business number is connected yet'
-                : linkProblem ? 'WhatsApp is not connected right now, so nothing can be sent. Use a Note for now.'
+                : linkProblem ? 'WhatsApp is not connected right now, so nothing can be sent. Notes go in the Comments tab.'
                 : linked ? 'Write a message'
                   // The reason, where the person is about to type — not after
                   // they have written a paragraph and pressed Send.

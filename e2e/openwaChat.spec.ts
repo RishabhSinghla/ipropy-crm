@@ -131,12 +131,19 @@ test('the banner says so when the phone is no longer linked, and nothing is sent
   await openChat(page);
   await expect(page.getByRole('alert').filter({ hasText: /disconnected|not connected/i })).toBeVisible({ timeout: 30_000 });
   const before = fake.sends.length;
-  await page.getByLabel('Write a WhatsApp message').fill('Should not go');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(page.getByText(/WhatsApp is not connected in OpenWA/i).first()).toBeVisible({ timeout: 20_000 });
-  expect(fake.sends).toHaveLength(before);
-  fake.status = 'ready';
-  await api(request, 'get', '/api/whatsapp-business/openwa/health?fresh=1');
+  // Since 29 October 2026 the box is shut with the reason instead of letting a
+  // paragraph be typed and then refused, so nothing can be sent at all.
+  try {
+    const box = page.getByLabel('Write a WhatsApp message');
+    await expect(box).toBeDisabled();
+    await expect(box).toHaveAttribute('placeholder', /not connected right now/i);
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+    expect(fake.sends).toHaveLength(before);
+  } finally {
+    // Always put the fake back, or the next test meets a phone that is "unlinked".
+    fake.status = 'ready';
+    await api(request, 'get', '/api/whatsapp-business/openwa/health?fresh=1');
+  }
 });
 
 test('on a phone, and with the dark theme classes on, the panel fits the screen and the composer is reachable', async ({ page }) => {
