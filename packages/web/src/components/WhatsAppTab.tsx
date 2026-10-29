@@ -64,6 +64,8 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         body: (row.body as string | null) ?? null,
         media: row.media,
         createdAt: String(row.created_at),
+        // Which route it used. Told to administrators only (the server drops it for everybody else).
+        channel: (row.via as string | undefined) ?? null,
         // An automatic message says so; an admin also sees which route sent it.
         sentVia: row.automated
           ? (isAdmin ? 'the WhatsApp API (automatic)' : 'automation')
@@ -144,7 +146,13 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     refetchInterval: 30_000,
   });
   const mode = composerMode(business?.capabilities ?? [], Boolean(thread?.windowOpen));
-  const linked = onBusiness && mode === 'text';
+  // OpenWA unreachable or the phone unlinked: the box is shut with the reason, not left to fail after a paragraph is typed.
+  const linkProblem = linkBanner(business?.link);
+  const linked = onBusiness && mode === 'text' && !linkProblem;
+  /** Where a message typed here will go, in words a rep understands. */
+  const sendingOn = business?.capabilities?.includes('linkedDevice')
+    ? 'WhatsApp chat (the company phone)'
+    : 'the official WhatsApp number';
 
   /*
     **When a free reply cannot go, an approved template still can.** Until now
@@ -282,6 +290,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
               )}
               <p className={cn('mt-1 flex items-center gap-1 text-[10px]', m.direction === 'outbound' ? 'text-white/80' : 'text-muted')}>
                 {bubbleTime(m.createdAt)}
+                {isAdmin && m.channel && <span className="rounded bg-black/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide">{m.channel === 'openwa' ? 'Chat' : 'API'}</span>}
                 {m.direction === 'outbound' && ticks(m.status).marks && (
                   ticks(m.status).marks === '✓'
                     ? <Check className="h-3 w-3" aria-label="sent" />
@@ -358,6 +367,12 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         </div>
       )}
 
+      {/* Only for a free-text reply: a template goes out on the automation number, which is not what `sendingOn` names. */}
+      {!optedOut && onBusiness && mobile && mode === 'text' && (
+        <p className="border-t border-[var(--border)] bg-white px-3 pt-2 text-2xs text-muted dark:bg-slate-900" data-testid="send-channel">
+          Sending on <strong>{sendingOn}</strong> to {mobile}
+        </p>
+      )}
       {!optedOut && (
       <form
         className="flex flex-wrap items-end gap-2 border-t border-[var(--border)] bg-white p-3 dark:bg-slate-900"
@@ -391,6 +406,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           placeholder={
             !mobile ? 'This contact has no mobile number'
               : !onBusiness ? 'No WhatsApp Business number is connected yet'
+                : linkProblem ? 'WhatsApp is not connected right now, so nothing can be sent. Use a Note for now.'
                 : linked ? 'Write a message'
                   // The reason, where the person is about to type — not after
                   // they have written a paragraph and pressed Send.

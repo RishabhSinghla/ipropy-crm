@@ -46,3 +46,16 @@ describe('WhatsApp channel roles', () => {
     expect(isAutomationOnlyProvider(OFFICIAL)).toBe(false);
   });
 });
+
+describe('which route a message used', () => {
+  it('is told to administrators only', () => {
+    const rows = [
+      { direction: 'outbound', body: 'hi', provider: 'whatsapp_openwa' },
+      { direction: 'inbound', body: 'yes', provider: 'whatsapp_whatsmarketing' },
+    ];
+    const admin = redactAutomated(rows, true);
+    expect(admin.map((r) => r.via)).toEqual(['openwa', 'api']);
+    const rep = redactAutomated(rows, false);
+    for (const r of rep) { expect(r).not.toHaveProperty('via'); expect(r).not.toHaveProperty('provider'); }
+  });
+});

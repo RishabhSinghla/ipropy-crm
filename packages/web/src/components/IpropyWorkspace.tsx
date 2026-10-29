@@ -61,9 +61,47 @@ import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
   always called itself ("Write a note…"), and one thing with two names is one
   thing a rep has to learn twice.
 */
+/**
+ * The "WhatsApp" tab of a record: the real chat with the contact, and a Note toggle so writing a note about them
+ * (never sent to anybody) is one tap away instead of lost. The chat is `WhatsAppTab` — the same component the
+ * record page uses — so the two cannot drift.
+ */
+function LeadChat({ module, recordId, mobile }: { module: string; recordId: string; mobile: string | null }): JSX.Element {
+  const [mode, setMode] = useState<'chat' | 'note'>('chat');
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 gap-1 border-b border-[var(--border)] bg-white p-2 dark:bg-slate-900" role="tablist" aria-label="Write to the customer, or a note for the team">
+        {([['chat', 'WhatsApp message'], ['note', 'Note (team only)']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={mode === key}
+            onClick={() => setMode(key)}
+            className={cn('rounded-full px-3 py-1 text-xs font-semibold transition-colors', mode === key ? 'bg-brand-600 text-white' : 'text-muted hover:bg-slate-100 dark:hover:bg-slate-800')}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {/*
+        Both stay mounted and the unused one is only hidden: each keeps its own unsent text, and switching to look at
+        a note must never throw away a half-written message (or the other way round).
+      */}
+      <div className={cn('flex min-h-0 flex-1 flex-col', mode !== 'chat' && 'hidden')}>
+        <WhatsAppTab module={module} recordId={recordId} mobile={mobile} />
+      </div>
+      <div className={cn('flex min-h-0 flex-1 flex-col', mode !== 'note' && 'hidden')}>
+        <ActivityFeed module={module} recordId={recordId} customerName="" find="" filter="comment" />
+        <NoteComposer module={module} recordId={recordId} look="dock" />
+      </div>
+    </div>
+  );
+}
+
 const STREAM_LABEL: Record<'comment' | 'message' | 'audit', string> = {
   comment: 'Comments',
-  message: 'Messages',
+  message: 'WhatsApp',
   audit: 'Changes',
 };
 
@@ -505,7 +543,7 @@ export function IpropyWorkspace({
   const [savedMenu, setSavedMenu] = useState<MenuKey[] | null>(() => loadRecordMenu(module.name));
   useEffect(() => { setSavedMenu(loadRecordMenu(module.name)); }, [module.name]);
   const availableMenu = useMemo<MenuKey[]>(
-    () => [...tabs.filter((item) => item.key !== 'timeline' && !(module.name === 'associates' && item.key.startsWith('deals_'))).map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
+    () => [...tabs.filter((item) => item.key !== 'timeline' && item.key !== 'whatsapp' && !(module.name === 'associates' && item.key.startsWith('deals_'))).map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
     [tabs, module.name],
   );
   const menuOrder = useMemo(() => arrangeRecordMenu(availableMenu, savedMenu), [availableMenu, savedMenu]);
@@ -526,7 +564,8 @@ export function IpropyWorkspace({
   const shownKey: MenuKey = menuOrder.includes(menuPick as MenuKey) ? menuPick! : menuOrder[0]!;
   /** `null` for a tab that draws its own screen; otherwise the stream, narrowed. */
   const streamKind = activityKindOf(shownKey);
-  const onTheStream = streamKind !== null || shownKey === 'timeline';
+  // 'WhatsApp' is a chat of its own (below), not a filter of the stream.
+  const onTheStream = (streamKind !== null && streamKind !== 'message') || shownKey === 'timeline';
 
   /*
     Which field holds the name. `module.labelFields` is what every other
@@ -630,9 +669,10 @@ export function IpropyWorkspace({
     if (key === 'calls') return shown(callRows?.length, 50);
     // The three stream entries count out of the same answer the tabs do, so a
     // badge and the list it labels cannot disagree and nothing is asked twice.
+    if (key === 'message' || key === 'whatsapp') return shown(feed?.filter((entry) => entry.type === 'message' && entry.meta.channel === 'whatsapp').length, FEED_LIMIT);
     const kind = activityKindOf(key);
     if (kind) return shown(feed?.filter((entry) => entry.type === kind).length, FEED_LIMIT);
-    return shown(feed?.filter((entry) => entry.type === 'message' && entry.meta.channel === 'whatsapp').length, FEED_LIMIT);
+    return null;
   };
 
   /*
@@ -1270,7 +1310,7 @@ export function IpropyWorkspace({
         */}
         <div className={cn(
           'flex min-h-0 min-w-0 flex-1 flex-col',
-          onTheStream || shownKey === 'whatsapp'
+          onTheStream || shownKey === 'whatsapp' || shownKey === 'message'
             ? 'overflow-hidden'
             // `xl:overflow-y-auto`, not `overflow-y-auto`: on a phone the whole
             // record column scrolls as one page, and a scroller inside a
@@ -1320,7 +1360,7 @@ export function IpropyWorkspace({
           )}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownKey === 'calls' && <CallsTab recordId={active.id} />}
-          {shownKey === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
+          {shownKey === 'message' && <LeadChat module={module.name} recordId={active.id} mobile={phoneValue || null} />}
         </div>
       </section>
 
