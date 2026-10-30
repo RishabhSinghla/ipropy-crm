@@ -277,25 +277,6 @@ export interface UiSettings {
   headerTabs: HeaderTab[] | null;
   /** Where the social icons sit: beside the brand, on the right, or nowhere. */
   socialPosition: 'brand' | 'right' | 'hidden';
-  /** The today-task buzzer, as Admin → Settings → Today's tasks sets it. */
-  taskBuzzer: TaskBuzzerSettings;
-}
-
-/**
- * The popup that walks a rep through every record due today, with a buzzer.
- *
- * **9 October 2026, the owner:** every fifteen minutes, first task to last,
- * each lead's form pops up with a buzzer — once a day per lead when there are
- * more than fifty, every round when there are fewer.
- */
-export interface TaskBuzzerSettings {
-  on: boolean;
-  /** Minutes between the end of one round and the start of the next. */
-  everyMinutes: number;
-  /** Over this many tasks, each lead pops up once a day rather than every round. */
-  onceOver: number;
-  /** On a day over `onceOver`, each popup closes itself after this many seconds. */
-  closeAfterSeconds: number;
 }
 
 /** Search field group kinds used to organize controls in the main Search panel. */

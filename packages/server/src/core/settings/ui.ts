@@ -11,14 +11,13 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
-import type { HeaderTab, TaskBuzzerSettings, UiSettings } from '@ipropy/shared';
+import type { HeaderTab, UiSettings } from '@ipropy/shared';
 
 const DEFAULTS: UiSettings = {
   inlineEdit: false,
   openInNewTab: true,
   headerTabs: null,
   socialPosition: 'right',
-  taskBuzzer: { on: true, everyMinutes: 15, onceOver: 50, closeAfterSeconds: 60 },
 };
 
 let cached: UiSettings | null = null;
@@ -64,33 +63,10 @@ export async function uiSettings(): Promise<UiSettings> {
       socialPosition: position === 'brand' || position === 'right' || position === 'hidden'
         ? position
         : DEFAULTS.socialPosition,
-      taskBuzzer: readTaskBuzzer(map),
     };
     return cached;
   } catch (err) {
     logger.warn({ err }, 'could not read UI settings, using defaults');
     return DEFAULTS;
   }
-}
-
-/**
- * The buzzer's four numbers, each held inside a range a person could live with.
- *
- * A typo in Settings must not become a popup every second, or one that closes
- * before anybody can read it. Anything out of range or not a number falls back
- * to what the owner asked for.
- */
-export function readTaskBuzzer(map: Map<string, unknown>): TaskBuzzerSettings {
-  const fallback = DEFAULTS.taskBuzzer;
-  const whole = (key: string, min: number, max: number, otherwise: number): number => {
-    const value = Number(map.get(key));
-    return Number.isInteger(value) && value >= min && value <= max ? value : otherwise;
-  };
-  const on = map.get('ui.task_buzzer_on');
-  return {
-    on: typeof on === 'boolean' ? on : fallback.on,
-    everyMinutes: whole('ui.task_buzzer_every_minutes', 1, 240, fallback.everyMinutes),
-    onceOver: whole('ui.task_buzzer_once_over', 1, 10_000, fallback.onceOver),
-    closeAfterSeconds: whole('ui.task_buzzer_close_after_seconds', 10, 600, fallback.closeAfterSeconds),
-  };
 }

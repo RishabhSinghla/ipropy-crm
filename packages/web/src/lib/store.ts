@@ -234,11 +234,10 @@ async function adoptSession(
   */
   if (isNative) rememberRefresh(result.refreshToken);
   /*
-    The login answer is the bare user. The screen settings, capabilities and
-    the today-task buzzer's numbers ride on `/api/auth/me` only, so without
-    this a person who signed in and never reloaded had none of them — the
-    buzzer stayed silent all day (found 10 October 2026). The bare user is the
-    fallback, so a slow `/me` never stops anybody signing in.
+    The login answer is the bare user. The screen settings and capabilities
+    ride on `/api/auth/me` only, so without this a person who signed in and
+    never reloaded had none of them. The bare user is the fallback, so a slow
+    `/me` never stops anybody signing in.
   */
   const [modules, user] = await Promise.all([
     api.modules(),
