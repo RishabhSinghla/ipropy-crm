@@ -39,7 +39,7 @@ import {
   type MenuKey,
 } from '../lib/recordMenu';
 import { api } from '../lib/api';
-import { activeSortOption, sortOptions } from '../lib/listSort';
+import { activeSortOption, NO_SORT_BY, sortOptions } from '../lib/listSort';
 import { cn } from '../lib/utils';
 import { toast } from '../lib/store';
 import { queueRecordUrl } from '../lib/saveNextUrl';
@@ -663,7 +663,7 @@ export function IpropyWorkspace({
   */
   const choices = useMemo(() => sortOptions(followUpField?.name), [followUpField?.name]);
   const chosen = activeSortOption(choices, sortBy);
-  const firstSortable = choices.find((option) => option.by);
+  const firstSortable = choices.find((option) => option.by && option.by !== NO_SORT_BY);
   // A column heading clicked in the table view is not one of the eight, so the
   // button says which field it is rather than claiming one of them.
   const sortedByColumn = chosen ? null : module.fields.find((field) => field.name === sortBy);
@@ -838,12 +838,12 @@ export function IpropyWorkspace({
                       <button
                         key={dir}
                         type="button"
-                        disabled={!chosen?.by && !sortBy && !firstSortable?.by}
+                        disabled={!chosen?.by || chosen.by === NO_SORT_BY}
                         title={dir === 'asc' ? (chosen?.ascHint ?? 'A–Z') : (chosen?.descHint ?? 'Z–A')}
                         onClick={() => { onSort(sortBy ?? chosen?.by ?? firstSortable?.by, dir); close(); }}
                         className={cn(
                           'rounded px-1.5 py-0.5 text-2xs font-bold transition-colors',
-                          sortDir === dir && (chosen?.by || sortBy)
+                          sortDir === dir && chosen?.by !== NO_SORT_BY && (chosen?.by || sortBy)
                             ? 'bg-brand-700 text-white'
                             : 'text-slate-500 hover:bg-[var(--surface-muted)] disabled:opacity-40 dark:text-slate-400',
                         )}

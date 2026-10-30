@@ -43,18 +43,17 @@ for (const module of MODULES) {
       1 October is still in the Quick & Live Filters panel.
     */
 
-    test('the sort menu is the eight he named, and Recently updated to begin with', async ({ page }) => {
+    test('the sort menu includes No sorting and defaults to Recently updated', async ({ page }) => {
       await openQueue(page, module.path);
 
       const trigger = page.getByRole('button', { name: 'Sort this list' });
-      // 1 October 2026: "No sorting" is gone; a list nobody sorted is
-      // Recently updated, and the button says so.
+      // A list nobody explicitly sorted is still Recently updated by default.
       await expect(trigger).toContainText('Recently updated');
 
       await trigger.click();
       const menu = page.getByTestId('queue-sort-menu');
       await expect(menu).toContainText('Recently created');
-      await expect(menu).not.toContainText('No sorting');
+      await expect(menu).toContainText('No sorting');
       await expect(menu).toContainText('Agent wise');
       await expect(menu).toContainText('Last call wise');
       await expect(menu).toContainText('Profile strength wise');

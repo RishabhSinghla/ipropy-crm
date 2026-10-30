@@ -43,6 +43,7 @@ import { IpropyWorkspace } from '../components/IpropyWorkspace';
 import { CallLogFilter } from '../components/CallLogFilter';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
+import { NO_SORT_BY } from '../lib/listSort';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 /**
@@ -533,7 +534,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     search: search || undefined,
     filter: countConditions(effectiveFilter) ? canonicalFilter(effectiveFilter) : undefined,
     ...(archive ? { archive: true } : {}),
-    sortBy: effectiveSort.sortBy,
+    sortBy: effectiveSort.sortBy === NO_SORT_BY ? undefined : effectiveSort.sortBy,
     sortDir: effectiveSort.sortDir,
     /*
       Exactly what the split view's queue reads, and nothing else — the open

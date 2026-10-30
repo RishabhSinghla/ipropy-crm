@@ -36,6 +36,9 @@ export interface SortOption {
   descHint: string;
 }
 
+/** URL/state sentinel for the explicit No sorting choice; never sent to API. */
+export const NO_SORT_BY = '__none__';
+
 const NEWEST = 'Newest first';
 const OLDEST = 'Oldest first';
 
@@ -48,6 +51,7 @@ const OLDEST = 'Oldest first';
  */
 export function sortOptions(taskField?: string): SortOption[] {
   const options: SortOption[] = [
+    { key: 'none', label: 'No sorting', by: NO_SORT_BY, ascHint: 'No direction', descHint: 'No direction' },
     { key: 'updated', label: 'Recently updated', by: 'updated_at', ascHint: OLDEST, descHint: NEWEST },
     { key: 'created', label: 'Recently created', by: 'created_at', ascHint: OLDEST, descHint: NEWEST },
     { key: 'agent', label: 'Agent wise', by: 'owner_id', ascHint: 'Agent name A–Z', descHint: 'Agent name Z–A' },
@@ -73,6 +77,6 @@ export function sortOptions(taskField?: string): SortOption[] {
  * button says which field it is instead of claiming one of these eight.
  */
 export function activeSortOption(options: SortOption[], sortBy: string | undefined): SortOption | null {
-  if (!sortBy) return options[0] ?? null;
+  if (!sortBy) return options.find((option) => option.key === 'updated') ?? options[0] ?? null;
   return options.find((option) => option.by === sortBy) ?? null;
 }

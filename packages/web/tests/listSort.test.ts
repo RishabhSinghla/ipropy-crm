@@ -15,9 +15,10 @@ import { describe, expect, it } from 'vitest';
 import { activeSortOption, sortOptions } from '../src/lib/listSort';
 
 describe('the list sort menu', () => {
-  it('offers the eight he asked for, and nothing about a field', () => {
+  it('offers the requested sort choices and nothing about a field', () => {
     const labels = sortOptions('next_followup_at').map((option) => option.label);
     expect(labels).toEqual([
+      'No sorting',
       'Recently updated',
       'Recently created',
       'Agent wise',
@@ -42,12 +43,11 @@ describe('the list sort menu', () => {
     expect(sortOptions('next_follow_up').find((o) => o.key === 'task')?.by).toBe('next_follow_up');
   });
 
-  // 1 October 2026: "No sorting" is gone and a list nobody sorted is
-  // Recently updated — the server's own default, so the button tells the truth.
+  // A list with no explicit choice still reflects the server's default order.
   it('reads Recently updated when nothing has been asked for', () => {
     const options = sortOptions('next_followup_at');
     expect(activeSortOption(options, undefined)?.key).toBe('updated');
-    expect(options.some((option) => option.label === 'No sorting')).toBe(false);
+    expect(activeSortOption(options, '__none__')?.key).toBe('none');
   });
 
   it('finds the row for an order that is on', () => {
