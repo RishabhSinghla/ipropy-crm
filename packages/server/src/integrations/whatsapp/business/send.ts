@@ -27,7 +27,7 @@ import { whyItFailed } from './whyItFailed.js';
 import { templateWording } from './templates.js';
 import { prepareOutgoingMedia } from './media.js';
 import { assertWithinLimits, takeSendSlot } from './openwaGuards.js';
-import { AUTOMATIC_MESSAGE_TEXT, isAutomationOnlyProvider } from './channelRoles.js';
+import { AUTOMATIC_MESSAGE_TEXT, isAutomationOnlyProvider, laneOfProvider, type Lane } from './channelRoles.js';
 
 export interface BusinessSendInput {
   userId: string;
@@ -44,6 +44,11 @@ export interface BusinessSendInput {
    */
   attachmentId?: string;
   recordId?: string | null;
+  /**
+   * The screen sending: 'chat' is the plain WhatsApp module (linked phone), 'api' the official API one.
+   * When given, that route's provider is used and nothing falls back to the other.
+   */
+  route?: Lane;
 }
 
 export interface BusinessSendResult {
@@ -95,13 +100,18 @@ async function moduleOfRecord(recordId: string | null): Promise<string | null> {
   return row?.name ?? null;
 }
 
-async function conversationFor(handle: string, recordId: string | null, userId: string): Promise<{
+async function conversationFor(handle: string, recordId: string | null, userId: string, lane: Lane): Promise<{
   id: string; windowOpen: boolean; waId: string | null;
 }> {
+  // (number, lane): a send on one route never lands in the other route's thread.
   const existing = await db.queryOne<{ id: string; window_expires_at: string | null; wa_id: string | null }>(
-    `SELECT id, window_expires_at, wa_id FROM ipy_conversation
-      WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL LIMIT 1`,
-    [handle],
+    `UPDATE ipy_conversation SET lane = COALESCE(lane, $2)
+      WHERE id = (SELECT id FROM ipy_conversation
+                   WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL
+                     AND (lane = $2 OR lane IS NULL)
+                   ORDER BY (lane IS NULL) LIMIT 1)
+      RETURNING id, window_expires_at, wa_id`,
+    [handle, lane],
   );
   if (existing) {
     /*
@@ -129,10 +139,10 @@ async function conversationFor(handle: string, recordId: string | null, userId: 
     };
   }
   const created = await db.queryOne<{ id: string }>(
-    `INSERT INTO ipy_conversation (channel, handle, record_id, record_module, assigned_to)
-     VALUES ('whatsapp', $1, $2, $3, $4)
+    `INSERT INTO ipy_conversation (channel, handle, record_id, record_module, assigned_to, lane)
+     VALUES ('whatsapp', $1, $2, $3, $4, $5)
      RETURNING id`,
-    [handle, recordId, await moduleOfRecord(recordId), userId],
+    [handle, recordId, await moduleOfRecord(recordId), userId, lane],
   );
   // Nobody has written to us, so there is no window: only a template may go.
   return { id: created!.id, windowOpen: false, waId: null };
@@ -218,7 +228,10 @@ export async function dialableNumber(
 
 export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<BusinessSendResult> {
   // Templates are the official route's job; everything typed by a person is chat.
-  const provider = activeBusinessProvider(input.template ? 'automation' : 'chat');
+  if (input.route === 'chat' && input.template) {
+    throw new BadRequestError('Templates belong to the WhatsApp API module; plain WhatsApp sends ordinary messages only.');
+  }
+  const provider = activeBusinessProvider(input.template || input.route === 'api' ? 'automation' : 'chat');
   if (!provider) throw new BadRequestError('No official WhatsApp provider is switched on.');
 
   const handle = matchKey(input.to);
@@ -248,7 +261,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     }
   }
 
-  const conversation = await conversationFor(handle, input.recordId ?? null, input.userId);
+  const conversation = await conversationFor(handle, input.recordId ?? null, input.userId, laneOfProvider(provider.name));
 
   const dialTo = await dialableNumber(conversation.waId, input.to, input.recordId ?? null);
   if (!dialTo) {

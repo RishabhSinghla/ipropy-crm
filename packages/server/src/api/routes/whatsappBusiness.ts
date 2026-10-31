@@ -41,7 +41,7 @@ import {
   approveCampaign, campaignRecipients, createCampaign, listCampaigns, previewCampaign,
   setCampaignStatus,
 } from '../../integrations/whatsapp/business/campaigns.js';
-import { redactAutomated, rolesInUse } from '../../integrations/whatsapp/business/channelRoles.js';
+import { plainLaneClause, redactAutomated, rolesInUse } from '../../integrations/whatsapp/business/channelRoles.js';
 import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.js';
 import {
   enableAllGroups, historyJobStatus, historySupported, listWaGroups, refreshGroupList, setGroupEnabled, startHistoryImport,
@@ -109,7 +109,8 @@ async function assertMayMessageOnLinkedDevice(
 
   const convo = await db.queryOne<{ id: string }>(
     `SELECT id FROM ipy_conversation
-      WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL LIMIT 1`,
+      WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL
+      ORDER BY (lane = 'chat') DESC NULLS LAST LIMIT 1`,
     [key],
   );
   if (!convo) throw new ForbiddenError('Open the contact first — the CRM only messages numbers it has a record or a chat for.');
@@ -255,6 +256,8 @@ const sendSchema = z.object({
    */
   attachmentId: z.string().uuid().optional(),
   recordId: z.string().uuid().optional(),
+  // Which module is sending: the plain WhatsApp one ('chat') or the official API one ('api').
+  route: z.enum(['chat', 'api']).optional(),
 }).refine((value) => {
   // A template is its own whole message: its wording is approved and frozen,
   // so a caption or an attachment alongside it has nowhere to go.
@@ -274,7 +277,7 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
   if (input.template && rolesInUse() && !user.isAdmin) {
     throw new ForbiddenError('Templates are sent automatically by the workflow; only admins can send one by hand.');
   }
-  if (!activeBusinessProvider(input.template ? 'automation' : 'chat')) throw new BadRequestError('No official WhatsApp provider is switched on.');
+  if (!activeBusinessProvider(input.template || input.route === 'api' ? 'automation' : 'chat')) throw new BadRequestError('No official WhatsApp provider is switched on.');
   if (input.attachmentId) await assertMaySendFile(req, input.attachmentId);
   await assertMayMessageOnLinkedDevice(req, input);
 
@@ -285,6 +288,7 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
     template: input.template,
     attachmentId: input.attachmentId,
     recordId: input.recordId ?? null,
+    route: user.isAdmin || !rolesInUse() ? input.route : 'chat',
   }));
 }));
 
@@ -446,6 +450,8 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
         -- that the business inbox has never held, and which read to the owner
         -- as messages appearing from nowhere. Kept in the table, not shown.
         AND c.wa_account_id IS NULL
+        -- Plain WhatsApp only: the official API's threads have their own module.
+        AND ${plainLaneClause('c')}
         AND (c.record_id = $1 OR ($2::text[] <> '{}' AND c.handle = ANY($2::text[])))
       ORDER BY m.created_at ASC
       LIMIT 500`,

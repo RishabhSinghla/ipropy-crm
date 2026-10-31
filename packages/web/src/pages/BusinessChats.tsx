@@ -217,6 +217,8 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
       text: input.text,
       attachmentId: input.attachmentId,
       recordId: active!.recordId ?? undefined,
+      // Each module sends on its own route only; never falls back to the other one.
+      route: route || undefined,
     }),
     onSuccess: () => { setDraft(''); refresh(); },
     onError: (err: Error) => {
@@ -725,10 +727,15 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
 function ChatQueueRow({ row, active, onSelect, modules, showWindow }: {
   row: ChatRow; active: boolean; onSelect: () => void; modules: ModuleSummary[] | undefined; showWindow: boolean;
 }): JSX.Element {
-  const who = row.recordLabel ?? row.contactName ?? row.handle;
+  // A chat not yet linked to a record still shows who holds that number, best match first (Contacts first,
+  // decided by the server) with a "+n" hint when more than one record has it.
+  const best = row.recordLabel ? null : row.owners?.[0] ?? null;
+  const more = row.recordLabel ? 0 : Math.max(0, (row.owners?.length ?? 0) - 1);
+  const who = row.recordLabel ?? best?.label ?? row.contactName ?? row.handle;
+  const shownModule = row.recordModule ?? best?.module ?? null;
   const replyWindow = windowLeft(row.windowExpiresAt);
-  const tag = moduleTag(modules?.find((entry) => entry.name === row.recordModule));
-  const tagColour = modules?.find((entry) => entry.name === row.recordModule)?.color;
+  const tag = moduleTag(modules?.find((entry) => entry.name === shownModule));
+  const tagColour = modules?.find((entry) => entry.name === shownModule)?.color;
 
   return (
     <button
@@ -778,6 +785,7 @@ function ChatQueueRow({ row, active, onSelect, modules, showWindow }: {
       <span className="min-w-0 flex-1 self-start">
         <span className="flex min-w-0 items-center gap-1">
           <span className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{who}</span>
+          {more > 0 && <span className="shrink-0 text-2xs font-bold text-slate-400" title="More records hold this number">+{more}</span>}
           {row.optedOut && (
             <BellOff className="h-3 w-3 shrink-0 text-rose-600 dark:text-rose-400" aria-label="Unsubscribed from WhatsApp" />
           )}
@@ -808,7 +816,7 @@ function ChatQueueRow({ row, active, onSelect, modules, showWindow }: {
         <span
           style={badgeVars(tagColour)}
           className="badge-tinted absolute right-2 top-0 rounded-b-md px-1.5 pb-px text-[9px] font-extrabold leading-tight tracking-wide"
-          title={`A record in ${modules?.find((entry) => entry.name === row.recordModule)?.label ?? ''}`}
+          title={`A record in ${modules?.find((entry) => entry.name === shownModule)?.label ?? ''}`}
         >
           {tag}
         </span>

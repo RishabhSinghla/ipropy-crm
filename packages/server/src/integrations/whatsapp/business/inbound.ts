@@ -31,6 +31,7 @@ import { matchContact, matchKey } from '../matchContact.js';
 import { businessProvider } from './registry.js';
 import { keepInboundMedia } from './media.js';
 import { HOLDER } from './inbox.js';
+import { laneOfProvider, type Lane } from './channelRoles.js';
 import { whyItFailed } from './whyItFailed.js';
 import { consentKeyword, recordConsent } from '../../../core/consent/index.js';
 import { tellWhatsMarketingAboutConsent } from './consentSync.js';
@@ -88,13 +89,18 @@ async function pruneEvents(conn: Tx): Promise<void> {
  */
 async function conversationFor(
   conn: Tx, handle: string, recordId: string | null, contactName: string | null,
-  waId: string | null,
+  waId: string | null, lane: Lane,
 ): Promise<{ id: string; assignedTo: string | null }> {
+  // A conversation is (number, lane): the same customer on the other route is a different thread.
+  // A message-less thread from before lanes (lane NULL) is adopted by whichever lane writes first.
   const existing = await conn.queryOne<{ id: string; assigned_to: string | null }>(
-    `SELECT id, assigned_to FROM ipy_conversation
-      WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL
-      LIMIT 1`,
-    [handle],
+    `UPDATE ipy_conversation SET lane = COALESCE(lane, $2)
+      WHERE id = (SELECT id FROM ipy_conversation
+                   WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL
+                     AND (lane = $2 OR lane IS NULL)
+                   ORDER BY (lane IS NULL) LIMIT 1)
+      RETURNING id, assigned_to`,
+    [handle, lane],
   );
   if (existing) {
     /*
@@ -138,10 +144,10 @@ async function conversationFor(
     : null;
 
   const created = await conn.queryOne<{ id: string }>(
-    `INSERT INTO ipy_conversation (channel, handle, contact_name, record_id, record_module, assigned_to, wa_id)
-     VALUES ('whatsapp', $1, $2, $3, $4, $5, $6)
+    `INSERT INTO ipy_conversation (channel, handle, contact_name, record_id, record_module, assigned_to, wa_id, lane)
+     VALUES ('whatsapp', $1, $2, $3, $4, $5, $6, $7)
      RETURNING id`,
-    [handle, contactName, recordId, recordId ? MODULE : null, owner?.owner_id ?? null, waId],
+    [handle, contactName, recordId, recordId ? MODULE : null, owner?.owner_id ?? null, waId, lane],
   );
   return { id: created!.id, assignedTo: owner?.owner_id ?? null };
 }
@@ -177,7 +183,7 @@ export async function recordSentElsewhere(provider: string, message: {
     if (!await claimEvent(conn, provider, 'message', `sent:${message.providerMessageId}`)) return false;
 
     const conversation = await conversationFor(
-      conn, handle, recordId, null, String(message.to).replace(/\D/g, '') || null,
+      conn, handle, recordId, null, String(message.to).replace(/\D/g, '') || null, laneOfProvider(provider),
     );
     const body = message.text ?? message.media?.caption ?? null;
 
@@ -258,6 +264,7 @@ export async function receiveInbound(
       // WhatsApp's own id for the sender, digits only. Authoritative in a way
       // a phone field typed by a person never is.
       String(message.from ?? '').replace(/\D/g, '') || null,
+      laneOfProvider(provider),
     );
 
     const body = message.text

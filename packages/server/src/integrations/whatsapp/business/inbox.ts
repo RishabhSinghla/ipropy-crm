@@ -19,7 +19,7 @@ import { BadRequestError, NotFoundError } from '../../../utils/errors.js';
 import { notify } from '../../../core/notifications/index.js';
 import { replyWindowAlwaysOpen } from './registry.js';
 import { findOwnersOfNumbers, ownerKey, type NumberOwner } from '../numberOwners.js';
-import { redactAutomated, routeClause, type RouteView } from './channelRoles.js';
+import { laneClause, redactAutomated, routeClause, type RouteView } from './channelRoles.js';
 
 export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread' | 'unmatched';
 
@@ -133,10 +133,10 @@ export async function listConversations(input: {
     see.clause,
   ];
 
-  const onRoute = routeClause(input.route, input.isAdmin, 'rm');
-  if (onRoute !== 'TRUE') {
-    where.push(`EXISTS (SELECT 1 FROM ipy_message rm WHERE rm.conversation_id = c.id AND ${onRoute})`);
-  }
+  // A conversation lives in exactly one lane (see migration 229), so the list, previews, unread counts
+  // and search hits of one screen can never include the other route's threads.
+  const lane = laneClause(input.route, input.isAdmin, 'c');
+  if (lane !== 'TRUE') where.push(lane);
 
   if (input.filter === 'mine') {
     params.push(input.userId);
@@ -152,17 +152,21 @@ export async function listConversations(input: {
     where.push(`c.record_module = $${params.length}`);
   }
 
-  if (input.search?.trim()) {
-    params.push(`%${input.search.trim().toLowerCase()}%`);
-    where.push(`(
+  const term = input.search?.trim().toLowerCase() ?? '';
+  let hit = 'TRUE';
+  if (term) {
+    params.push(`%${term}%`);
+    hit = `(
       lower(coalesce(c.contact_name, '')) LIKE $${params.length}
       OR c.handle LIKE $${params.length}
       OR lower(coalesce(c.last_message_preview, '')) LIKE $${params.length}
       OR lower(coalesce(r.label, '')) LIKE $${params.length}
-    )`);
+    )`;
+    // Chats not linked to a record are also kept so the name of whoever holds the number can match, below.
+    where.push(`(${hit} OR c.record_id IS NULL)`);
   }
 
-  params.push(Math.min(input.limit ?? 100, 1000));
+  params.push(term ? 1000 : Math.min(input.limit ?? 100, 1000));
 
   const { rows } = await db.query<{
     id: string; handle: string; contact_name: string | null; record_id: string | null;
@@ -171,13 +175,14 @@ export async function listConversations(input: {
     last_message_at: string | null; last_message_preview: string | null;
     window_expires_at: string | null;
     wa_id: string | null;
-    opted_out: boolean;
+    opted_out: boolean; term_hit: boolean;
   }>(
     `SELECT c.id, c.handle, c.contact_name, c.record_id, c.record_module,
             r.label AS record_label, ${HOLDER} AS assigned_to,
             trim(u.first_name || ' ' || u.last_name) AS assigned_name,
             c.status, c.unread_count, c.last_message_at, c.last_message_preview,
-            c.window_expires_at, c.wa_id, ${OPTED_OUT} AS opted_out
+            c.window_expires_at, c.wa_id, ${OPTED_OUT} AS opted_out,
+            (${hit}) AS term_hit
        FROM ipy_conversation c
        LEFT JOIN ipy_record r ON r.id = c.record_id
        LEFT JOIN ipy_user u ON u.id = ${HOLDER}
@@ -191,7 +196,11 @@ export async function listConversations(input: {
   const alwaysOpen = replyWindowAlwaysOpen();
   // Resolved at read time, so chats that already exist are covered, not only new ones.
   const owners = await findOwnersOfNumbers(rows.filter((r) => !r.record_id).map((r) => r.wa_id ?? r.handle));
-  return rows.map((row) => ({
+  const wanted = term
+    ? rows.filter((row) => row.term_hit
+      || (owners.get(ownerKey(row.wa_id ?? row.handle) ?? '') ?? []).some((o) => o.label.toLowerCase().includes(term)))
+    : rows;
+  return wanted.slice(0, Math.min(input.limit ?? 100, 1000)).map((row) => ({
     id: row.id,
     handle: row.handle,
     contactName: row.contact_name,
@@ -226,7 +235,7 @@ export async function readableConversation(
     `SELECT id, handle, record_id, ${HOLDER} AS assigned_to
        FROM ipy_conversation c
       WHERE c.id = $1 AND c.channel = 'whatsapp' AND c.wa_account_id IS NULL
-        AND ${see.clause}`,
+        AND ${see.clause} AND ${laneClause(undefined, isAdmin, 'c')}`,
     params,
   );
   if (!row) throw new NotFoundError('That conversation is not in your inbox.');
@@ -236,7 +245,13 @@ export async function readableConversation(
 export async function conversationMessages(
   userId: string, isAdmin: boolean, conversationId: string, route?: RouteView,
 ): Promise<Record<string, unknown>[]> {
-  await readableConversation(userId, isAdmin, conversationId);
+  const convo = await readableConversation(userId, isAdmin, conversationId);
+  if (route) {
+    const inLane = await db.queryOne(
+      `SELECT 1 FROM ipy_conversation c WHERE c.id = $1 AND ${laneClause(route, isAdmin, 'c')}`, [convo.id],
+    );
+    if (!inLane) throw new NotFoundError('That conversation is not on this WhatsApp screen.');
+  }
   const { rows } = await db.query(
     `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.error_message,
             m.template_name, m.created_at, m.delivered_at, m.read_at, m.route, m.provider,
