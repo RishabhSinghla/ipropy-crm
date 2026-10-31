@@ -141,7 +141,7 @@ commsRouter.post('/rcs/messages', asyncHandler(async (req, res) => {
      -- The predicate is required, not decoration: since migration 156 the old
      -- (channel, handle) unique is a *partial* index, and Postgres will not
      -- infer a partial index unless the statement repeats its WHERE clause.
-     ON CONFLICT (channel, handle) WHERE wa_account_id IS NULL
+     ON CONFLICT (channel, handle) WHERE wa_account_id IS NULL AND lane IS NULL
        DO UPDATE SET last_message_at = now(), last_message_preview = EXCLUDED.last_message_preview
      RETURNING id`, [input.to, input.recordId ?? null, input.module ?? null, user.id, input.text.slice(0, 240)],
   );

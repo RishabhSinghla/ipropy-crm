@@ -18,6 +18,7 @@ let repToken = '';
 let adminTok = '';
 let leadId = '';
 let conversationId = '';
+let apiConversationId = '';
 const previousRoles = channelRoles();
 
 beforeAll(async () => {
@@ -27,36 +28,43 @@ beforeAll(async () => {
   const lead = await recordService.createRecord(await contextFor(SEEDED.executiveA), 'leads', leadInput({ full_name: `AgentView ${stamp}`, mobile: MOBILE, country_code: '+91' }));
   leadId = lead.id;
   const convo = await db.queryOne<{ id: string }>(
-    `INSERT INTO ipy_conversation (channel, handle, contact_name, record_id, record_module) VALUES ('whatsapp', $1, $2, $3, 'leads') RETURNING id`,
+    `INSERT INTO ipy_conversation (channel, handle, contact_name, record_id, record_module, lane) VALUES ('whatsapp', $1, $2, $3, 'leads', 'chat') RETURNING id`,
     [`+91${MOBILE}`, `AgentView ${stamp}`, leadId],
   );
   conversationId = convo!.id;
-  for (const [direction, provider, body] of [
-    ['inbound', 'whatsapp_openwa', 'customer says hello'],
-    ['outbound', 'whatsapp_openwa', 'the rep typed this reply'],
-    ['outbound', 'whatsapp_whatsmarketing', 'AUTOMATIC TEMPLATE WORDS SECRET'],
+  // The same customer on the official API is a separate conversation: the contact's tab is plain WhatsApp only.
+  const apiConvo = await db.queryOne<{ id: string }>(
+    `INSERT INTO ipy_conversation (channel, handle, contact_name, record_id, record_module, lane) VALUES ('whatsapp', $1, $2, $3, 'leads', 'api') RETURNING id`,
+    [`+91${MOBILE}`, `AgentView ${stamp}`, leadId],
+  );
+  apiConversationId = apiConvo!.id;
+  for (const [convoId, direction, provider, body] of [
+    [conversationId, 'inbound', 'whatsapp_openwa', 'customer says hello'],
+    [conversationId, 'outbound', 'whatsapp_openwa', 'the rep typed this reply'],
+    [apiConversationId, 'outbound', 'whatsapp_whatsmarketing', 'AUTOMATIC TEMPLATE WORDS SECRET'],
   ] as const) {
-    await db.query(`INSERT INTO ipy_message (conversation_id, direction, channel, status, provider, route, body) VALUES ($1, $2, 'whatsapp', 'sent', $3, 'business', $4)`, [conversationId, direction, provider, body]);
+    await db.query(`INSERT INTO ipy_message (conversation_id, direction, channel, status, provider, route, body) VALUES ($1, $2, 'whatsapp', 'sent', $3, 'business', $4)`, [convoId, direction, provider, body]);
   }
   setChannelRolesInMemory({ automation: 'whatsapp_whatsmarketing', chat: 'whatsapp_openwa' });
 });
 
 afterAll(async () => {
   setChannelRolesInMemory(previousRoles);
-  await db.query(`DELETE FROM ipy_conversation WHERE id = $1`, [conversationId]);
+  await db.query(`DELETE FROM ipy_conversation WHERE id = ANY($1::uuid[])`, [[conversationId, apiConversationId]]);
   await db.query(`DELETE FROM ipy_record WHERE id = $1`, [leadId]);
 });
 
 const read = (token: string) => request(app).get(`/api/whatsapp-business/contacts/leads/${leadId}/messages`).set('Authorization', `Bearer ${token}`);
 
 describe('a rep reading the contact\'s WhatsApp tab', () => {
-  it('sees the chat and the customer, an automatic message only as a stand-in, and never a provider or route', async () => {
+  it('sees the chat and the customer, never the API messages, and never a provider or route', async () => {
     const res = await read(repToken);
     expect(res.status).toBe(200);
     const bodies = res.body.messages.map((m: { body: string }) => m.body);
     expect(bodies).toContain('customer says hello');
     expect(bodies).toContain('the rep typed this reply');
-    expect(bodies).toContain(AUTOMATIC_MESSAGE_TEXT);
+    // The official API's messages live in their own module and never appear on this tab.
+    expect(bodies).not.toContain(AUTOMATIC_MESSAGE_TEXT);
     expect(JSON.stringify(res.body)).not.toContain('AUTOMATIC TEMPLATE WORDS SECRET');
     for (const m of res.body.messages) {
       expect(m).not.toHaveProperty('provider');
@@ -70,10 +78,10 @@ describe('a rep reading the contact\'s WhatsApp tab', () => {
 });
 
 describe('an administrator', () => {
-  it('sees the real words and which route each message used', async () => {
+  it('sees which route each plain message used, and none from the API route', async () => {
     const res = await read(adminTok);
-    const auto = res.body.messages.find((m: { body: string }) => m.body === 'AUTOMATIC TEMPLATE WORDS SECRET');
-    expect(auto).toMatchObject({ automated: true, via: 'api' });
+    // Even an admin does not get the API route's messages mixed into the plain WhatsApp tab.
+    expect(res.body.messages.find((m: { body: string }) => m.body === 'AUTOMATIC TEMPLATE WORDS SECRET')).toBeUndefined();
     const chat = res.body.messages.find((m: { body: string }) => m.body === 'the rep typed this reply');
     expect(chat.via).toBe('openwa');
   });

@@ -16,7 +16,7 @@ import { db } from '../../../db/pool.js';
 import { BadRequestError } from '../../../utils/errors.js';
 import { matchKey } from '../matchContact.js';
 import { replyWindowAlwaysOpen } from './registry.js';
-import { redactAutomated } from './channelRoles.js';
+import { plainLaneClause, redactAutomated } from './channelRoles.js';
 
 export interface NumberThread {
   handle: string;
@@ -46,6 +46,7 @@ export async function threadForNumber(to: string, withMessages: boolean, isAdmin
        FROM ipy_conversation c
        LEFT JOIN ipy_user u ON u.id = c.assigned_to
       WHERE c.channel = 'whatsapp' AND c.handle = $1 AND c.wa_account_id IS NULL
+        AND ${plainLaneClause('c')}
       LIMIT 1`,
     [handle],
   );

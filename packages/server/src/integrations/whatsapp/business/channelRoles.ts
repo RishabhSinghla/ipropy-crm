@@ -122,3 +122,39 @@ export function routeClause(view: RouteView | undefined, isAdmin: boolean, alias
     ? `${alias}.provider = '${auto}'`
     : `${alias}.provider IS DISTINCT FROM '${auto}'`;
 }
+
+/**
+ * A business conversation belongs to exactly one lane, and that is the whole of
+ * the separation between the two WhatsApp screens: `chat` is the linked phone
+ * (OpenWA), `api` is the official API. A customer who has used both has two
+ * conversations, one per lane — never one thread carrying both.
+ *
+ * Decided by the provider a message actually came from or went through, never
+ * by a screen's say-so, so it cannot drift.
+ */
+export type Lane = 'chat' | 'api';
+
+export const CHAT_PROVIDER = 'whatsapp_openwa';
+
+export function laneOfProvider(providerName: string): Lane {
+  return providerName === CHAT_PROVIDER ? 'chat' : 'api';
+}
+
+/**
+ * A SQL condition on `<alias>.lane` for one screen.
+ *
+ * With the routes not split (no automation route) there is one screen and no
+ * condition. When split, an admin sees the lane of the screen they are on, and
+ * everybody else only ever sees the chat lane.
+ */
+export function laneClause(view: RouteView | undefined, isAdmin: boolean, alias = 'c'): string {
+  if (!automationOnlyRoute()) return 'TRUE';
+  if (!isAdmin) return `${alias}.lane = 'chat'`;
+  if (!view) return 'TRUE';
+  return `${alias}.lane = '${view === 'api' ? 'api' : 'chat'}'`;
+}
+
+/** The plain-WhatsApp-only condition: the record tab and the composer beside a number. */
+export function plainLaneClause(alias = 'c'): string {
+  return automationOnlyRoute() ? `${alias}.lane = 'chat'` : 'TRUE';
+}
