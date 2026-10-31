@@ -25,6 +25,10 @@ const sightingsOf = async (post: string): Promise<string[]> =>
 const misread = (month: number, day: number, hour: number, minute: number): string =>
   new Date(Date.UTC(2026, day - 1, month, hour - 5, minute - 30)).toISOString();
 
+// A sighting whose real date lies in the future, so the migration must drop it. The migration only
+// reads dates inside 2026, so this is the last day it can represent; it was 31 October until the clock got there.
+const FUTURE = misread(12, 31, 9, 15);
+
 const NEW_ONLY = `${group} brand new deal`;
 const OLD_AND_NEW = `${group} older deal seen again`;
 const ELSEWHERE = `${group} other group untouched`;
@@ -67,9 +71,9 @@ beforeAll(async () => {
   await db.query(`INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
                   SELECT id, $2, $3::timestamptz, 'B' FROM ipy_market_post WHERE body = $1`, [NEW_ONLY, group, misread(10, 20, 16, 32)]);
   // The old deal was seen again in the bad import: its dates were pushed forward by GREATEST.
-  await db.query(`UPDATE ipy_market_post SET last_posted_at = $2::timestamptz WHERE body = $1`, [OLD_AND_NEW, misread(10, 31, 9, 15)]);
+  await db.query(`UPDATE ipy_market_post SET last_posted_at = $2::timestamptz WHERE body = $1`, [OLD_AND_NEW, FUTURE]);
   await db.query(`INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
-                  SELECT id, $2, $3::timestamptz, 'B' FROM ipy_market_post WHERE body = $1`, [OLD_AND_NEW, group, misread(10, 31, 9, 15)]);
+                  SELECT id, $2, $3::timestamptz, 'B' FROM ipy_market_post WHERE body = $1`, [OLD_AND_NEW, group, FUTURE]);
   // And one that landed on a valid but wrong day: 5 September, read as 9 May.
   await db.query(`INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
                   SELECT id, $2, $3::timestamptz, 'C' FROM ipy_market_post WHERE body = $1`, [NEW_ONLY, group, misread(9, 5, 9, 0)]);
@@ -95,7 +99,7 @@ describe('migration 215 puts misread dates back', () => {
     expect(await sightingsOf(NEW_ONLY)).toEqual(['2026-09-05T03:30:00.000Z', '2026-10-20T11:02:00.000Z']);
     expect(await posted(NEW_ONLY)).toEqual({ first: '2026-09-05T03:30:00.000Z', last: '2026-10-20T11:02:00.000Z' });
 
-    // The older deal keeps its real earlier sighting. The second one reads back as 31 October, which has not happened
+    // The older deal keeps its real earlier sighting. The second one reads back as 31 December, which has not happened
     // yet, so it is dropped rather than believed — and the deal's dates come from the sighting that is left.
     const old = await posted(OLD_AND_NEW);
     expect(old.first).toBe('2026-09-20T04:30:00.000Z');
