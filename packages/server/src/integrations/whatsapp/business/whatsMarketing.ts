@@ -157,7 +157,7 @@ function outcome(answer: Record<string, unknown>): SendOutcome {
     `queued`, not `sent`. Their API answers as soon as it has taken the message,
     and the real sent/delivered/read comes back from the status endpoint — so
     claiming `sent` here would show the customer a tick their phone has not
-    earned. The same reasoning as the Gupshup adapter.
+    earned.
   */
   return { providerMessageId: id, status: 'queued' };
 }

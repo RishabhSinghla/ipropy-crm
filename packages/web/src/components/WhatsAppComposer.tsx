@@ -26,7 +26,7 @@ import { readMessageMedia, WhatsAppMedia } from './WhatsAppMedia';
  *    templates instead of a box that would fail on send — with the finished
  *    wording shown first, since a positional template says nothing in the
  *    abstract.
- *  * **What the live provider can actually do.** AiSensy's API sends templates
+ *  * **What the live provider can actually do.** Some providers' APIs send templates
  *    and nothing else, so the box is not offered there at all.
  *  * **Whether there is an official number at all.** With no provider switched
  *    on there is nothing to send from, and the icon goes back to opening the

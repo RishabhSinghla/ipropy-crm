@@ -152,7 +152,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
   /*
     **Both halves, not just the clock.** A free reply needs an open 24-hour
-    window *and* a provider that can carry one — AiSensy's API sends approved
+    window *and* a provider that can carry one — some providers' APIs send approved
     templates and nothing else, window or no window. The record's composer has
     always asked `composerMode`; this screen only looked at the window, so on
     such a provider it would offer a box whose every send was refused.
@@ -265,7 +265,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
         <EmptyState
           icon={<MessageCircle className="h-8 w-8" />}
           title="WhatsApp Business is not connected yet"
-          body="An admin adds a provider — Meta Cloud API, AiSensy, Gupshup or whatsmarketing.in — in Admin → Integrations, pastes its credentials and presses Test."
+          body="An admin adds a provider — Meta Cloud API, OpenWA or whatsmarketing.in — in Admin → Integrations, pastes its credentials and presses Test."
           action={<Link className="btn-primary btn-sm" to="/admin/integrations">Open Integrations</Link>}
         />
       </div>

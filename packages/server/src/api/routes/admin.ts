@@ -1287,8 +1287,6 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         this is what lets somebody press the button.
       */
       case 'whatsapp_meta':
-      case 'whatsapp_aisensy':
-      case 'whatsapp_gupshup':
       case 'whatsapp_whatsmarketing':
       case 'whatsapp_openwa': {
         const { businessProvider } = await import('../../integrations/whatsapp/business/registry.js');

@@ -571,6 +571,13 @@ can set a header.
 
 ---
 
+> **31 October 2026: the AiSensy and Gupshup providers are removed** (code, cards, tests; migration `228`
+> deletes their unused cards). References to them below are history. The live providers are
+> whatsmarketing.in, Meta Cloud and OpenWA.
+> **Brand colour on refresh:** `public/brand-boot.js` (a file, because CSP forbids inline scripts) replays the
+> shades `applyBrandColour` cached in `localStorage['ipropy.brandVars']` before first paint, so a refresh no
+> longer flashes the stylesheet's default violet before the saved brand loads.
+
 ## WhatsApp is gone. Do not rebuild it without being asked.
 
 **Removed on 2026-09-17, on the owner's instruction:** *"whatever whatsapp thing we have

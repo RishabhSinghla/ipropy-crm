@@ -115,18 +115,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'appSecret', label: 'App secret', source: 'credentials', secret: true },
     { key: 'apiVersion', label: 'Graph API version', source: 'config', placeholder: 'v21.0' },
   ],
-  whatsapp_aisensy: [
-    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
-    { key: 'businessNumber', label: 'Your WhatsApp business number', source: 'config', placeholder: '919876543210' },
-    { key: 'campaignName', label: 'Default campaign name', source: 'config' },
-    { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
-  ],
-  whatsapp_gupshup: [
-    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
-    { key: 'source', label: 'Source number', source: 'config', placeholder: '919876543210' },
-    { key: 'appName', label: 'App name', source: 'config' },
-    { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
-  ],
   /*
     Read off WhatsMarketing's own API documentation (v1.0), not guessed. Their
     token is `apiToken` in the form body rather than a Bearer header, and there
@@ -287,7 +275,7 @@ const TESTABLE = new Set([
     `testConnection`; a provider added here without one gets the honest
     "does not support a connectivity test" from the server instead.
   */
-  'whatsapp_meta', 'whatsapp_aisensy', 'whatsapp_gupshup', 'whatsapp_whatsmarketing', 'whatsapp_openwa',
+  'whatsapp_meta', 'whatsapp_whatsmarketing', 'whatsapp_openwa',
 ]);
 
 /**
@@ -385,30 +373,6 @@ const GUIDES: Record<string, Guide> = {
       { title: 'We made you a verify token', help: 'Meta asks for a password of your choosing when you set up the webhook. Here is one — paste it into Meta in the next step.', field: 'verifyToken', generate: true },
       { title: 'App secret', help: 'App settings → Basic → App secret. It is what proves an incoming message really came from Meta, so nobody can post fake customer messages into your CRM.', field: 'appSecret' },
       { title: 'Point Meta at us', help: 'WhatsApp → Configuration → Webhook. Use this callback URL and the verify token above, then subscribe to the "messages" field.', copyPath: '/api/webhooks/whatsapp/meta' },
-    ],
-  },
-  whatsapp_aisensy: {
-    outcome: 'Send your approved WhatsApp templates through AiSensy, with replies landing on the contact in the CRM.',
-    minutes: 8,
-    steps: [
-      { title: 'Get your AiSensy API key', help: 'AiSensy dashboard → Manage → API Key. It is a long token.', href: 'https://app.aisensy.com', linkLabel: 'Open AiSensy' },
-      { title: 'Paste the key', help: 'Nothing else about your AiSensy account is read.', field: 'apiKey' },
-      { title: 'Your business number', help: 'The number AiSensy sends from, digits only with the country code — for example 919876543210.', field: 'businessNumber' },
-      { title: 'Default campaign name', help: 'AiSensy sends approved templates as campaigns, so each template needs a live API campaign. Name the one to fall back on when a template has no campaign of its own.', field: 'campaignName' },
-      { title: 'We made you a webhook token', help: 'A password AiSensy sends back with each incoming message, so nobody else can post into your CRM.', field: 'webhookToken', generate: true },
-      { title: 'Point AiSensy at us', help: 'AiSensy → Manage → Webhook. Paste this URL and the token above.', copyPath: '/api/webhooks/whatsapp/aisensy' },
-    ],
-  },
-  whatsapp_gupshup: {
-    outcome: 'Send and receive WhatsApp through Gupshup — free typing as well as templates — with every thread on the contact.',
-    minutes: 8,
-    steps: [
-      { title: 'Get your Gupshup API key', help: 'Gupshup dashboard → your profile → API key.', href: 'https://www.gupshup.io/whatsapp/dashboard', linkLabel: 'Open Gupshup' },
-      { title: 'Paste the key', help: 'It is a long string of letters and numbers.', field: 'apiKey' },
-      { title: 'Source number', help: 'The WhatsApp number Gupshup sends from, digits only with the country code.', field: 'source' },
-      { title: 'App name', help: 'The name of your Gupshup app, exactly as their dashboard spells it. Templates are pulled in by this name, so a typo means no templates.', field: 'appName' },
-      { title: 'We made you a webhook token', help: 'A password Gupshup sends back with each incoming message, so nobody else can post into your CRM.', field: 'webhookToken', generate: true },
-      { title: 'Point Gupshup at us', help: 'Gupshup → your app → Callback URL. Paste this URL and the token above.', copyPath: '/api/webhooks/whatsapp/gupshup' },
     ],
   },
   whatsapp_whatsmarketing: {
@@ -738,7 +702,7 @@ const JOBS: JobDef[] = [
     title: 'WhatsApp',
     blurb: 'Message buyers from your official business number, with every thread on the contact.',
     icon: MessageCircle,
-    providers: ['whatsapp_whatsmarketing', 'whatsapp_aisensy', 'whatsapp_gupshup', 'whatsapp_meta', 'whatsapp_openwa'],
+    providers: ['whatsapp_whatsmarketing', 'whatsapp_meta', 'whatsapp_openwa'],
     recommended: 'whatsapp_whatsmarketing',
     wanted: true,
     short: 'WhatsApp',

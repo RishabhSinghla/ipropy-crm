@@ -6,16 +6,13 @@
  * lands seconds after the first with no way to tell which one a rep saw.
  *
  * Everything else in the CRM asks here rather than importing a vendor, which
- * is the whole point of the layer — moving from AiSensy to Gupshup is an admin
+ * is the whole point of the layer — moving between providers is an admin
  * switching a card, and no conversation moves anywhere.
  */
 import {
   firstActiveIntegration, getIntegrationCredentials,
 } from '../../../core/settings/integrations.js';
 import { metaCloudProvider, META_PROVIDER } from './metaCloud.js';
-import {
-  aisensyProvider, AISENSY_PROVIDER, gupshupProvider, GUPSHUP_PROVIDER,
-} from './resellers.js';
 import { whatsMarketingProvider, WHATSMARKETING_PROVIDER } from './whatsMarketing.js';
 import { openWaProvider, OPENWA_PROVIDER } from './openwa.js';
 import type { WhatsAppBusinessProvider } from './types.js';
@@ -29,8 +26,6 @@ export type RouteJob = 'automation' | 'chat';
 /** In the order an admin sees them, which is also the order a tie is broken. */
 export const BUSINESS_PROVIDERS: { id: string; label: string; provider: WhatsAppBusinessProvider }[] = [
   { id: META_PROVIDER, label: 'Meta Cloud API (direct)', provider: metaCloudProvider },
-  { id: AISENSY_PROVIDER, label: 'AiSensy', provider: aisensyProvider },
-  { id: GUPSHUP_PROVIDER, label: 'Gupshup', provider: gupshupProvider },
   { id: WHATSMARKETING_PROVIDER, label: 'whatsmarketing.in', provider: whatsMarketingProvider },
   { id: OPENWA_PROVIDER, label: 'OpenWA (linked device)', provider: openWaProvider },
 ];

@@ -98,8 +98,7 @@ webhooksRouter.post('/sarvam/:secret', asyncHandler(async (req, res) => {
 /*
   The official WhatsApp Business route, whichever provider is carrying it.
 
-  One URL per provider — `/api/webhooks/whatsapp/aisensy`, `…/gupshup`,
-  `…/meta`, `…/whatsmarketing` — so the business can run one today and another
+  One URL per provider — `/api/webhooks/whatsapp/meta`, `…/whatsmarketing` — so the business can run one today and another
   next year without re-registering a URL, and so a delivery that arrives on the
   wrong door is refused rather than parsed by the wrong adapter.
 

@@ -96,7 +96,7 @@ export async function syncTemplates(): Promise<{ added: string[]; updated: strin
       added: [],
       updated: [],
       removed: [],
-      // AiSensy publishes no template list, so its templates are added by hand
+      // A provider with no template list means templates are added by hand
       // and this says so rather than reporting an empty success.
       skipped: `${provider.name} does not hand its template list back, so add them here by name.`,
     };

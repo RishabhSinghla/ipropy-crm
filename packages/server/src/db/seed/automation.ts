@@ -399,8 +399,6 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
       the registry takes the first switched on.
     */
     { provider: 'whatsapp_meta', kind: 'messaging', label: 'WhatsApp Business — Meta Cloud API' },
-    { provider: 'whatsapp_aisensy', kind: 'messaging', label: 'WhatsApp Business — AiSensy' },
-    { provider: 'whatsapp_gupshup', kind: 'messaging', label: 'WhatsApp Business — Gupshup' },
     { provider: 'whatsapp_whatsmarketing', kind: 'messaging', label: 'WhatsApp Business — whatsmarketing.in' },
     { provider: 'whatsapp_openwa', kind: 'messaging', label: 'WhatsApp — OpenWA (linked device)' },
     { provider: 'housing', kind: 'lead_source', label: 'Housing.com' },

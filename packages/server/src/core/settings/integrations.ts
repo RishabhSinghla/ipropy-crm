@@ -643,8 +643,6 @@ const SECRET_FIELDS: Record<string, string[]> = {
   // anything that leaves this list is a key the admin panel would hand back in
   // plaintext to whoever opened the page.
   whatsapp_meta: ['accessToken', 'appSecret', 'verifyToken'],
-  whatsapp_aisensy: ['apiKey', 'webhookToken'],
-  whatsapp_gupshup: ['apiKey', 'webhookToken'],
   whatsapp_whatsmarketing: ['apiToken', 'webhookToken'],
   // OpenWA: the gateway's API key, and the secret its webhooks are signed with.
   whatsapp_openwa: ['apiKey', 'webhookSecret'],

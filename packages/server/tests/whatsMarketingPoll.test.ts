@@ -254,7 +254,7 @@ describe('pulling replies in', () => {
   });
 
   it('does nothing at all when another provider is the live one', async () => {
-    active.name = 'whatsapp_gupshup';
+    active.name = 'whatsapp_meta';
     wire([{ chat_id: '919811533633' }], [customerSaid('hey', RECENT)]);
     expect(await pollWhatsMarketingInbound()).toEqual({ checked: 0, stored: 0 });
     expect(received.calls).toHaveLength(0);

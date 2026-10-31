@@ -149,7 +149,7 @@ whatsappBusinessRouter.use(
  * What the CRM can do on WhatsApp right now.
  *
  * Every screen asks this before offering a control: a provider that cannot
- * send free text (AiSensy's campaign API is templates only) should show the
+ * send free text (some providers are templates only) should show the
  * template picker rather than a message box that fails on send.
  */
 /**

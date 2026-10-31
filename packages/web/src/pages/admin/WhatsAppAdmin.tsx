@@ -270,8 +270,6 @@ function label(provider: string): string {
   const names: Record<string, string> = {
     whatsapp_whatsmarketing: 'WhatsMarketing',
     whatsapp_meta: 'Meta Cloud API',
-    whatsapp_aisensy: 'AiSensy',
-    whatsapp_gupshup: 'Gupshup',
     whatsapp_openwa: 'OpenWA',
   };
   return names[provider] ?? provider;

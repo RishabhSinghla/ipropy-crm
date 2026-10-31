@@ -16,7 +16,7 @@ describe('what the composer offers', () => {
   });
 
   it('never offers a box on a provider that sends templates only', () => {
-    // AiSensy's campaign API, which is the whole reason this is not just a
+    // a templates-only API, which is the whole reason this is not just a
     // window check.
     expect(composerMode(['templates'], true)).toBe('template');
     expect(composerMode(['templates'], false)).toBe('template');
@@ -24,7 +24,7 @@ describe('what the composer offers', () => {
 
   it('says which of the two reasons applies', () => {
     expect(whyNoTextBox(['text'], 'Meta Cloud API')).toMatch(/24 hours/);
-    expect(whyNoTextBox(['templates'], 'AiSensy')).toBe('AiSensy sends approved templates only.');
+    expect(whyNoTextBox(['templates'], 'ExampleBsp')).toBe('ExampleBsp sends approved templates only.');
     expect(whyNoTextBox(['templates'], null)).toMatch(/^This provider/);
   });
 });

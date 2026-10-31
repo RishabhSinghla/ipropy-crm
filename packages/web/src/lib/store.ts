@@ -70,6 +70,7 @@ export function applyBrandColour(hex: string | null | undefined): void {
   const isDefault = !hex || /^#6366f1$/i.test(hex.trim());
   if (isDefault || !/^#[0-9a-f]{6}$/i.test(hex)) {
     for (let i = 50; i <= 950; i += 50) root.style.removeProperty(`--brand-${i}`);
+    try { localStorage.removeItem('ipropy.brandVars'); } catch { /* storage blocked */ }
     return;
   }
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -149,9 +150,13 @@ export function applyBrandColour(hex: string | null | undefined): void {
     900: shade(0.22),
     950: shade(0.16, Math.min(sat, 0.5)),
   };
+  const vars: Record<string, string> = {};
   for (const [step, value] of Object.entries(steps)) {
     root.style.setProperty(`--brand-${step}`, value);
+    vars[`--brand-${step}`] = value;
   }
+  // public/brand-boot.js replays these before first paint on the next refresh.
+  try { localStorage.setItem('ipropy.brandVars', JSON.stringify(vars)); } catch { /* storage blocked */ }
 }
 
 function initialTheme(): 'light' | 'dark' {

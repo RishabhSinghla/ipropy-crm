@@ -1,10 +1,10 @@
 /**
  * The official WhatsApp Business route, as one contract with many adapters.
  *
- * Four services can carry it — AiSensy, Gupshup, whatsmarketing.in and Meta's
+ * Three services can carry it — whatsmarketing.in, OpenWA and Meta's
  * own Cloud API — and the business will change its mind at least once. So the
- * CRM talks to this interface and never to a vendor: swapping AiSensy for
- * Gupshup is a row in `ipy_integration`, not a rewrite, and the conversation
+ * CRM talks to this interface and never to a vendor: swapping one provider for
+ * another is a row in `ipy_integration`, not a rewrite, and the conversation
  * history stays because it was never the vendor's to hold.
  *
  * It extends the same `WhatsAppProvider` the agent-linked route implements

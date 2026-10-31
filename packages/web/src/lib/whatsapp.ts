@@ -20,7 +20,7 @@ export function waDigits(value: string): string {
  *
  *  * **The 24-hour window.** WhatsApp allows a free reply only for a day after
  *    the customer last wrote. After that, an approved template or nothing.
- *  * **What the live provider can do at all.** AiSensy's API sends approved
+ *  * **What the live provider can do at all.** Some providers' APIs send approved
  *    templates and nothing else, window or no window, so a message box there
  *    would fail on every send.
  *
