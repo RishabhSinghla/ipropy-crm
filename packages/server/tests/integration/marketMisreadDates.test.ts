@@ -25,6 +25,17 @@ const sightingsOf = async (post: string): Promise<string[]> =>
 const misread = (month: number, day: number, hour: number, minute: number): string =>
   new Date(Date.UTC(2026, day - 1, month, hour - 5, minute - 30)).toISOString();
 
+// The migrations ask the database for now(); a real clock would turn "in the future" fixtures into the past one
+// day. So they run with now() pinned (below) and every fixture is dated against this instead.
+const PINNED_NOW = '2026-10-25 12:00+00';
+const FUTURE = misread(10, 31, 9, 15);
+
+/** Runs a migration file as the runner does, with every now() in it replaced by PINNED_NOW. */
+const runPinned = (sql: string, afterwards = ''): Promise<void> => transaction(async (tx) => {
+  await tx.query(sql.replaceAll('now()', `timestamptz '${PINNED_NOW}'`));
+  if (afterwards) await tx.query(afterwards);
+});
+
 const NEW_ONLY = `${group} brand new deal`;
 const OLD_AND_NEW = `${group} older deal seen again`;
 const ELSEWHERE = `${group} other group untouched`;
@@ -67,9 +78,9 @@ beforeAll(async () => {
   await db.query(`INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
                   SELECT id, $2, $3::timestamptz, 'B' FROM ipy_market_post WHERE body = $1`, [NEW_ONLY, group, misread(10, 20, 16, 32)]);
   // The old deal was seen again in the bad import: its dates were pushed forward by GREATEST.
-  await db.query(`UPDATE ipy_market_post SET last_posted_at = $2::timestamptz WHERE body = $1`, [OLD_AND_NEW, misread(10, 31, 9, 15)]);
+  await db.query(`UPDATE ipy_market_post SET last_posted_at = $2::timestamptz WHERE body = $1`, [OLD_AND_NEW, FUTURE]);
   await db.query(`INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
-                  SELECT id, $2, $3::timestamptz, 'B' FROM ipy_market_post WHERE body = $1`, [OLD_AND_NEW, group, misread(10, 31, 9, 15)]);
+                  SELECT id, $2, $3::timestamptz, 'B' FROM ipy_market_post WHERE body = $1`, [OLD_AND_NEW, group, FUTURE]);
   // And one that landed on a valid but wrong day: 5 September, read as 9 May.
   await db.query(`INSERT INTO ipy_market_post_seen (post_id, group_name, posted_at, sender)
                   SELECT id, $2, $3::timestamptz, 'C' FROM ipy_market_post WHERE body = $1`, [NEW_ONLY, group, misread(9, 5, 9, 0)]);
@@ -86,10 +97,7 @@ describe('migration 215 puts misread dates back', () => {
   it('turns every misread sighting back into the day it was posted, and leaves the rest alone', async () => {
     const sql = await readFile(join(here, '../../src/db/migrations/215_market_fix_misread_dates.sql'), 'utf8');
     // As the runner does it: the file and its row in ipy_migration share one transaction id.
-    await transaction(async (tx) => {
-      await tx.query(sql);
-      await tx.query(`UPDATE ipy_migration SET applied_at = applied_at WHERE name = '215_market_fix_misread_dates.sql'`);
-    });
+    await runPinned(sql, `UPDATE ipy_migration SET applied_at = applied_at WHERE name = '215_market_fix_misread_dates.sql'`);
 
     // 20 October 4:32 PM and 5 September 9:00 AM, India time.
     expect(await sightingsOf(NEW_ONLY)).toEqual(['2026-09-05T03:30:00.000Z', '2026-10-20T11:02:00.000Z']);
@@ -99,7 +107,7 @@ describe('migration 215 puts misread dates back', () => {
     // yet, so it is dropped rather than believed — and the deal's dates come from the sighting that is left.
     const old = await posted(OLD_AND_NEW);
     expect(old.first).toBe('2026-09-20T04:30:00.000Z');
-    expect(new Date(old.last!).getTime()).toBeLessThanOrEqual(Date.now() + 86_400_000);
+    expect(new Date(old.last!).getTime()).toBeLessThanOrEqual(Date.parse(PINNED_NOW) + 86_400_000);
 
     // Another group's rows were never touched.
     expect(await sightingsOf(ELSEWHERE)).toEqual(['2026-10-01T04:30:00.000Z']);
@@ -108,9 +116,9 @@ describe('migration 215 puts misread dates back', () => {
 
   it('the second pass finishes what the first could not reach, and leaves what the first fixed alone', async () => {
     // After the first pass the early deal still has a future sighting.
-    expect((await sightingsOf(EARLY)).some((at) => new Date(at).getTime() > Date.now())).toBe(true);
+    expect((await sightingsOf(EARLY)).some((at) => new Date(at).getTime() > Date.parse(PINNED_NOW))).toBe(true);
     const second = await readFile(join(here, '../../src/db/migrations/216_market_fix_misread_dates_second_pass.sql'), 'utf8');
-    await db.query(second);
+    await runPinned(second);
 
     // 18 October 10:00 IST and 8 September 10:00 IST.
     expect(await sightingsOf(EARLY)).toEqual(['2026-09-08T04:30:00.000Z', '2026-10-18T04:30:00.000Z']);
@@ -122,7 +130,7 @@ describe('migration 215 puts misread dates back', () => {
 
   it('brings the group\'s "read up to" back from 2028 to its newest real sighting', async () => {
     const mark = await db.queryOne<{ read_up_to: Date }>(`SELECT read_up_to FROM ipy_market_group WHERE name = $1`, [group]);
-    expect(mark!.read_up_to.getTime()).toBeLessThanOrEqual(Date.now() + 86_400_000);
+    expect(mark!.read_up_to.getTime()).toBeLessThanOrEqual(Date.parse(PINNED_NOW) + 86_400_000);
     expect(mark!.read_up_to.toISOString()).toBe('2026-10-20T11:02:00.000Z');
   });
 
