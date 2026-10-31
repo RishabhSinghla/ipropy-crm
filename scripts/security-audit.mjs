@@ -57,6 +57,23 @@ const ALLOWED = new Map([
    + '(xlsx/xform/sheet/cf-ext/cf-rule-ext-xform.js), so the vulnerable path is '
    + 'not reachable. Retires when exceljs accepts uuid >=11.1.1 — an npm '
    + '`overrides` entry was tried first and npm keeps resolving 8.3.2.'],
+  ['GHSA-3g3m-2fjr-6pw4',
+   'glob 9–14.0.1 — an AbortSignal cancellation can be bypassed, so a glob '
+   + 'keeps walking the disk after its timeout. Reached only through '
+   + '@capacitor/cli → rimraf (a build tool for the phone app, a devDependency of '
+   + 'packages/web); no server code imports glob and nothing here passes it a '
+   + 'signal. Overriding to the patched 14.0.2 was tried on 31 October 2026 and '
+   + 'left npm with an invalid tree (rimraf got glob 7, which it cannot call). '
+   + 'Retires when @capacitor/cli or rimraf accepts glob >=14.0.2.'],
+  ['GHSA-g3hv-75wg-m249',
+   'minimatch <11.0.1 — a crafted glob pattern can make it use huge amounts '
+   + 'of memory and time (denial of service). Every path is a pattern this '
+   + 'repo writes itself, never user input: eslint and typescript-eslint '
+   + '(devDependencies), and archiver → readdir-glob, which only sees the fixed '
+   + '`**` that `zip.directory()` adds in public.ts. exceljs also pulls in '
+   + 'minimatch 3 and 5, which cannot be moved to 11 (a different export shape '
+   + 'breaks their callers). Retires when archiver/exceljs/eslint accept '
+   + 'minimatch >=11.0.1.'],
   ['GHSA-mrhx-c7xc-m3w5',
    'zod <4.6.6 — a request that validates a very large array or set against '
    + 'a size limit can use a lot of memory (denial of service, CVSS 7.5). The only '
