@@ -16,7 +16,7 @@ import {
 } from '../lib/whatsapp';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { badgeVars } from '../lib/color';
-import { ChatRecordPane, ChatRecordPaneSkeleton, useChatRecord } from '../components/ChatRecordPane';
+import { ChatSidePanel, useChatRecord, type ChatCandidate } from '../components/ChatRecordPane';
 import { HeaderFieldStrip } from '../components/RecordBlocks';
 import { FieldValue } from '../components/FieldRenderer';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
@@ -145,10 +145,31 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
     page and the split view use — so an edit made here refreshes there, and
     opening one warms the other.
   */
-  const { module: recordModule, record: recordRow, failed: recordFailed } = useChatRecord(
+  const { module: recordModule, record: recordRow } = useChatRecord(
     active?.recordModule ?? null,
     active?.recordId ?? null,
   );
+  const [paneOpen, setPaneOpen] = useState(false);
+  /*
+    Every record this number belongs to: the one the chat is linked to first,
+    then any other that holds the number (an inventory owner, a project
+    contact…). A chat whose header already names a match must never be told
+    that nobody holds the number.
+  */
+  const candidates: ChatCandidate[] = [];
+  if (active?.recordId && active.recordModule) {
+    candidates.push({
+      module: active.recordModule,
+      recordId: active.recordId,
+      label: who,
+      moduleLabel: modules?.find((entry) => entry.name === active.recordModule)?.label ?? active.recordModule,
+    });
+  }
+  for (const owner of active?.owners ?? []) {
+    if (!candidates.some((candidate) => candidate.recordId === owner.recordId)) {
+      candidates.push({ module: owner.module, recordId: owner.recordId, label: owner.label, moduleLabel: owner.moduleLabel });
+    }
+  }
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
   /*
     **Both halves, not just the clock.** A free reply needs an open 24-hour
@@ -385,6 +406,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
             <header className="border-b border-[var(--border)] bg-white px-4 py-2.5 dark:bg-slate-900">
               <div className="flex min-w-0 items-start gap-3">
                 <Avatar name={who} size={42} className="mt-0.5" />
+                <button type="button" className="btn-secondary btn-sm order-last shrink-0 xl:hidden" onClick={() => setPaneOpen(true)}>Details</button>
                 <div className="min-w-0 flex-1">
                   {recordModule && recordRow ? (
                     <ChatRecordHeader module={recordModule} record={recordRow} who={who} />
@@ -653,34 +675,32 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
         the same metadata — every value editable where it stands.
       */}
       {active && (
-        <aside className="hidden w-[24rem] shrink-0 flex-col overflow-y-auto border-l border-[var(--border)] bg-[var(--surface-muted)] p-3 xl:flex 2xl:w-[28rem] dark:bg-slate-950/40">
-          {active.recordId && active.recordModule ? (
-            recordModule && recordRow
-              ? <ChatRecordPane module={recordModule} record={recordRow} />
-              /*
-                **A failed fetch is not a slow one.** These boxes used to wait
-                for ever on a record that was never coming — the grey pane the
-                owner reported on 25 September. It says so now, which is the
-                difference between "still loading" and "go and look".
-              */
-              : recordFailed
-                ? (
-                  <div className="card p-3 text-xs text-muted">
-                    <p className="font-semibold text-slate-700 dark:text-slate-200">This contact could not be opened.</p>
-                    <p className="mt-1">It may have been deleted, moved to another module, or be outside what you can see.</p>
-                  </div>
-                )
-                : <ChatRecordPaneSkeleton />
-          ) : (
-            <div className="card border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-              <p className="font-semibold">Nobody in the CRM holds this number.</p>
-              <p className="mt-1">
-                Create a contact or link an existing one — the CRM never makes a second
-                contact on its own.
-              </p>
-            </div>
-          )}
-        </aside>
+        <>
+          {paneOpen && <button type="button" aria-label="Close details" className="fixed inset-0 z-30 bg-black/30 xl:hidden" onClick={() => setPaneOpen(false)} />}
+          <aside
+            className={cn(
+              'w-[24rem] shrink-0 flex-col overflow-y-auto border-l border-[var(--border)] bg-[var(--surface-muted)] p-3 dark:bg-slate-950/40 2xl:w-[28rem]',
+              paneOpen
+                ? 'fixed inset-y-0 right-0 z-40 flex w-[min(24rem,100vw)] shadow-xl xl:static xl:shadow-none'
+                : 'hidden xl:flex',
+            )}
+          >
+            <button type="button" className="btn-secondary btn-sm mb-2 self-end xl:hidden" onClick={() => setPaneOpen(false)}>Close</button>
+            <ChatSidePanel
+              key={active.id}
+              candidates={candidates}
+              empty={(
+                <div className="card border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <p className="font-semibold">Nobody in the CRM holds this number.</p>
+                  <p className="mt-1">
+                    Create a contact or link an existing one — the CRM never makes a second
+                    contact on its own.
+                  </p>
+                </div>
+              )}
+            />
+          </aside>
+        </>
       )}
     </div>
   );
