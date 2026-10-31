@@ -21,7 +21,8 @@
 import { type JSX, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Loader2, Trash2, Upload } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, authedFileUrl } from '../lib/api';
+import { previewAfter, previewTries } from '../lib/photoPreview';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { strengthFill } from '../lib/strengthBar';
@@ -210,10 +211,35 @@ export function RecordAvatar({ module, recordId, name, canEdit, size = 96 }: {
         here is a second way to reach a record's bytes.
       */}
       <Modal open={previewing} onClose={() => setPreviewing(false)} title={name} size="lg">
-        {file && <img src={fileUrl(file.id)} alt={name} className="mx-auto max-h-[70vh] w-auto rounded-xl" />}
+        {file && <PhotoPreview fileId={file.id} name={name} />}
       </Modal>
     </span>
   );
+}
+
+/**
+ * The photo at a size somebody can look at.
+ *
+ * **The token has to ride in the address.** A plain `<img>` cannot send an
+ * Authorization header, so `/api/files/:id` bare answers 401 and the dialog
+ * showed a broken icon with only the alt text, while the small avatar (which
+ * goes through `authedFileUrl`) loaded. If the full picture still fails it
+ * falls back to the small one, then to initials with a plain message.
+ */
+function PhotoPreview({ fileId, name }: { fileId: string; name: string }): JSX.Element {
+  const [failed, setFailed] = useState(0);
+  const tries = previewTries(authedFileUrl(fileUrl(fileId)), authedFileUrl(fileUrl(fileId), { size: 'thumb' }));
+  const src = previewAfter(tries, failed);
+  if (!src) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-6" role="status">
+        <Avatar name={name} size={120} />
+        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Photo unavailable</p>
+        <p className="text-xs text-muted">The picture could not be loaded. Upload it again to replace it.</p>
+      </div>
+    );
+  }
+  return <img key={src} src={src} alt={name} onError={() => setFailed((count) => count + 1)} className="mx-auto max-h-[70vh] w-auto rounded-xl" />;
 }
 
 /**

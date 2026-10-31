@@ -1624,6 +1624,14 @@ function QueueCard({
       data-testid="queue-card"
       className={cn(
         'group relative border-b border-[var(--border)]',
+        /*
+          **Ticked rows must be unmistakable.** A grey tint plus a strong ink
+          bar down the left edge, in slate and not a brand step: the brand
+          colour is whatever Brand settings say (a pale grey on this site), so
+          anything built on it can vanish. The open row keeps its own brand
+          fill, so a row can be open, ticked, or both and still read right.
+        */
+        checked && 'bg-slate-200/80 before:absolute before:inset-y-0 before:left-0 before:z-[3] before:w-1.5 before:bg-slate-900 dark:bg-slate-700/60 dark:before:bg-slate-100',
         /* A soft shadow under the open record, lifted above the card after it
            so the shadow is not painted over — *"a down shadow sort of not at
            all uncomfortable to eyes"* (2 October 2026). */
@@ -1805,7 +1813,7 @@ function QueueCard({
         and a price until somebody reaches for a bulk action.
       */}
       <span className="absolute left-3 top-1/2 z-[2] -translate-y-1/2">
-        <span data-testid="queue-record-avatar" className={cn('pointer-events-none block rounded-full', checked && 'ring-2 ring-brand-500 ring-offset-2')}>
+        <span data-testid="queue-record-avatar" className={cn('pointer-events-none block rounded-full', checked && 'ring-2 ring-slate-900 ring-offset-2 dark:ring-slate-100 dark:ring-offset-slate-900')}>
           <RecordAvatar module={moduleName} recordId={row.id} name={row.label} canEdit={false} size={40} />
         </span>
         <button
@@ -1814,9 +1822,18 @@ function QueueCard({
           aria-pressed={checked}
           title={`${checked ? 'Unselect' : 'Select'} ${row.label}`}
           onClick={() => onToggle(!checked)}
-          className="absolute inset-0 rounded-full hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          className="absolute inset-0 rounded-full hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 dark:focus-visible:ring-slate-100"
         >
-          {checked && <span className="absolute inset-0 flex items-center justify-center rounded-full bg-brand-600/80 text-white"><Check className="h-5 w-5" /></span>}
+          {/* A solid ink badge with a white tick — readable on a photo and on
+              an initials circle alike. Unticked, an empty ring shows on hover
+              or keyboard focus (always on a phone, which has no hover). */}
+          {checked ? (
+            <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white ring-2 ring-white dark:bg-slate-100 dark:text-slate-900 dark:ring-slate-900">
+              <Check className="h-3 w-3" strokeWidth={3.5} />
+            </span>
+          ) : (
+            <span className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full border-2 border-slate-500 bg-white opacity-100 shadow-sm md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 dark:border-slate-300 dark:bg-slate-800" />
+          )}
         </button>
       </span>
     </div>
