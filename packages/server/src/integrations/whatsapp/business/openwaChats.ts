@@ -17,6 +17,7 @@ import { getModule } from '../../../core/metadata/registry.js';
 import { recordService } from '../../../core/entity/recordService.js';
 import { BadRequestError, NotFoundError } from '../../../utils/errors.js';
 import { matchContact } from '../matchContact.js';
+import { findOwnersOfNumbers, forgetNumberOwners } from '../numberOwners.js';
 import { readableConversation } from './inbox.js';
 import { fetchOpenWaMedia, toWaDigits } from './openwa.js';
 import type { ScopeContext } from '../../../core/permissions/index.js';
@@ -44,7 +45,16 @@ export async function createLeadFromChat(
   }
   if (match.kind === 'one') {
     await link(conversationId, match.recordId, userId);
+    forgetNumberOwners();
     return { recordId: match.recordId, linkedExisting: true };
+  }
+
+  // Someone in another module (an inventory owner, a project contact) already
+  // holds this number: that person is shown instead, never a second contact.
+  const others = [...(await findOwnersOfNumbers([row.wa_id ?? convo.handle])).values()].flat();
+  if (others.length) {
+    const first = others[0]!;
+    throw new BadRequestError(`This number already belongs to ${first.label} (${first.moduleLabel}), so no new contact was made.`);
   }
 
   const digits = toWaDigits(row.wa_id ?? convo.handle, '');
@@ -65,6 +75,7 @@ export async function createLeadFromChat(
 
   const record = await recordService.createRecord(scope, 'leads', values);
   await link(conversationId, record.id, userId);
+  forgetNumberOwners();
   return { recordId: record.id, linkedExisting: false };
 }
 

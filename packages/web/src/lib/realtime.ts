@@ -86,12 +86,18 @@ export function useRealtime(enabled: boolean): void {
       WhatsApp. Without this a lead's WhatsApp tab waited for its own timer.
     */
     let lastWa = 0;
+    let lastCounts = 0;
     const onWhatsApp = (): void => {
       const now = Date.now();
       if (now - lastWa < 700) return;
       lastWa = now;
       for (const key of ['wa-biz', 'whatsapp', 'timeline', 'conversations', 'conversation']) {
         void qc.invalidateQueries({ queryKey: [key] });
+      }
+      // The toolbar's WhatsApp numbers; at most twice a minute, as the count covers every module.
+      if (now - lastCounts > 30_000) {
+        lastCounts = now;
+        void qc.invalidateQueries({ queryKey: ['record-counts'] });
       }
     };
     const onNotification = (note?: LiveNotification): void => {

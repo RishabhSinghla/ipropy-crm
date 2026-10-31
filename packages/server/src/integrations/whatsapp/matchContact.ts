@@ -49,7 +49,7 @@ export async function matchContact(moduleName: string, handle: string | null): P
   if (!module) return { kind: 'none' };
 
   const phoneFields = module.fields.filter(
-    (f) => f.uitype === 'phone' && f.isActive && f.storage === 'column',
+    (f) => f.uitype === 'phone' && f.isActive,
   );
   if (!phoneFields.length) return { kind: 'none' };
 
@@ -61,8 +61,14 @@ export async function matchContact(moduleName: string, handle: string | null): P
     reads NULL instead. `#>>'{}'` and not `::text`, which disagree on some types.
   */
   const comparisons = phoneFields
-    .filter((f) => present.has(f.columnName))
-    .map((f) => `RIGHT(regexp_replace(COALESCE(${fieldText(present, 'p', f.columnName)}, ''), '\\D', '', 'g'), 10) = $2`);
+    .filter((f) => (f.storage === 'column' ? present.has(f.columnName) : present.has('custom_fields')))
+    .map((f) => {
+      // An admin-made phone field lives in custom_fields, not in a column.
+      const text = f.storage === 'column'
+        ? fieldText(present, 'p', f.columnName)
+        : `p.custom_fields->>'${f.columnName.replace(/'/g, "''")}'`;
+      return `RIGHT(regexp_replace(COALESCE(${text}, ''), '\\D', '', 'g'), 10) = $2`;
+    });
 
   if (!comparisons.length) return { kind: 'none' };
 
