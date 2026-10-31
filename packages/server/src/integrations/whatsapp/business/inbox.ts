@@ -18,6 +18,7 @@ import { db } from '../../../db/pool.js';
 import { BadRequestError, NotFoundError } from '../../../utils/errors.js';
 import { notify } from '../../../core/notifications/index.js';
 import { replyWindowAlwaysOpen } from './registry.js';
+import { findOwnersOfNumbers, ownerKey, type NumberOwner } from '../numberOwners.js';
 import { redactAutomated, routeClause, type RouteView } from './channelRoles.js';
 
 export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread' | 'unmatched';
@@ -55,6 +56,8 @@ export interface InboxConversation {
   optedOut: boolean;
   /** WhatsApp's own full number, so a screen can print one a person recognises. */
   waId: string | null;
+  /** For a chat with no linked record: everyone in the CRM who holds this number, best match first. */
+  owners: NumberOwner[];
 }
 
 /**
@@ -159,7 +162,7 @@ export async function listConversations(input: {
     )`);
   }
 
-  params.push(Math.min(input.limit ?? 100, 300));
+  params.push(Math.min(input.limit ?? 100, 1000));
 
   const { rows } = await db.query<{
     id: string; handle: string; contact_name: string | null; record_id: string | null;
@@ -186,6 +189,8 @@ export async function listConversations(input: {
 
   const now = Date.now();
   const alwaysOpen = replyWindowAlwaysOpen();
+  // Resolved at read time, so chats that already exist are covered, not only new ones.
+  const owners = await findOwnersOfNumbers(rows.filter((r) => !r.record_id).map((r) => r.wa_id ?? r.handle));
   return rows.map((row) => ({
     id: row.id,
     handle: row.handle,
@@ -203,6 +208,7 @@ export async function listConversations(input: {
     windowExpiresAt: row.window_expires_at,
     optedOut: row.opted_out,
     waId: row.wa_id,
+    owners: row.record_id ? [] : owners.get(ownerKey(row.wa_id ?? row.handle) ?? '') ?? [],
   }));
 }
 

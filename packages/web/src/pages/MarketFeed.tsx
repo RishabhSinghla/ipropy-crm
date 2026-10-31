@@ -7,7 +7,7 @@
  * thinks — have or want, BHK, budget, locality. The same list is what
  * chat.ipropy.com searches when somebody asks "who has a 3 BHK under 1.5 Cr".
  */
-import { type JSX, useEffect, useRef, useState } from 'react';
+import { type JSX, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MARKET_FEED_DAYS, formatIndianPrice, relativeTime } from '@ipropy/shared';
@@ -20,6 +20,9 @@ import SearchableSelect from '../components/SearchableSelect';
 import MarketDealers from '../components/MarketDealers';
 import MarketIntroductions from '../components/MarketIntroductions';
 import { toast } from '../lib/store';
+
+// Which WhatsApp groups the company number may read here; moved from the WhatsApp page.
+const GroupSyncAdmin = lazy(() => import('./admin/GroupSyncAdmin'));
 
 function priceText(post: MarketPost): string | null {
   if (post.priceMinLakh === null) return null;
@@ -314,19 +317,20 @@ function GroupsTab(): JSX.Element {
   );
 }
 
-type Tab = 'calls' | 'deals' | 'dealers' | 'groups';
+type Tab = 'calls' | 'deals' | 'dealers' | 'groups' | 'sync';
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'calls', label: 'Calls today' },
   { id: 'deals', label: 'All deals' },
   { id: 'dealers', label: 'Dealers' },
   { id: 'groups', label: 'Groups' },
+  { id: 'sync', label: 'Group sync' },
 ];
 
 export default function MarketFeedPage(): JSX.Element {
   const [params, setParams] = useSearchParams();
   // An alert about one deal or one buyer opens the list it is about; otherwise the call sheet leads.
   const wanted = params.get('tab');
-  const tab: Tab = wanted === 'calls' || wanted === 'deals' || wanted === 'dealers' || wanted === 'groups'
+  const tab: Tab = wanted === 'calls' || wanted === 'deals' || wanted === 'dealers' || wanted === 'groups' || wanted === 'sync'
     ? wanted
     : params.get('deal') || params.get('kind') || params.get('locality') ? 'deals' : 'calls';
 
@@ -358,6 +362,7 @@ export default function MarketFeedPage(): JSX.Element {
       {tab === 'deals' && <DealsTab />}
       {tab === 'dealers' && <MarketDealers />}
       {tab === 'groups' && <GroupsTab />}
+      {tab === 'sync' && <Suspense fallback={<Spinner />}><GroupSyncAdmin /></Suspense>}
     </div>
   );
 }

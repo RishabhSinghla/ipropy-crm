@@ -43,7 +43,6 @@ const CampaignsAdmin = lazy(() => import('./admin/CampaignsAdmin'));
 const WhatsAppTemplatesAdmin = lazy(() => import('./admin/WhatsAppTemplatesAdmin'));
 const WhatsAppAdmin = lazy(() => import('./admin/WhatsAppAdmin'));
 const Reports = lazy(() => import('./Reports'));
-const GroupSyncAdmin = lazy(() => import('./admin/GroupSyncAdmin'));
 
 /** Which of an admin's two screens this is. One screen for everyone else. */
 export type WhatsAppMode = 'chat' | 'api';
@@ -109,16 +108,6 @@ const TABS: Tab[] = [
     element: <Reports />,
   },
   {
-    // Which WhatsApp groups the company number may read into Dealer Groups. Server-enforced admin-only.
-    path: 'groups',
-    label: 'Group sync',
-    capability: 'admin.integrations',
-    only: 'chat',
-    adminOnly: true,
-    icon: MessagesSquare,
-    element: <GroupSyncAdmin />,
-  },
-  {
     path: 'health',
     label: 'Health',
     capability: 'admin.integrations',
@@ -182,6 +171,8 @@ export default function WhatsAppPage({ mode = 'chat' }: { mode?: WhatsAppMode })
         <Suspense fallback={<div className="p-4 sm:p-6"><Skeleton className="h-96 w-full" /></div>}>
           <Routes>
             {tabs.map((tab) => <Route key={tab.path} path={tab.path} element={tab.element} />)}
+            {/* Group sync moved to Dealer groups; the old address still works. */}
+            <Route path="groups" element={<Navigate to="/market?tab=sync" replace />} />
             {/* The first tab this person may open, not a fixed one: a rep with
                 only Chats must not be bounced to a page they cannot see. */}
             {/*

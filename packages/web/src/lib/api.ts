@@ -1648,6 +1648,7 @@ export const api = {
     assignedName: string | null; status: string; unreadCount: number;
     lastMessageAt: string | null; lastMessagePreview: string | null; waId: string | null; windowOpen: boolean;
     windowExpiresAt: string | null; optedOut: boolean;
+    owners: { recordId: string; module: string; moduleLabel: string; label: string; fieldLabel: string }[];
   }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined, route: route || undefined })}`),
   waBizMessages: (conversationId: string, route = '') => get<{
     messages: Record<string, unknown>[]; alsoViewing: string[];

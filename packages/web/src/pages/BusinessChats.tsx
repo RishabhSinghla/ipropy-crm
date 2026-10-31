@@ -157,7 +157,13 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
     always asked `composerMode`; this screen only looked at the window, so on
     such a provider it would offer a box whose every send was refused.
   */
-  const mode = composerMode(status?.capabilities ?? [], Boolean(active?.windowOpen));
+  /*
+    The 24-hour reply window belongs to the official API only. The plain
+    WhatsApp chat (a linked phone) has no such window, so its rows, header and
+    composer show none of it; the WhatsApp API page keeps all of it.
+  */
+  const showWindow = route === 'api' || (route === '' && !status?.split && !(status?.capabilities ?? []).includes('linkedDevice'));
+  const mode = showWindow ? composerMode(status?.capabilities ?? [], Boolean(active?.windowOpen)) : 'text';
 
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['wa-biz'] });
@@ -324,6 +330,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
           )}
           {(conversations ?? []).map((row) => (
             <ChatQueueRow
+              showWindow={showWindow}
               key={row.id}
               row={row}
               active={row.id === activeId}
@@ -387,8 +394,28 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                       <p className="mt-0.5 text-sm font-semibold text-slate-600 dark:text-slate-300">
                         {displayNumber(active.handle, active.waId)}
                       </p>
-                      {/* One click: the phone and the WhatsApp name go in, a
-                          person confirms by pressing it. Never automatic. */}
+                      {/* The number is already in the CRM (a contact, an inventory
+                          owner, a project contact…): show who, never offer a second
+                          contact. Only a number nobody holds gets the create button. */}
+                      {active.owners.length > 0 ? (
+                        <ul className="mt-2 space-y-1" data-testid="chat-number-owners">
+                          {active.owners.map((owner) => (
+                            <li key={owner.recordId} className="flex flex-wrap items-center gap-2 text-sm">
+                              <Link to={`/${owner.module}/${owner.recordId}`} className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
+                                {owner.label}
+                              </Link>
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-2xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                {owner.moduleLabel} · {owner.fieldLabel}
+                              </span>
+                              {owner.module === 'leads' && (
+                                <button type="button" className="btn-secondary btn-sm" disabled={createLead.isPending} onClick={() => createLead.mutate()}>
+                                  Link this chat
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
                       <button
                         type="button"
                         className="btn-secondary btn-sm mt-2"
@@ -398,6 +425,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                         {createLead.isPending ? <Spinner className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
                         Create contact from this chat
                       </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -674,8 +702,8 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
  * then nobody has picked this up, then a thread somebody has parked, then who
  * holds it.
  */
-function ChatQueueRow({ row, active, onSelect, modules }: {
-  row: ChatRow; active: boolean; onSelect: () => void; modules: ModuleSummary[] | undefined;
+function ChatQueueRow({ row, active, onSelect, modules, showWindow }: {
+  row: ChatRow; active: boolean; onSelect: () => void; modules: ModuleSummary[] | undefined; showWindow: boolean;
 }): JSX.Element {
   const who = row.recordLabel ?? row.contactName ?? row.handle;
   const replyWindow = windowLeft(row.windowExpiresAt);
@@ -693,6 +721,8 @@ function ChatQueueRow({ row, active, onSelect, modules }: {
     >
       {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600" aria-hidden />}
 
+      {showWindow && (
+<>
       {/*
         **The reply window, down the left of every chat.** 25 September 2026,
         the owner. Green with the hours left while a free reply may still go;
@@ -715,6 +745,9 @@ function ChatQueueRow({ row, active, onSelect, modules }: {
         </span>
         <span className={cn('w-1 flex-1 rounded-full', replyWindow.open ? 'bg-emerald-500' : 'bg-amber-400')} aria-hidden />
       </span>
+
+</>
+      )}
 
       <span className="relative shrink-0 self-start">
         <Avatar name={who} size={36} />

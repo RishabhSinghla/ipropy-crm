@@ -14,6 +14,7 @@
 import { db, type Tx } from '../../db/pool.js';
 import { SqlParams } from '../query/builder.js';
 import { registry } from '../metadata/registry.js';
+import { routeClause } from '../../integrations/whatsapp/business/channelRoles.js';
 import { hasCapability, recordScopeSql, type ScopeContext } from '../permissions/index.js';
 
 export async function recordCounts(ctx: ScopeContext, conn: Tx = db): Promise<Record<string, number>> {
@@ -57,6 +58,17 @@ export async function recordCounts(ctx: ScopeContext, conn: Tx = db): Promise<Re
     `SELECT COUNT(*)::int AS count FROM ipy_conversation WHERE channel = 'whatsapp'${ctx.user.isAdmin ? '' : ' AND (assigned_to = $1::uuid OR assigned_to IS NULL)'}`,
     ctx.user.isAdmin ? [] : [ctx.user.id],
   );
+  // The official-API chats, for the admin-only "WhatsApp API" row. Absent (so the
+  // row shows no number) when the two routes are not split, or for non-admins.
+  const onApi = routeClause('api', ctx.user.isAdmin, 'rm');
+  if (onApi !== 'TRUE') {
+    const api = await conn.queryOne<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM ipy_conversation c
+        WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL
+          AND EXISTS (SELECT 1 FROM ipy_message rm WHERE rm.conversation_id = c.id AND ${onApi})`,
+    ).catch(() => null);
+    if (api) counts.whatsappApi = api.count;
+  }
   counts.calls = calls?.count ?? 0;
   counts.whatsapp = whatsapp?.count ?? 0;
 
