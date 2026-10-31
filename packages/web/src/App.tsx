@@ -70,6 +70,7 @@ const SettingsPage = lazy(() => import('./pages/Settings'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
 const WhatsAppPage = lazy(() => import('./pages/WhatsApp'));
 const CallsPage = lazy(() => import('./pages/Calls'));
+const SearchResultsPage = lazy(() => import('./pages/SearchResults'));
 const ToolsPage = lazy(() => import('./pages/Tools'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
 
@@ -165,6 +166,7 @@ export default function App(): JSX.Element {
               {/* The official API's own screen, for admins. Everyone else is sent home. */}
               <Route path="whatsapp-api/*" element={<RequireAdminRoute><WhatsAppPage mode="api" /></RequireAdminRoute>} />
               <Route path="calls" element={<CallsPage />} />
+              <Route path="search" element={<SearchResultsPage />} />
               <Route path="whatsapp-lookup" element={<WhatsAppLookupPage />} />
               {/* Dealer-group deals. Above `:module`, which would read "market" as a module. */}
               <Route path="market" element={<RequireAdminRoute><MarketFeedPage /></RequireAdminRoute>} />

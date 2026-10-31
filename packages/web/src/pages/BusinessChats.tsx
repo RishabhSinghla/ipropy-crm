@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
+import { enterSends } from '../lib/enterToSend';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -588,10 +589,12 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && draft.trim()) send.mutate({ text: draft.trim() });
+                    if (!enterSends(event.nativeEvent)) return;
+                    event.preventDefault();
+                    if (draft.trim() && mode === 'text' && !send.isPending) send.mutate({ text: draft.trim() });
                   }}
                   disabled={mode === 'template'}
-                  placeholder={mode === 'text' ? 'Type a reply… ⌘↵ to send' : 'Only an approved template can go now'}
+                  placeholder={mode === 'text' ? 'Type a reply… Enter to send, Shift+Enter for a new line' : 'Only an approved template can go now'}
                   className="input min-h-[2.5rem] flex-1 resize-none"
                 />
                 <button

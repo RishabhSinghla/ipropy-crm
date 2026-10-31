@@ -36,6 +36,8 @@ test('search options offers compact two-column defaults', async ({ page }) => {
   await page.goto('/leads');
   await page.getByRole('button', { name: 'Search options', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'CRM search options' });
+  await expect(panel.getByLabel('Search in')).toHaveValue('__all__');
+  await panel.getByLabel('Search in').selectOption('leads');
   await expect(panel.getByTestId('default-search-fields')).toBeVisible();
   await expect(panel.getByText('Agent', { exact: true })).toBeVisible();
   await expect(panel.getByText('Location', { exact: true })).toBeVisible();

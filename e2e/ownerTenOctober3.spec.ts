@@ -116,6 +116,7 @@ test('global toolbar replaces duplicate left-pane search controls', async ({ pag
     const box = panel.getBoundingClientRect();
     return panel.contains(document.elementFromPoint(box.left + box.width / 2, box.top + 120));
   })).toBe(true);
+  await page.getByLabel('Search in').selectOption('leads');
   await page.getByLabel('Has the words').fill('toolbar search check');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await expect(page).toHaveURL(/q=toolbar\+search\+check/);

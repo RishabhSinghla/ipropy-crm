@@ -803,7 +803,7 @@ function NotificationBell(): JSX.Element {
  * itself, and `getRecord` still refuses the record until the owner hands it
  * over.
  */
-function RestrictedHit({ hit }: { hit: SearchHit }): JSX.Element {
+export function RestrictedHit({ hit }: { hit: SearchHit }): JSX.Element {
   const [asked, setAsked] = useState(false);
   const ask = useMutation({
     mutationFn: () => api.requestAccess(hit.id),
@@ -1007,13 +1007,13 @@ function GlobalSearch(): JSX.Element {
     navigate(`${hit.archived ? '/archive' : ''}/${hit.module}?open=${hit.id}`);
   };
 
-  /** Everything this module matched, in its own list, where it can be filtered further. */
-  const openModule = (module: string): void => {
-    remember(query);
+  /** Every match in every group, on the full results page. */
+  const openAll = (): void => {
+    const term = query.trim();
+    remember(term);
     setOpen(false);
-    const term = query;
     setQuery('');
-    navigate(`/${module}?q=${encodeURIComponent(term)}`);
+    navigate(`/search?q=${encodeURIComponent(term)}`);
   };
 
   const onBoxKey = (event: React.KeyboardEvent<HTMLInputElement>): void => {
@@ -1026,14 +1026,14 @@ function GlobalSearch(): JSX.Element {
     }
     if (event.key === 'Enter') {
       /*
-        ↵ with nothing highlighted opens the first module's full list rather than
+        ↵ with nothing highlighted opens the full results page rather than
         guessing a record. Pressing it is "show me these", and opening the top
         answer because it happened to be first is how a rep ends up on somebody
         else's record with no idea why.
       */
       const chosen = flat[highlight];
       if (chosen) openHit(chosen);
-      else if (groups[0]) openModule(groups[0].module);
+      else if (query.trim().length >= 2) openAll();
     }
   };
 
@@ -1111,7 +1111,7 @@ function GlobalSearch(): JSX.Element {
                 <button
                   type="button"
                   className="ml-auto shrink-0 text-[10px] font-semibold text-brand-700 hover:underline dark:text-brand-300"
-                  onClick={() => openModule(group.module)}
+                  onClick={openAll}
                 >
                   See all
                 </button>

@@ -127,3 +127,12 @@ test('a mouse click on a result opens that record', async ({ page }) => {
   await expect(page).toHaveURL(/\/(archive\/)?(leads|properties|associates|projects|builder_floors)\?.*open=[0-9a-f-]{36}/);
   await expect(page.locator('#global-search-results')).toHaveCount(0);
 });
+
+test('See all opens the full results page', async ({ page }) => {
+  await page.goto('/dashboard');
+  const box = page.getByPlaceholder('Search everything…');
+  await box.fill(TERM);
+  await page.locator('#global-search-results .sticky').first().getByRole('button', { name: 'See all' }).click();
+  await expect(page).toHaveURL(/\/search\?q=/);
+  await expect(page.locator('[data-search-module]').first()).toBeVisible();
+});

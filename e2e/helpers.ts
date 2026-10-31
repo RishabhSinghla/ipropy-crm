@@ -218,12 +218,9 @@ export async function dashboardWithRecordRows(page: Page): Promise<string> {
  * The record pane no longer has a separate search input.
  */
 export async function searchList(page: Page, term: string): Promise<void> {
-  // Search moved to the universal toolbar. Its module heading's See all
-  // action applies the same words to the list, without opening a random hit.
+  // "See all" now opens the full results page, so go straight to the module's own list with the words in it.
   const module = new URL(page.url()).pathname.split('/')[1];
-  const box = page.getByRole('combobox', { name: 'Search everything', exact: true });
-  await box.fill(term);
-  await page.locator(`[data-search-module="${module}"]`).getByRole('button', { name: 'See all', exact: true }).click();
+  await page.goto(`/${module}?q=${encodeURIComponent(term)}`);
 }
 
 /**
