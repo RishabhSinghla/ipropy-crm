@@ -1,4 +1,5 @@
 import { useLiveCards } from '../lib/liveCards';
+import { enterSends } from '../lib/enterToSend';
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Paperclip, Send } from 'lucide-react';
@@ -450,13 +451,18 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (!enterSends(e.nativeEvent)) return;
+            e.preventDefault();
+            if (draft.trim() && !send.isPending && linked && mobile) send.mutate(draft.trim());
+          }}
           rows={1}
           disabled={!linked || !mobile}
           placeholder={
             !mobile ? 'This contact has no mobile number'
               : !onBusiness ? 'No WhatsApp Business number is connected yet'
                 : linkProblem ? 'WhatsApp is not connected right now, so nothing can be sent. Notes go in the Comments tab.'
-                : linked ? 'Write a message'
+                : linked ? 'Write a message — Enter sends, Shift+Enter for a new line'
                   // The reason, where the person is about to type — not after
                   // they have written a paragraph and pressed Send.
                   : whyNoTextBox(business?.capabilities ?? [], business?.provider ?? null)

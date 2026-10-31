@@ -1,7 +1,7 @@
 import { useState, type JSX } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { type FieldMeta, type FilterCondition, type FilterGroup } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
@@ -31,7 +31,7 @@ export function SearchOptions({ words, onWordsChange, onOpen, onSearchAll }: {
   const entities = modules.filter((module) => module.isEntity);
   const current = location.pathname.split('/')[1];
   const [moduleName, setModuleName] = useState('');
-  const selected = moduleName || (entities.some((module) => module.name === current) ? current : entities[0]?.name) || '';
+  const selected = moduleName || EVERYWHERE;
   const everywhere = selected === EVERYWHERE;
   const [filter, setFilter] = useState<FilterGroup>({ logic: 'AND', conditions: [] });
   const [choices, setChoices] = useState<Record<string, unknown>>({});
@@ -70,6 +70,10 @@ export function SearchOptions({ words, onWordsChange, onOpen, onSearchAll }: {
     if (range) quickConditions.push(range);
   }
   const quickField = (field: FieldMeta | undefined, label: string): JSX.Element | null => field ? <div className="min-w-0 space-y-1"><label htmlFor={`search-option-${field.name}`} className="block text-xs font-medium text-muted">{label}</label><FieldInput id={`search-option-${field.name}`} field={{ ...field, config: { ...field.config, placeholder: `Any ${label.toLowerCase()}` }, isReadonly: false, displayType: 'default', isMandatory: false }} value={choices[field.name] ?? null} onChange={(value) => choose(field.name, value)} /></div> : null;
+  // One select look for every dropdown here: the same box and chevron FieldInput draws for a picklist.
+  const pick = (label: string, value: string, onChange: (value: string) => void, options: Array<[string, string]>, any: string): JSX.Element =>
+    <div className="min-w-0 space-y-1"><label className="block text-xs font-medium text-muted">{label}
+      <div className="relative mt-1 font-normal"><select aria-label={label} className="input appearance-none pr-8" value={value} onChange={(event) => onChange(event.target.value)}><option value="">{any}</option>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></div></label></div>;
   const apply = (close: () => void, clear = false): void => {
     // "All": there is no single list to filter, so hand the words to the global
     // search, which already reads every module and the archive.
@@ -94,19 +98,20 @@ export function SearchOptions({ words, onWordsChange, onOpen, onSearchAll }: {
     trigger={<button onClick={onOpen} className="rounded-full bg-slate-200/70 p-2 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 group-data-[open=true]/dropdown:!bg-brand-700 group-data-[open=true]/dropdown:!text-white" aria-label="Search options" title="Search options"><SlidersHorizontal className="h-4 w-4" /></button>}>
     {(close) => <div className="space-y-3" role="dialog" aria-label="CRM search options">
       <h2 className="text-base font-semibold">Search options</h2>
-      <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Search in</span><select className="input" value={selected} onChange={(event) => { setModuleName(event.target.value); setChoices({}); setFilter({ logic: 'AND', conditions: [] }); }}><option value={EVERYWHERE}>All (every module and the archive)</option>{entities.map((module) => <option key={module.name} value={module.name}>{module.label}</option>)}</select></label>
+      <div className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Search in</span><div className="relative flex-1"><select aria-label="Search in" className="input appearance-none pr-8" value={selected} onChange={(event) => { setModuleName(event.target.value); setChoices({}); setFilter({ logic: 'AND', conditions: [] }); }}><option value={EVERYWHERE}>All (every module and the archive)</option>{entities.map((module) => <option key={module.name} value={module.name}>{module.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></div></div>
       <label className="flex items-center gap-4 text-sm"><span className="w-24 shrink-0">Has the words</span><input className="input" value={words} onChange={(event) => onWordsChange(event.target.value)} placeholder="Name, phone, property or comma-separated words" /></label>
-      <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2" data-testid="default-search-fields">
+      {!everywhere && <div className="grid grid-cols-1 items-start gap-x-5 gap-y-3 sm:grid-cols-2" data-testid="default-search-fields">
         {quickField(owner, 'Agent')}{quickField(locationField, 'Location')}{quickField(status, `${meta?.singularLabel ?? 'Record'} status`)}{quickField(contactType, 'Contact type')}{quickField(category, 'Category')}
-        {due && <label className="space-y-1 text-xs font-medium text-muted">Task wise<select className="input" value={String(choices.task ?? '')} onChange={(event) => choose('task', event.target.value)}><option value="">Any task</option><option value="pending">Overdue</option><option value="today">Today</option><option value="tomorrow">Tomorrow</option><option value="upcoming">Upcoming</option></select></label>}
-        <label className="space-y-1 text-xs font-medium text-muted">Created date<select aria-label="Created date" className="input" value={String(choices.created ?? '')} onChange={(event) => choose('created', event.target.value)}><option value="">Any date</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="this_week">This week</option><option value="this_month">This month</option></select></label>
-        <label className="space-y-1 text-xs font-medium text-muted">Tag wise<select className="input" value={String(choices.tag ?? '')} onChange={(event) => choose('tag', event.target.value)}><option value="">Any tag</option>{tags?.map((tag) => <option key={tag.id} value={tag.name}>{tag.name}</option>)}</select></label>
-        <label className="space-y-1 text-xs font-medium text-muted">Call disposition / log<select className="input" value={String(choices.disposition ?? '')} onChange={(event) => choose('disposition', event.target.value)}><option value="">Any call disposition</option>{dispositions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>{quickField(lostReason, 'Lost reason')}
-        <div className="hidden sm:block" />
-        {money && <div className="min-w-0"><span className="text-xs font-medium text-muted">{money.label} range (₹)</span><RangeSlider low={0} high={1_000_000_000} money min={choices.min == null ? undefined : Number(choices.min)} max={choices.max == null ? undefined : Number(choices.max)} onChange={(min, max) => setChoices(previous => ({ ...previous, min, max }))} /></div>}
-        {size && <div className="min-w-0"><span className="text-xs font-medium text-muted">{size.label} range (Sq. Yd.)</span><RangeSlider low={0} high={10000} money={false} min={choices.sizeMin == null ? undefined : Number(choices.sizeMin)} max={choices.sizeMax == null ? undefined : Number(choices.sizeMax)} onChange={(sizeMin, sizeMax) => setChoices(previous => ({ ...previous, sizeMin, sizeMax }))} /><p className="text-2xs text-muted">Units with a configured conversion are included.</p></div>}
-      </div>
-      <p className="text-xs text-muted">{everywhere ? 'Searches every module and the archive for these words.' : 'Temporary search only — saved views stay unchanged.'}</p>
+        {due && pick('Task wise', String(choices.task ?? ''), (v) => choose('task', v), [['pending', 'Overdue'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['upcoming', 'Upcoming']], 'Any task')}
+        {pick('Created date', String(choices.created ?? ''), (v) => choose('created', v), [['today', 'Today'], ['yesterday', 'Yesterday'], ['this_week', 'This week'], ['this_month', 'This month']], 'Any date')}
+        {pick('Tag wise', String(choices.tag ?? ''), (v) => choose('tag', v), (tags ?? []).map((tag) => [tag.name, tag.name] as [string, string]), 'Any tag')}
+        {pick('Call disposition / log', String(choices.disposition ?? ''), (v) => choose('disposition', v), dispositions.map((option) => [option.value, option.label] as [string, string]), 'Any call disposition')}{quickField(lostReason, 'Lost reason')}
+        {(money || size) && <div className="grid grid-cols-1 items-start gap-x-5 gap-y-3 sm:col-span-2 sm:grid-cols-2">
+          {money && <div className="min-w-0 space-y-1"><span className="block text-xs font-medium text-muted">{money.label} range (₹)</span><RangeSlider low={0} high={1_000_000_000} money min={choices.min == null ? undefined : Number(choices.min)} max={choices.max == null ? undefined : Number(choices.max)} onChange={(min, max) => setChoices(previous => ({ ...previous, min, max }))} /></div>}
+          {size && <div className="min-w-0 space-y-1"><span className="block text-xs font-medium text-muted">{size.label} range (Sq. Yd.)</span><RangeSlider low={0} high={10000} money={false} min={choices.sizeMin == null ? undefined : Number(choices.sizeMin)} max={choices.sizeMax == null ? undefined : Number(choices.sizeMax)} onChange={(sizeMin, sizeMax) => setChoices(previous => ({ ...previous, sizeMin, sizeMax }))} /><p className="text-2xs text-muted">Units with a configured conversion are included.</p></div>}
+        </div>}
+      </div>}
+      <p className="text-xs text-muted">{everywhere ? 'Searches every module and the archive for these words. Pick one list above to narrow by agent, status, location and more.' : 'Temporary search only — saved views stay unchanged.'}</p>
       {meta && !everywhere && <FilterBuilder compact module={meta} value={filter} onChange={setFilter} />}
       <div className="flex justify-end gap-2"><button className="btn-secondary" onClick={() => apply(close, true)}>Clear search filters</button><button className="btn-primary" onClick={() => apply(close)}>Search</button></div>
     </div>}

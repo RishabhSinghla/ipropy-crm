@@ -1,4 +1,5 @@
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { enterSends } from '../lib/enterToSend';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { api } from '../lib/api';
@@ -269,6 +270,11 @@ function ComposerDialog({ to, module, recordId, recordLabel, draft = '', onClose
                   placeholder={`Write to ${recordLabel}…`}
                   value={text}
                   onChange={(event) => setText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (!enterSends(event.nativeEvent)) return;
+                    event.preventDefault();
+                    void send();
+                  }}
                 />
               ) : (
                 <div className="space-y-2">

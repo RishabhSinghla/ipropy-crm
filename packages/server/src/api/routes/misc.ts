@@ -72,7 +72,7 @@ miscRouter.use(requireAuth);
 miscRouter.get('/search', asyncHandler(async (req, res) => {
   const term = String(req.query.q ?? '').trim();
   if (term.length < 2) { res.json([]); return; }
-  res.json(await recordService.globalSearch(getScope(req), term, Math.min(50, Number(req.query.limit) || 20)));
+  res.json(await recordService.globalSearch(getScope(req), term, Math.min(200, Number(req.query.limit) || 20)));
 }));
 
 miscRouter.get('/recent', asyncHandler(async (req, res) => {

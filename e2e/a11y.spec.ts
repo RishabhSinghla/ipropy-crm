@@ -171,6 +171,8 @@ test.describe('accessibility', () => {
     await waitForRecords(page);
     await page.getByRole('button', { name: 'Search options' }).click();
     await expect(page.getByRole('dialog', { name: 'CRM search options' })).toBeVisible();
+    await page.getByLabel('Search in').selectOption('leads');
+    await expect(page.getByTestId('default-search-fields')).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
   });

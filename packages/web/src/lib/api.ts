@@ -1516,7 +1516,7 @@ export const api = {
   }>('/api/ai/usage'),
 
   // --- misc ---------------------------------------------------------------
-  search: (q: string) => get<SearchHit[]>(`/api/search${qs({ q })}`),
+  search: (q: string, limit?: number) => get<SearchHit[]>(`/api/search${qs({ q, limit })}`),
 
   /*
     Asking the owner of a record for it (3 October 2026). Asking grants
