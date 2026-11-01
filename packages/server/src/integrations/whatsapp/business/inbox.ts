@@ -207,7 +207,8 @@ export async function listConversations(input: {
     where.push(`(${hit} OR c.record_id IS NULL)`);
   }
 
-  params.push(term ? 1000 : Math.min(input.limit ?? 100, 1000));
+  // Merged: a person can take two rows, so fetch enough lane rows to still fill the requested number of people.
+  params.push(term ? 1000 : Math.min((input.limit ?? 100) * (input.merged ? 2 : 1), 2000));
 
   const { rows } = await db.query<{
     id: string; handle: string; contact_name: string | null; record_id: string | null;
@@ -300,7 +301,7 @@ export function mergeByHandle(rows: InboxConversation[]): InboxConversation[] {
 
 /** The one place a thread is fetched with its visibility checked. */
 export async function readableConversation(
-  userId: string, isAdmin: boolean, conversationId: string, anyLane = false,
+  userId: string, isAdmin: boolean, conversationId: string, anyLane = true,
 ): Promise<{ id: string; handle: string; recordId: string | null; assignedTo: string | null }> {
   const params: unknown[] = [conversationId];
   const see = visibility(userId, isAdmin, params.length + 1);
@@ -325,17 +326,21 @@ export async function conversationMessages(
   const convo = await readableConversation(userId, isAdmin, conversationId, merged);
   if (merged) {
     // Both lanes of this person in one column; every row says which lane it came from.
+    // Every sibling lane is checked against the reader's visibility too, never just the conversation that was opened.
+    const see = visibility(userId, isAdmin, 2);
     const { rows } = await db.query(
-      `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.error_message,
-              m.template_name, m.created_at, m.delivered_at, m.read_at, m.route, m.provider, m.number_id,
-              c.lane AS lane, trim(u.first_name || ' ' || u.last_name) AS sent_by_name
-         FROM ipy_message m
-         JOIN ipy_conversation c ON c.id = m.conversation_id
-         LEFT JOIN ipy_user u ON u.id = m.sent_by
-        WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL AND c.handle = $1
-        ORDER BY m.created_at ASC
-        LIMIT 500`,
-      [convo.handle],
+      `SELECT * FROM (
+         SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.error_message,
+                m.template_name, m.created_at, m.delivered_at, m.read_at, m.route, m.provider, m.number_id,
+                c.lane AS lane, trim(u.first_name || ' ' || u.last_name) AS sent_by_name
+           FROM ipy_message m
+           JOIN ipy_conversation c ON c.id = m.conversation_id
+           LEFT JOIN ipy_user u ON u.id = m.sent_by
+          WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL AND c.handle = $1 AND ${see.clause}
+          ORDER BY m.created_at DESC
+          LIMIT 500) newest
+        ORDER BY created_at ASC`,
+      [convo.handle, ...see.params],
     );
     return redactAutomated(await withSenderLabels(rows), isAdmin);
   }
@@ -363,9 +368,11 @@ export async function conversationMessages(
 export async function markRead(userId: string, isAdmin: boolean, conversationId: string, merged = false): Promise<void> {
   const convo = await readableConversation(userId, isAdmin, conversationId, merged);
   if (merged) {
+    const see = visibility(userId, isAdmin, 2);
     await db.query(
-      `UPDATE ipy_conversation SET unread_count = 0
-        WHERE channel = 'whatsapp' AND wa_account_id IS NULL AND handle = $1`, [convo.handle],
+      `UPDATE ipy_conversation c SET unread_count = 0
+        WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL AND c.handle = $1 AND ${see.clause}`,
+      [convo.handle, ...see.params],
     );
     return;
   }
