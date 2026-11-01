@@ -6,6 +6,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { normaliseConfigFieldNames, runWidget } from '../../core/analytics/widgets.js';
+import { buildRoiReport, roiFilterOptions } from '../../core/analytics/roi.js';
 
 export const dashboardsRouter = Router();
 dashboardsRouter.use(requireAuth);
@@ -31,6 +32,25 @@ dashboardsRouter.get('/', asyncHandler(async (req, res) => {
     module: r.module_name, sequence: r.sequence,
     canEdit: user.isAdmin || r.owner_id === user.id,
   })));
+}));
+
+// "What earns money". Declared before `/:id` so "roi" is not read as a dashboard id.
+const roiQuery = z.object({
+  from: z.coerce.date(),
+  to: z.coerce.date(),
+  windowDays: z.coerce.number().int().refine((n) => [3, 7, 14].includes(n)).default(7),
+  source: z.string().max(80).optional(),
+  agentId: z.string().uuid().optional(),
+});
+
+dashboardsRouter.get('/roi', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const q = roiQuery.parse(req.query);
+  // Admins see everything and may filter by agent; everybody else only ever sees their own numbers.
+  const agentId = user.isAdmin ? q.agentId : user.id;
+  const report = await buildRoiReport({ ...q, source: q.source || undefined, agentId });
+  const options = user.isAdmin ? await roiFilterOptions() : { sources: (await roiFilterOptions()).sources, agents: [] };
+  res.json({ ...report, options, scopedToMe: !user.isAdmin });
 }));
 
 dashboardsRouter.get('/:id', asyncHandler(async (req, res) => {

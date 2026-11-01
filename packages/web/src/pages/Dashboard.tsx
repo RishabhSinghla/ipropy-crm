@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX, type ReactNode, type Ref } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type Dashboard, type DashboardWidget, type FilterGroup, type FilterOperator, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
@@ -21,6 +21,7 @@ import { Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Skelet
 import WidgetBuilder from '../components/WidgetBuilder';
 import { ChartFrame, SeriesSummary, formatValue, type Series } from '../components/ChartFrame';
 import { PeekLink } from '../components/PeekLink';
+import RoiReport, { DashboardViewTabs } from '../components/RoiReport';
 
 const PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#0ea5e9', '#a855f7', '#14b8a6', '#f97316', '#64748b', '#ef4444'];
 
@@ -38,6 +39,8 @@ export default function DashboardPage(): JSX.Element {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useApp();
+  const [searchParams] = useSearchParams();
+  const view = searchParams.get('view') === 'roi' ? 'roi' : 'widgets';
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const { data: dashboards } = useQuery({ queryKey: ['dashboards'], queryFn: () => api.dashboards() });
@@ -109,8 +112,18 @@ export default function DashboardPage(): JSX.Element {
     }
   };
 
+  if (view === 'roi') {
+    return (
+      <div className="p-4 sm:p-6">
+        <DashboardViewTabs view="roi" />
+        <RoiReport />
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6">
+      <DashboardViewTabs view="widgets" />
       <DigestBanner />
       {/* Above everything, because it is only here at all when the CRM is not
           yet somebody's working day, and under the charts is where a new
