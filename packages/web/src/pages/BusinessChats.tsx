@@ -653,7 +653,7 @@ export default function BusinessChats({ route = '', merged = false }: {
               <div ref={endRef} />
             </div>
 
-            {!merged && route === 'api' ? (
+            {(!merged && route === 'api') || apiOnly ? (
               <footer className="border-t border-[var(--border)] bg-sky-50 px-4 py-3 text-xs text-sky-900 dark:bg-sky-950 dark:text-sky-100" data-testid="api-readonly">
                 <strong>Automatic: sent by workflows.</strong> This inbox is read-only. Replies to customers are sent from the WhatsApp chat inbox.
               </footer>
