@@ -11,11 +11,10 @@ import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
 import {
-  bubbleTime, composerMode, dayLabel, displayNumber, linkBanner, moduleTag, outboundTone, ticks, wentOut, whyNoTextBox,
-  windowLeft,
+  bubbleTime, composerMode, dayLabel, displayNumber, linkBanner, outboundTone, ticks, wentOut, whyNoTextBox,
+  rowChip, type RowChip,
 } from '../lib/whatsapp';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
-import { badgeVars } from '../lib/color';
 import { ChatSidePanel, useChatRecord, type ChatCandidate } from '../components/ChatRecordPane';
 import { HeaderFieldStrip } from '../components/RecordBlocks';
 import { FieldValue } from '../components/FieldRenderer';
@@ -58,6 +57,14 @@ const FILTERS: { value: Filter; label: string }[] = [
 const MODULE_PREFIX = 'module:';
 
 /** One row of the queue, as `listConversations` returns it. */
+const CHIP_TONE: Record<RowChip['tone'], string> = {
+  red: 'bg-rose-100 text-rose-900 dark:bg-rose-900 dark:text-rose-100',
+  amber: 'bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100',
+  green: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100',
+  blue: 'bg-sky-100 text-sky-900 dark:bg-sky-900 dark:text-sky-100',
+  grey: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+};
+
 type ChatRow = Awaited<ReturnType<typeof api.waBizConversations>>[number];
 
 interface BizMessage {
@@ -354,6 +361,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
           {(conversations ?? []).map((row) => (
             <ChatQueueRow
               showWindow={showWindow}
+              api={route === 'api'}
               key={row.id}
               row={row}
               active={row.id === activeId}
@@ -724,8 +732,8 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
  * then nobody has picked this up, then a thread somebody has parked, then who
  * holds it.
  */
-function ChatQueueRow({ row, active, onSelect, modules, showWindow }: {
-  row: ChatRow; active: boolean; onSelect: () => void; modules: ModuleSummary[] | undefined; showWindow: boolean;
+function ChatQueueRow({ row, active, onSelect, modules, showWindow, api }: {
+  row: ChatRow; active: boolean; onSelect: () => void; modules: ModuleSummary[] | undefined; showWindow: boolean; api: boolean;
 }): JSX.Element {
   // A chat not yet linked to a record still shows who holds that number, best match first (Contacts first,
   // decided by the server) with a "+n" hint when more than one record has it.
@@ -733,9 +741,8 @@ function ChatQueueRow({ row, active, onSelect, modules, showWindow }: {
   const more = row.recordLabel ? 0 : Math.max(0, (row.owners?.length ?? 0) - 1);
   const who = row.recordLabel ?? best?.label ?? row.contactName ?? row.handle;
   const shownModule = row.recordModule ?? best?.module ?? null;
-  const replyWindow = windowLeft(row.windowExpiresAt);
-  const tag = moduleTag(modules?.find((entry) => entry.name === shownModule));
-  const tagColour = modules?.find((entry) => entry.name === shownModule)?.color;
+  const chip = rowChip(row, api);
+  const contactKind = modules?.find((entry) => entry.name === shownModule)?.label ?? null;
 
   return (
     <button
@@ -747,34 +754,6 @@ function ChatQueueRow({ row, active, onSelect, modules, showWindow }: {
       )}
     >
       {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600" aria-hidden />}
-
-      {showWindow && (
-<>
-      {/*
-        **The reply window, down the left of every chat.** 25 September 2026,
-        the owner. Green with the hours left while a free reply may still go;
-        yellow with "Exp" once only an approved template can reopen the
-        conversation. Read from the same expiry the composer checks, so the bar
-        and the box underneath it can never disagree.
-      */}
-      <span
-        className="flex w-9 shrink-0 flex-col items-center gap-1"
-        title={replyWindow.open ? `A free reply can go for ${replyWindow.label} more` : 'The 24-hour window has shut: send a template to start again'}
-      >
-        <span className={cn(
-          'inline-flex items-center gap-0.5 rounded px-1 py-px text-[10px] font-bold tabular-nums',
-          replyWindow.open
-            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200'
-            : 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200',
-        )}>
-          {!replyWindow.open && <Clock className="h-2.5 w-2.5" />}
-          {replyWindow.label}
-        </span>
-        <span className={cn('w-1 flex-1 rounded-full', replyWindow.open ? 'bg-emerald-500' : 'bg-amber-400')} aria-hidden />
-      </span>
-
-</>
-      )}
 
       <span className="relative shrink-0 self-start">
         <Avatar name={who} size={36} />
@@ -791,36 +770,20 @@ function ChatQueueRow({ row, active, onSelect, modules, showWindow }: {
           )}
         </span>
         <span className="mt-1 block truncate text-xs text-slate-500">{row.lastMessagePreview ?? 'No messages yet'}</span>
+        <span className="mt-1 flex min-w-0 items-center gap-1.5">
+          {chip && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold', CHIP_TONE[chip.tone])}>{chip.text}</span>}
+          <span className="min-w-0 truncate text-[10px] text-slate-400">{[contactKind, row.assignedName].filter(Boolean).join(' · ')}</span>
+        </span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1 self-start pt-2">
         {row.lastMessageAt
           ? <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-400">{relativeTime(row.lastMessageAt)}</span>
           : <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-300">—</span>}
-        {row.unreadCount > 0 ? (
+        {row.unreadCount > 0 && (
           <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-2xs font-bold text-white">{row.unreadCount} new</span>
-        ) : !row.assignedName ? (
-          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">Unassigned</span>
-        ) : (
-          <span className="max-w-[7rem] truncate px-1.5 py-0.5 text-2xs font-semibold text-slate-400">{row.assignedName}</span>
         )}
       </span>
 
-      {/*
-        **LD or INV, hanging from the top-right corner.** Which module the
-        person is a record of, in the smallest space that still reads — above
-        the time and out of the name's way, where the old sticker beside the
-        name made long names truncate for it. The module's own colour, through
-        `badgeVars`, so it clears contrast in both themes.
-      */}
-      {tag && (
-        <span
-          style={badgeVars(tagColour)}
-          className="badge-tinted absolute right-2 top-0 rounded-b-md px-1.5 pb-px text-[9px] font-extrabold leading-tight tracking-wide"
-          title={`A record in ${modules?.find((entry) => entry.name === shownModule)?.label ?? ''}`}
-        >
-          {tag}
-        </span>
-      )}
     </button>
   );
 }

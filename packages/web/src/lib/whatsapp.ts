@@ -274,3 +274,30 @@ export const BUBBLE_STYLE: Record<BubbleKind, { label: string; bubble: string; c
     chip: 'bg-sky-200 text-sky-900 dark:bg-sky-800 dark:text-sky-100',
   },
 };
+
+/**
+ * The ONE status chip on a chat-list row. Plain chat shows where the reply window
+ * stands; the API inbox shows how the last automatic send went. Priority: failed,
+ * then nobody has picked it up, then the window or the delivery state.
+ */
+export type RowChip = { text: string; tone: 'red' | 'amber' | 'green' | 'blue' | 'grey' };
+
+export function rowChip(
+  row: { lastDirection: string | null; lastStatus: string | null; unreadCount: number; assignedName: string | null; windowExpiresAt: string | null },
+  api: boolean,
+  now: Date = new Date(),
+): RowChip | null {
+  if (!row.lastDirection) return null;
+  const lastOut = row.lastDirection === 'outbound';
+  if (lastOut && row.lastStatus === 'failed') return { text: 'Failed', tone: 'red' };
+  if (api) {
+    if (!lastOut) return { text: 'Replied · needs a person', tone: 'amber' };
+    if (row.lastStatus === 'read') return { text: 'Read', tone: 'green' };
+    if (row.lastStatus === 'delivered') return { text: 'Delivered', tone: 'blue' };
+    return { text: 'Sent', tone: 'grey' };
+  }
+  const win = windowLeft(row.windowExpiresAt, now);
+  if (!lastOut && !row.assignedName) return { text: 'Needs a reply · unassigned', tone: 'amber' };
+  if (!win.open) return { text: 'Reply window closed', tone: 'grey' };
+  return { text: `Reply window open · ${win.label} left`, tone: 'green' };
+}

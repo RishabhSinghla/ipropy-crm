@@ -1648,7 +1648,7 @@ export const api = {
     id: string; handle: string; contactName: string | null; recordId: string | null;
     recordModule: string | null; recordLabel: string | null; assignedTo: string | null;
     assignedName: string | null; status: string; unreadCount: number;
-    lastMessageAt: string | null; lastMessagePreview: string | null; waId: string | null; windowOpen: boolean;
+    lastMessageAt: string | null; lastMessagePreview: string | null; lastDirection: string | null; lastStatus: string | null; waId: string | null; windowOpen: boolean;
     windowExpiresAt: string | null; optedOut: boolean;
     owners: { recordId: string; module: string; moduleLabel: string; label: string; fieldLabel: string }[];
   }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined, route: route || undefined })}`),
