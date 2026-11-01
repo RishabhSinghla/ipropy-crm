@@ -766,7 +766,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
             className={cn(
               'w-[24rem] shrink-0 flex-col overflow-y-auto border-l border-[var(--border)] bg-[var(--surface-muted)] p-3 dark:bg-slate-950/40 2xl:w-[28rem]',
               paneOpen
-                ? 'fixed inset-y-0 right-0 z-40 flex w-[min(24rem,100vw)] shadow-xl xl:static xl:shadow-none'
+                ? cn('fixed inset-y-0 right-0 z-40 flex w-[min(24rem,100vw)] shadow-xl xl:static xl:shadow-none', panelHidden && 'xl:hidden')
                 : panelHidden ? 'hidden' : 'hidden xl:flex',
             )}
           >

@@ -43,6 +43,11 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit, colla
     if (!collapsible) return false;
     try { return localStorage.getItem(storeKey) === '1'; } catch { return false; }
   });
+  // The same card instance can be reused for another module's section; read that section's own saved choice.
+  useEffect(() => {
+    if (!collapsible) return;
+    try { setFolded(localStorage.getItem(storeKey) === '1'); } catch { setFolded(false); }
+  }, [storeKey, collapsible]);
   const toggle = (): void => {
     setFolded((was) => {
       try { localStorage.setItem(storeKey, was ? '0' : '1'); } catch { /* private window */ }
