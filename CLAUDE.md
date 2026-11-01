@@ -1014,7 +1014,7 @@ which is the right moment to *try* and the wrong moment to depend on: the
 contact may not exist yet, two records may share the number, or it may sit in
 a field the matcher does not read (it reads `uitype = 'phone'` **and**
 `storage = 'column'`, so an admin-created phone field — always `json` — is
-invisible to it). On production, 20 September 2026, a thread from 9811533633
+invisible to it). On production, 20 September 2026, a thread from 9000010000
 sat unlinked beside a contact holding that exact number, and the tab showed
 nothing, which reads as WhatsApp being broken. The route now matches
 `c.record_id = $1 OR c.handle = ANY($2)`, the handles coming off the record

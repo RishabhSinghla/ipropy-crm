@@ -108,7 +108,7 @@ export default function MobileDialer(): JSX.Element {
     test could.
 
     **The CRM's text search does not match a phone number.** Searching
-    `9830132657` against a database holding exactly that number answers zero —
+    `9000010002` against a database holding exactly that number answers zero —
     measured on 3 October 2026, against the endpoint every other screen uses.
     It searches names. On a keypad that is the one search that matters, so this
     asks with the **filter grammar** instead: `contains` on each of the

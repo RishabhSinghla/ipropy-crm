@@ -110,7 +110,7 @@ function sameValue(a: unknown, b: unknown): boolean {
  *
  * This has to run over the *sheet's* side too, not just the record's. Left raw,
  * a currency column read `₹80 L` against `25000000` and a mobile read
- * `+91 9910324679` against `9910324679` — two pairs where the eye reports a
+ * `+91 9000010006` against `9000010006` — two pairs where the eye reports a
  * difference the data does not have, on exactly the fields somebody is about to
  * make a decision on.
  */

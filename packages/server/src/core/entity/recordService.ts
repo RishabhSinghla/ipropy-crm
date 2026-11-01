@@ -1456,8 +1456,8 @@ export function buildLabel(module: ModuleMeta, values: Record<string, unknown>):
  * by its owner or by anyone else. That reads exactly like a permissions
  * problem, and it was reported as one.
  *
- * Both forms go in. The stored value may be `9811421156` while the caller ID
- * says `+91 98114 21156`, and the tokeniser treats those as different words,
+ * Both forms go in. The stored value may be `9000010004` while the caller ID
+ * says `+91 90000 10004`, and the tokeniser treats those as different words,
  * so the digits-only form is appended alongside whatever was typed.
  */
 function buildSearchText(module: ModuleMeta, values: Record<string, unknown>): string {
@@ -1976,8 +1976,8 @@ export interface SearchHit {
  *
  *  * **Phone-shaped terms only** — eight digits or more. A name, a locality or
  *    a budget goes nowhere near this path, so it cannot be used to browse.
- *  * **Digits compared to digits.** The stored value may be `9811421156`,
- *    `+91 98114 21156` or `098114-21156`; a `LIKE` on the raw column matches
+ *  * **Digits compared to digits.** The stored value may be `9000010004`,
+ *    `+91 90000 10004` or `098114-21156`; a `LIKE` on the raw column matches
  *    the first and misses the rest, which would report "not taken" for a number
  *    that is.
  *  * **The last eight digits.** Indian mobiles are ten, and the pair that

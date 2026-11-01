@@ -999,7 +999,7 @@ All three were invisible to a clean typecheck and 1,200 green unit tests,
 because all three are about data this CRM actually holds.
 
 * **The CRM's text search does not match a phone number at all.** Searching
-  `9830132657` against a database holding exactly that number answers **zero**
+  `9000010002` against a database holding exactly that number answers **zero**
   — measured against the endpoint every other screen uses. It searches names.
   On a keypad that is the one search that matters, so the dialler asks with the
   **filter grammar** instead — `contains` on each of the module's phone fields,

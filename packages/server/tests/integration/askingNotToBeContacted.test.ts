@@ -23,7 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { filterOptedOut, isOptedOut, recordConsent } from '../../src/core/consent/index.js';
 
-const CALLER = '+919811590101';
+const CALLER = '+919000010025';
 const EMAIL = 'optout-test@example.com';
 
 async function wipe() {
@@ -93,8 +93,8 @@ describe('a request not to be contacted', () => {
   });
 
   it('recognises the same number written differently', async () => {
-    // A rep types 9811590101, the provider reports +919811590101. Same person.
-    expect(await isOptedOut('9811590101', 'call')).toBe(true);
+    // A rep types 9000010025, the provider reports +919000010025. Same person.
+    expect(await isOptedOut('9000010025', 'call')).toBe(true);
   });
 
   it('removes an unsubscribed address from an email send', async () => {

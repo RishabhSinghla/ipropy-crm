@@ -16,13 +16,13 @@ import { redactContactDetails } from '@ipropy/shared';
 
 describe('every way a phone number gets written', () => {
   it.each([
-    ['plain', '9811533633'],
-    ['country code, spaced', '+91 98115 33633'],
-    ['country code, joined', '+919811533633'],
+    ['plain', '9000010000'],
+    ['country code, spaced', '+91 90000 10000'],
+    ['country code, joined', '+919000010000'],
     ['country code, hyphens', '+91-98115-33633'],
     ['leading zero', '098115 33633'],
-    ['91 without a plus', '91 9811533633'],
-    ['brackets round the code', '(+91) 9811533633'],
+    ['91 without a plus', '91 9000010000'],
+    ['brackets round the code', '(+91) 9000010000'],
     ['a dot', '98115.33633'],
     ['four-three-three', '9811 533 633'],
     ['four-six', '9811 533633'],

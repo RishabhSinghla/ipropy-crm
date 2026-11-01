@@ -75,7 +75,7 @@ describe('is the phone there', () => {
 
     const queued = await request(app).post('/api/telephony/dial')
       .set('Authorization', `Bearer ${token}`)
-      .send({ to: '9711533633' })
+      .send({ to: '9000010026' })
       .expect(200);
     expect(queued.body.sent).toBe(true);
     const target = await db.queryOne<{ device_id: string }>(
@@ -93,7 +93,7 @@ describe('is the phone there', () => {
     ]);
     const handed = [first.body.command, second.body.command].filter(Boolean);
     expect(handed).toHaveLength(1);
-    expect(handed[0].number).toBe('9711533633');
+    expect(handed[0].number).toBe('9000010026');
 
     // And the phone closing it out is what the desk reads back.
     await request(app).post(`/api/telephony/dial/${handed[0].id}/result`)
@@ -117,7 +117,7 @@ describe('is the phone there', () => {
     */
     const queued = await request(app).post('/api/telephony/dial')
       .set('Authorization', `Bearer ${token}`)
-      .send({ to: '9811533633' })
+      .send({ to: '9000010000' })
       .expect(200);
     const target = await db.queryOne<{ device_id: string }>(
       'SELECT device_id FROM ipy_device_command WHERE id = $1', [queued.body.commandId],

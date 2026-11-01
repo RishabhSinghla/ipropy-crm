@@ -12,8 +12,8 @@ const owner = (module: string, rank: number, fieldRank: number, label: string) =
 
 describe('the key a chat number is compared on', () => {
   it('is the last ten digits whatever the shape', () => {
-    for (const shape of ['9811050512', '+91 9811050512', '09811050512', '91-98110 50512', '919811050512@s.whatsapp.net', '0091 98110-50512']) {
-      expect(ownerKey(shape)).toBe('9811050512');
+    for (const shape of ['9000010010', '+91 9000010010', '09000010010', '91-90000 10010', '919000010010@s.whatsapp.net', '0091 90000-10010']) {
+      expect(ownerKey(shape)).toBe('9000010010');
     }
   });
   it('has no key for something too short', () => {

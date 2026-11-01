@@ -434,7 +434,7 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
     message arrives. That is the right moment to *try*, and it is the wrong
     moment to rely on: the contact may not exist yet, two records may share the
     number, or the number may sit in a field the matcher does not read. On
-    production, 20 September 2026, a thread from 9811533633 sat unlinked while
+    production, 20 September 2026, a thread from 9000010000 sat unlinked while
     a contact holding that exact number sat beside it — and the tab on that
     contact showed nothing at all, which reads as WhatsApp being broken.
 

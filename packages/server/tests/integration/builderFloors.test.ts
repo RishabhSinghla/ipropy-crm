@@ -32,7 +32,7 @@ import { signIn } from './fixtures.js';
 
 const MARK = `zzbf${Date.now()}`;
 /** One builder, three houses — the case Inventories cannot hold. */
-const ONE_MOBILE = '9910534500';
+const ONE_MOBILE = '9000010001';
 /** This suite's own locality, so it asserts on its own rows and nobody else's. */
 const LOCALITY = 'Adyar';
 
@@ -76,7 +76,7 @@ beforeAll(async () => {
     { house_no: `${MARK}-B`, builder_name: `${MARK} Chauhan`, mobile: ONE_MOBILE,
       first_floor_price: 500, top_floor_price: 500, floor_status: 'Available', bedrooms: 4,
       accommodation: '4 BHK', size: 635.25 },
-    { house_no: `${MARK}-C`, builder_name: `${MARK} Bindal`, mobile: '9899423088',
+    { house_no: `${MARK}-C`, builder_name: `${MARK} Bindal`, mobile: '9000010011',
       first_floor_price: 245, floor_status: 'Sold', bedrooms: 3, accommodation: '3 BHK', size: 281.83 },
   ];
   for (const house of houses) {

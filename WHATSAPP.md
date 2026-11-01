@@ -446,7 +446,7 @@ which is the right moment to *try* and the wrong moment to depend on: the
 contact may not exist yet, two records may share the number, or it may sit in
 a field the matcher does not read (it reads `uitype = 'phone'` **and**
 `storage = 'column'`, so an admin-created phone field — always `json` — is
-invisible to it). On production, 20 September 2026, a thread from 9811533633
+invisible to it). On production, 20 September 2026, a thread from 9000010000
 sat unlinked beside a contact holding that exact number, and the tab showed
 nothing, which reads as WhatsApp being broken. The route now matches
 `c.record_id = $1 OR c.handle = ANY($2)`, the handles coming off the record
@@ -1356,7 +1356,7 @@ configuration rather than accepting the refusal.
 | the same delivery twice is one message | two identical POSTs, **one** `ipy_message` row |
 | a thread finds its contact by number | `record_id` set, `wa_id` written in full |
 | the 24-hour window opens on an inbound | `window_expires_at` in the future |
-| a reply reaches the provider | the stand-in received it **addressed `919810220579`, not the ten-digit handle** |
+| a reply reaches the provider | the stand-in received it **addressed `919000010003`, not the ten-digit handle** |
 | a status only moves forward | delivered → read, then a late `sent` left it **read** |
 | templates sync and store | `site_visit_invite` added from the provider |
 | a blank fills per person | *"Hello WA UI …, shall we book a site visit?"* |

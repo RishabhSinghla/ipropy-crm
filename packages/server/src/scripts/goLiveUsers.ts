@@ -9,7 +9,7 @@
  *
  *   ADMIN_EMAIL='you@example.com' \
  *   ADMIN_PASSWORD='...' \
- *   ADMIN_MOBILE='98115 33633' \
+ *   ADMIN_MOBILE='90000 10000' \
  *   ADMIN_NAME='Rishabh Singhla' \
  *   DATABASE_URL='postgresql://…' \
  *   npm run go-live:users
@@ -52,7 +52,7 @@ function required(name: string): string {
   return value;
 }
 
-/** Digits only, so "98115 33633" and "+91 98115 33633" store the same way. */
+/** Digits only, so "90000 10000" and "+91 90000 10000" store the same way. */
 function nationalDigits(input: string): string {
   const digits = input.replace(/\D/g, '');
   return digits.length > 10 ? digits.slice(-10) : digits;

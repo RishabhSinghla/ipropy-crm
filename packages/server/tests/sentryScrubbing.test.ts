@@ -19,9 +19,9 @@ const { scrub, beforeSend } = __testing;
 
 describe('what gets stripped before an error is sent', () => {
   it.each([
-    ['a mobile with a country code', '+91 98115 33633'],
-    ['a mobile without one', '9811533633'],
-    ['a mobile with hyphens', '98115-33633'],
+    ['a mobile with a country code', '+91 90000 10000'],
+    ['a mobile without one', '9000010000'],
+    ['a mobile with hyphens', '90000-10000'],
     ['an email', 'buyer@example.com'],
   ])('removes %s', (_what, value) => {
     const out = scrub(`Failed to update lead ${value} on save`) as string;
@@ -43,7 +43,7 @@ describe('what gets stripped before an error is sent', () => {
     // A request body is not flat. A lead arrives wrapped in a values object,
     // inside a list, inside an envelope.
     const out = scrub({
-      records: [{ values: { full_name: 'Aftab Siddiqui', mobile: '+91 97177 94439' } }],
+      records: [{ values: { full_name: 'Aftab Siddiqui', mobile: '+91 90000 10028' } }],
     }) as { records: { values: { full_name: string; mobile: string } }[] };
 
     expect(out.records[0]!.values.mobile).toBe('[redacted]');
@@ -86,7 +86,7 @@ describe('the event on its way out', () => {
     const event = beforeSend({
       request: {
         url: 'https://crm.example.com/leads',
-        query_string: 'q=Aftab+Siddiqui&mobile=9811533633',
+        query_string: 'q=Aftab+Siddiqui&mobile=9000010000',
         cookies: { 'ipropy.token': 'a-real-session' },
         headers: { authorization: 'Bearer real-token', 'user-agent': 'Chrome' },
       },
@@ -111,7 +111,7 @@ describe('the event on its way out', () => {
 
   it('redacts a number that ended up in the error message itself', () => {
     const event = beforeSend({
-      message: 'Duplicate lead for +91 98115 33633',
+      message: 'Duplicate lead for +91 90000 10000',
     } as never, {} as never);
 
     expect(event?.message).toContain('[redacted]');
@@ -145,7 +145,7 @@ describe('the three that got through the first version', () => {
       Sentry was the one path left open.
     */
     const event = beforeSend({
-      exception: { values: [{ type: 'Error', value: 'No lead found for +91 98115 33633 (buyer@example.com)' }] },
+      exception: { values: [{ type: 'Error', value: 'No lead found for +91 90000 10000 (buyer@example.com)' }] },
     } as never, {} as never);
 
     const out = event?.exception?.values?.[0]?.value ?? '';
@@ -161,7 +161,7 @@ describe('the three that got through the first version', () => {
       exception: {
         values: [{
           value: 'boom',
-          stacktrace: { frames: [{ filename: 'x.ts', vars: { mobile: '9811533633', recordId: 'ok-to-keep' } }] },
+          stacktrace: { frames: [{ filename: 'x.ts', vars: { mobile: '9000010000', recordId: 'ok-to-keep' } }] },
         }],
       },
     } as never, {} as never);
@@ -177,7 +177,7 @@ describe('the three that got through the first version', () => {
       records array, record, values, address — and everything below came out
       untouched.
     */
-    const deep = { a: { b: { c: { d: { e: { f: { g: { mobile: '+91 98115 33633' } } } } } } } };
+    const deep = { a: { b: { c: { d: { e: { f: { g: { mobile: '+91 90000 10000' } } } } } } } };
     expect(JSON.stringify(scrub(deep))).not.toContain('98115');
   });
 
@@ -194,18 +194,18 @@ describe('the three that got through the first version', () => {
   it('does not hand back the contents of a Map or a class instance untouched', () => {
     // Object.entries finds nothing on these, so the old version returned the
     // original object and everything inside escaped.
-    class Lead { constructor(public mobile = '+91 98115 33633') {} toString() { return `Lead ${this.mobile}`; } }
+    class Lead { constructor(public mobile = '+91 90000 10000') {} toString() { return `Lead ${this.mobile}`; } }
     expect(JSON.stringify(scrub(new Lead()))).not.toContain('98115');
-    expect(JSON.stringify(scrub(new Map([['mobile', '9811533633']])))).not.toContain('9811533633');
+    expect(JSON.stringify(scrub(new Map([['mobile', '9000010000']])))).not.toContain('9000010000');
   });
 
   it('drops a repeated object rather than returning it raw', () => {
     // A cycle used to be handled by the depth limit alone; now it is detected,
     // and the detected branch must not be a way back to unscrubbed data.
-    const loop: Record<string, unknown> = { mobile: '9811533633' };
+    const loop: Record<string, unknown> = { mobile: '9000010000' };
     loop.self = loop;
     const out = JSON.stringify(scrub(loop));
-    expect(out).not.toContain('9811533633');
+    expect(out).not.toContain('9000010000');
     expect(out).toContain('[circular]');
   });
 });
@@ -223,7 +223,7 @@ describe('it cannot be used to freeze the server', () => {
       Capped at Sentry's own maxValueLength, so nothing is lost that would have
       survived the far end anyway.
     */
-    const huge = 'lead 9811533633 '.repeat(30_000); // ~480 KB
+    const huge = 'lead 9000010000 '.repeat(30_000); // ~480 KB
 
     const started = performance.now();
     const out = scrub(huge) as string;
@@ -233,7 +233,7 @@ describe('it cannot be used to freeze the server', () => {
     expect(out.length).toBeLessThan(2_200);
     expect(out).toContain('more characters');
     // Still scrubbed, not merely shortened.
-    expect(out).not.toContain('9811533633');
+    expect(out).not.toContain('9000010000');
   });
 
   it('says how much it dropped rather than silently truncating', () => {
@@ -269,7 +269,7 @@ describe('the twelve phone formats that leaked', () => {
     ['a comma', '98115,33633'],
     ['a Faridabad landline', '0129 2419711'],
     ['a landline without its zero', '129 2419711'],
-    ['brackets round the country code', '(+91) 9811533633'],
+    ['brackets round the country code', '(+91) 9000010000'],
     ['a leading zero', '098115 33633'],
   ])('redacts a number written with %s', (_shape, number) => {
     const out = scrub(`Lead update failed for ${number} on save`) as string;
@@ -353,7 +353,7 @@ describe('the request body, which was going out whole', () => {
     const event = beforeSend({
       request: {
         url: 'https://crm.example.com/api/records/leads',
-        data: { full_name: 'Aftab Siddiqui', mobile: '9811533633', budget: 18000000 },
+        data: { full_name: 'Aftab Siddiqui', mobile: '9000010000', budget: 18000000 },
       },
     } as never, {} as never);
 

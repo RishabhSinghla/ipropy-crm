@@ -31,9 +31,9 @@ import { registry } from '../metadata/registry.js';
 import { getFieldPermissions } from './index.js';
 
 /**
- * `9811421156` → `98xxxxxx56`.
+ * `9000010004` → `98xxxxxx56`.
  *
- * Digits only for the count, so `+91 98114 21156` and `9811421156` mask to the
+ * Digits only for the count, so `+91 90000 10004` and `9000010004` mask to the
  * same shape. Anything under six digits is returned as-is: masking a four-digit
  * extension to `xx` hides nothing and looks broken.
  */

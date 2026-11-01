@@ -144,7 +144,7 @@ export function formatPhone(value: string | null | undefined): string {
 }
 
 /**
- * A number the way a person reads it: "+91 9811533636".
+ * A number the way a person reads it: "+91 9000010027".
  *
  * The code and the national number are stored apart (see `toInternational`),
  * but nobody wants to read them apart — a lead's mobile should look like one

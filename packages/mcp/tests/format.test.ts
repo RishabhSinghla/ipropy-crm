@@ -37,7 +37,7 @@ describe('a lead as a rep would describe one', () => {
     label: 'Riya Sharma',
     recordNumber: 'LD-00025',
     values: {
-      mobile: '9910190056',
+      mobile: '9000010007',
       country_code: '+91',
       budget: 25_000_000,
       configuration: ['2 BHK', '3 BHK'],
@@ -51,7 +51,7 @@ describe('a lead as a rep would describe one', () => {
   it('puts the number back together from its two halves', () => {
     // Migration 026 split the phone into a country code and national digits.
     // Reading only `mobile` hands a model a number it will recite wrong.
-    expect(leadSummary(lead)).toContain('Mobile: +91 9910190056');
+    expect(leadSummary(lead)).toContain('Mobile: +91 9000010007');
   });
 
   it('leads with what matters and leaves out what does not', () => {

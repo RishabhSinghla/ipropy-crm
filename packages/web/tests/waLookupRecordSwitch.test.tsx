@@ -19,7 +19,7 @@ const found = (number: string, name: string) => ({
 const flush = async () => { await act(async () => { await new Promise((r) => setTimeout(r, 20)); }); };
 
 it('switching records closes the popover and never shows or applies the previous record', async () => {
-  vi.spyOn(api, 'waLookupStored').mockImplementation(async (n: string) => ({ result: n === '9953280558' ? found('919953280558', 'Old Person') : null }) as never);
+  vi.spyOn(api, 'waLookupStored').mockImplementation(async (n: string) => ({ result: n === '9000010005' ? found('919000010005', 'Old Person') : null }) as never);
   const apply = vi.spyOn(api, 'waLookupApply').mockResolvedValue({ savedName: true, savedPhoto: false });
   const container = document.createElement('div');
   document.body.append(container);
@@ -30,12 +30,12 @@ it('switching records closes the popover and never shows or applies the previous
     root!.render(<QueryClientProvider client={query}><WhatsAppLookupButton key={`leads:${id}:${number}`} module="leads" recordId={id} number={number} /></QueryClientProvider>);
   });
 
-  show('rec-old', '9953280558');
+  show('rec-old', '9000010005');
   await flush();
   act(() => { container.querySelector<HTMLButtonElement>('[data-testid="wa-lookup-button"]')!.click(); });
   expect(document.body.textContent).toContain('Old Person');
 
-  show('rec-new', '9891845488');
+  show('rec-new', '9000010016');
   await flush();
   expect(document.body.textContent).not.toContain('Old Person');
   expect(document.querySelector('[role="dialog"]')).toBeNull();

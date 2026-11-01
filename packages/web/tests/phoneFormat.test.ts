@@ -7,11 +7,11 @@ import { formatPhone, formatPhoneWithCode } from '@ipropy/shared';
 // quietly bring the split back.
 describe('formatPhone', () => {
   it('shows an Indian mobile as +91 and ten unbroken digits', () => {
-    expect(formatPhone('9811533636')).toBe('+91 9811533636');
+    expect(formatPhone('9000010027')).toBe('+91 9000010027');
   });
 
   it('strips a stored 91 prefix rather than keeping it as eleven digits', () => {
-    expect(formatPhone('919811533636')).toBe('+91 9811533636');
+    expect(formatPhone('919000010027')).toBe('+91 9000010027');
   });
 
   it('leaves anything it cannot parse as it found it', () => {
@@ -29,7 +29,7 @@ describe('formatPhone', () => {
 
 describe('formatPhoneWithCode', () => {
   it('joins the stored country code onto unbroken national digits', () => {
-    expect(formatPhoneWithCode('91', '9811533636')).toBe('+91 9811533636');
+    expect(formatPhoneWithCode('91', '9000010027')).toBe('+91 9000010027');
   });
 
   it('keeps a code the user chose, UAE included, without inventing a split', () => {
@@ -37,6 +37,6 @@ describe('formatPhoneWithCode', () => {
   });
 
   it('falls back to formatPhone when no code was stored', () => {
-    expect(formatPhoneWithCode(null, '9811533636')).toBe('+91 9811533636');
+    expect(formatPhoneWithCode(null, '9000010027')).toBe('+91 9000010027');
   });
 });
