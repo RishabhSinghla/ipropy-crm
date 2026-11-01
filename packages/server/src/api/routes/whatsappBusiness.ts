@@ -41,7 +41,7 @@ import {
   approveCampaign, campaignRecipients, createCampaign, listCampaigns, previewCampaign,
   setCampaignStatus,
 } from '../../integrations/whatsapp/business/campaigns.js';
-import { plainLaneClause, redactAutomated, rolesInUse } from '../../integrations/whatsapp/business/channelRoles.js';
+import { redactAutomated, rolesInUse } from '../../integrations/whatsapp/business/channelRoles.js';
 import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.js';
 import {
   enableAllGroups, historyJobStatus, historySupported, listWaGroups, refreshGroupList, setGroupEnabled, startHistoryImport,
@@ -450,8 +450,9 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
         -- that the business inbox has never held, and which read to the owner
         -- as messages appearing from nowhere. Kept in the table, not shown.
         AND c.wa_account_id IS NULL
-        -- Plain WhatsApp only: the official API's threads have their own module.
-        AND ${plainLaneClause('c')}
+        -- Both lanes (plain chat and the official API) on purpose: the record's tab is one
+        -- chronological thread, and each row says which lane it came from. The two inbox
+        -- pages stay separate; only this per-contact view merges them.
         AND (c.record_id = $1 OR ($2::text[] <> '{}' AND c.handle = ANY($2::text[])))
       ORDER BY m.created_at ASC
       LIMIT 500`,
