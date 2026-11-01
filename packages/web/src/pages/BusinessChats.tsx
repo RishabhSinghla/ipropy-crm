@@ -96,6 +96,14 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
   const [filter, setFilter] = useState<Filter>('all');
   /** Pressed colour-key chips in the open thread; empty shows everything. Resets when another chat opens. */
   const { data: counts } = useQuery({ queryKey: ['wa-biz', 'counts', route], queryFn: () => api.waBizCounts(route), refetchInterval: 30_000 });
+  /** The right-hand record panel on wide screens; hiding it is remembered in this browser. */
+  const [panelHidden, setPanelHidden] = useState<boolean>(() => {
+    try { return localStorage.getItem('ipropy.waPanelHidden') === '1'; } catch { return false; }
+  });
+  const togglePanel = (): void => setPanelHidden((was) => {
+    try { localStorage.setItem('ipropy.waPanelHidden', was ? '0' : '1'); } catch { /* private window */ }
+    return !was;
+  });
   const [kindFilter, setKindFilter] = useState<Set<BubbleKind>>(new Set());
   // Empty means every module. Set from the same dropdown, prefixed so a module
   // name can never be mistaken for a status.
@@ -458,6 +466,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                 <button type="button" className="btn-secondary btn-sm shrink-0 md:hidden" aria-label="Back to chats" onClick={() => { setActiveId(null); setPicked(null); }}>Back</button>
                 <Avatar name={who} size={42} className="mt-0.5" />
                 <button type="button" className="btn-secondary btn-sm order-last shrink-0 xl:hidden" onClick={() => setPaneOpen(true)}>Details</button>
+                <button type="button" className="btn-secondary btn-sm order-last hidden shrink-0 xl:inline-flex" aria-pressed={!panelHidden} onClick={togglePanel}>{panelHidden ? 'Show details' : 'Hide details'}</button>
                 <div className="min-w-0 flex-1">
                   {recordModule && recordRow ? (
                     <ChatRecordHeader module={recordModule} record={recordRow} who={who} />
@@ -746,7 +755,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
               'w-[24rem] shrink-0 flex-col overflow-y-auto border-l border-[var(--border)] bg-[var(--surface-muted)] p-3 dark:bg-slate-950/40 2xl:w-[28rem]',
               paneOpen
                 ? 'fixed inset-y-0 right-0 z-40 flex w-[min(24rem,100vw)] shadow-xl xl:static xl:shadow-none'
-                : 'hidden xl:flex',
+                : panelHidden ? 'hidden' : 'hidden xl:flex',
             )}
           >
             <button type="button" className="btn-secondary btn-sm mb-2 self-end xl:hidden" onClick={() => setPaneOpen(false)}>Close</button>

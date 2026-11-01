@@ -1,7 +1,7 @@
 import { type JSX, type ReactNode, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { owesLostReason, picklistOptionForValue, relativeTime, type FieldMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
-import { FileText, LayoutList, MessageSquare, Mic, Send, Sparkles } from 'lucide-react';
+import { ChevronDown, FileText, LayoutList, MessageSquare, Mic, Send, Sparkles } from 'lucide-react';
 import { Avatar } from './ui';
 import { FieldValue } from './FieldRenderer';
 import { EditableField, isInlineEditable } from './EditableField';
@@ -32,12 +32,33 @@ import { EmojiPicker } from './EmojiPicker';
  * it drifts is that one of them stops being inline-editable and nobody
  * notices for a month.
  */
-export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
+export function FieldBlock({ module, title, columns, fields, row, canEdit, collapsible }: {
   module: DescribedModule; title: string; columns: number; fields: FieldMeta[]; row: RecordEnvelope; canEdit: boolean;
+  /** The heading becomes a button that folds the card; the choice is remembered per browser. */
+  collapsible?: boolean;
 }): JSX.Element {
   const queryClient = useQueryClient();
+  const storeKey = `ipropy.fold.${module.name}.${title}`;
+  const [folded, setFolded] = useState<boolean>(() => {
+    if (!collapsible) return false;
+    try { return localStorage.getItem(storeKey) === '1'; } catch { return false; }
+  });
+  const toggle = (): void => {
+    setFolded((was) => {
+      try { localStorage.setItem(storeKey, was ? '0' : '1'); } catch { /* private window */ }
+      return !was;
+    });
+  };
   return <section className="card overflow-hidden">
-    <header className="panel-head"><LayoutList className="h-4 w-4 text-brand-600" />{title}</header>
+    {collapsible ? (
+      <button type="button" className="panel-head w-full text-left" aria-expanded={!folded} onClick={toggle}>
+        <LayoutList className="h-4 w-4 text-brand-600" />{title}
+        <ChevronDown className={cn('ml-auto h-4 w-4 text-muted transition-transform', folded && '-rotate-90')} aria-hidden />
+      </button>
+    ) : (
+      <header className="panel-head"><LayoutList className="h-4 w-4 text-brand-600" />{title}</header>
+    )}
+    {!folded && (<>
     {/* A step tighter top and bottom, on the owner's instruction of
         28 September 2026 — the rows and the card's own padding, matching the
         step `.key-tile` lost. The columns keep their gap: fields that touch
@@ -81,6 +102,7 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
           : <FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact plain />}
       </dd>
     </div>)}</dl>
+    </>)}
   </section>;
 }
 
