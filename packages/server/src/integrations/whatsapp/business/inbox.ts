@@ -48,6 +48,9 @@ export interface InboxConversation {
   unreadCount: number;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
+  /** Direction and delivery status of the newest message, so the queue can show one status chip. */
+  lastDirection: string | null;
+  lastStatus: string | null;
   /** Whether a free reply is allowed, or only an approved template. */
   windowOpen: boolean;
   /** When that stops being true, so the queue can say how long is left. */
@@ -174,6 +177,7 @@ export async function listConversations(input: {
     assigned_name: string | null; status: string; unread_count: number;
     last_message_at: string | null; last_message_preview: string | null;
     window_expires_at: string | null;
+    last_direction: string | null; last_status: string | null;
     wa_id: string | null;
     opted_out: boolean; term_hit: boolean;
   }>(
@@ -181,11 +185,16 @@ export async function listConversations(input: {
             r.label AS record_label, ${HOLDER} AS assigned_to,
             trim(u.first_name || ' ' || u.last_name) AS assigned_name,
             c.status, c.unread_count, c.last_message_at, c.last_message_preview,
-            c.window_expires_at, c.wa_id, ${OPTED_OUT} AS opted_out,
+            c.window_expires_at, lm.direction AS last_direction, lm.status AS last_status,
+            c.wa_id, ${OPTED_OUT} AS opted_out,
             (${hit}) AS term_hit
        FROM ipy_conversation c
        LEFT JOIN ipy_record r ON r.id = c.record_id
        LEFT JOIN ipy_user u ON u.id = ${HOLDER}
+       LEFT JOIN LATERAL (
+         SELECT m.direction, m.status FROM ipy_message m
+          WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1
+       ) lm ON TRUE
       WHERE ${where.join(' AND ')}
       ORDER BY c.last_message_at DESC NULLS LAST
       LIMIT $${params.length}`,
@@ -213,6 +222,8 @@ export async function listConversations(input: {
     unreadCount: row.unread_count,
     lastMessageAt: row.last_message_at,
     lastMessagePreview: row.last_message_preview,
+    lastDirection: row.last_direction,
+    lastStatus: row.last_status,
     windowOpen: alwaysOpen || Boolean(row.window_expires_at && new Date(row.window_expires_at).getTime() > now),
     windowExpiresAt: row.window_expires_at,
     optedOut: row.opted_out,
