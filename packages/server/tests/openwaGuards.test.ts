@@ -65,3 +65,12 @@ describe('random spacing', () => {
     expect(verdict.ok).toBe(false);
   });
 });
+
+describe('a retry meets the same gap', () => {
+  it('derives the jitter from the previous send, so it does not change between attempts', async () => {
+    const { jitterSeconds } = await import('../src/integrations/whatsapp/business/openwaGuards.js');
+    const seed = 1_762_000_123_456;
+    const first = jitterSeconds(10, () => (seed % 997) / 997);
+    expect(jitterSeconds(10, () => (seed % 997) / 997)).toBe(first);
+  });
+});

@@ -68,6 +68,8 @@ export interface SendCounts {
   secondsSinceLast: number | null;
   /** Extra random seconds on top of the minimum gap, decided by the caller. */
   jitter?: number;
+  /** When the previous send happened (ms); the jitter is derived from it so retries see the same gap. */
+  lastSentAtMs?: number | null;
 }
 
 export type GuardVerdict =
@@ -102,11 +104,12 @@ export function decideSend(limits: GuardLimits, counts: SendCounts): GuardVerdic
 /** What has gone out today, counted from the CRM's own rows. A failed message does not count: nothing was sent. */
 export async function currentCounts(userId: string, handle: string, numberId: string | null = null): Promise<SendCounts> {
   const tz = await organisationTimezone();
-  const row = await db.queryOne<{ user_today: string; number_today: string; since: string | null }>(
+  const row = await db.queryOne<{ user_today: string; number_today: string; since: string | null; last_ms: string | null }>(
     `WITH today AS (SELECT (date_trunc('day', now() AT TIME ZONE $1) AT TIME ZONE $1) AS start)
      SELECT COUNT(*) FILTER (WHERE m.sent_by = $2 AND m.created_at >= today.start)         AS user_today,
             COUNT(*) FILTER (WHERE c.handle = $3 AND m.created_at >= today.start)          AS number_today,
-            EXTRACT(EPOCH FROM (now() - MAX(m.created_at)))                                AS since
+            EXTRACT(EPOCH FROM (now() - MAX(m.created_at)))                                AS since,
+            (EXTRACT(EPOCH FROM MAX(m.created_at)) * 1000)::bigint                         AS last_ms
        FROM ipy_message m
        JOIN ipy_conversation c ON c.id = m.conversation_id
        CROSS JOIN today
@@ -119,6 +122,7 @@ export async function currentCounts(userId: string, handle: string, numberId: st
     userToday: Number(row?.user_today ?? 0),
     numberToday: Number(row?.number_today ?? 0),
     secondsSinceLast: row?.since === null || row?.since === undefined ? null : Number(row.since),
+    lastSentAtMs: row?.last_ms ? Number(row.last_ms) : null,
   };
 }
 
@@ -141,6 +145,9 @@ export function takeSendSlot(): Promise<() => void> {
 export async function assertWithinLimits(userId: string, handle: string, numberId: string | null = null): Promise<void> {
   // The spacing and daily caps are counted per number, so one agent's busy day never slows another's.
   const limits = guardLimits();
-  const verdict = decideSend(limits, { ...(await currentCounts(userId, handle, numberId)), jitter: jitterSeconds(limits.minSpacingSeconds) });
+  const counts = await currentCounts(userId, handle, numberId);
+  // Random-looking but fixed for a given previous send: a retry after the shown wait must not meet a longer gap.
+  const seed = counts.lastSentAtMs ?? 0;
+  const verdict = decideSend(limits, { ...counts, jitter: jitterSeconds(limits.minSpacingSeconds, () => (seed % 997) / 997) });
   if (!verdict.ok) throw new BadRequestError(verdict.message);
 }
