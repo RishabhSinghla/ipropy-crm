@@ -5,12 +5,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { toast, useApp } from '../lib/store';
+import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from './WhatsAppMedia';
 import { UnsubscribedPanel, UnsubscribeLink } from './WhatsAppConsent';
-import { bubbleTime, composerMode, dayLabel, linkBanner, outboundTone, ticks, wentOut, whyNoTextBox } from '../lib/whatsapp';
-import { EmptyState, Select, Skeleton, Spinner } from './ui';
+import { BUBBLE_STYLE, bubbleKind, bubbleTime, composerMode, dayLabel, linkBanner, ticks, whyNoTextBox } from '../lib/whatsapp';
+import { EmptyState, Skeleton, Spinner } from './ui';
 
 /**
  * This contact's WhatsApp history, on the contact.
@@ -29,7 +29,6 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   mobile: string | null;
 }): JSX.Element {
   const queryClient = useQueryClient();
-  const isAdmin = Boolean(useApp().user?.isAdmin);
   const [draft, setDraft] = useState('');
   /** The text of a message on its way: shown at once as a bubble that says Sending, so pressing Send feels instant. */
   const [pending, setPending] = useState<string | null>(null);
@@ -68,14 +67,9 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         body: (row.body as string | null) ?? null,
         media: row.media,
         createdAt: String(row.created_at),
-        // Which route it used. Told to administrators only (the server drops it for everybody else).
-        channel: (row.via as string | undefined) ?? null,
-        // An automatic message says so; an admin also sees which route sent it.
-        sentVia: row.automated
-          ? (isAdmin ? 'the WhatsApp API (automatic)' : 'automation')
-          : row.route === 'agent'
-            ? (row.sent_by_name as string | null) ?? 'a linked phone'
-            : 'the business number',
+        // Official API (workflow) or the company phone. Admins get `via`; everyone else only learns that a message was automatic.
+        viaApi: Boolean(row.automated) || row.via === 'api',
+        templateName: (row.template_name as string | null) ?? null,
         status: String(row.status ?? ''),
         error: (row.error_message as string | null) ?? null,
       })) };
@@ -168,39 +162,6 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   // OpenWA unreachable or the phone unlinked: the box is shut with the reason, not left to fail after a paragraph is typed.
   const linkProblem = linkBanner(business?.link);
   const linked = onBusiness && mode === 'text' && !linkProblem;
-  /** Where a message typed here will go, in words a rep understands. */
-  const sendingOn = business?.capabilities?.includes('linkedDevice')
-    ? 'WhatsApp chat (the company phone)'
-    : 'the official WhatsApp number';
-
-  /*
-    **When a free reply cannot go, an approved template still can.** Until now
-    this tab answered a shut window with a dead box and nothing else, so a rep
-    on a record had no way to reach the customer at all and had to go and find
-    the Chats screen. Same controls as that screen, same server call — the
-    blanks are filled by `resolveTemplate` as the person asking, so this cannot
-    put a value in front of a customer that the rep was not allowed to read.
-  */
-  const [templateId, setTemplateId] = useState('');
-  const { data: templates } = useQuery({
-    queryKey: ['wa-biz', 'templates', 'saved'],
-    queryFn: () => api.waBizSavedTemplates(),
-    enabled: onBusiness && mode === 'template',
-  });
-  const { data: preview } = useQuery({
-    queryKey: ['wa-biz', 'template-preview', templateId, module, recordId],
-    queryFn: () => api.waBizTemplatePreview(templateId, module, recordId),
-    enabled: Boolean(templateId),
-  });
-  const sendTemplate = useMutation({
-    mutationFn: () => api.waBizSendTemplate({ templateId, module, recordId, to: mobile! }),
-    onSuccess: () => {
-      setTemplateId('');
-      void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
-      void queryClient.invalidateQueries({ queryKey: ['wa-biz', 'thread', mobile, module, recordId] });
-    },
-    onError: (err: Error) => toast.error('Could not send the template', err.message),
-  });
 
   /*
     Open at the newest message, the way WhatsApp does. The list scrolls on its
@@ -234,137 +195,111 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     ...(messages ?? []),
     ...(pending !== null ? [{
       id: 'pending', direction: 'outbound' as const, body: pending, media: null, createdAt: new Date().toISOString(),
-      channel: null, sentVia: null, status: 'sending', error: null,
+      viaApi: false, templateName: null, status: 'sending', error: null,
     }] : []),
   ];
 
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      {/*
-        The way back to the same conversation on the WhatsApp screen, where the
-        whole team's queue is — the mirror of "Open the full record" there.
-      */}
-      <div className="flex justify-end border-b border-[var(--border)] bg-white px-4 py-1.5 dark:bg-slate-900">
-        <Link
-          to={`/whatsapp/chats?record=${recordId}`}
-          className="inline-flex items-center gap-1.5 text-2xs font-semibold text-muted transition-colors hover:text-brand-600"
-        >
-          <ExternalLink className="h-3 w-3" />
-          Open in WhatsApp
-        </Link>
+      <div className="border-b border-[var(--border)] bg-white px-4 py-2 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-2">
+          <p className="min-w-0 truncate text-sm font-semibold">WhatsApp{mobile ? <span className="ml-2 font-normal text-muted">{mobile}</span> : null}</p>
+          <Link
+            to={`/whatsapp/chats?record=${recordId}`}
+            className="inline-flex shrink-0 items-center gap-1.5 text-2xs font-semibold text-muted transition-colors hover:text-brand-600"
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open in WhatsApp
+          </Link>
+        </div>
+        <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Colour key">
+          {(Object.keys(BUBBLE_STYLE) as Array<keyof typeof BUBBLE_STYLE>).map((kind) => (
+            <li key={kind} className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', BUBBLE_STYLE[kind].chip)}>{BUBBLE_STYLE[kind].label}</li>
+          ))}
+        </ul>
       </div>
-      {/* OpenWA down or the phone unlinked: said above the chat, in words. */}
-      {linkBanner(business?.link) && (
-        <div role="alert" className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+      {linkProblem && (
+        <div role="alert" className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{linkBanner(business?.link)}</span>
+          <span>{linkProblem}</span>
         </div>
       )}
-      {/*
-        A tinted canvas, the same one the Chats screen uses, so a white
-        incoming bubble reads as a bubble. On white the thread looked like a
-        page with faint boxes on it rather than like a chat.
-      */}
-      <div ref={bottomOf} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-slate-100 p-4 dark:bg-slate-950">
+      <div ref={bottomOf} className="min-h-0 flex-1 space-y-1.5 overflow-y-auto bg-slate-100 p-3 dark:bg-slate-950">
         {conversation.length === 0 && (
           <EmptyState
             icon={<MessageCircle className="h-8 w-8" />}
             title="No WhatsApp yet"
             body={onBusiness
-              ? 'Send the first message below — it goes out from the business number.'
+              ? 'No messages on either WhatsApp channel. Send the first one below.'
               : 'Ask an admin to connect the WhatsApp Business number in Admin → Integrations.'}
           />
         )}
-        {conversation.map((m, index) => (
-          <div key={m.id}>
-          {/* The date once, down the middle, the way WhatsApp does it —
-              instead of on all forty bubbles from one afternoon. */}
-          {dayLabel(m.createdAt) !== (index > 0 ? dayLabel(conversation[index - 1]!.createdAt) : null) && (
-            <div className="flex justify-center py-2">
-              <span className="rounded-md bg-white px-2.5 py-1 text-2xs font-semibold uppercase tracking-wide text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
-                {dayLabel(m.createdAt)}
-              </span>
-            </div>
-          )}
-          <div className={cn('flex', m.direction === 'outbound' ? 'justify-end' : 'justify-start')}>
-            <div
-              className={cn(
-                'max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-sm',
-                /*
-                  **A message that did not go must not look like one that
-                  did.** Until 20 September every outbound line here was the
-                  same green and said "sent via the business number" —
-                  including six that WhatsApp had refused outright. The owner
-                  was looking at a screen telling him his customer had been
-                  messaged. `outboundTone` is the one place that decides, so
-                  this tab and the Chats screen cannot disagree about what a
-                  refused message looks like.
-                */
-                m.direction !== 'outbound'
-                  ? 'bg-white text-slate-800 dark:bg-slate-800 dark:text-slate-100'
-                  : cn(outboundTone(m.status), 'text-white'),
+        {conversation.map((m, index) => {
+          const kind = bubbleKind(m);
+          const style = BUBBLE_STYLE[kind];
+          const out = m.direction === 'outbound';
+          const failed = out && m.status === 'failed';
+          const media = readMessageMedia(m.media);
+          const remote = readRemoteFile(m.media);
+          return (
+            <div key={m.id}>
+              {dayLabel(m.createdAt) !== (index > 0 ? dayLabel(conversation[index - 1]!.createdAt) : null) && (
+                <div className="flex justify-center py-2">
+                  <span className="rounded-md bg-white px-2.5 py-1 text-2xs font-semibold uppercase tracking-wide text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
+                    {dayLabel(m.createdAt)}
+                  </span>
+                </div>
               )}
-            >
-              {(() => {
-                const media = readMessageMedia(m.media);
-                if (media) {
-                  return (
-                    <div className="mb-1 min-w-[12rem]">
-                      <WhatsAppMedia media={media} dark={m.direction === 'outbound'} />
-                    </div>
-                  );
-                }
-                const remote = readRemoteFile(m.media);
-                return remote ? (
-                  <div className="mb-1 min-w-[12rem]">
-                    <WhatsAppRemoteFile messageId={m.id} file={remote} dark={m.direction === 'outbound'} />
-                  </div>
-                ) : null;
-              })()}
-              {(m.body || !(readMessageMedia(m.media) || readRemoteFile(m.media))) && (
-                <p className="whitespace-pre-wrap break-words">
-                  {m.body ?? <span className="italic opacity-70">Attachment</span>}
-                </p>
-              )}
-              <p className={cn('mt-1 flex items-center gap-1 text-[10px]', m.direction === 'outbound' ? 'text-white/80' : 'text-muted')}>
-                {bubbleTime(m.createdAt)}
-                {isAdmin && m.channel && <span className="rounded bg-black/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide">{m.channel === 'openwa' ? 'Chat' : 'API'}</span>}
-                {m.status === 'sending' && <span className="flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden /> Sending…</span>}
-                {m.direction === 'outbound' && ticks(m.status).marks && (
-                  ticks(m.status).marks === '✓'
-                    ? <Check className="h-3 w-3" aria-label="sent" />
-                    : <CheckCheck className={cn('h-3 w-3', ticks(m.status).read && 'text-sky-200')} aria-label={ticks(m.status).read ? 'read' : 'delivered'} />
-                )}
-                {/* Which number it left from — older rows may name a rep's
-                    own phone, from before that route was removed. */}
-                {m.direction === 'outbound' && m.sentVia
-                  && ` · ${m.status === 'failed' ? 'NOT delivered' : wentOut(m.status)} via ${m.sentVia}`}
-              </p>
-              {/*
-                The reason, in the provider's own words. "Not delivered" alone
-                sends somebody hunting; "outside the 24-hour window" is a thing
-                a person can act on in ten seconds.
-              */}
-              {m.direction === 'outbound' && m.status === 'failed' && m.body && !readMessageMedia(m.media) && !readRemoteFile(m.media) && (
-                <button
-                  type="button"
-                  className="mt-1 rounded bg-white/25 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-white/35 disabled:opacity-50"
-                  disabled={send.isPending || !linked}
-                  onClick={() => send.mutate(m.body!)}
+              <div className={cn('flex', out ? 'justify-end' : 'justify-start')}>
+                <div
+                  data-kind={kind}
+                  className={cn(
+                    'max-w-[85%] rounded-xl border px-2.5 py-1.5 text-sm sm:max-w-[75%]',
+                    style.bubble,
+                    failed && 'border-rose-500 ring-1 ring-rose-500',
+                  )}
                 >
-                  Retry
-                </button>
-              )}
-              {m.direction === 'outbound' && m.status === 'failed' && (
-                <p className="mt-1 rounded bg-white/15 px-1.5 py-1 text-[10px] leading-snug text-white">
-                  <strong>Not delivered.</strong> {m.error ?? 'WhatsApp gave no reason.'}
-                </p>
-              )}
+                  <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">
+                    {style.label}{m.templateName ? ` · template: ${m.templateName}` : ''}
+                  </p>
+                  {media && <div className="mb-1 min-w-[12rem]"><WhatsAppMedia media={media} /></div>}
+                  {!media && remote && <div className="mb-1 min-w-[12rem]"><WhatsAppRemoteFile messageId={m.id} file={remote} /></div>}
+                  {(m.body || !(media || remote)) && (
+                    <p className="whitespace-pre-wrap break-words">
+                      {m.body ?? <span className="italic opacity-70">Attachment</span>}
+                    </p>
+                  )}
+                  <p className="mt-0.5 flex items-center justify-end gap-1 text-[10px] opacity-80">
+                    {bubbleTime(m.createdAt)}
+                    {m.status === 'sending' && <span className="flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden /> Sending…</span>}
+                    {out && !failed && ticks(m.status).marks && (
+                      ticks(m.status).marks === '✓'
+                        ? <Check className="h-3 w-3" aria-label="sent" />
+                        : <CheckCheck className={cn('h-3 w-3', ticks(m.status).read && 'text-sky-600 dark:text-sky-300')} aria-label={ticks(m.status).read ? 'read' : 'delivered'} />
+                    )}
+                    {out && m.status && m.status !== 'sending' && !failed && <span>{m.status === 'queued' ? 'sending' : m.status}</span>}
+                  </p>
+                  {failed && (
+                    <p className="mt-1 rounded bg-rose-100 px-1.5 py-1 text-[11px] leading-snug text-rose-900 dark:bg-rose-950 dark:text-rose-100">
+                      <strong>Failed.</strong> {m.error ?? 'WhatsApp gave no reason.'}
+                    </p>
+                  )}
+                  {failed && m.body && !media && !remote && !m.viaApi && (
+                    <button
+                      type="button"
+                      className="mt-1 rounded bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                      disabled={send.isPending || !linked}
+                      onClick={() => send.mutate(m.body!)}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/*
@@ -378,49 +313,9 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         </div>
       )}
 
-      {!optedOut && onBusiness && mode === 'template' && mobile && (
-        <div className="space-y-2 border-t border-[var(--border)] bg-amber-50 px-3 py-2 dark:bg-amber-950/40">
-          <p className="flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-200">
-            <Clock className="h-3.5 w-3.5" />
-            {whyNoTextBox(business?.capabilities ?? [], business?.provider ?? null)}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={templateId}
-              onChange={setTemplateId}
-              placeholder="Choose an approved template…"
-              options={(templates ?? [])
-                .filter((template) => template.status.toUpperCase() === 'APPROVED')
-                .map((template) => ({ value: template.id, label: `${template.name} (${template.language})` }))}
-            />
-            <button
-              className="btn-primary btn-sm"
-              disabled={!templateId || sendTemplate.isPending || Boolean(preview?.missing.length)}
-              onClick={() => sendTemplate.mutate()}
-            >
-              {sendTemplate.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
-              Send template
-            </button>
-          </div>
-          {preview && (
-            <div className="rounded-md bg-white/70 p-2 text-xs dark:bg-slate-900/60">
-              <p className="whitespace-pre-wrap">{preview.preview}</p>
-              {preview.missing.length > 0 && (
-                // Named, not counted: this is fixable in ten seconds on the
-                // record itself, and "failed" would send somebody hunting.
-                <p className="mt-1 font-semibold text-rose-700 dark:text-rose-300">
-                  {preview.missing.map((gap) => `{{${gap.slot}}} ${gap.reason}`).join('; ')}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Only for a free-text reply: a template goes out on the automation number, which is not what `sendingOn` names. */}
-      {!optedOut && onBusiness && mobile && mode === 'text' && (
+      {!optedOut && onBusiness && mobile && (
         <p className="border-t border-[var(--border)] bg-white px-3 pt-2 text-2xs text-muted dark:bg-slate-900" data-testid="send-channel">
-          Sending on <strong>{sendingOn}</strong> to {mobile}
+          Sending on <strong>WhatsApp chat (company phone)</strong>. API messages go out automatically from workflows.
         </p>
       )}
       {!optedOut && (

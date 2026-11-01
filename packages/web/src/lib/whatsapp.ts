@@ -238,3 +238,39 @@ export function moduleTag(meta: { label: string; settings?: Record<string, unkno
   if (typeof own === 'string' && own.trim()) return own.trim().toUpperCase();
   return meta.label.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || null;
 }
+
+/**
+ * The four kinds of bubble in a contact's merged WhatsApp thread. Which one a
+ * message is comes from the route it used (the official API vs the company
+ * phone) and its direction. Plain steps only (no opacity modifiers: those
+ * compile to nothing on this repo's var()-based colours).
+ */
+export type BubbleKind = 'api-out' | 'api-in' | 'chat-out' | 'chat-in';
+
+export function bubbleKind(m: { direction: string; viaApi: boolean }): BubbleKind {
+  if (m.viaApi) return m.direction === 'outbound' ? 'api-out' : 'api-in';
+  return m.direction === 'outbound' ? 'chat-out' : 'chat-in';
+}
+
+export const BUBBLE_STYLE: Record<BubbleKind, { label: string; bubble: string; chip: string }> = {
+  'api-out': {
+    label: 'API · sent by CRM',
+    bubble: 'border-indigo-300 bg-indigo-100 text-indigo-950 dark:border-indigo-700 dark:bg-indigo-900 dark:text-indigo-50',
+    chip: 'bg-indigo-200 text-indigo-900 dark:bg-indigo-800 dark:text-indigo-100',
+  },
+  'api-in': {
+    label: 'API · received',
+    bubble: 'border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-700 dark:bg-amber-900 dark:text-amber-50',
+    chip: 'bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100',
+  },
+  'chat-out': {
+    label: 'Chat · sent by us',
+    bubble: 'border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900 dark:text-emerald-50',
+    chip: 'bg-emerald-200 text-emerald-900 dark:bg-emerald-800 dark:text-emerald-100',
+  },
+  'chat-in': {
+    label: 'Chat · received',
+    bubble: 'border-sky-300 bg-sky-100 text-sky-950 dark:border-sky-700 dark:bg-sky-900 dark:text-sky-50',
+    chip: 'bg-sky-200 text-sky-900 dark:bg-sky-800 dark:text-sky-100',
+  },
+};
