@@ -220,7 +220,7 @@ async function loadTouches(q: RoiQuery): Promise<TouchRow[]> {
          CROSS JOIN LATERAL (SELECT ch->>'to' AS val FROM jsonb_array_elements(CASE WHEN jsonb_typeof(a.changes) = 'array' THEN a.changes ELSE '[]'::jsonb END) ch WHERE ch->>'field' = 'status') c
         WHERE a.module_name = 'leads' AND a.record_id IS NOT NULL
           AND a.created_at >= $1 AND a.created_at < $2 + make_interval(days => $3::int)
-     ), cred AS (
+     ), cred AS MATERIALIZED (
        SELECT x.touch_id, e.stage, e.record_id
          FROM ev e
          CROSS JOIN LATERAL (
@@ -231,8 +231,9 @@ async function loadTouches(q: RoiQuery): Promise<TouchRow[]> {
      )
      SELECT t.id, t.record_id, t.channel, t.template, t.category, t.status, t.error_message, t.agent_id,
             t.replied, t.delivered, t.read, t.answered, t.current_status,
-            COALESCE((SELECT jsonb_agg(DISTINCT cr.stage) FROM cred cr WHERE cr.touch_id = t.id), '[]'::jsonb) AS stages
-       FROM touches t`,
+            COALESCE(cs.stages, '[]'::jsonb) AS stages
+       FROM touches t
+       LEFT JOIN (SELECT touch_id, jsonb_agg(DISTINCT stage) AS stages FROM cred GROUP BY touch_id) cs ON cs.touch_id = t.id`,
     [q.from, q.to, q.windowDays, q.source ?? null, q.agentId ?? null],
   );
   return rows;
