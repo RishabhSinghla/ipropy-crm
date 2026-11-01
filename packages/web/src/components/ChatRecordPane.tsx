@@ -1,12 +1,12 @@
 import { type JSX, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Phone } from 'lucide-react';
 import type { RecordEnvelope } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { FieldBlock, NotesPanel } from './RecordBlocks';
-import { Skeleton } from './ui';
+import { Avatar, Skeleton } from './ui';
 
 /**
  * The whole contact, beside the conversation.
@@ -57,24 +57,32 @@ export function useChatRecord(moduleName: string | null, recordId: string | null
 export function ChatRecordPane({ module, record }: {
   module: DescribedModule; record: RecordEnvelope;
 }): JSX.Element {
-  const { blocks } = useRecordPanes(module);
+  const { blocks, headerFields, phoneField } = useRecordPanes(module);
+  const phoneValue = phoneField ? record.values[phoneField.name] : null;
+  const phone = typeof phoneValue === 'string' && phoneValue.trim() ? phoneValue.trim() : null;
   const canEdit = record.can?.edit ?? module.permissions.edit;
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {/*
-        The way out, kept small. Everything worth reading is on this pane now,
-        so the link is for the things that are not — the timeline, the files,
-        the matching inventory — rather than the first thing somebody reaches
-        for.
-      */}
-      <Link
-        to={`/${module.name}/${record.id}`}
-        className="inline-flex items-center gap-1.5 self-start rounded-lg px-1 py-0.5 text-2xs font-semibold text-muted transition-colors hover:text-brand-600"
-      >
-        <ExternalLink className="h-3 w-3" />
-        Open the full record
-      </Link>
+      {/* Who this is, with the two things a rep reaches for: the full record and a call. */}
+      <header className="card flex items-center gap-3 p-3">
+        <Avatar name={record.label ?? 'Contact'} size={40} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-extrabold text-slate-950 dark:text-white">{record.label ?? 'Contact'}</p>
+          {phone && <p className="truncate text-2xs text-muted">{phone}</p>}
+        </div>
+        {phone && (
+          <a href={`tel:${phone}`} className="btn-secondary btn-sm shrink-0" aria-label="Call"><Phone className="h-3.5 w-3.5" /></a>
+        )}
+        <Link to={`/${module.name}/${record.id}`} className="btn-secondary btn-sm shrink-0">
+          <ExternalLink className="h-3.5 w-3.5" /> Open full record
+        </Link>
+      </header>
+
+      {/* Key facts first: the fields the Layout Designer puts in the record header. */}
+      {headerFields.length > 0 && (
+        <FieldBlock module={module} title="Key facts" columns={1} fields={headerFields} row={record} canEdit={canEdit} collapsible />
+      )}
 
       {blocks.map((block) => (
         <FieldBlock
@@ -85,6 +93,7 @@ export function ChatRecordPane({ module, record }: {
           fields={block.fields}
           row={record}
           canEdit={canEdit}
+          collapsible
         />
       ))}
 
