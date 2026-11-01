@@ -8,6 +8,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, requireAdmin, requireAuth } from '../../middleware/auth.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+import { BadRequestError } from '../../utils/errors.js';
 import { catchUpNumber } from '../../integrations/whatsapp/business/waCatchUp.js';
 import { fleetSummary, saveCapacity } from '../../integrations/whatsapp/business/waFleet.js';
 import {
@@ -23,6 +24,27 @@ whatsappNumbersRouter.get('/mine', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const [mine, all] = await Promise.all([numberOfUser(user.id), user.isAdmin ? listNumbers() : Promise.resolve([])]);
   res.json({ mine, numbers: all });
+}));
+
+/**
+ * An agent links or re-links THEIR OWN number: the QR picture and a (re)start. Only the number assigned to the signed-in
+ * user is ever touched; an agent with none is told so. (Admins can use the same two calls for their own number, and the
+ * admin screen for any number.)
+ */
+async function ownNumberId(userId: string): Promise<string> {
+  const mine = await numberOfUser(userId);
+  if (!mine) throw new BadRequestError('No WhatsApp number is assigned to you yet. Ask an admin to assign one.');
+  return mine.id;
+}
+whatsappNumbersRouter.get('/mine/qr', asyncHandler(async (req, res) => {
+  const id = await ownNumberId(getUser(req).id);
+  res.json(await qrFor(id));
+}));
+whatsappNumbersRouter.post('/mine/start', asyncHandler(async (req, res) => {
+  const id = await ownNumberId(getUser(req).id);
+  const { action } = z.object({ action: z.enum(['start', 'restart']) }).parse(req.body ?? {});
+  logger.info({ by: getUser(req).id, number: id, action }, 'whatsapp number control by its own agent');
+  res.json(await controlSession(id, action));
 }));
 
 /** Who will a send from this record go out as, for the signed-in user? The composer shows it before anything is sent. */

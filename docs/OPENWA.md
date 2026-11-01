@@ -255,3 +255,24 @@ $0.25 per GB per month. Steps, about 10 minutes, at a quiet time:
 5. CRM → Admin → WhatsApp numbers → "OpenWA server room": set *Most numbers connected at once* to `10`, *Server memory* to `2048`, Save.
 6. Watch memory in Render → Metrics for a day; it should stay under about 1.2 GB with 10 numbers.
 Rollback: Instance Type back to Starter, and set the room limit back to `3`.
+
+## An agent links their own number (Settings → My WhatsApp)
+
+Any signed-in agent with an assigned number opens **Settings → My WhatsApp**, presses *Get QR code*, scans it (WhatsApp → Linked devices →
+Link a device) and the page flips to *Connected* by itself. If they are logged out later, the same page's button gets a new code. The page only
+ever acts on the number assigned to the person signed in (`/api/whatsapp-numbers/mine/qr` and `/mine/start`); it cannot stop or unlink, and it
+obeys the same capacity rule as the admin screen.
+
+## Why a number can show "missing"
+
+"Missing" means the CRM has the number in its list but OpenWA no longer has that session. `shikha-phone` went missing because somebody deleted
+the session in OpenWA (OpenWA log, 1 Nov 2026 10:30 UTC: "Session deleted: shikha-phone", an explicit delete request) — not the redeploy and not the
+CRM's capacity rule (the CRM has no delete button and the rule came later). Fix: Admin → WhatsApp numbers → type the same name → *Add number*, then
+the agent scans from Settings → My WhatsApp.
+
+## Memory token (not set yet)
+
+The CRM can read OpenWA's real memory only if `METRICS_TOKEN` is set on the OpenWA service and the same value is saved as "OpenWA metrics token"
+on the OpenWA card. Both are secret-store writes, so they are done by the owner: Render → ipropy-openwa → Environment → add `METRICS_TOKEN`
+(any long random string; this restarts OpenWA once, quiet moment, numbers reconnect by themselves), then Admin → Integrations → OpenWA → paste the
+same string → Save. Until then the guard only counts connected numbers.
