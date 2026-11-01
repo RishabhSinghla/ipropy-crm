@@ -35,7 +35,7 @@ let adminToken: string;
 let leadId: string;
 let mobileFieldId: string;
 const profileIds: string[] = [];
-const MOBILE = '9811421156';
+const MOBILE = '9000010004';
 const made: string[] = [];
 
 /**
@@ -142,9 +142,9 @@ afterAll(async () => {
 
 describe('masking a phone number', () => {
   it('shapes it so a known number is still recognisable', () => {
-    expect(maskNumber('9811421156')).toBe('98xxxxxx56');
+    expect(maskNumber('9000010004')).toBe('90xxxxxx04');
     // Formatting varies in the wild; the mask should not.
-    expect(maskNumber('+91 98114 21156')).toBe('91xxxxxxxx56');
+    expect(maskNumber('+91 90000 10004')).toBe('91xxxxxxxx04');
     // Too short to be worth hiding, and masking it would just look broken.
     expect(maskNumber('1234')).toBe('1234');
     expect(maskNumber(null)).toBeNull();
@@ -168,7 +168,7 @@ describe('masking a phone number', () => {
 
     // The assertion the whole feature rests on.
     expect(JSON.stringify(res.body)).not.toContain(MOBILE);
-    expect(res.body.values.mobile).toBe('98xxxxxx56');
+    expect(res.body.values.mobile).toBe('90xxxxxx04');
   });
 
   it('masks it on the list too, which is where a list would be copied from', async () => {

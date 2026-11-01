@@ -7,8 +7,8 @@
 -- from the search box, and that is how it was reported.
 --
 -- recordService.buildSearchText now always includes phone fields — and both
--- forms of them, because the tokeniser reads `+91 98114 21156` and
--- `9811421156` as different words. That fixes every record written from now
+-- forms of them, because the tokeniser reads `+91 90000 10004` and
+-- `9000010004` as different words. That fixes every record written from now
 -- on. This backfills the ones already here.
 --
 -- **Driven by metadata, not by a hand-written column list.** The first version

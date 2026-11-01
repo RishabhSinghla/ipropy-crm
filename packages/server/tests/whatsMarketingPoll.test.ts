@@ -124,7 +124,7 @@ describe('pulling replies in', () => {
 
   it('stores what the customer wrote, through the same door the webhook uses', async () => {
     wire(
-      [{ chat_id: '919811533633', first_name: 'Yogesh', last_name: 'Bindal' }],
+      [{ chat_id: '919000010000', first_name: 'Yogesh', last_name: 'Bindal' }],
       [customerSaid('hey', RECENT)],
     );
 
@@ -134,7 +134,7 @@ describe('pulling replies in', () => {
 
     const [{ provider, message }] = received.calls;
     expect(provider).toBe('whatsapp_whatsmarketing');
-    expect(message.from).toBe('919811533633');
+    expect(message.from).toBe('919000010000');
     expect(message.text).toBe('hey');
     expect(message.profileName).toBe('Yogesh Bindal');
     expect(message.providerMessageId).toBe('wamid.IN1');
@@ -147,7 +147,7 @@ describe('pulling replies in', () => {
       agent they had a reply from themselves.
     */
     wire(
-      [{ chat_id: '919811533633' }],
+      [{ chat_id: '919000010000' }],
       [
         { sender: 'bot', wa_message_id: 'wamid.OUT', conversation_time: RECENT,
           message_content: JSON.stringify({ text: { body: 'we sent this' } }) },
@@ -163,7 +163,7 @@ describe('pulling replies in', () => {
   });
 
   it('leaves alone what it has already seen', async () => {
-    wire([{ chat_id: '919811533633' }], [customerSaid('ancient', OLD)]);
+    wire([{ chat_id: '919000010000' }], [customerSaid('ancient', OLD)]);
     expect((await pollWhatsMarketingInbound()).stored).toBe(0);
     expect(received.calls).toHaveLength(0);
   });
@@ -173,13 +173,13 @@ describe('pulling replies in', () => {
       A reply that arrives mid-visit must be picked up next time. Proved by
       polling twice with a message timestamped between the two.
     */
-    wire([{ chat_id: '919811533633' }], [customerSaid('first', RECENT, 'wamid.A')]);
+    wire([{ chat_id: '919000010000' }], [customerSaid('first', RECENT, 'wamid.A')]);
     await pollWhatsMarketingInbound();
     expect(received.calls).toHaveLength(1);
 
     // Same instant as the first visit. A watermark set to "now" would skip it.
     const during = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    wire([{ chat_id: '919811533633' }], [customerSaid('landed mid-visit', during, 'wamid.B')]);
+    wire([{ chat_id: '919000010000' }], [customerSaid('landed mid-visit', during, 'wamid.B')]);
     await pollWhatsMarketingInbound();
     expect(received.calls.map((c) => c.message.providerMessageId)).toContain('wamid.B');
   });
@@ -255,7 +255,7 @@ describe('pulling replies in', () => {
 
   it('does nothing at all when another provider is the live one', async () => {
     active.name = 'whatsapp_meta';
-    wire([{ chat_id: '919811533633' }], [customerSaid('hey', RECENT)]);
+    wire([{ chat_id: '919000010000' }], [customerSaid('hey', RECENT)]);
     expect(await pollWhatsMarketingInbound()).toEqual({ checked: 0, stored: 0 });
     expect(received.calls).toHaveLength(0);
   });
@@ -314,7 +314,7 @@ describe('pulling replies in', () => {
   it('says how much it looked at even on a quiet visit', async () => {
     // "Checked 1, stored 0" and "could not reach them" look identical from
     // outside, and only one of them needs somebody to act.
-    wire([{ chat_id: '919811533633' }], [customerSaid('ancient', OLD)]);
+    wire([{ chat_id: '919000010000' }], [customerSaid('ancient', OLD)]);
     await pollWhatsMarketingInbound();
     expect(reported.calls.at(-1)?.ok).toBe(true);
     expect(reported.calls.at(-1)?.detail).toMatch(/listed 1 subscriber; read 1 thread; stored 0 new messages/);

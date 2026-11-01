@@ -28,7 +28,7 @@ INSERT INTO ipy_setting (key, value, category, label, description) VALUES
      {"platform":"instagram","label":"Instagram", "url":"https://www.instagram.com/ipropy_official/"},
      {"platform":"facebook", "label":"Facebook",  "url":"https://www.facebook.com/ipropy/"},
      {"platform":"x",        "label":"X",         "url":"https://x.com/iPropy_Floors"},
-     {"platform":"whatsapp", "label":"WhatsApp",  "url":"https://wa.me/919711533633"}
+     {"platform":"whatsapp", "label":"WhatsApp",  "url":"https://wa.me/919000010026"}
    ]'::jsonb, 'brand',
    'Social links', 'One-click links to the company''s own accounts, shown in the sidebar. Verify these before relying on them.')
 ON CONFLICT (key) DO NOTHING;

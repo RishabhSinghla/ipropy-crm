@@ -68,9 +68,9 @@ describe('which number a message goes to', () => {
       provider was called. What the warning is about is a default **nobody can
       see**; `org.country_code` has a label in Admin → Settings.
     */
-    row.value = { country_code: null, mobile: '9311171162' };
+    row.value = { country_code: null, mobile: '9000010018' };
     orgCode.value = '91';
-    expect(await dialableNumber(null, '9311171162', 'rec-1')).toBe('919311171162');
+    expect(await dialableNumber(null, '9000010018', 'rec-1')).toBe('919000010018');
   });
 
   it("lets the contact's own code win over the organisation's", async () => {

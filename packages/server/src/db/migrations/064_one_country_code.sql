@@ -67,7 +67,7 @@ UPDATE ipy_layout
 
 -- The other number on a lead gets the same prefix. Not WhatsApp Number: that
 -- one stores the full dialable form on purpose, and painting a code in front of
--- a value that already carries one reads as "+91 +919811533636".
+-- a value that already carries one reads as "+91 +919000010027".
 UPDATE ipy_field f
    SET config = f.config || '{"codePrefix":"+91"}'::jsonb, updated_at = now()
   FROM ipy_module m

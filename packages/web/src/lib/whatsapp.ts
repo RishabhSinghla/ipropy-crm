@@ -110,7 +110,7 @@ export function readMessageMedia(value: unknown): MessageMedia | null {
  *
  * `ipy_conversation.handle` is the last ten digits — deliberately, because it
  * is what matches a contact however their mobile is stored. Printing it with a
- * `+` in front produced **`+9811533633`** on the Chats header: a plus sign
+ * `+` in front produced **`+9000010000`** on the Chats header: a plus sign
  * glued to a number that has no country code, which is not any number in the
  * world. `wa_id` is WhatsApp's own full id and is what to show when there is
  * one; without it the ten digits stand alone, unprefixed, rather than

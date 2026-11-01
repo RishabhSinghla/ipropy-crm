@@ -18,7 +18,7 @@ import { signIn, SEEDED } from './fixtures.js';
 let app: Express;
 let token = '';
 let repToken = '';
-const MOBILE = '9711533633';
+const MOBILE = '9000010026';
 
 beforeAll(async () => {
   await registry.warmup();
@@ -45,7 +45,7 @@ describe('who is calling', () => {
 
     // Every shape the same number arrives in: bare, international, with a
     // trunk zero, spaced. All ten-digit-equal, so all one person.
-    for (const shape of [MOBILE, `+91${MOBILE}`, `091${MOBILE}`, '97115 33633']) {
+    for (const shape of [MOBILE, `+91${MOBILE}`, `091${MOBILE}`, '90000 10026']) {
       const res = await request(app).get(`/api/telephony/lookup?phone=${encodeURIComponent(shape)}`)
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
@@ -132,7 +132,7 @@ describe('the calls list', () => {
     // being pinned is `to` meaning midnight, which excludes the whole day.
     await request(app).post('/api/telephony/log')
       .set('Authorization', `Bearer ${token}`)
-      .send({ to: '9711533633', direction: 'outbound', durationSeconds: 65, disposition: 'Call Back Later' })
+      .send({ to: '9000010026', direction: 'outbound', durationSeconds: 65, disposition: 'Call Back Later' })
       .expect(201);
 
     const res = await request(app).get(`/api/telephony/calls?from=${today}&to=${today}&limit=200`)

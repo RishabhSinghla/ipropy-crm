@@ -2762,7 +2762,7 @@ nowhere to go.
 
 **Why it is not the Properties module, which already holds units.** A property's
 identity there is `mobile`, and that column is `unique`. One number in his sheet
-(9910534500) owns five buildings, which is twenty floors, and nineteen of them
+(9000010001) owns five buildings, which is twenty floors, and nineteen of them
 would be refused on insert. Loosening a live uniqueness rule to fit a new feature
 is not a quiet change. `tests/integration/builderFloors.test.ts` pins four floors
 on one mobile across two plots for exactly that reason.

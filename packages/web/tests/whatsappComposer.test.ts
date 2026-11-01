@@ -71,13 +71,13 @@ describe('what a screen shows about an outbound message', () => {
 
   it('never glues a plus sign to a number with no country code', () => {
     /*
-      The Chats header printed `+9811533633` — a ten-digit matching key with a
+      The Chats header printed `+9000010000` — a ten-digit matching key with a
       `+` in front, which is not a number anywhere in the world. With
       WhatsApp's own id it can be printed properly; without one the digits
       stand alone rather than claiming a country nobody knows.
     */
-    expect(displayNumber('9811533633', '919811533633')).toBe('+91 9811533633');
-    expect(displayNumber('9811533633', null)).toBe('9811533633');
-    expect(displayNumber('9811533633', null)).not.toContain('+');
+    expect(displayNumber('9000010000', '919000010000')).toBe('+91 9000010000');
+    expect(displayNumber('9000010000', null)).toBe('9000010000');
+    expect(displayNumber('9000010000', null)).not.toContain('+');
   });
 });

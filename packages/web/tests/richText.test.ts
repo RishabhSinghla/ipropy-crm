@@ -32,10 +32,10 @@ describe('looksLikeHtml', () => {
 describe('sanitiseRichText', () => {
   it('keeps the sentence and the paragraphs of a real imported note', () => {
     const out = sanitiseRichText(
-      '<div style=""    ><div><p>Ye 3.30 pm tak aayega</p><p>Ye iska dusra number hai</p><p>9883859579</p></div>\n</div>',
+      '<div style=""    ><div><p>Ye 3.30 pm tak aayega</p><p>Ye iska dusra number hai</p><p>9000010008</p></div>\n</div>',
     );
     expect(out).toContain('<p>Ye 3.30 pm tak aayega</p>');
-    expect(out).toContain('9883859579');
+    expect(out).toContain('9000010008');
     // The empty style attribute the import left on every note goes.
     expect(out).not.toContain('style');
   });

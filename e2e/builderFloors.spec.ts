@@ -53,7 +53,7 @@ test.beforeAll(async ({ request }) => {
     const response = await request.post('http://localhost:4000/api/records/builder_floors', {
       headers: { Authorization: `Bearer ${fixtureToken}` },
       data: { locality, house_no: `${HOUSE_MARK}-${index}`, builder_name: HOUSE_MARK,
-        mobile: '9910534500', floor_status: 'Available', first_floor_price: 255 },
+        mobile: '9000010001', floor_status: 'Available', first_floor_price: 255 },
     });
     expect(response.ok(), await response.text()).toBeTruthy();
     fixtureIds.push((await response.json()).id);

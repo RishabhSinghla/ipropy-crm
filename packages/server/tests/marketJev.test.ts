@@ -103,8 +103,8 @@ describe('sale or rent', () => {
 
 describe('reading a phone number', () => {
   it('never builds one out of the end of a longer number and the digits after it', () => {
-    expect(readPost('plot ref 1791809876543 25000 per month call 9703330888').phone).toBe('9703330888');
-    expect(readPost('call 97033 30888 or +91 97033-30888').phone).toBe('9703330888');
+    expect(readPost('plot ref 1791809876543 25000 per month call 9000010009').phone).toBe('9000010009');
+    expect(readPost('call 90000 10009 or +91 90000-10009').phone).toBe('9000010009');
   });
 });
 

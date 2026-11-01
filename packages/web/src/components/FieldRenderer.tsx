@@ -176,7 +176,7 @@ export function FieldValue({
 
     case 'phone': {
       // The server joins the country code onto the number (see
-      // resolveDisplayValues), so this shows one value — "+91 9811533636" —
+      // resolveDisplayValues), so this shows one value — "+91 9000010027" —
       // instead of a bare ten digits beside a separate Country chip.
       const shown = display || formatPhone(String(value));
       // Plain text colour, like the name beside it. The number used to sit in
@@ -721,7 +721,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
             // exactly a full number. Somebody handed a number reads it out with
             // its code — the whole point of a fixed prefix is that they never
             // have to think about that — and clipping to ten digits first kept
-            // the wrong end of it: "+91 98115 33636" became 9198115336. A real
+            // the wrong end of it: "+91 90000 10027" became 9198115336. A real
             // ten-digit number that happens to start 91 is untouched, because
             // taking the code off it would leave eight digits, not ten.
             onChange={(e) => {

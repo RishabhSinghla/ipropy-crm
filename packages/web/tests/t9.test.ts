@@ -58,7 +58,7 @@ describe('matching a number somebody is part way through typing', () => {
 describe('what the keypad offers', () => {
   const people = [
     { id: 'a', name: 'Pradeep Gupta', numbers: ['+919810234567'] },
-    { id: 'b', name: 'Sanjeev Thakur', numbers: ['+919811533633'] },
+    { id: 'b', name: 'Sanjeev Thakur', numbers: ['+919000010000'] },
     { id: 'c', name: 'Manjusa Benrjee', numbers: ['9898989898'] },
   ];
 

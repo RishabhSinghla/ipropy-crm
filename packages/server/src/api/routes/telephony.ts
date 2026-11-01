@@ -43,7 +43,7 @@ telephonyRouter.use(requireAuth);
  *    nobody, or "more than one and I will not choose" — because filing a
  *    customer against a stranger who shares their number is worse than asking.
  *    The screen offers the candidates.
- *  * **Numbers match on their last ten digits.** `9711533633`, `+919711533633`
+ *  * **Numbers match on their last ten digits.** `9000010026`, `+919000010026`
  *    and `0919711533633` are one number; the CRM stores a country code and
  *    national digits, and imported rows carry every shape there is.
  *  * **The card is read as the person asking**, through `recordService`, so a
