@@ -57,7 +57,7 @@ afterAll(async () => {
 const read = (token: string) => request(app).get(`/api/whatsapp-business/contacts/leads/${leadId}/messages`).set('Authorization', `Bearer ${token}`);
 
 describe('a rep reading the contact\'s WhatsApp tab', () => {
-  it('sees the chat, the customer and the API messages as 'automatic', never the words or a provider', async () => {
+  it('sees the chat, the customer and the API messages as automatic, never the words or a provider', async () => {
     const res = await read(repToken);
     expect(res.status).toBe(200);
     const bodies = res.body.messages.map((m: { body: string }) => m.body);
