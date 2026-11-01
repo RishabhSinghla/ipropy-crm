@@ -16,6 +16,7 @@ import { copyText } from '../lib/nativeActions';
 import { isNative } from '../lib/native';
 import { needsUninstallFirst, updateAvailable, UNKNOWN_VERSION } from '../lib/appVersion';
 import { PhoneStatus } from '../components/PhoneStatus';
+import { MyWhatsAppNumber } from '../components/MyWhatsAppNumber';
 import { PhoneSetup } from '../components/PhoneSetup';
 import {
   callSyncStatus, callSyncSupported, disableCallSync, enableCallSync, openAppSettings,
@@ -80,6 +81,7 @@ export default function SettingsPage(): JSX.Element {
               { key: 'alerts', label: 'Alerts', icon: <Bell className="h-3.5 w-3.5" /> },
               { key: 'security', label: 'Security', icon: <KeyRound className="h-3.5 w-3.5" /> },
               { key: 'phones', label: 'Phones', icon: <Smartphone className="h-3.5 w-3.5" /> },
+              { key: 'whatsapp', label: 'My WhatsApp', icon: <MessageCircle className="h-3.5 w-3.5" /> },
             ]}
             active={tab}
             onChange={setTab}
@@ -91,6 +93,7 @@ export default function SettingsPage(): JSX.Element {
           {tab === 'alerts' && <AlertsTab />}
           {tab === 'security' && <SecurityTab />}
           {tab === 'phones' && <PhonesTab />}
+          {tab === 'whatsapp' && <MyWhatsAppNumber />}
         </div>
       </div>
     </div>

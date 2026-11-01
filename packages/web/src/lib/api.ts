@@ -1650,6 +1650,8 @@ export const api = {
   waNumberCreate: (sessionName: string, label?: string) => post<WaNumber>('/api/whatsapp-numbers', { sessionName, label }),
   waNumberControl: (id: string, action: 'start' | 'stop' | 'restart' | 'unlink') =>
     post<WaNumber>(`/api/whatsapp-numbers/${id}/control`, { action }),
+  waMineQr: () => get<{ qrCode: string | null; status: string }>('/api/whatsapp-numbers/mine/qr'),
+  waMineStart: (action: 'start' | 'restart') => post<WaNumber>('/api/whatsapp-numbers/mine/start', { action }),
   waCatchUp: (id: string, dryRun: boolean) => post<{ fetched: number; stored: number; alreadyHad: number; skipped: number; since: string }>(`/api/whatsapp-numbers/${id}/catch-up`, { dryRun }),
   waCapacity: () => get<WaFleetSummary>('/api/whatsapp-numbers/capacity'),
   waCapacitySave: (maxLive: number, memoryLimitMb: number) => put<WaFleetSummary>('/api/whatsapp-numbers/capacity', { maxLive, memoryLimitMb }),

@@ -148,3 +148,20 @@ describe('the admin inbox number filter', () => {
     await db.query(`DELETE FROM ipy_conversation WHERE id = $1`, [conv!.id]);
   });
 });
+
+describe('an agent linking their own number', () => {
+  it('can only ever reach their own number, and an agent with none is told so', async () => {
+    await assignNumber(ids[1], aisha);
+    const own = await request(app).get('/api/whatsapp-numbers/mine').set('Authorization', `Bearer ${agent}`);
+    expect(own.status).toBe(200);
+    expect(own.body.mine?.sessionName).toBe(NAMES[1]);
+    // an agent cannot pass somebody else's number: the route takes no id at all
+    const start = await request(app).post('/api/whatsapp-numbers/mine/start').set('Authorization', `Bearer ${agent}`).send({ action: 'stop' });
+    expect([400, 422]).toContain(start.status); // only start / restart are allowed
+    await assignNumber(ids[1], null);
+    const none = await request(app).get('/api/whatsapp-numbers/mine/qr').set('Authorization', `Bearer ${agent}`);
+    expect(none.status).toBe(400);
+    expect(JSON.stringify(none.body)).toMatch(/No WhatsApp number is assigned/);
+    await assignNumber(ids[1], aisha);
+  });
+});
