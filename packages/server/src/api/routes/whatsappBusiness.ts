@@ -305,8 +305,8 @@ const filters = ['all', 'mine', 'unassigned', 'unread', 'unmatched'] as const;
 
 whatsappBusinessRouter.get('/conversation-counts', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const query = z.object({ route: z.enum(['chat', 'api']).optional() }).parse(req.query ?? {});
-  res.json(await inboxCounts({ userId: user.id, isAdmin: user.isAdmin, route: query.route }));
+  const query = z.object({ route: z.enum(['chat', 'api']).optional(), merged: z.enum(['1']).optional() }).parse(req.query ?? {});
+  res.json(await inboxCounts({ userId: user.id, isAdmin: user.isAdmin, route: query.route, merged: query.merged === '1' }));
 }));
 
 whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
@@ -319,11 +319,13 @@ whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
     search: z.string().max(120).optional(),
     route: z.enum(['chat', 'api']).optional(),
     numberId: z.string().uuid().optional(),
+    merged: z.enum(['1']).optional(),
     limit: z.coerce.number().int().min(1).max(1000).optional(),
   }).parse(req.query ?? {});
   res.json(await listConversations({
     limit: query.limit,
     route: query.route,
+    merged: query.merged === '1',
     // Only an admin may narrow by number; everybody else already sees just their own chats.
     numberId: user.isAdmin ? query.numberId : undefined,
     userId: user.id,
@@ -340,14 +342,14 @@ whatsappBusinessRouter.get('/conversations/:id/messages', asyncHandler(async (re
   // other rather than both typing an answer.
   noteViewing(req.params.id, user.id, user.fullName ?? 'Somebody');
   res.json({
-    messages: await conversationMessages(user.id, user.isAdmin, req.params.id, req.query.route === 'api' ? 'api' : req.query.route === 'chat' ? 'chat' : undefined),
+    messages: await conversationMessages(user.id, user.isAdmin, req.params.id, req.query.route === 'api' ? 'api' : req.query.route === 'chat' ? 'chat' : undefined, req.query.merged === '1'),
     alsoViewing: othersViewing(req.params.id, user.id),
   });
 }));
 
 whatsappBusinessRouter.post('/conversations/:id/read', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  await markRead(user.id, user.isAdmin, req.params.id);
+  await markRead(user.id, user.isAdmin, req.params.id, req.query.merged === '1');
   res.json({ ok: true });
 }));
 
@@ -448,7 +450,7 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
 
   const { rows } = await db.query(
     `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.template_name,
-            m.created_at, m.route, m.provider, m.number_id,
+            m.created_at, m.route, m.provider, m.number_id, c.lane AS lane,
             -- Why a send failed, so the screen can say it. Without this the
             -- tab paints a refused message the same green as a delivered one
             -- and writes "sent" under it.

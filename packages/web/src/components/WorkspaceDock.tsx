@@ -75,8 +75,6 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
   const expanded = !folded || hovered;
   const { modules, user } = useApp();
   const isAdmin = Boolean(user?.isAdmin);
-  const { data: waStatus } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus(), enabled: isAdmin });
-  const split = Boolean(waStatus?.split);
   const here = useLocation().pathname.split('/')[1];
   const favouriteModule = modules.find((module) => module.isEntity && module.name === here)?.name
     ?? modules.find((module) => module.isEntity)?.name ?? 'leads';
@@ -103,9 +101,6 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
     ] : []),
     { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, count: counts?.whatsapp, tone: 'whatsapp' as const },
     { to: '/whatsapp-lookup', label: 'WhatsApp Lookup', icon: <Search className="h-[18px] w-[18px]" />, tone: 'whatsapp' as const },
-    ...(isAdmin && split ? [
-      { to: '/whatsapp-api', label: 'WhatsApp API', icon: <MessagesSquare className="h-[18px] w-[18px]" />, count: counts?.whatsappApi || undefined, tone: 'whatsapp' as const },
-    ] : []),
     ...(isAdmin ? [
       { to: '/market', label: 'Dealer groups', tone: 'associates', icon: <Store className="h-[18px] w-[18px]" /> },
     ] : []),

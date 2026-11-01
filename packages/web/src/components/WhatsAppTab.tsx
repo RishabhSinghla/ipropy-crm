@@ -73,7 +73,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         media: row.media,
         createdAt: String(row.created_at),
         // Official API (workflow) or the company phone. Admins get `via`; everyone else only learns that a message was automatic.
-        viaApi: Boolean(row.automated) || row.via === 'api',
+        viaApi: row.lane ? row.lane === 'api' : Boolean(row.automated) || row.via === 'api',
         templateName: (row.template_name as string | null) ?? null,
         status: String(row.status ?? ''),
         error: (row.error_message as string | null) ?? null,

@@ -52,6 +52,9 @@ export interface InboxConversation {
   /** Direction and delivery status of the newest message, so the queue can show one status chip. */
   lastDirection: string | null;
   lastStatus: string | null;
+  /** The lane (plain chat or official API) this row's own thread is in; `lanes` lists every lane the person has. */
+  lane: string | null;
+  lanes: string[];
   /** Whether a free reply is allowed, or only an approved template. */
   windowOpen: boolean;
   /** When that stops being true, so the queue can say how long is left. */
@@ -110,21 +113,21 @@ export function visibility(userId: string, isAdmin: boolean, nextIndex: number):
 
 /** How many threads each quick filter would show, for the counts beside All / Mine / Unassigned / Unread. */
 export async function inboxCounts(input: {
-  userId: string; isAdmin: boolean; route?: RouteView;
+  userId: string; isAdmin: boolean; route?: RouteView; merged?: boolean;
 }): Promise<{ all: number; mine: number; unassigned: number; unread: number }> {
   const params: unknown[] = [];
   const see = visibility(input.userId, input.isAdmin, params.length + 1);
   params.push(...see.params);
   const where = [`c.channel = 'whatsapp'`, `c.wa_account_id IS NULL`, see.clause];
-  const lane = laneClause(input.route, input.isAdmin, 'c');
+  const lane = input.merged && !input.route ? 'TRUE' : laneClause(input.route, input.isAdmin, 'c');
   if (lane !== 'TRUE') where.push(lane);
   params.push(input.userId);
   const mineParam = `$${params.length}`;
   const row = await db.queryOne<{ all: string; mine: string; unassigned: string; unread: string }>(
-    `SELECT count(*) AS all,
-            count(*) FILTER (WHERE ${HOLDER} = ${mineParam}) AS mine,
-            count(*) FILTER (WHERE ${HOLDER} IS NULL) AS unassigned,
-            count(*) FILTER (WHERE c.unread_count > 0) AS unread
+    `SELECT count(DISTINCT c.handle) AS all,
+            count(DISTINCT c.handle) FILTER (WHERE ${HOLDER} = ${mineParam}) AS mine,
+            count(DISTINCT c.handle) FILTER (WHERE ${HOLDER} IS NULL) AS unassigned,
+            count(DISTINCT c.handle) FILTER (WHERE c.unread_count > 0) AS unread
        FROM ipy_conversation c
        LEFT JOIN ipy_record r ON r.id = c.record_id
       WHERE ${where.join(' AND ')}`,
@@ -152,6 +155,8 @@ export async function listConversations(input: {
   route?: RouteView;
   /** Only conversations with a message that went through this WhatsApp number (admin screens). */
   numberId?: string;
+  /** One row per person: a customer reached on both lanes is one chat, not two. */
+  merged?: boolean;
 }): Promise<InboxConversation[]> {
   const params: unknown[] = [];
   const see = visibility(input.userId, input.isAdmin, params.length + 1);
@@ -166,7 +171,7 @@ export async function listConversations(input: {
 
   // A conversation lives in exactly one lane (see migration 229), so the list, previews, unread counts
   // and search hits of one screen can never include the other route's threads.
-  const lane = laneClause(input.route, input.isAdmin, 'c');
+  const lane = input.merged && !input.route ? 'TRUE' : laneClause(input.route, input.isAdmin, 'c');
   if (lane !== 'TRUE') where.push(lane);
 
   if (input.filter === 'mine') {
@@ -209,7 +214,7 @@ export async function listConversations(input: {
     record_module: string | null; record_label: string | null; assigned_to: string | null;
     assigned_name: string | null; status: string; unread_count: number;
     last_message_at: string | null; last_message_preview: string | null;
-    window_expires_at: string | null;
+    window_expires_at: string | null; lane: string | null;
     last_direction: string | null; last_status: string | null;
     wa_id: string | null;
     opted_out: boolean; term_hit: boolean;
@@ -218,7 +223,7 @@ export async function listConversations(input: {
             r.label AS record_label, ${HOLDER} AS assigned_to,
             trim(u.first_name || ' ' || u.last_name) AS assigned_name,
             c.status, c.unread_count, c.last_message_at, c.last_message_preview,
-            c.window_expires_at, lm.direction AS last_direction, lm.status AS last_status,
+            c.window_expires_at, c.lane, lm.direction AS last_direction, lm.status AS last_status,
             c.wa_id, ${OPTED_OUT} AS opted_out,
             (${hit}) AS term_hit
        FROM ipy_conversation c
@@ -242,7 +247,7 @@ export async function listConversations(input: {
     ? rows.filter((row) => row.term_hit
       || (owners.get(ownerKey(row.wa_id ?? row.handle) ?? '') ?? []).some((o) => o.label.toLowerCase().includes(term)))
     : rows;
-  return wanted.slice(0, Math.min(input.limit ?? 100, 1000)).map((row) => ({
+  const shaped = wanted.map((row) => ({
     id: row.id,
     handle: row.handle,
     contactName: row.contact_name,
@@ -257,17 +262,45 @@ export async function listConversations(input: {
     lastMessagePreview: row.last_message_preview,
     lastDirection: row.last_direction,
     lastStatus: row.last_status,
+    lane: row.lane,
+    lanes: row.lane ? [row.lane] : [],
     windowOpen: alwaysOpen || Boolean(row.window_expires_at && new Date(row.window_expires_at).getTime() > now),
     windowExpiresAt: row.window_expires_at,
     optedOut: row.opted_out,
     waId: row.wa_id,
     owners: row.record_id ? [] : owners.get(ownerKey(row.wa_id ?? row.handle) ?? '') ?? [],
   }));
+  const out = input.merged ? mergeByHandle(shaped) : shaped;
+  return out.slice(0, Math.min(input.limit ?? 100, 1000));
+}
+
+/**
+ * One chat per person. The rows arrive newest first, so the first row of a handle is the one that
+ * speaks for it (preview, last status, window); unread adds up across lanes, and `lanes` records
+ * which channels this person has used. Nothing is merged in the database: each lane keeps its own thread.
+ */
+export function mergeByHandle(rows: InboxConversation[]): InboxConversation[] {
+  const byHandle = new Map<string, InboxConversation>();
+  for (const row of rows) {
+    const seen = byHandle.get(row.handle);
+    if (!seen) { byHandle.set(row.handle, { ...row, lanes: [...row.lanes] }); continue; }
+    seen.unreadCount += row.unreadCount;
+    for (const lane of row.lanes) if (!seen.lanes.includes(lane)) seen.lanes.push(lane);
+    seen.recordId ??= row.recordId;
+    seen.recordModule ??= row.recordModule;
+    seen.recordLabel ??= row.recordLabel;
+    seen.assignedTo ??= row.assignedTo;
+    seen.assignedName ??= row.assignedName;
+    seen.optedOut = seen.optedOut || row.optedOut;
+    // A free reply is possible if either lane's window is open.
+    if (row.windowOpen && !seen.windowOpen) { seen.windowOpen = true; seen.windowExpiresAt = row.windowExpiresAt; }
+  }
+  return [...byHandle.values()];
 }
 
 /** The one place a thread is fetched with its visibility checked. */
 export async function readableConversation(
-  userId: string, isAdmin: boolean, conversationId: string,
+  userId: string, isAdmin: boolean, conversationId: string, anyLane = false,
 ): Promise<{ id: string; handle: string; recordId: string | null; assignedTo: string | null }> {
   const params: unknown[] = [conversationId];
   const see = visibility(userId, isAdmin, params.length + 1);
@@ -279,7 +312,7 @@ export async function readableConversation(
     `SELECT id, handle, record_id, ${HOLDER} AS assigned_to
        FROM ipy_conversation c
       WHERE c.id = $1 AND c.channel = 'whatsapp' AND c.wa_account_id IS NULL
-        AND ${see.clause} AND ${laneClause(undefined, isAdmin, 'c')}`,
+        AND ${see.clause} AND ${anyLane ? 'TRUE' : laneClause(undefined, isAdmin, 'c')}`,
     params,
   );
   if (!row) throw new NotFoundError('That conversation is not in your inbox.');
@@ -287,9 +320,25 @@ export async function readableConversation(
 }
 
 export async function conversationMessages(
-  userId: string, isAdmin: boolean, conversationId: string, route?: RouteView,
+  userId: string, isAdmin: boolean, conversationId: string, route?: RouteView, merged = false,
 ): Promise<Record<string, unknown>[]> {
-  const convo = await readableConversation(userId, isAdmin, conversationId);
+  const convo = await readableConversation(userId, isAdmin, conversationId, merged);
+  if (merged) {
+    // Both lanes of this person in one column; every row says which lane it came from.
+    const { rows } = await db.query(
+      `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.error_message,
+              m.template_name, m.created_at, m.delivered_at, m.read_at, m.route, m.provider, m.number_id,
+              c.lane AS lane, trim(u.first_name || ' ' || u.last_name) AS sent_by_name
+         FROM ipy_message m
+         JOIN ipy_conversation c ON c.id = m.conversation_id
+         LEFT JOIN ipy_user u ON u.id = m.sent_by
+        WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL AND c.handle = $1
+        ORDER BY m.created_at ASC
+        LIMIT 500`,
+      [convo.handle],
+    );
+    return redactAutomated(await withSenderLabels(rows), isAdmin);
+  }
   if (route) {
     const inLane = await db.queryOne(
       `SELECT 1 FROM ipy_conversation c WHERE c.id = $1 AND ${laneClause(route, isAdmin, 'c')}`, [convo.id],
@@ -311,8 +360,15 @@ export async function conversationMessages(
 }
 
 /** Opening a thread is what marks it read — receiving it is not. */
-export async function markRead(userId: string, isAdmin: boolean, conversationId: string): Promise<void> {
-  await readableConversation(userId, isAdmin, conversationId);
+export async function markRead(userId: string, isAdmin: boolean, conversationId: string, merged = false): Promise<void> {
+  const convo = await readableConversation(userId, isAdmin, conversationId, merged);
+  if (merged) {
+    await db.query(
+      `UPDATE ipy_conversation SET unread_count = 0
+        WHERE channel = 'whatsapp' AND wa_account_id IS NULL AND handle = $1`, [convo.handle],
+    );
+    return;
+  }
   await db.query(`UPDATE ipy_conversation SET unread_count = 0 WHERE id = $1`, [conversationId]);
 }
 
