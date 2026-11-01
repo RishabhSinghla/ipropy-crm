@@ -769,7 +769,7 @@ function ChatQueueRow({ row, active, onSelect, modules, showWindow, api }: {
       onClick={onSelect}
       className={cn(
         'relative flex w-full items-stretch gap-2.5 border-b border-slate-100 py-2.5 pl-2 pr-3 text-left transition-colors dark:border-slate-800',
-        active ? 'bg-brand-50 dark:bg-brand-950/50' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
+        active ? 'bg-brand-50 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800',
       )}
     >
       {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600" aria-hidden />}
