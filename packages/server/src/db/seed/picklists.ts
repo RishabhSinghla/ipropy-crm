@@ -183,6 +183,15 @@ export const PICKLISTS: PicklistDef[] = [
     'Site visit planned', 'Budget confirmed', 'Loan required',
     'Asked for brochure', 'Not reachable today',
   ] },
+  // One-tap replies in the plain WhatsApp composer. Edited in Admin → Dropdowns; the seed only creates it.
+  { name: 'wa_quick_reply', ordered: true, label: 'WhatsApp Quick Replies', values: [
+    'Hello! Thanks for your enquiry. How can I help you today?',
+    'Could you share your budget and preferred location?',
+    'I will call you shortly. Is this a good time?',
+    'Sharing the details with you now.',
+    'Would you like to visit the property this weekend?',
+    'Thank you! Let me know if you have any questions.',
+  ] },
   /*
     Buyer is the default, and it has to be one. `contact_type` is mandatory, and
     with no default not one automated source could create a lead — the website

@@ -21,6 +21,7 @@ import { FieldValue } from '../components/FieldRenderer';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from '../components/WhatsAppMedia';
 import { BubbleKindFilter, countKinds } from '../components/BubbleKindFilter';
+import { EmojiButton, QuickReplies } from '../components/WhatsAppComposerExtras';
 import { UnsubscribedPanel, UnsubscribeLink } from '../components/WhatsAppConsent';
 
 /**
@@ -671,6 +672,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                   )}
                 </div>
               )}
+              {mode === 'text' && <QuickReplies onPick={(text) => setDraft(text)} />}
               <div className="flex items-end gap-2">
                 <label
                   className={cn(
@@ -695,6 +697,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                     }}
                   />
                 </label>
+                <EmojiButton disabled={mode === 'template'} onPick={(e) => setDraft((d) => d + e)} />
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
