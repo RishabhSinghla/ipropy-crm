@@ -9,7 +9,8 @@ import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from './WhatsAppMedia';
 import { UnsubscribedPanel, UnsubscribeLink } from './WhatsAppConsent';
-import { BUBBLE_STYLE, bubbleKind, bubbleTime, composerMode, dayLabel, linkBanner, ticks, whyNoTextBox } from '../lib/whatsapp';
+import { BubbleKindFilter, countKinds } from './BubbleKindFilter';
+import { BUBBLE_STYLE, type BubbleKind, bubbleKind, bubbleTime, composerMode, dayLabel, linkBanner, ticks, whyNoTextBox } from '../lib/whatsapp';
 import { EmptyState, Skeleton, Spinner } from './ui';
 
 /**
@@ -32,6 +33,9 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   const [draft, setDraft] = useState('');
   /** The text of a message on its way: shown at once as a bubble that says Sending, so pressing Send feels instant. */
   const [pending, setPending] = useState<string | null>(null);
+  /** Which bubble kinds are pressed in the colour key; empty means show everything. Resets per record. */
+  const [kindFilter, setKindFilter] = useState<Set<BubbleKind>>(new Set());
+  useEffect(() => setKindFilter(new Set()), [recordId]);
 
   /*
     A contact messaged on the business number last week and from a rep's own
@@ -199,6 +203,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     }] : []),
   ];
 
+  const visible = kindFilter.size === 0 ? conversation : conversation.filter((m) => kindFilter.has(bubbleKind(m)));
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -213,11 +218,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
             Open in WhatsApp
           </Link>
         </div>
-        <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Colour key">
-          {(Object.keys(BUBBLE_STYLE) as Array<keyof typeof BUBBLE_STYLE>).map((kind) => (
-            <li key={kind} className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', BUBBLE_STYLE[kind].chip)}>{BUBBLE_STYLE[kind].label}</li>
-          ))}
-        </ul>
+        <BubbleKindFilter active={kindFilter} counts={countKinds(conversation, bubbleKind)} onChange={setKindFilter} />
       </div>
       {linkProblem && (
         <div role="alert" className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
@@ -235,7 +236,10 @@ export function WhatsAppTab({ module, recordId, mobile }: {
               : 'Ask an admin to connect the WhatsApp Business number in Admin → Integrations.'}
           />
         )}
-        {conversation.map((m, index) => {
+        {conversation.length > 0 && visible.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted" role="status">No messages match. <button type="button" className="font-semibold underline" onClick={() => setKindFilter(new Set())}>Clear filter</button></p>
+        )}
+        {visible.map((m, index) => {
           const kind = bubbleKind(m);
           const style = BUBBLE_STYLE[kind];
           const out = m.direction === 'outbound';
@@ -244,7 +248,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           const remote = readRemoteFile(m.media);
           return (
             <div key={m.id}>
-              {dayLabel(m.createdAt) !== (index > 0 ? dayLabel(conversation[index - 1]!.createdAt) : null) && (
+              {dayLabel(m.createdAt) !== (index > 0 ? dayLabel(visible[index - 1]!.createdAt) : null) && (
                 <div className="flex justify-center py-2">
                   <span className="rounded-md bg-white px-2.5 py-1 text-2xs font-semibold uppercase tracking-wide text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
                     {dayLabel(m.createdAt)}
