@@ -1616,6 +1616,8 @@ export const api = {
   }>(`/api/whatsapp-business/openwa/health${fresh ? '?fresh=1' : ''}`),
   waLookup: (number: string) => post<WaLookupResult>('/api/whatsapp-business/lookup', { number }),
   waLookupSave: (number: string, recordId: string) => post<{ savedName: boolean; savedPhoto: boolean }>('/api/whatsapp-business/lookup/save', { number, recordId }),
+  waLookupStored: (number: string) => get<{ result: (WaLookupResult & { lookedUpAt: string }) | null }>(`/api/whatsapp-business/lookup/stored?number=${encodeURIComponent(number)}`),
+  waLookupApply: (body: { number: string; module: string; recordId: string; photo: boolean; name: boolean }) => post<{ savedName: boolean; savedPhoto: boolean }>('/api/whatsapp-business/lookup/apply', body),
   waLookupLog: () => get<{ rows: Array<{ created_at: string; number: string; result: string; push_name: string | null; from_cache: boolean; user_name: string | null }> }>('/api/whatsapp-business/lookup/log'),
   waNumberCheck: () => get<WaNumberCheck>('/api/whatsapp-business/number-check'),
   waNumberCheckStart: (dailyCap?: number) => post<{ started: boolean; reason?: string }>('/api/whatsapp-business/number-check/start', dailyCap ? { dailyCap } : {}),
