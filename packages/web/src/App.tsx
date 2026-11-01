@@ -75,6 +75,14 @@ const ToolsPage = lazy(() => import('./pages/Tools'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
 
 /** Pages that only an admin has any use for: everybody else lands on the dashboard. */
+/** The old API-only address: one WhatsApp module now. Chats opens with the API filter on, other tabs keep their place. */
+function WhatsAppApiRedirect(): JSX.Element {
+  const { pathname } = useLocation();
+  const rest = pathname.replace(/^\/whatsapp-api\/?/, '');
+  const target = rest && rest !== 'chats' ? `/whatsapp/${rest}` : '/whatsapp/chats?kind=api';
+  return <Navigate to={target} replace />;
+}
+
 function RequireAdminRoute({ children }: { children: JSX.Element }): JSX.Element {
   const { user } = useApp();
   return user?.isAdmin ? children : <Navigate to="/dashboard" replace />;
@@ -164,7 +172,7 @@ export default function App(): JSX.Element {
                   the door, not the room. */}
               <Route path="whatsapp/*" element={<WhatsAppPage />} />
               {/* The official API's own screen, for admins. Everyone else is sent home. */}
-              <Route path="whatsapp-api/*" element={<RequireAdminRoute><WhatsAppPage mode="api" /></RequireAdminRoute>} />
+              <Route path="whatsapp-api/*" element={<RequireAdminRoute><WhatsAppApiRedirect /></RequireAdminRoute>} />
               <Route path="calls" element={<CallsPage />} />
               <Route path="search" element={<SearchResultsPage />} />
               <Route path="whatsapp-lookup" element={<WhatsAppLookupPage />} />

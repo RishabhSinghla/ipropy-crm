@@ -469,7 +469,6 @@ function MobileNav({
   const location = useLocation();
   const { user } = useApp();
   const isAdmin = Boolean(user?.isAdmin);
-  const { data: waStatus } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus(), enabled: isAdmin });
 
   // Navigating must dismiss the drawer: leaving it open covers the page the
   // user just asked for.
@@ -513,7 +512,6 @@ function MobileNav({
                 repo already learned twice, with Chats and then Reports. */}
             <DrawerLink to="/whatsapp" icon="message-circle" label="WhatsApp" />
             <DrawerLink to="/whatsapp-lookup" icon="message-circle" label="WhatsApp Lookup" />
-            {isAdmin && waStatus?.split && <DrawerLink to="/whatsapp-api" icon="message-circle" label="WhatsApp API" />}
             <DrawerLink to="/calls" icon="phone" label="Calls" />
             {isAdmin && <DrawerLink to="/market" icon="users" label="Dealer groups" />}
             <DrawerLink to="/tools" icon="calculator" label="Calculators" />

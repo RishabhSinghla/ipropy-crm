@@ -84,9 +84,10 @@ describe('a customer on both WhatsApp routes', () => {
 
   it('counts each route\'s conversations separately for the sidebar', async () => {
     const counts = await recordCounts(await adminContext());
-    const chat = (await listConversations({ userId: adminId, isAdmin: true, filter: 'all', route: 'chat', limit: 1000 })).length;
     const api = (await listConversations({ userId: adminId, isAdmin: true, filter: 'all', route: 'api', limit: 1000 })).length;
-    expect(counts.whatsapp).toBe(chat);
+    // The one menu badge is people with something unread, both channels together.
+    const unread = (await listConversations({ userId: adminId, isAdmin: true, filter: 'unread', merged: true, limit: 1000 })).length;
+    expect(counts.whatsapp).toBe(unread);
     expect(counts.whatsappApi).toBe(api);
   });
 

@@ -1667,23 +1667,23 @@ export const api = {
     name: string; language: string; category: string; status: string;
     bodyText: string | null; variableCount: number;
   }[]>('/api/whatsapp-business/templates'),
-  waBizConversations: (filter = 'all', search = '', module = '', route = '', numberId = '') => get<{
+  waBizConversations: (filter = 'all', search = '', module = '', route = '', numberId = '', merged = false) => get<{
     id: string; handle: string; contactName: string | null; recordId: string | null;
     recordModule: string | null; recordLabel: string | null; assignedTo: string | null;
     assignedName: string | null; status: string; unreadCount: number;
-    lastMessageAt: string | null; lastMessagePreview: string | null; lastDirection: string | null; lastStatus: string | null; waId: string | null; windowOpen: boolean;
+    lastMessageAt: string | null; lastMessagePreview: string | null; lastDirection: string | null; lastStatus: string | null; lane: string | null; lanes: string[]; waId: string | null; windowOpen: boolean;
     windowExpiresAt: string | null; optedOut: boolean;
     owners: { recordId: string; module: string; moduleLabel: string; label: string; fieldLabel: string }[];
-  }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined, route: route || undefined, numberId: numberId || undefined })}`),
-  waBizCounts: (route = '') => get<{ all: number; mine: number; unassigned: number; unread: number }>(`/api/whatsapp-business/conversation-counts${qs({ route: route || undefined })}`),
-  waBizMessages: (conversationId: string, route = '') => get<{
+  }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined, route: route || undefined, numberId: numberId || undefined, merged: merged ? '1' : undefined })}`),
+  waBizCounts: (route = '', merged = false) => get<{ all: number; mine: number; unassigned: number; unread: number }>(`/api/whatsapp-business/conversation-counts${qs({ route: route || undefined, merged: merged ? '1' : undefined })}`),
+  waBizMessages: (conversationId: string, route = '', merged = false) => get<{
     messages: Record<string, unknown>[]; alsoViewing: string[];
-  }>(`/api/whatsapp-business/conversations/${conversationId}/messages${qs({ route: route || undefined })}`),
+  }>(`/api/whatsapp-business/conversations/${conversationId}/messages${qs({ route: route || undefined, merged: merged ? '1' : undefined })}`),
   waBizSend: (data: {
     to: string; text?: string; recordId?: string; attachmentId?: string; route?: 'chat' | 'api'; numberId?: string;
     template?: { name: string; language: string; params: string[] };
   }) => post<{ messageId: string; conversationId: string; status: string }>('/api/whatsapp-business/send', { ...data, numberId: data.numberId ?? chosenWaNumberId() }),
-  waBizRead: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/read`, {}),
+  waBizRead: (id: string, merged = false) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/read${qs({ merged: merged ? '1' : undefined })}`, {}),
   waBizUnread: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/unread`, {}),
   waBizTake: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/take`, {}),
   waBizAssign: (id: string, to: string | null) =>

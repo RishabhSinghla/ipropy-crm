@@ -4,7 +4,7 @@ import { BarChart3, MessageCircle, Megaphone, MessagesSquare } from 'lucide-reac
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Skeleton } from '../components/ui';
-import { tabHref, WHATSAPP_API_BASE, WHATSAPP_BASE } from '../lib/whatsapp';
+import { tabHref, WHATSAPP_BASE } from '../lib/whatsapp';
 import { api } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 
@@ -121,7 +121,7 @@ export default function WhatsAppPage({ mode = 'chat' }: { mode?: WhatsAppMode })
   const allowed = useMemo(() => new Set(user?.capabilities ?? []), [user?.capabilities]);
   const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   const split = Boolean(status?.split);
-  const base = mode === 'api' ? WHATSAPP_API_BASE : WHATSAPP_BASE;
+  const base = WHATSAPP_BASE;
   // Chats is the same screen on both, told which route's conversations to list.
   const route = split && user?.isAdmin ? mode : '';
 
@@ -132,8 +132,9 @@ export default function WhatsAppPage({ mode = 'chat' }: { mode?: WhatsAppMode })
     if (t.capability && !allowed.has(t.capability)) return false;
     if (!split) return true;
     if (t.adminOnly && !user?.isAdmin) return false;
-    return !t.only || t.only === mode;
-  }).map((t) => (t.path === 'chats' ? { ...t, element: <BusinessChats route={route} /> } : t));
+    // One module now: an admin keeps the API tools (Campaigns, Templates) beside Chats; Reports is for the plain side.
+    return t.only !== 'chat' || mode === 'chat';
+  }).map((t) => (t.path === 'chats' ? { ...t, element: <BusinessChats route="chat" merged /> } : t));
 
   // A rep with only Chats sees no tab strip at all: one tab is not a choice,
   // and a row of one reads as something missing rather than as the whole thing.

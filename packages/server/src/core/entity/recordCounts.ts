@@ -55,8 +55,9 @@ export async function recordCounts(ctx: ScopeContext, conn: Tx = db): Promise<Re
     allCalls ? [] : [ctx.user.id],
   );
   const whatsapp = await conn.queryOne<{ count: number }>(
-    `SELECT COUNT(*)::int AS count FROM ipy_conversation c
-      WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL AND ${laneClause('chat', ctx.user.isAdmin, 'c')}${ctx.user.isAdmin ? '' : ' AND (c.assigned_to = $1::uuid OR c.assigned_to IS NULL)'}`,
+    // One WhatsApp menu item for both channels: people with something unread, a person on both lanes counted once.
+    `SELECT COUNT(DISTINCT c.handle)::int AS count FROM ipy_conversation c
+      WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL AND c.unread_count > 0${ctx.user.isAdmin ? '' : ' AND (c.assigned_to = $1::uuid OR c.assigned_to IS NULL)'}`,
     ctx.user.isAdmin ? [] : [ctx.user.id],
   );
   // The official-API chats, for the admin-only "WhatsApp API" row. Absent (so the

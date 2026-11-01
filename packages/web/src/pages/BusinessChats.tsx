@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { relativeTime, type RecordEnvelope } from '@ipropy/shared';
 import { api, type ModuleSummary } from '../lib/api';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
 import {
@@ -79,6 +79,7 @@ type ChatRow = Awaited<ReturnType<typeof api.waBizConversations>>[number];
 
 interface BizMessage {
   id: string;
+  lane?: string | null;
   direction: 'inbound' | 'outbound';
   body: string | null;
   type: string;
@@ -94,11 +95,20 @@ interface BizMessage {
   media: unknown;
 }
 
-export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'api' }): JSX.Element {
+export default function BusinessChats({ route = '', merged = false }: {
+  route?: '' | 'chat' | 'api';
+  /** One inbox for both channels: a person is one chat, the thread shows both lanes. `route` then only says how replies go out. */
+  merged?: boolean;
+}): JSX.Element {
   const queryClient = useQueryClient();
+  const [urlParams] = useSearchParams();
+  const { user: me } = useApp();
+  /** `?kind=api` (the old API address redirects here): only official-API chats, with the API bubbles pressed. Admins only. */
+  const apiOnly = merged && urlParams.get('kind') === 'api' && Boolean(me?.isAdmin);
+  const listRoute = merged ? (apiOnly ? 'api' : '') : route;
   const [filter, setFilter] = useState<Filter>('all');
   /** Pressed colour-key chips in the open thread; empty shows everything. Resets when another chat opens. */
-  const { data: counts } = useQuery({ queryKey: ['wa-biz', 'counts', route], queryFn: () => api.waBizCounts(route), refetchInterval: 30_000 });
+  const { data: counts } = useQuery({ queryKey: ['wa-biz', 'counts', listRoute, merged], queryFn: () => api.waBizCounts(listRoute, merged), refetchInterval: 30_000 });
   /** The right-hand record panel on wide screens; hiding it is remembered in this browser. */
   const [panelHidden, setPanelHidden] = useState<boolean>(() => {
     try { return localStorage.getItem('ipropy.waPanelHidden') === '1'; } catch { return false; }
@@ -107,7 +117,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
     try { localStorage.setItem('ipropy.waPanelHidden', was ? '0' : '1'); } catch { /* private window */ }
     return !was;
   });
-  const [kindFilter, setKindFilter] = useState<Set<BubbleKind>>(new Set());
+  const [kindFilter, setKindFilter] = useState<Set<BubbleKind>>(() => new Set(apiOnly ? ['api-out', 'api-in'] : []));
   // Empty means every module. Set from the same dropdown, prefixed so a module
   // name can never be mistaken for a status.
   const [moduleFilter, setModuleFilter] = useState('');
@@ -122,14 +132,14 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
   const { data: waNumbers } = useQuery({ queryKey: ['wa-numbers', 'mine'], queryFn: () => api.waNumbersMine(), staleTime: 60_000 });
   const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   const { data: conversations, isLoading } = useQuery({
-    queryKey: ['wa-biz', 'conversations', filter, search, moduleFilter, route, numberFilter],
-    queryFn: () => api.waBizConversations(filter, search, moduleFilter, route, numberFilter),
+    queryKey: ['wa-biz', 'conversations', filter, search, moduleFilter, listRoute, numberFilter, merged],
+    queryFn: () => api.waBizConversations(filter, search, moduleFilter, listRoute, numberFilter, merged),
     // A customer writing while somebody reads is the point of the screen.
     refetchInterval: 15_000,
   });
   const { data: thread } = useQuery({
-    queryKey: ['wa-biz', 'messages', activeId, route],
-    queryFn: () => api.waBizMessages(activeId!, route),
+    queryKey: ['wa-biz', 'messages', activeId, merged ? 'merged' : route],
+    queryFn: () => api.waBizMessages(activeId!, merged ? '' : route, merged),
     enabled: Boolean(activeId),
     refetchInterval: activeId ? 10_000 : false,
   });
@@ -205,9 +215,9 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
   }
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
   // Each inbox lives in one lane: the API page holds only automatic sends, the plain page only company-phone chat.
-  const kindOf = (m: { direction: string }): BubbleKind => bubbleKind({ direction: m.direction, viaApi: route === 'api' });
+  const kindOf = (m: { direction: string; lane?: string | null }): BubbleKind => bubbleKind({ direction: m.direction, viaApi: merged ? m.lane === 'api' : route === 'api' });
   const shown = kindFilter.size === 0 ? messages : messages.filter((m) => kindFilter.has(kindOf(m)));
-  useEffect(() => setKindFilter(new Set()), [activeId]);
+  useEffect(() => setKindFilter(new Set(apiOnly ? ['api-out', 'api-in'] : [])), [activeId, apiOnly]);
   /*
     **Both halves, not just the clock.** A free reply needs an open 24-hour
     window *and* a provider that can carry one — some providers' APIs send approved
@@ -220,7 +230,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
     WhatsApp chat (a linked phone) has no such window, so its rows, header and
     composer show none of it; the WhatsApp API page keeps all of it.
   */
-  const showWindow = route === 'api' || (route === '' && !status?.split && !(status?.capabilities ?? []).includes('linkedDevice'));
+  const showWindow = !merged && route === 'api' || (route === '' && !status?.split && !(status?.capabilities ?? []).includes('linkedDevice'));
   const mode = showWindow ? composerMode(status?.capabilities ?? [], Boolean(active?.windowOpen)) : 'text';
 
   const refresh = (): void => {
@@ -255,7 +265,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
       attachmentId: input.attachmentId,
       recordId: active!.recordId ?? undefined,
       // Each module sends on its own route only; never falls back to the other one.
-      route: route || undefined,
+      route: merged ? 'chat' : route || undefined,
     }),
     onSuccess: () => { setDraft(''); refresh(); },
     onError: (err: Error) => {
@@ -319,7 +329,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
   // Opening a thread is what marks it read — receiving it is not.
   useEffect(() => {
     if (!activeId) return;
-    void api.waBizRead(activeId).then(refresh).catch(() => undefined);
+    void api.waBizRead(activeId, merged).then(refresh).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
@@ -350,8 +360,8 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
       <aside className={cn('w-full shrink-0 flex-col border-r border-[var(--border)] md:flex md:w-80', active ? 'hidden' : 'flex')}>
         <div className="space-y-2 border-b border-slate-100 p-3 dark:border-slate-800">
           <div>
-            <h2 className="text-base font-extrabold tracking-tight text-slate-950 dark:text-white">{route === 'api' ? 'WhatsApp API' : 'WhatsApp chat'}</h2>
-            <p className="text-2xs text-muted">{route === 'api' ? 'Automatic sends from workflows' : 'Company phone · you reply by hand'}</p>
+            <h2 className="text-base font-extrabold tracking-tight text-slate-950 dark:text-white">{merged ? 'WhatsApp' : route === 'api' ? 'WhatsApp API' : 'WhatsApp chat'}</h2>
+            <p className="text-2xs text-muted">{merged ? 'Chat and API in one place · you reply by hand' : route === 'api' ? 'Automatic sends from workflows' : 'Company phone · you reply by hand'}</p>
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
@@ -422,7 +432,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
           {(conversations ?? []).map((row) => (
             <ChatQueueRow
               showWindow={showWindow}
-              api={route === 'api'}
+              api={row.lane === 'api'}
               key={row.id}
               row={row}
               active={row.id === activeId}
@@ -527,7 +537,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
               </div>
             </header>
             <div className="border-b border-[var(--border)] bg-white px-4 pb-2 dark:bg-slate-900">
-              <BubbleKindFilter active={kindFilter} counts={countKinds(messages.map((m) => ({ direction: m.direction, viaApi: route === 'api' })), bubbleKind)} onChange={setKindFilter} />
+              <BubbleKindFilter active={kindFilter} counts={countKinds(messages, kindOf)} onChange={setKindFilter} />
             </div>
 
             {/*
@@ -640,7 +650,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
               <div ref={endRef} />
             </div>
 
-            {route === 'api' ? (
+            {!merged && route === 'api' ? (
               <footer className="border-t border-[var(--border)] bg-sky-50 px-4 py-3 text-xs text-sky-900 dark:bg-sky-950 dark:text-sky-100" data-testid="api-readonly">
                 <strong>Automatic: sent by workflows.</strong> This inbox is read-only. Replies to customers are sent from the WhatsApp chat inbox.
               </footer>
@@ -850,6 +860,12 @@ function ChatQueueRow({ row, active, onSelect, modules, showWindow, api }: {
         <span className="mt-1 block truncate text-xs text-slate-500">{row.lastMessagePreview ?? 'No messages yet'}</span>
         <span className="mt-1 flex min-w-0 items-center gap-1.5">
           {chip && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold', CHIP_TONE[chip.tone])}>{chip.text}</span>}
+          {row.lanes.length > 0 && (
+            <span className="flex shrink-0 gap-0.5" title={row.lanes.length > 1 ? 'Both plain chat and the official API' : row.lanes[0] === 'api' ? 'Official API' : 'Plain chat'}>
+              {row.lanes.includes('chat') && <span className="rounded bg-emerald-100 px-1 text-[9px] font-bold text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100">Chat</span>}
+              {row.lanes.includes('api') && <span className="rounded bg-indigo-100 px-1 text-[9px] font-bold text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100">API</span>}
+            </span>
+          )}
           <span className="min-w-0 truncate text-[10px] text-slate-400">{[contactKind, row.assignedName].filter(Boolean).join(' · ')}</span>
         </span>
       </span>

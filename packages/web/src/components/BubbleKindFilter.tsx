@@ -56,7 +56,7 @@ export function BubbleKindFilter({ active, counts, onChange }: {
   );
 }
 
-export function countKinds(messages: Array<{ direction: string; viaApi: boolean }>, kindOf: (m: { direction: string; viaApi: boolean }) => BubbleKind): Record<BubbleKind, number> {
+export function countKinds<T>(messages: T[], kindOf: (m: T) => BubbleKind): Record<BubbleKind, number> {
   const counts: Record<BubbleKind, number> = { 'api-out': 0, 'api-in': 0, 'chat-out': 0, 'chat-in': 0 };
   for (const m of messages) counts[kindOf(m)] += 1;
   return counts;
