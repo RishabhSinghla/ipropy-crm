@@ -301,3 +301,18 @@ export function rowChip(
   if (!win.open) return { text: 'Reply window closed', tone: 'grey' };
   return { text: `Reply window open · ${win.label} left`, tone: 'green' };
 }
+
+/**
+ * The small line on a bubble saying which of our numbers carried it, and who sent it.
+ * Sent: "from yogesh-phone · +91 98xx". Received: "to iPropy Floors · +91 98217 72933".
+ * Null when the server does not know (old messages) so nothing wrong is claimed.
+ */
+export function senderLine(m: {
+  direction: string; numberName?: string | null; numberPhone?: string | null; sentByName?: string | null;
+}): string | null {
+  const number = [m.numberName, m.numberPhone].filter(Boolean).join(' · ');
+  const who = m.direction === 'outbound' && m.sentByName ? `by ${m.sentByName}` : '';
+  if (!number && !who) return null;
+  const via = number ? `${m.direction === 'outbound' ? 'from' : 'to'} ${number}` : '';
+  return [via, who].filter(Boolean).join(' · ');
+}

@@ -96,6 +96,9 @@ export function redactAutomated<T extends Record<string, unknown>>(rows: T[], is
       template_name: null,
       error_message: null,
       sent_by_name: null,
+      numberName: null,
+      numberPhone: null,
+      numberId: null,
     };
   });
 }

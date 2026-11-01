@@ -8,6 +8,7 @@
  * which provider is live, what it can actually do, whether its credentials
  * work, and sending a message.
  */
+import { withSenderLabels } from '../../integrations/whatsapp/business/senderLabels.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../../middleware/errorHandler.js';
@@ -447,7 +448,7 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
 
   const { rows } = await db.query(
     `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.template_name,
-            m.created_at, m.route, m.provider,
+            m.created_at, m.route, m.provider, m.number_id,
             -- Why a send failed, so the screen can say it. Without this the
             -- tab paints a refused message the same green as a delivered one
             -- and writes "sent" under it.
@@ -486,7 +487,7 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
       LIMIT 1`,
     [handles],
   ));
-  res.json({ messages: redactAutomated(rows, user.isAdmin), user: user.id, optedOut });
+  res.json({ messages: redactAutomated(await withSenderLabels(rows), user.isAdmin), user: user.id, optedOut });
 }));
 
 /**
