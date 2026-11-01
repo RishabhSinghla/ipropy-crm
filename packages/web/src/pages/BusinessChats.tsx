@@ -22,6 +22,7 @@ import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from '../components/WhatsAppMedia';
 import { BubbleKindFilter, countKinds } from '../components/BubbleKindFilter';
 import { EmojiButton, QuickReplies } from '../components/WhatsAppComposerExtras';
+import SendFromPicker from '../components/SendFromPicker';
 import { UnsubscribedPanel, UnsubscribeLink } from '../components/WhatsAppConsent';
 
 /**
@@ -109,15 +110,18 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
   // name can never be mistaken for a status.
   const [moduleFilter, setModuleFilter] = useState('');
   const [search, setSearch] = useState('');
+  // Admin's inbox filter: only chats that went through this WhatsApp number.
+  const [numberFilter, setNumberFilter] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
 
   const [shell, shellHeight] = useFillHeight<HTMLDivElement>();
+  const { data: waNumbers } = useQuery({ queryKey: ['wa-numbers', 'mine'], queryFn: () => api.waNumbersMine(), staleTime: 60_000 });
   const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   const { data: conversations, isLoading } = useQuery({
-    queryKey: ['wa-biz', 'conversations', filter, search, moduleFilter, route],
-    queryFn: () => api.waBizConversations(filter, search, moduleFilter, route),
+    queryKey: ['wa-biz', 'conversations', filter, search, moduleFilter, route, numberFilter],
+    queryFn: () => api.waBizConversations(filter, search, moduleFilter, route, numberFilter),
     // A customer writing while somebody reads is the point of the screen.
     refetchInterval: 15_000,
   });
@@ -399,6 +403,13 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                 })),
             ]}
           />
+          {route !== 'api' && waNumbers && waNumbers.numbers.length > 1 && (
+            <Select
+              value={numberFilter}
+              onChange={(value) => setNumberFilter(value)}
+              options={[{ value: '', label: 'All numbers' }, ...waNumbers.numbers.map((n) => ({ value: n.id, label: n.label || n.sessionName }))]}
+            />
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -682,6 +693,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                 </div>
               )}
               {mode === 'text' && <QuickReplies onPick={(text) => setDraft(text)} />}
+              <SendFromPicker recordId={active?.recordId} />
               <div className="flex items-end gap-2">
                 <label
                   className={cn(

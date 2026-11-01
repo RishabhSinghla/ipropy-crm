@@ -128,3 +128,23 @@ describe('history is never re-attributed', () => {
     await db.query(`DELETE FROM ipy_conversation WHERE id = $1`, [conv!.id]);
   });
 });
+
+describe('the admin inbox number filter', () => {
+  it('lists only chats that went through the chosen number', async () => {
+    const { listConversations } = await import('../../src/integrations/whatsapp/business/inbox.js');
+    const handle = `8${String(stamp).slice(-9)}`;
+    const conv = await db.queryOne<{ id: string }>(
+      `INSERT INTO ipy_conversation (channel, handle, lane) VALUES ('whatsapp', $1, 'chat') RETURNING id`, [handle],
+    );
+    await db.query(
+      `INSERT INTO ipy_message (conversation_id, direction, channel, type, body, status, provider, route, number_id)
+       VALUES ($1, 'inbound', 'whatsapp', 'text', 'hi', 'delivered', 'whatsapp_openwa', 'business', $2)`, [conv!.id, ids[2]],
+    );
+    const mine = await listConversations({ userId: adminId, isAdmin: true, filter: 'all', route: 'chat', numberId: ids[2] });
+    const other = await listConversations({ userId: adminId, isAdmin: true, filter: 'all', route: 'chat', numberId: ids[1] });
+    expect(mine.some((c) => c.id === conv!.id)).toBe(true);
+    expect(other.some((c) => c.id === conv!.id)).toBe(false);
+    await db.query(`DELETE FROM ipy_message WHERE conversation_id = $1`, [conv!.id]);
+    await db.query(`DELETE FROM ipy_conversation WHERE id = $1`, [conv!.id]);
+  });
+});

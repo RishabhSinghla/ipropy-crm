@@ -12,6 +12,7 @@ import { UnsubscribedPanel, UnsubscribeLink } from './WhatsAppConsent';
 import { BubbleKindFilter, countKinds } from './BubbleKindFilter';
 import { BUBBLE_STYLE, type BubbleKind, bubbleKind, bubbleTime, composerMode, dayLabel, linkBanner, ticks, whyNoTextBox } from '../lib/whatsapp';
 import { EmptyState, Skeleton, Spinner } from './ui';
+import SendFromPicker from './SendFromPicker';
 
 /**
  * This contact's WhatsApp history, on the contact.
@@ -322,6 +323,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           Sending on <strong>WhatsApp chat (company phone)</strong>. API messages go out automatically from workflows.
         </p>
       )}
+      {!optedOut && onBusiness && mobile && <SendFromPicker recordId={recordId} />}
       {!optedOut && (
       <form
         className="flex flex-wrap items-end gap-2 border-t border-[var(--border)] bg-white p-3 dark:bg-slate-900"
