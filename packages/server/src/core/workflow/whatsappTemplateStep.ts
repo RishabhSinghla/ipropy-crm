@@ -8,7 +8,9 @@
  *  - an approved template only — WhatsApp allows nothing else to a stranger;
  *  - the one send path (`sendOnBusinessNumber`), which already refuses an
  *    opted-out person and a number it cannot dial;
- *  - the same person never gets the same template twice from the CRM;
+ *  - the same person never gets the same template twice from the CRM, and a
+ *    template and its twin (`x_mkt` / `x_utl`, the marketing and utility
+ *    versions of one message) count as the same template;
  *  - a blank the template needs but the record lacks is named, never sent.
  *
  * A quiet refusal (already sent, opted out) returns; anything somebody must
@@ -40,15 +42,27 @@ async function whoSends(ctx: TaskContext): Promise<string | null> {
   return admin?.id ?? null;
 }
 
+/**
+ * The marketing and utility versions of one message are named `x_mkt` and
+ * `x_utl`. They are the same message to the customer, so whichever was sent
+ * first blocks the other — otherwise switching a workflow from one to the
+ * other would send everybody who already had it a second copy.
+ */
+export function namesInTheSameFamily(templateName: string): string[] {
+  const stem = templateName.replace(/_(mkt|utl)$/, '');
+  if (stem === templateName) return [templateName];
+  return [`${stem}_mkt`, `${stem}_utl`];
+}
+
 async function alreadySent(recordId: string, templateName: string): Promise<boolean> {
   const row = await db.queryOne<{ one: number }>(
     `SELECT 1 AS one
        FROM ipy_message m
        JOIN ipy_conversation c ON c.id = m.conversation_id
       WHERE c.record_id = $1 AND m.direction = 'outbound'
-        AND m.template_name = $2 AND m.status <> 'failed'
+        AND m.template_name = ANY($2::text[]) AND m.status <> 'failed'
       LIMIT 1`,
-    [recordId, templateName],
+    [recordId, namesInTheSameFamily(templateName)],
   );
   return Boolean(row);
 }

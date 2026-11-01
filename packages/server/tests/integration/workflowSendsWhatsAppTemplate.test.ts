@@ -23,7 +23,7 @@ import { invalidate as reloadIntegrations, saveIntegration } from '../../src/cor
 import { adminContext, leadInput } from './fixtures.js';
 
 const stamp = Date.now();
-const TEMPLATE = `welcome_new_lead_${stamp}`;
+const TEMPLATE = `welcome_new_lead_${stamp}_utl`;
 
 let stub: Server;
 const received: { path: string; body: Record<string, unknown> }[] = [];
@@ -138,6 +138,21 @@ describe('a new lead with status New', () => {
     const afterFirst = received.length;
     await arrives(lead, 'New');
     expect(received.length, 'the second arrival must send nothing').toBe(afterFirst);
+  });
+
+  it('is not sent the utility twin of a template the marketing version already reached', async () => {
+    const lead = await newLead();
+    await arrives(lead, 'New');
+    // Make the stored send look like the old marketing version of the same message.
+    await db.query(
+      `UPDATE ipy_message SET template_name = $2
+        WHERE template_name = $1
+          AND conversation_id IN (SELECT id FROM ipy_conversation WHERE record_id = $3)`,
+      [TEMPLATE, TEMPLATE.replace(/_utl$/, '_mkt'), lead.id],
+    );
+    const before = received.length;
+    await arrives(lead, 'New');
+    expect(received.length, 'the twin must not be sent again').toBe(before);
   });
 });
 
