@@ -2,7 +2,7 @@ import { type JSX, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Phone } from 'lucide-react';
-import type { RecordEnvelope } from '@ipropy/shared';
+import { toInternational, type RecordEnvelope } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { FieldBlock, NotesPanel } from './RecordBlocks';
@@ -58,8 +58,16 @@ export function ChatRecordPane({ module, record }: {
   module: DescribedModule; record: RecordEnvelope;
 }): JSX.Element {
   const { blocks, headerFields, phoneField } = useRecordPanes(module);
-  const phoneValue = phoneField ? record.values[phoneField.name] : null;
-  const phone = typeof phoneValue === 'string' && phoneValue.trim() ? phoneValue.trim() : null;
+  // First phone field holding a number (the main one first), with the country code the record stores.
+  const phoneFields = [phoneField, ...module.fields.filter((f) => f.uitype === 'phone')].filter((f): f is NonNullable<typeof phoneField> => Boolean(f));
+  let phone: string | null = null;
+  for (const field of phoneFields) {
+    const raw = record.values[field.name];
+    if (typeof raw !== 'string' || !raw.trim()) continue;
+    const code = record.values.country_code;
+    phone = toInternational(typeof code === 'string' ? code : null, raw) ?? raw.trim();
+    break;
+  }
   const canEdit = record.can?.edit ?? module.permissions.edit;
 
   return (
