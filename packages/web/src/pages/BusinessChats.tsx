@@ -20,7 +20,7 @@ import { HeaderFieldStrip } from '../components/RecordBlocks';
 import { FieldValue } from '../components/FieldRenderer';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from '../components/WhatsAppMedia';
-import { BubbleKindFilter, countKinds } from '../components/BubbleKindFilter';
+import { BubbleKindFilter, countKinds, NumberFilter, numbersIn } from '../components/BubbleKindFilter';
 import { EmojiButton, QuickReplies } from '../components/WhatsAppComposerExtras';
 import SendFromPicker from '../components/SendFromPicker';
 import { UnsubscribedPanel, UnsubscribeLink } from '../components/WhatsAppConsent';
@@ -88,6 +88,7 @@ interface BizMessage {
   created_at: string;
   route: string | null;
   sent_by_name: string | null;
+  numberId?: string | null;
   numberName?: string | null;
   numberPhone?: string | null;
   error_message: string | null;
@@ -117,6 +118,7 @@ export default function BusinessChats({ route = '', merged = false }: {
     try { localStorage.setItem('ipropy.waPanelHidden', was ? '0' : '1'); } catch { /* private window */ }
     return !was;
   });
+  const [threadNumbers, setThreadNumbers] = useState<Set<string>>(new Set());
   const [kindFilter, setKindFilter] = useState<Set<BubbleKind>>(() => new Set(apiOnly ? ['api-out', 'api-in'] : []));
   // Empty means every module. Set from the same dropdown, prefixed so a module
   // name can never be mistaken for a status.
@@ -216,8 +218,8 @@ export default function BusinessChats({ route = '', merged = false }: {
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
   // Each inbox lives in one lane: the API page holds only automatic sends, the plain page only company-phone chat.
   const kindOf = (m: { direction: string; lane?: string | null }): BubbleKind => bubbleKind({ direction: m.direction, viaApi: merged ? m.lane === 'api' : route === 'api' });
-  const shown = kindFilter.size === 0 ? messages : messages.filter((m) => kindFilter.has(kindOf(m)));
-  useEffect(() => setKindFilter(new Set(apiOnly ? ['api-out', 'api-in'] : [])), [activeId, apiOnly]);
+  const shown = messages.filter((m) => (kindFilter.size === 0 || kindFilter.has(kindOf(m))) && (threadNumbers.size === 0 || (m.numberId != null && threadNumbers.has(m.numberId))));
+  useEffect(() => { setKindFilter(new Set(apiOnly ? ['api-out', 'api-in'] : [])); setThreadNumbers(new Set()); }, [activeId, apiOnly]);
   /*
     **Both halves, not just the clock.** A free reply needs an open 24-hour
     window *and* a provider that can carry one — some providers' APIs send approved
@@ -538,6 +540,7 @@ export default function BusinessChats({ route = '', merged = false }: {
             </header>
             <div className="border-b border-[var(--border)] bg-white px-4 pb-2 dark:bg-slate-900">
               <BubbleKindFilter active={kindFilter} counts={countKinds(messages, kindOf)} onChange={setKindFilter} />
+              <NumberFilter options={numbersIn(messages)} active={threadNumbers} onChange={setThreadNumbers} />
             </div>
 
             {/*
@@ -548,7 +551,7 @@ export default function BusinessChats({ route = '', merged = false }: {
             */}
             <div className="flex-1 space-y-2 overflow-y-auto bg-slate-100 p-4 dark:bg-slate-950">
               {messages.length > 0 && shown.length === 0 && (
-                <p className="py-8 text-center text-sm text-muted" role="status">No messages match. <button type="button" className="font-semibold underline" onClick={() => setKindFilter(new Set())}>Clear filter</button></p>
+                <p className="py-8 text-center text-sm text-muted" role="status">No messages match. <button type="button" className="font-semibold underline" onClick={() => { setKindFilter(new Set()); setThreadNumbers(new Set()); }}>Clear filter</button></p>
               )}
               {shown.map((message, index) => (
                 <div key={message.id}>

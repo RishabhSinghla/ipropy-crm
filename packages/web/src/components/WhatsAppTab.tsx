@@ -9,7 +9,7 @@ import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from './WhatsAppMedia';
 import { UnsubscribedPanel, UnsubscribeLink } from './WhatsAppConsent';
-import { BubbleKindFilter, countKinds } from './BubbleKindFilter';
+import { BubbleKindFilter, countKinds, NumberFilter, numbersIn } from './BubbleKindFilter';
 import { BUBBLE_STYLE, type BubbleKind, bubbleKind, bubbleTime, composerMode, dayLabel, linkBanner, senderLine, ticks, whyNoTextBox } from '../lib/whatsapp';
 import { EmptyState, Skeleton, Spinner } from './ui';
 import SendFromPicker from './SendFromPicker';
@@ -36,7 +36,8 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   const [pending, setPending] = useState<string | null>(null);
   /** Which bubble kinds are pressed in the colour key; empty means show everything. Resets per record. */
   const [kindFilter, setKindFilter] = useState<Set<BubbleKind>>(new Set());
-  useEffect(() => setKindFilter(new Set()), [recordId]);
+  const [numberFilter, setNumberFilter] = useState<Set<string>>(new Set());
+  useEffect(() => { setKindFilter(new Set()); setNumberFilter(new Set()); }, [recordId]);
 
   /*
     A contact messaged on the business number last week and from a rep's own
@@ -77,6 +78,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         templateName: (row.template_name as string | null) ?? null,
         status: String(row.status ?? ''),
         error: (row.error_message as string | null) ?? null,
+        numberId: (row.numberId as string | null) ?? null,
         numberName: (row.numberName as string | null) ?? null,
         numberPhone: (row.numberPhone as string | null) ?? null,
         sentByName: (row.sent_by_name as string | null) ?? null,
@@ -203,11 +205,11 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     ...(messages ?? []),
     ...(pending !== null ? [{
       id: 'pending', direction: 'outbound' as const, body: pending, media: null, createdAt: new Date().toISOString(),
-      viaApi: false, templateName: null, status: 'sending', error: null, numberName: null, numberPhone: null, sentByName: null,
+      viaApi: false, templateName: null, status: 'sending', error: null, numberId: null, numberName: null, numberPhone: null, sentByName: null,
     }] : []),
   ];
 
-  const visible = kindFilter.size === 0 ? conversation : conversation.filter((m) => kindFilter.has(bubbleKind(m)));
+  const visible = conversation.filter((m) => (kindFilter.size === 0 || kindFilter.has(bubbleKind(m))) && (numberFilter.size === 0 || (m.numberId != null && numberFilter.has(m.numberId))));
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -223,6 +225,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           </Link>
         </div>
         <BubbleKindFilter active={kindFilter} counts={countKinds(conversation, bubbleKind)} onChange={setKindFilter} />
+        <NumberFilter options={numbersIn(conversation)} active={numberFilter} onChange={setNumberFilter} />
       </div>
       {linkProblem && (
         <div role="alert" className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
@@ -241,7 +244,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           />
         )}
         {conversation.length > 0 && visible.length === 0 && (
-          <p className="py-8 text-center text-sm text-muted" role="status">No messages match. <button type="button" className="font-semibold underline" onClick={() => setKindFilter(new Set())}>Clear filter</button></p>
+          <p className="py-8 text-center text-sm text-muted" role="status">No messages match. <button type="button" className="font-semibold underline" onClick={() => { setKindFilter(new Set()); setNumberFilter(new Set()); }}>Clear filter</button></p>
         )}
         {visible.map((m, index) => {
           const kind = bubbleKind(m);

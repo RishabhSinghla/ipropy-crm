@@ -61,3 +61,45 @@ export function countKinds<T>(messages: T[], kindOf: (m: T) => BubbleKind): Reco
   for (const m of messages) counts[kindOf(m)] += 1;
   return counts;
 }
+
+export interface NumberOption { id: string; label: string }
+
+/** The distinct numbers of ours that carried messages in this thread, for the "number" filter chips. */
+export function numbersIn(messages: Array<{ numberId?: string | null; numberName?: string | null; numberPhone?: string | null }>): NumberOption[] {
+  const seen = new Map<string, string>();
+  for (const m of messages) {
+    if (!m.numberId || seen.has(m.numberId)) continue;
+    seen.set(m.numberId, [m.numberName, m.numberPhone].filter(Boolean).join(' · ') || 'Unknown number');
+  }
+  return [...seen].map(([id, label]) => ({ id, label }));
+}
+
+/** Multi-select of our numbers (shown only when the thread used more than one). Nothing pressed shows all. */
+export function NumberFilter({ options, active, onChange }: {
+  options: NumberOption[]; active: ReadonlySet<string>; onChange: (next: Set<string>) => void;
+}): JSX.Element | null {
+  if (options.length < 2) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter messages by our number">
+      <span className="text-[10px] font-semibold text-muted">Number</span>
+      {options.map((o) => {
+        const pressed = active.has(o.id);
+        return (
+          <button
+            key={o.id}
+            type="button"
+            aria-pressed={pressed}
+            onClick={() => { const next = new Set(active); if (pressed) next.delete(o.id); else next.add(o.id); onChange(next); }}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-100',
+              pressed ? 'ring-2 ring-slate-900 dark:ring-white' : active.size > 0 && 'opacity-60 hover:opacity-100',
+            )}
+          >
+            {pressed && <Check className="h-3 w-3" aria-hidden />}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
