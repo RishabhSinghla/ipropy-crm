@@ -7,6 +7,7 @@ import request from 'supertest';
 import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
+import { db } from '../../src/db/pool.js';
 import { signIn, SEEDED } from './fixtures.js';
 
 let app: Express;
@@ -19,6 +20,8 @@ beforeAll(async () => {
   app = createApp();
   adminToken = await signIn(app, 'admin@ipropy.com');
   repToken = await signIn(app, SEEDED.executiveA);
+  // Some audit rows hold an object, not a list, in `changes`; the report must step over them (it once returned 500).
+  await db.query(`INSERT INTO ipy_audit(module_name, action, changes, source) VALUES ('leads','update','{}'::jsonb,'itest what-earns-money')`);
 });
 
 describe('what earns money', () => {

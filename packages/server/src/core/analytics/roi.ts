@@ -13,6 +13,7 @@
  * channel comes from the message row itself.
  */
 import { db } from '../../db/pool.js';
+import { columnsOf, fieldText } from '../entity/payloadColumns.js';
 
 export const STAGES = {
   qualified: ['Qualified', 'Contacted'],
@@ -175,6 +176,10 @@ function rollup(rows: TouchRow[], costs: CostSettings): Counts {
 }
 
 async function loadTouches(q: RoiQuery): Promise<TouchRow[]> {
+  // Read through the helpers: an admin may delete these fields, and a bare column would then be a 42703.
+  const present = await columnsOf('ipy_e_leads');
+  const leadStatus = fieldText(present, 'l', 'status');
+  const leadSource = fieldText(present, 'l', 'lead_source');
   const stageCases = STAGE_KEYS.map((k) => `WHEN c.val = ANY(ARRAY[${STAGES[k].map((s) => `'${s}'`).join(',')}]) THEN '${k}'`).join(' ');
   const { rows } = await db.query<TouchRow>(
     `WITH touches AS MATERIALIZED (
@@ -189,7 +194,7 @@ async function loadTouches(q: RoiQuery): Promise<TouchRow[]> {
                          AND i.created_at <= m.created_at + make_interval(days => $3::int)) AS replied,
               (m.status IN ('delivered','read') OR m.delivered_at IS NOT NULL) AS delivered,
               (m.status = 'read' OR m.read_at IS NOT NULL) AS read,
-              false AS answered, l.status AS current_status
+              false AS answered, ${leadStatus} AS current_status
          FROM ipy_message m
          JOIN ipy_conversation c ON c.id = m.conversation_id
          LEFT JOIN ipy_record r ON r.id = c.record_id
@@ -197,22 +202,22 @@ async function loadTouches(q: RoiQuery): Promise<TouchRow[]> {
          LEFT JOIN ipy_e_leads l ON l.record_id = c.record_id
          LEFT JOIN LATERAL (SELECT category FROM ipy_whatsapp_template w WHERE w.name = m.template_name LIMIT 1) t ON true
         WHERE m.direction = 'outbound' AND m.created_at >= $1 AND m.created_at < $2
-          AND ($4::text IS NULL OR l.lead_source = $4)
+          AND ($4::text IS NULL OR ${leadSource} = $4)
           AND ($5::uuid IS NULL OR COALESCE(m.sent_by, wn.user_id, r.owner_id) = $5)
        UNION ALL
        SELECT k.id::text, k.record_id, k.started_at, 'call', NULL, NULL,
               CASE WHEN k.status = 'failed' THEN 'failed' ELSE 'sent' END, NULL, k.user_id, false,
-              false, false, (k.duration_seconds > 0 OR k.answered_at IS NOT NULL), l.status
+              false, false, (k.duration_seconds > 0 OR k.answered_at IS NOT NULL), ${leadStatus}
          FROM ipy_call k
          LEFT JOIN ipy_e_leads l ON l.record_id = k.record_id
         WHERE k.direction = 'outbound' AND k.started_at >= $1 AND k.started_at < $2
-          AND ($4::text IS NULL OR l.lead_source = $4)
+          AND ($4::text IS NULL OR ${leadSource} = $4)
           AND ($5::uuid IS NULL OR k.user_id = $5)
      ), ev AS (
        SELECT a.record_id, a.created_at AS ts,
               CASE ${stageCases} END AS stage
          FROM ipy_audit a
-         CROSS JOIN LATERAL (SELECT ch->>'to' AS val FROM jsonb_array_elements(a.changes) ch WHERE ch->>'field' = 'status') c
+         CROSS JOIN LATERAL (SELECT ch->>'to' AS val FROM jsonb_array_elements(CASE WHEN jsonb_typeof(a.changes) = 'array' THEN a.changes ELSE '[]'::jsonb END) ch WHERE ch->>'field' = 'status') c
         WHERE a.module_name = 'leads' AND a.record_id IS NOT NULL
           AND a.created_at >= $1 AND a.created_at < $2 + make_interval(days => $3::int)
      ), cred AS (
@@ -317,8 +322,10 @@ async function responseTimes(q: RoiQuery): Promise<Map<string, number>> {
 }
 
 export async function roiFilterOptions(): Promise<{ sources: string[]; agents: { id: string; name: string }[] }> {
+  const present = await columnsOf('ipy_e_leads');
+  const src = fieldText(present, 'l', 'lead_source');
   const [s, a] = await Promise.all([
-    db.query<{ lead_source: string }>(`SELECT DISTINCT lead_source FROM ipy_e_leads WHERE lead_source IS NOT NULL ORDER BY 1`),
+    db.query<{ lead_source: string }>(`SELECT DISTINCT ${src} AS lead_source FROM ipy_e_leads l WHERE ${src} IS NOT NULL ORDER BY 1`),
     db.query<{ id: string; name: string }>(
       `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE is_active ORDER BY 2`),
   ]);
