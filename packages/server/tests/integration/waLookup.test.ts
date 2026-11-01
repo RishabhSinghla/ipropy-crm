@@ -53,6 +53,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await fake.close();
   await db.query(`DELETE FROM ipy_wa_lookup_log WHERE number = ANY($1)`, [[full(ON), full(NOT_ON), full(NO_RECORD)]]);
+  await db.query(`DELETE FROM ipy_wa_lookup_result WHERE number = ANY($1)`, [[full(ON), full(NOT_ON), full(NO_RECORD)]]);
   await db.query(`DELETE FROM ipy_record WHERE id = $1`, [leadId]);
   await db.query(`UPDATE ipy_integration SET is_active = false WHERE provider = $1`, [OPENWA_PROVIDER]);
   for (const provider of previouslyActive) if (provider !== OPENWA_PROVIDER) await db.query(`UPDATE ipy_integration SET is_active = true WHERE provider = $1`, [provider]);
@@ -124,6 +125,21 @@ describe('saving to a record', () => {
     const res = await request(app).post('/api/whatsapp-business/lookup/save').set('Authorization', `Bearer ${admin}`).send({ number: full(ON), recordId: other.id });
     expect(res.status).toBe(400);
     await db.query(`DELETE FROM ipy_record WHERE id = $1`, [other.id]);
+  });
+});
+
+describe('the record icon', () => {
+  it('remembers the answer, and applies the name to a record that holds the number', async () => {
+    await look(admin, ON);
+    const stored = await request(app).get(`/api/whatsapp-business/lookup/stored?number=${ON}`).set('Authorization', `Bearer ${rep}`);
+    expect(stored.body.result).toMatchObject({ status: 'on_whatsapp', pushName: 'Ravi Kumar' });
+    const res = await request(app).post('/api/whatsapp-business/lookup/apply').set('Authorization', `Bearer ${admin}`)
+      .send({ number: ON, module: 'leads', recordId: leadId, photo: false, name: true });
+    expect(res.status).toBe(200);
+    expect(res.body.savedName).toBe(true);
+    const wrong = await request(app).post('/api/whatsapp-business/lookup/apply').set('Authorization', `Bearer ${admin}`)
+      .send({ number: NOT_ON, module: 'leads', recordId: leadId, photo: false, name: true });
+    expect(wrong.status).toBe(400);
   });
 });
 

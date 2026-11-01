@@ -46,7 +46,7 @@ import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.
 import {
   enableAllGroups, historyJobStatus, historySupported, listWaGroups, refreshGroupList, setGroupEnabled, startHistoryImport,
 } from '../../core/market/liveGroups.js';
-import { lookupNumber, recordsWithNumber, saveLookupToRecord } from '../../integrations/whatsapp/business/lookup.js';
+import { applyLookupToRecord, lookupNumber, recordsWithNumber, saveLookupToRecord, storedLookup } from '../../integrations/whatsapp/business/lookup.js';
 import { numberCheckStatus, startNumberCheck, stopNumberCheck } from '../../integrations/whatsapp/business/numberCheck.js';
 import { currentLinkHealth, checkOpenWaNow, openWaMetrics } from '../../integrations/whatsapp/business/openwaHealth.js';
 import { createLeadFromChat, loadMessageFile } from '../../integrations/whatsapp/business/openwaChats.js';
@@ -918,6 +918,26 @@ whatsappBusinessRouter.post('/lookup/save', asyncHandler(async (req, res) => {
   const digits = number.replace(/\D/g, '');
   try {
     res.json(await saveLookupToRecord(getScope(req), digits, recordId));
+  } catch (err) {
+    if (err instanceof ForbiddenError || err instanceof NotFoundError) throw err;
+    throw new BadRequestError((err as Error).message);
+  }
+}));
+
+/** The remembered answer for a number (no WhatsApp query): lets a record's icon show instantly. */
+whatsappBusinessRouter.get('/lookup/stored', asyncHandler(async (req, res) => {
+  const number = z.string().min(1).max(40).parse(req.query.number);
+  res.json({ result: await storedLookup(number) });
+}));
+
+/** Use the remembered photo and/or WhatsApp name on a record, as the person pressing it. */
+whatsappBusinessRouter.post('/lookup/apply', asyncHandler(async (req, res) => {
+  const body = z.object({
+    number: z.string().min(1).max(40), module: z.string().min(1).max(60), recordId: z.string().uuid(),
+    photo: z.boolean(), name: z.boolean(),
+  }).parse(req.body ?? {});
+  try {
+    res.json(await applyLookupToRecord(getScope(req), body.module, body.recordId, body.number, { photo: body.photo, name: body.name }));
   } catch (err) {
     if (err instanceof ForbiddenError || err instanceof NotFoundError) throw err;
     throw new BadRequestError((err as Error).message);

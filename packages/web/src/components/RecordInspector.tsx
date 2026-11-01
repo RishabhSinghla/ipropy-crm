@@ -22,6 +22,7 @@ import { FieldValue } from './FieldRenderer';
 import { FollowUpChipCell, HeaderChipValue } from './RecordBlocks';
 import { HeaderPills } from './HeaderPills';
 import { WhatsAppIconButton } from './WhatsAppButton';
+import { WhatsAppLookupButton } from './WhatsAppLookupButton';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { badgeVars } from '../lib/color';
 import { cn, restrictionForField } from '../lib/utils';
@@ -82,7 +83,7 @@ export function RecordInspector({ module, row, canEdit, blocks, rows, assignedFi
                 <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
               </Row>
             ) : (
-              <Row key={item.name} label={item.label} mandatory={item.isMandatory} after={<WhatsAppBeside row={row} field={item} />}>
+              <Row key={item.name} label={item.label} mandatory={item.isMandatory} after={<WhatsAppBeside module={module.name} row={row} field={item} />}>
                 <PinnedValue
                   module={module}
                   row={item.name === assignedField?.name && assignedName ? { ...row, display: { ...row.display, [item.name]: assignedName } } : row}
@@ -94,7 +95,7 @@ export function RecordInspector({ module, row, canEdit, blocks, rows, assignedFi
               </Row>
             )))}
             {block.fields.map((field) => (
-              <Row key={field.name} label={field.label} mandatory={field.isMandatory} after={<WhatsAppBeside row={row} field={field} />}>
+              <Row key={field.name} label={field.label} mandatory={field.isMandatory} after={<WhatsAppBeside module={module.name} row={row} field={field} />}>
                 <PlainValue module={module} row={row} field={field} canEdit={canEdit} />
               </Row>
             ))}
@@ -126,12 +127,17 @@ function Row({ label, mandatory, after, children }: { label: string; mandatory?:
  * made a number impossible to change. The header used to carry this icon with
  * the number; the number lives here since 30 September, so the icon does too.
  */
-function WhatsAppBeside({ row, field }: { row: RecordEnvelope; field: FieldMeta }): JSX.Element | null {
+function WhatsAppBeside({ module, row, field }: { module: string; row: RecordEnvelope; field: FieldMeta }): JSX.Element | null {
   if (field.uitype !== 'phone') return null;
   // The display value carries the country code, as the header's did.
   const number = row.display?.[field.name] ?? row.values[field.name];
   if (typeof number !== 'string' || !number) return null;
-  return <WhatsAppIconButton to={number} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-slate-800" />;
+  return (
+    <>
+      <WhatsAppLookupButton module={module} recordId={row.id} number={number} />
+      <WhatsAppIconButton to={number} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-slate-800" />
+    </>
+  );
 }
 
 /**

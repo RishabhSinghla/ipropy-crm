@@ -97,6 +97,37 @@ async function refusal(userId: string): Promise<string | null> {
   return null;
 }
 
+/** Keep the answer so the next person (or the next page load) sees it without asking WhatsApp. Never throws. */
+async function persist(number: string, entry: Cached): Promise<void> {
+  await db.query(
+    `INSERT INTO ipy_wa_lookup_result (number, on_whatsapp, push_name, photo, photo_type, looked_up_at)
+     VALUES ($1,$2,$3,$4,$5, now())
+     ON CONFLICT (number) DO UPDATE SET on_whatsapp = EXCLUDED.on_whatsapp, push_name = EXCLUDED.push_name,
+       photo = EXCLUDED.photo, photo_type = EXCLUDED.photo_type, looked_up_at = now()`,
+    [number, entry.status === 'on_whatsapp', entry.pushName, entry.photo?.data ?? null, entry.photo?.type ?? null],
+  ).catch((err) => logger.warn({ err }, 'could not store lookup result'));
+}
+
+interface StoredRow { on_whatsapp: boolean; push_name: string | null; photo: Buffer | null; photo_type: string | null; looked_up_at: Date }
+
+async function storedRow(number: string): Promise<StoredRow | null> {
+  return db.queryOne<StoredRow>(
+    `SELECT on_whatsapp, push_name, photo, photo_type, looked_up_at FROM ipy_wa_lookup_result WHERE number = $1`, [number]);
+}
+
+/** The remembered answer for a number, or null. Asks WhatsApp nothing and costs nothing. */
+export async function storedLookup(input: string): Promise<(LookupOutcome & { lookedUpAt: string }) | null> {
+  const number = normaliseLookupNumber(input, await defaultCountryCode());
+  if (!number) return null;
+  const row = await storedRow(number);
+  if (!row) return null;
+  const entry: Cached = {
+    at: row.looked_up_at.getTime(), status: row.on_whatsapp ? 'on_whatsapp' : 'not_on_whatsapp', pushName: row.push_name,
+    photo: row.photo && row.photo_type ? { data: row.photo, type: row.photo_type } : null,
+  };
+  return { ...outcomeOf(number, entry, true), lookedUpAt: row.looked_up_at.toISOString() };
+}
+
 export async function lookupNumber(userId: string, input: string): Promise<LookupOutcome> {
   const number = normaliseLookupNumber(input, await defaultCountryCode());
   if (!number) return { status: 'invalid', message: 'That does not look like a phone number.', number: null, pushName: null, avatar: null, fromCache: false };
@@ -115,6 +146,7 @@ export async function lookupNumber(userId: string, input: string): Promise<Looku
     if (!found.exists || !found.waId) {
       const entry: Cached = { at: Date.now(), status: 'not_on_whatsapp', pushName: null, photo: null };
       cache.set(number, entry);
+      await persist(number, entry);
       await log(userId, number, 'not_on_whatsapp', null, false);
       return outcomeOf(number, entry, false);
     }
@@ -126,6 +158,7 @@ export async function lookupNumber(userId: string, input: string): Promise<Looku
     const photo = pictureUrl ? await downloadProfilePhoto(pictureUrl).catch(() => null) : null;
     const entry: Cached = { at: Date.now(), status: 'on_whatsapp', pushName, photo };
     cache.set(number, entry);
+    await persist(number, entry);
     await log(userId, number, 'on_whatsapp', pushName, false);
     return outcomeOf(number, entry, false);
   } catch (err) {
@@ -195,5 +228,33 @@ export async function saveLookupToRecord(
     savedName = true;
   }
   const savedPhoto = hit.photo ? (await storeAvatar(recordId, hit.photo, { replace: true })) === 'saved' : false;
+  return { savedName, savedPhoto };
+}
+
+/**
+ * "Use photo / name" from the icon beside a record's Mobile. Works for any module: the record must be one this person
+ * may edit and must hold this number in one of its values. Uses the remembered lookup, so it never asks WhatsApp.
+ * The suggestion goes into `whatsapp_name` only — the contact's real name is never touched.
+ */
+export async function applyLookupToRecord(
+  ctx: ServiceContext, module: string, recordId: string, input: string, use: { photo: boolean; name: boolean },
+): Promise<{ savedName: boolean; savedPhoto: boolean }> {
+  const number = normaliseLookupNumber(input, await defaultCountryCode());
+  const key = number ? matchKey(number) : null;
+  if (!number || !key) throw new Error('That does not look like a phone number.');
+  const record = await recordService.getRecord(ctx, module, recordId);
+  const holds = Object.values(record.values).some((v) => typeof v === 'string' && matchKey(v) === key);
+  if (!holds) throw new Error('That record does not have this number.');
+  const row = await storedRow(number);
+  if (!row || !row.on_whatsapp) throw new Error('Nothing was found for this number. Check it first.');
+
+  let savedName = false;
+  if (use.name && row.push_name) {
+    await recordService.updateRecord(ctx, module, recordId, { whatsapp_name: row.push_name }, { skipWorkflow: true });
+    savedName = true;
+  }
+  const savedPhoto = use.photo && row.photo && row.photo_type
+    ? (await storeAvatar(recordId, { data: row.photo, type: row.photo_type }, { replace: true })) === 'saved'
+    : false;
   return { savedName, savedPhoto };
 }
