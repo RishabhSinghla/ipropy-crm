@@ -89,7 +89,7 @@ export function decideSend(limits: GuardLimits, counts: SendCounts): GuardVerdic
 }
 
 /** What has gone out today, counted from the CRM's own rows. A failed message does not count: nothing was sent. */
-export async function currentCounts(userId: string, handle: string): Promise<SendCounts> {
+export async function currentCounts(userId: string, handle: string, numberId: string | null = null): Promise<SendCounts> {
   const tz = await organisationTimezone();
   const row = await db.queryOne<{ user_today: string; number_today: string; since: string | null }>(
     `WITH today AS (SELECT (date_trunc('day', now() AT TIME ZONE $1) AT TIME ZONE $1) AS start)
@@ -100,8 +100,9 @@ export async function currentCounts(userId: string, handle: string): Promise<Sen
        JOIN ipy_conversation c ON c.id = m.conversation_id
        CROSS JOIN today
       WHERE m.provider = $4 AND m.direction = 'outbound' AND m.sent_by IS NOT NULL
-        AND m.status <> 'failed' AND m.created_at >= now() - interval '1 day'`,
-    [tz, userId, handle, OPENWA_PROVIDER],
+        AND m.status <> 'failed' AND m.created_at >= now() - interval '1 day'
+        AND ($5::uuid IS NULL OR m.number_id = $5::uuid)`,
+    [tz, userId, handle, OPENWA_PROVIDER, numberId],
   );
   return {
     userToday: Number(row?.user_today ?? 0),
@@ -126,7 +127,8 @@ export function takeSendSlot(): Promise<() => void> {
 }
 
 /** Refuse, with the reason, if this send would break a limit. */
-export async function assertWithinLimits(userId: string, handle: string): Promise<void> {
-  const verdict = decideSend(guardLimits(), await currentCounts(userId, handle));
+export async function assertWithinLimits(userId: string, handle: string, numberId: string | null = null): Promise<void> {
+  // The spacing and daily caps are counted per number, so one agent's busy day never slows another's.
+  const verdict = decideSend(guardLimits(), await currentCounts(userId, handle, numberId));
   if (!verdict.ok) throw new BadRequestError(verdict.message);
 }

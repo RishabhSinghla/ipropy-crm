@@ -258,6 +258,8 @@ const sendSchema = z.object({
   recordId: z.string().uuid().optional(),
   // Which module is sending: the plain WhatsApp one ('chat') or the official API one ('api').
   route: z.enum(['chat', 'api']).optional(),
+  // Admins only: which of the company's numbers to send from (default: the lead owner's number).
+  numberId: z.string().uuid().optional(),
 }).refine((value) => {
   // A template is its own whole message: its wording is approved and frozen,
   // so a caption or an attachment alongside it has nowhere to go.
@@ -289,6 +291,8 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
     attachmentId: input.attachmentId,
     recordId: input.recordId ?? null,
     route: user.isAdmin || !rolesInUse() ? input.route : 'chat',
+    numberId: input.numberId ?? null,
+    isAdmin: user.isAdmin,
   }));
 }));
 

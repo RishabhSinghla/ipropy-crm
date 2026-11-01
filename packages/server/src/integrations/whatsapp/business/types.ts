@@ -73,6 +73,8 @@ export interface WebhookBatch {
   }[];
   /** The linked session changed state (ready, disconnected, qr_ready…). */
   session?: { status: string };
+  /** OpenWA's id of the session (the number) this delivery came from. */
+  sessionId?: string;
   /**
    * Messages written in WhatsApp groups. Never turned into chats or contacts: the CRM only hands them to the
    * dealer-groups feed, and only for groups an admin switched on.
@@ -139,6 +141,8 @@ export interface MediaRef {
 }
 
 export interface SendMediaByIdRequest {
+  /** The linked-device session (agent's number) to send from; null for the card's default. */
+  accountId?: string | null;
   to: string;
   type: 'image' | 'document' | 'audio' | 'video';
   /** The provider's own id, from `uploadMedia`. Never the CRM's. */
@@ -207,7 +211,7 @@ export interface WhatsAppBusinessProvider extends WhatsAppProvider {
    * not ready should refuse here, with the reason, rather than leave a message
    * stuck in 'queued'. Optional: the official providers have no such state.
    */
-  preflight?(): Promise<void>;
+  preflight?(sessionName?: string): Promise<void>;
 
   /** A cheap call that proves the credentials work, for the Test button. */
   testConnection(): Promise<{ ok: boolean; detail: string }>;

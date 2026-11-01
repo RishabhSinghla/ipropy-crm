@@ -13,6 +13,7 @@ import { getSettings } from '../../core/settings/integrations.js';
 import { db } from '../../db/pool.js';
 import { businessProvider } from '../../integrations/whatsapp/business/registry.js';
 import { applyStatus, receiveInbound } from '../../integrations/whatsapp/business/inbound.js';
+import { numberBySessionId } from '../../integrations/whatsapp/business/waNumbers.js';
 import { handleOpenWaExtras } from '../../integrations/whatsapp/business/openwaInbound.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
@@ -157,9 +158,11 @@ webhooksRouter.post('/whatsapp/:slug', asyncHandler(async (req, res) => {
   res.sendStatus(200);
 
   const batch = provider.parseWebhook(req.body);
+  // Which of the company's numbers this arrived on (OpenWA names its session in every delivery).
+  const number = batch.sessionId ? await numberBySessionId(batch.sessionId).catch(() => null) : null;
   for (const message of batch.messages) {
     try {
-      await receiveInbound(provider.name, message);
+      await receiveInbound(provider.name, message, number?.id ?? null);
     } catch (err) {
       logger.error({ err, provider: provider.name }, 'could not store an inbound WhatsApp message');
     }
@@ -173,7 +176,7 @@ webhooksRouter.post('/whatsapp/:slug', asyncHandler(async (req, res) => {
   }
   // Messages sent from the phone or another device, and session changes —
   // things only a linked-device provider can see.
-  await handleOpenWaExtras(provider.name, batch);
+  await handleOpenWaExtras(provider.name, batch, number?.id ?? null);
 }));
 
 webhooksRouter.get('/leads/facebook', (req, res) => {
