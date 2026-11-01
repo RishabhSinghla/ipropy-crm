@@ -107,6 +107,31 @@ export function visibility(userId: string, isAdmin: boolean, nextIndex: number):
     : { clause: `(${HOLDER} = $${nextIndex} OR ${HOLDER} IS NULL)`, params: [userId] };
 }
 
+/** How many threads each quick filter would show, for the counts beside All / Mine / Unassigned / Unread. */
+export async function inboxCounts(input: {
+  userId: string; isAdmin: boolean; route?: RouteView;
+}): Promise<{ all: number; mine: number; unassigned: number; unread: number }> {
+  const params: unknown[] = [];
+  const see = visibility(input.userId, input.isAdmin, params.length + 1);
+  params.push(...see.params);
+  const where = [`c.channel = 'whatsapp'`, `c.wa_account_id IS NULL`, see.clause];
+  const lane = laneClause(input.route, input.isAdmin, 'c');
+  if (lane !== 'TRUE') where.push(lane);
+  params.push(input.userId);
+  const mineParam = `$${params.length}`;
+  const row = await db.queryOne<{ all: string; mine: string; unassigned: string; unread: string }>(
+    `SELECT count(*) AS all,
+            count(*) FILTER (WHERE ${HOLDER} = ${mineParam}) AS mine,
+            count(*) FILTER (WHERE ${HOLDER} IS NULL) AS unassigned,
+            count(*) FILTER (WHERE c.unread_count > 0) AS unread
+       FROM ipy_conversation c
+       LEFT JOIN ipy_record r ON r.id = c.record_id
+      WHERE ${where.join(' AND ')}`,
+    params,
+  );
+  return { all: Number(row?.all ?? 0), mine: Number(row?.mine ?? 0), unassigned: Number(row?.unassigned ?? 0), unread: Number(row?.unread ?? 0) };
+}
+
 export async function listConversations(input: {
   userId: string;
   isAdmin: boolean;

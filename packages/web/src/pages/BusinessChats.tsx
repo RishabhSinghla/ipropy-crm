@@ -57,6 +57,13 @@ const FILTERS: { value: Filter; label: string }[] = [
 */
 const MODULE_PREFIX = 'module:';
 
+const QUICK: { value: 'all' | 'mine' | 'unassigned' | 'unread'; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'mine', label: 'Mine' },
+  { value: 'unassigned', label: 'Unassigned' },
+  { value: 'unread', label: 'Unread' },
+];
+
 /** One row of the queue, as `listConversations` returns it. */
 const CHIP_TONE: Record<RowChip['tone'], string> = {
   red: 'bg-rose-100 text-rose-900 dark:bg-rose-900 dark:text-rose-100',
@@ -87,6 +94,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>('all');
   /** Pressed colour-key chips in the open thread; empty shows everything. Resets when another chat opens. */
+  const { data: counts } = useQuery({ queryKey: ['wa-biz', 'counts', route], queryFn: () => api.waBizCounts(route), refetchInterval: 30_000 });
   const [kindFilter, setKindFilter] = useState<Set<BubbleKind>>(new Set());
   // Empty means every module. Set from the same dropdown, prefixed so a module
   // name can never be mistaken for a status.
@@ -326,6 +334,10 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
       {/* The queue */}
       <aside className={cn('w-full shrink-0 flex-col border-r border-[var(--border)] md:flex md:w-80', active ? 'hidden' : 'flex')}>
         <div className="space-y-2 border-b border-slate-100 p-3 dark:border-slate-800">
+          <div>
+            <h2 className="text-base font-extrabold tracking-tight text-slate-950 dark:text-white">{route === 'api' ? 'WhatsApp API' : 'WhatsApp chat'}</h2>
+            <p className="text-2xs text-muted">{route === 'api' ? 'Automatic sends from workflows' : 'Company phone · you reply by hand'}</p>
+          </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
             <input
@@ -336,6 +348,26 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
               aria-label="Search chats"
               className="input h-8 w-full pl-8 text-xs"
             />
+          </div>
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Quick filters">
+            {QUICK.map((q) => {
+              const on = !moduleFilter && filter === q.value;
+              return (
+                <button
+                  key={q.value}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => { setModuleFilter(''); setFilter(q.value); }}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                    on ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700',
+                  )}
+                >
+                  {q.label}
+                  {counts && <span className="tabular-nums opacity-70">{counts[q.value]}</span>}
+                </button>
+              );
+            })}
           </div>
           <Select
             value={moduleFilter ? `${MODULE_PREFIX}${moduleFilter}` : filter}
