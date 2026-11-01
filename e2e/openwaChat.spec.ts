@@ -123,7 +123,8 @@ test('OpenWA\'s own rate limit is shown in plain words and the message is marked
   await page.getByLabel('Write a WhatsApp message').fill('This one is paced');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(page.getByText(/try again in about 30 seconds/i).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText('NOT delivered').first()).toBeVisible();
+  // The merged thread marks a refused message with a red "Failed." and the reason under it (WhatsAppTab.tsx).
+  await expect(page.getByText('Failed.', { exact: true }).first()).toBeVisible();
   fake.pacingRetryAfter = null;
 });
 
