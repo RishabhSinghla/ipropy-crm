@@ -214,6 +214,13 @@ export interface WaNumber {
   userId: string | null; userName: string | null; isDefault: boolean; paused: boolean; pausedAt: string | null;
   status: string; statusText: string; lastActiveAt: string | null;
   statusSince: string | null; alerted: boolean;
+  lastError?: string | null; lastErrorAt?: string | null;
+  restartAttempts?: number; messagesToday?: number; failedToday?: number;
+}
+
+export interface WaFleetSummary {
+  capacity: { maxLive: number; memoryLimitMb: number }; live: number; rssMb: number | null;
+  room: { ok: boolean; reason: string | null }; sendQueueDepth: number; droppedNumbers: number;
 }
 
 const get = <T>(path: string): Promise<T> => request<T>(path);
@@ -1643,6 +1650,9 @@ export const api = {
   waNumberCreate: (sessionName: string, label?: string) => post<WaNumber>('/api/whatsapp-numbers', { sessionName, label }),
   waNumberControl: (id: string, action: 'start' | 'stop' | 'restart' | 'unlink') =>
     post<WaNumber>(`/api/whatsapp-numbers/${id}/control`, { action }),
+  waCatchUp: (id: string, dryRun: boolean) => post<{ fetched: number; stored: number; alreadyHad: number; skipped: number; since: string }>(`/api/whatsapp-numbers/${id}/catch-up`, { dryRun }),
+  waCapacity: () => get<WaFleetSummary>('/api/whatsapp-numbers/capacity'),
+  waCapacitySave: (maxLive: number, memoryLimitMb: number) => put<WaFleetSummary>('/api/whatsapp-numbers/capacity', { maxLive, memoryLimitMb }),
   waNumberQr: (id: string) => get<{ qrCode: string | null; status: string }>(`/api/whatsapp-numbers/${id}/qr`),
   waNumberAssign: (id: string, userId: string | null) => put<WaNumber>(`/api/whatsapp-numbers/${id}/assign`, { userId }),
   waNumberDefault: (id: string) => put<WaNumber>(`/api/whatsapp-numbers/${id}/default`, {}),

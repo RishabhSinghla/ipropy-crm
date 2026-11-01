@@ -48,7 +48,13 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
     mutationFn: () => api.waNumberWebhook(n.id),
     onSuccess: () => toast.success('Connected', 'This number now reports messages to the CRM.'), onError: fail('Connect'),
   });
+  const catchUp = useMutation({
+    mutationFn: (dryRun: boolean) => api.waCatchUp(n.id, dryRun),
+    onSuccess: (r, dryRun) => toast.success(dryRun ? 'Checked (nothing saved)' : 'Caught up', `Looked back to ${new Date(r.since).toLocaleString('en-IN')}: ${r.fetched} found, ${dryRun ? `${r.stored} would be new` : `${r.stored} new`}, ${r.alreadyHad} already here, ${r.skipped} skipped.`),
+    onError: fail('Catch up'),
+  });
   const ready = n.status === 'ready';
+  const trouble = !ready && !n.paused;
   return (
     <div className="card p-4" data-testid="wa-number-card">
       <div className="flex flex-wrap items-center gap-2">
@@ -63,6 +69,17 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
           </span>
         )}
       </div>
+      <p className="mt-1 text-sm text-muted" data-testid="wa-number-facts">
+        Sent today: {n.messagesToday ?? 0}{n.failedToday ? ` (${n.failedToday} failed)` : ''}
+        {' · '}Last active: {n.lastActiveAt ? new Date(n.lastActiveAt).toLocaleString('en-IN') : 'never'}
+        {n.statusSince ? ` · Status since ${new Date(n.statusSince).toLocaleString('en-IN')}` : ''}
+        {n.restartAttempts ? ` · Automatic restarts tried: ${n.restartAttempts}` : ''}
+      </p>
+      {(n.lastError || trouble) && (
+        <p role="alert" className="mt-1 text-sm" data-testid="wa-number-error">
+          {n.lastError ?? `Not connected: ${n.statusText}.`}
+        </p>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <label className="text-sm">
           Agent{' '}
@@ -84,6 +101,7 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
           className="btn-secondary btn-sm"
           onClick={() => { if (window.confirm('Unlink this phone from WhatsApp? A new QR scan is needed after.')) control.mutate('unlink'); }}
         >Unlink</button>
+        <button className="btn-secondary btn-sm" onClick={() => catchUp.mutate(false)} disabled={catchUp.isPending || !ready} title="Fetch customer messages this number received while the CRM was not listening">Catch up messages</button>
         <button className="btn-secondary btn-sm" onClick={() => hook.mutate()} title="Make this number report messages to the CRM">Connect to CRM</button>
         {!n.isDefault && <button className="btn-secondary btn-sm" onClick={() => makeDefault.mutate()}>Make company number</button>}
         <button className={n.paused ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => pause.mutate(!n.paused)}>
@@ -91,6 +109,42 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
         </button>
       </div>
       {qr && <div className="mt-3"><QrBox id={n.id} /></div>}
+    </div>
+  );
+}
+
+function CapacityBox(): JSX.Element | null {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['wa-numbers', 'capacity'], queryFn: () => api.waCapacity(), refetchInterval: 30_000 });
+  const [maxLive, setMaxLive] = useState<string>('');
+  const [mem, setMem] = useState<string>('');
+  const save = useMutation({
+    mutationFn: () => api.waCapacitySave(Number(maxLive || data?.capacity.maxLive), Number(mem || data?.capacity.memoryLimitMb)),
+    onSuccess: () => { setMaxLive(''); setMem(''); toast.success('Saved'); void qc.invalidateQueries({ queryKey: ['wa-numbers'] }); },
+    onError: (err) => toast.error('Capacity', err instanceof Error ? err.message : 'Something went wrong'),
+  });
+  if (!data) return null;
+  return (
+    <div className="card p-4" data-testid="wa-capacity">
+      <h3 className="text-base font-semibold">OpenWA server room</h3>
+      <p className="mt-1 text-sm">
+        {data.live} of {data.capacity.maxLive} numbers connected
+        {data.rssMb !== null ? ` · server memory ${Math.round(data.rssMb)} of ${data.capacity.memoryLimitMb} MB` : ''}.
+      </p>
+      {!data.room.ok && <p role="alert" className="mt-1 text-sm">{data.room.reason}</p>}
+      <p className="mt-1 text-sm text-muted">
+        Starting a number beyond this limit is refused, so the company number cannot be knocked offline. After the OpenWA server is moved to a
+        bigger Render plan, raise the limit here (see docs/OPENWA.md, “Upgrading the OpenWA server”).
+      </p>
+      <div className="mt-2 flex flex-wrap items-end gap-2">
+        <label className="text-sm">Most numbers connected at once
+          <input className="input mt-1 block w-28" inputMode="numeric" value={maxLive} placeholder={String(data.capacity.maxLive)} onChange={(e) => setMaxLive(e.target.value)} />
+        </label>
+        <label className="text-sm">Server memory (MB)
+          <input className="input mt-1 block w-28" inputMode="numeric" value={mem} placeholder={String(data.capacity.memoryLimitMb)} onChange={(e) => setMem(e.target.value)} />
+        </label>
+        <button className="btn-secondary btn-sm" disabled={(!maxLive && !mem) || save.isPending} onClick={() => save.mutate()}>Save</button>
+      </div>
     </div>
   );
 }
@@ -141,6 +195,7 @@ export default function WhatsAppNumbersAdmin(): JSX.Element {
         <button className="btn-primary btn-sm" disabled={name.trim().length < 2 || create.isPending} onClick={() => create.mutate()}>Add number</button>
         <button className="btn-secondary btn-sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>Refresh from OpenWA</button>
       </div>
+      <CapacityBox />
       {numbers.isLoading ? <Skeleton className="h-32 w-full" /> : (numbers.data ?? []).map((n) => (
         <NumberCard key={n.id} n={n} agents={users.data ?? []} />
       ))}

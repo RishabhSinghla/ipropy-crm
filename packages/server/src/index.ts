@@ -14,6 +14,7 @@ import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { startWhatsAppPolling, stopWhatsAppPolling } from './integrations/whatsapp/business/pollInbound.js';
 import { startOpenWaHealth, stopOpenWaHealth } from './integrations/whatsapp/business/openwaHealth.js';
+import { startFleetWatch, stopFleetWatch } from './integrations/whatsapp/business/waFleet.js';
 import { startCampaignSending, stopCampaignSending } from './integrations/whatsapp/business/campaigns.js';
 import { startWaitWatch, stopWaitWatch } from './integrations/whatsapp/business/waitWatch.js';
 import { initRealtime, closeRealtime } from './realtime.js';
@@ -83,6 +84,7 @@ async function main(): Promise<void> {
   */
   startWhatsAppPolling();
   startOpenWaHealth();
+  startFleetWatch();
   startCampaignSending();
   startWaitWatch();
   startSarvamQueue();
@@ -105,6 +107,7 @@ async function main(): Promise<void> {
     stopScheduler();
   stopWhatsAppPolling();
   stopOpenWaHealth();
+  stopFleetWatch();
   stopCampaignSending();
   stopWaitWatch();
     stopSarvamQueue();

@@ -42,6 +42,8 @@ export interface FakeOpenWa {
   requests: { method: string; url: string }[];
   /** Groups the pretend number is in, and what each one said before the CRM was listening. */
   groups: { id: string; name: string }[];
+  /** OpenWA's own stored copy of messages, as `GET /messages` lists them (used by the catch-up). */
+  stored: Record<string, unknown>[];
   groupHistory: Map<string, Record<string, unknown>[]>;
   /** Numbers that are on WhatsApp, by digits, with the name they set and a picture address (if any). */
   /** True plays the Baileys engine: old messages cannot be fetched on demand (HTTP 501). */
@@ -77,7 +79,7 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
     pacingRetryAfter: null,
     media: new Map(),
     requests: [],
-    groups: [],
+    groups: [], stored: [],
     groupHistory: new Map(),
     onWhatsApp: new Map(),
     historyUnsupported: false,
@@ -123,6 +125,8 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
       json(res, 200, { id: `${contact[2]}@c.us`, number: contact[2], pushName: c.pushName, name: 'Saved Name In Company Book' });
       return;
     }
+    const stored = /^\/api\/sessions\/([^/]+)\/messages$/.exec(url.pathname);
+    if (req.method === 'GET' && stored) { json(res, 200, { messages: fake.stored, total: fake.stored.length }); return; }
     const listed = /^\/api\/sessions\/([^/]+)\/groups$/.exec(url.pathname);
     if (req.method === 'GET' && listed) { json(res, 200, fake.groups); return; }
     const history = /^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/history$/.exec(url.pathname);
