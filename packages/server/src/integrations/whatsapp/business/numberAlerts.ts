@@ -12,7 +12,7 @@ import { db } from '../../../db/pool.js';
 import { logger } from '../../../utils/logger.js';
 import { notify } from '../../../core/notifications/index.js';
 import { sendEmail } from '../../email/service.js';
-import { describeSessionStatus } from './openwa.js';
+import { describeSessionStatus, OpenWaError } from './openwa.js';
 import { syncFromOpenWa } from './waNumbers.js';
 
 export const GRACE_MS = 2 * 60_000;
@@ -94,7 +94,7 @@ interface Row { id: string; session_name: string; label: string | null; status: 
 
 async function checkNumbers(now: Date): Promise<void> {
   const { rows } = await db.query<Row>(`SELECT id, session_name, label, status, status_since, alerted_at FROM ipy_wa_number
-      WHERE is_default OR user_id IS NOT NULL`); // a spare session nobody uses is not an outage
+      WHERE is_default OR user_id IS NOT NULL OR last_active_at IS NOT NULL`); // a spare session nobody has ever used is not an outage
   const numbers: WatchedNumber[] = rows.map((r) => ({
     id: r.id, name: r.label?.trim() || r.session_name, status: r.status, statusSince: r.status_since, alertedAt: r.alerted_at,
   }));
@@ -118,12 +118,18 @@ async function readServiceState(): Promise<ServiceState> {
   return row?.value ?? { downSince: null, alertedAt: null };
 }
 
-async function writeServiceState(state: ServiceState): Promise<void> {
+/** Compare-and-swap, so two server instances cannot both claim the same transition. False means someone else got there first. */
+async function claimServiceState(before: ServiceState, after: ServiceState): Promise<boolean> {
   await db.query(
     `INSERT INTO ipy_setting (key, value, category, label, updated_at) VALUES ($1, $2::jsonb, 'whatsapp', 'OpenWA service alert state', now())
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-    [SERVICE_KEY, JSON.stringify(state)],
+     ON CONFLICT (key) DO NOTHING`,
+    [SERVICE_KEY, JSON.stringify({ downSince: null, alertedAt: null })],
   );
+  const done = await db.query(
+    `UPDATE ipy_setting SET value = $3::jsonb, updated_at = now() WHERE key = $1 AND value = $2::jsonb RETURNING key`,
+    [SERVICE_KEY, JSON.stringify(before), JSON.stringify(after)],
+  );
+  return (done.rowCount ?? 0) > 0;
 }
 
 /** One pass: refresh every number from OpenWA, then alert or recover. Never throws. */
@@ -131,11 +137,17 @@ export async function runNumberWatch(now: Date = new Date()): Promise<void> {
   try {
     let reachable = true;
     try { await syncFromOpenWa(); } catch (err) {
+      // A key that may not list sessions is a settings matter, not an outage: say nothing about the service.
+      if (err instanceof OpenWaError && (err.status === 401 || err.status === 403)) {
+        logger.warn({ err: String(err) }, 'OpenWA refused the session list; the number check needs a key that may manage sessions');
+        return;
+      }
       reachable = false;
       logger.warn({ err: String(err) }, 'OpenWA could not be reached for the number check');
     }
-    const decided = decideServiceAlert(reachable, await readServiceState(), now);
-    await writeServiceState(decided.next);
+    const before = await readServiceState();
+    const decided = decideServiceAlert(reachable, before, now);
+    if (!(await claimServiceState(before, decided.next))) return;
     if (decided.send === 'down') {
       await tellAdmins('down', 'WhatsApp service (OpenWA) is unreachable',
         'The CRM cannot reach OpenWA, so no WhatsApp chat messages are going out or coming in until it is back.');

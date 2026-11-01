@@ -173,14 +173,22 @@ export async function syncFromOpenWa(): Promise<WaNumber[]> {
     const name = String(s.name ?? '').trim();
     if (!name) continue;
     await db.query(
-      `INSERT INTO ipy_wa_number (session_name, session_id, phone, status)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO ipy_wa_number (session_name, session_id, phone, status, status_since)
+       VALUES ($1, $2, $3, $4, now())
        ON CONFLICT (session_name) DO UPDATE
          SET session_id = EXCLUDED.session_id,
              phone = COALESCE(EXCLUDED.phone, ipy_wa_number.phone),
              status_since = CASE WHEN ipy_wa_number.status IS DISTINCT FROM EXCLUDED.status THEN now() ELSE ipy_wa_number.status_since END,
              status = EXCLUDED.status`,
       [name, String(s.id ?? ''), typeof s.phone === 'string' && s.phone ? s.phone : null, String(s.status ?? 'unknown')],
+    );
+  }
+  if (Array.isArray(remote)) {
+    // A session removed from OpenWA is as down as a disconnected one; keep the row, say so.
+    const names = remote.map((s) => String(s.name ?? '').trim()).filter(Boolean);
+    await db.query(
+      `UPDATE ipy_wa_number SET status = 'missing', status_since = now()
+        WHERE status <> 'missing' AND NOT (session_name = ANY($1::text[]))`, [names],
     );
   }
   return listNumbers();
