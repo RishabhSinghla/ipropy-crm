@@ -29,6 +29,7 @@ const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
 const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 const ProjectMastersAdmin = lazy(() => import('./ProjectMastersAdmin'));
+const WhatsAppNumbersAdmin = lazy(() => import('./WhatsAppNumbersAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -92,6 +93,7 @@ const SECTIONS = [
     group: 'Platform',
     items: [
       { path: 'integrations', capability: 'admin.integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
+      { path: 'whatsapp-numbers', capability: 'admin.integrations', label: 'WhatsApp numbers', icon: MessageSquareText, element: <WhatsAppNumbersAdmin /> },
       { path: 'templates', capability: 'whatsapp.templates', label: 'Email Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand', icon: Sparkles, element: <BrandAdmin /> },

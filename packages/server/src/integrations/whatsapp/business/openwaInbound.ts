@@ -11,6 +11,7 @@ import { logger } from '../../../utils/logger.js';
 import { recordSentElsewhere } from './inbound.js';
 import { OPENWA_PROVIDER } from './openwa.js';
 import { rememberSessionStatus } from './openwaHealth.js';
+import { rememberStatus } from './waNumbers.js';
 import type { WebhookBatch } from './types.js';
 import { noteGroupMessages } from '../../../core/market/liveGroups.js';
 
@@ -23,10 +24,13 @@ import { noteGroupMessages } from '../../../core/market/liveGroups.js';
  */
 export const JUST_SENT_MS = 20_000;
 
-export async function handleOpenWaExtras(provider: string, batch: WebhookBatch): Promise<void> {
+export async function handleOpenWaExtras(provider: string, batch: WebhookBatch, numberId: string | null = null): Promise<void> {
   if (provider !== OPENWA_PROVIDER) return;
 
-  if (batch.session) rememberSessionStatus(batch.session.status);
+  if (batch.session) {
+    rememberSessionStatus(batch.session.status);
+    if (batch.sessionId) await rememberStatus(batch.sessionId, batch.session.status).catch(() => undefined);
+  }
 
   if (batch.groupMessages?.length) {
     try {
@@ -41,7 +45,7 @@ export async function handleOpenWaExtras(provider: string, batch: WebhookBatch):
     const age = Date.now() - sent.sentAt.getTime();
     const store = async (): Promise<void> => {
       try {
-        await recordSentElsewhere(provider, sent);
+        await recordSentElsewhere(provider, sent, numberId);
       } catch (err) {
         logger.error({ err, provider }, 'could not store a message sent from another device');
       }

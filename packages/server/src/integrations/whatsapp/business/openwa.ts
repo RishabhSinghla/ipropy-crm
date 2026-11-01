@@ -197,15 +197,18 @@ export function groupMessageFrom(data: Record<string, unknown>, chatId: string):
 export function parseOpenWaWebhook(body: unknown): WebhookBatch {
   const batch: WebhookBatch = { messages: [], statuses: [], sentElsewhere: [], unresolvedSenders: 0 };
   if (!body || typeof body !== 'object') return batch;
-  const root = body as { event?: unknown; data?: unknown };
+  const root = body as { event?: unknown; data?: unknown; sessionId?: unknown };
   const event = String(root.event ?? '');
   const data = (root.data ?? {}) as Record<string, unknown>;
+  // Which of the company's numbers (OpenWA sessions) this delivery came from.
+  if (typeof root.sessionId === 'string') batch.sessionId = root.sessionId;
 
   if (event.startsWith('session.')) {
     const status = event === 'session.status' ? String(data.status ?? '')
       : event === 'session.disconnected' ? 'disconnected'
         : event === 'session.qr' ? 'qr_ready' : '';
     if (status) batch.session = { status };
+    if (typeof root.sessionId === 'string') batch.sessionId = root.sessionId;
     return batch;
   }
 
@@ -446,24 +449,41 @@ function readSession(raw: Record<string, unknown>): OpenWaSession {
   };
 }
 
-let sessionCache: { key: string; at: number; session: OpenWaSession } | null = null;
+const sessionCache = new Map<string, { at: number; session: OpenWaSession }>();
 
-/** The configured session, looked up by name. Cached briefly: it is asked on every send and screen. */
-export async function openWaSession({ fresh = false } = {}): Promise<OpenWaSession> {
+/**
+ * A session, looked up by name (default: the one on the card). Cached briefly: it is asked on every send and screen.
+ * `name` is how one agent's number is addressed; the card's session is the company default.
+ */
+export async function openWaSession({ fresh = false, name }: { fresh?: boolean; name?: string } = {}): Promise<OpenWaSession> {
   const c = conf();
   if (!c) throw notSet();
-  const key = `${c.baseUrl}|${c.sessionName}`;
-  if (!fresh && sessionCache && sessionCache.key === key && Date.now() - sessionCache.at < 10_000) {
-    return sessionCache.session;
-  }
-  const list = await api<Record<string, unknown>[]>(c, `/api/sessions?name=${encodeURIComponent(c.sessionName)}`);
-  const row = Array.isArray(list) ? list[0] : undefined;
+  const wanted = (name ?? c.sessionName).trim();
+  const key = `${c.baseUrl}|${wanted}`;
+  const cached = sessionCache.get(key);
+  if (!fresh && cached && Date.now() - cached.at < 10_000) return cached.session;
+  const list = await api<Record<string, unknown>[]>(c, `/api/sessions?name=${encodeURIComponent(wanted)}`);
+  const row = Array.isArray(list) ? list.find((r) => r.name === wanted) ?? list[0] : undefined;
   if (!row) {
-    throw new OpenWaError(`OpenWA has no session called "${c.sessionName}". Check the session name in Admin → Integrations.`, 404, 'NO_SESSION');
+    throw new OpenWaError(`OpenWA has no session called "${wanted}". Check the number in Admin → WhatsApp numbers.`, 404, 'NO_SESSION');
   }
   const session = readSession(row);
-  sessionCache = { key, at: Date.now(), session };
+  sessionCache.set(key, { at: Date.now(), session });
   return session;
+}
+
+/**
+ * Admin calls to the OpenWA server itself (list, create, start, stop, QR). Uses the admin key when one is saved
+ * on the card, else the card's API key (which only works if that key may manage sessions).
+ */
+export async function openWaManage<T>(
+  path: string, init: { method?: 'GET' | 'POST' | 'DELETE'; body?: unknown } = {},
+): Promise<T> {
+  const c = conf();
+  if (!c) throw notSet();
+  const admin = (getIntegrationCredentials(OPENWA_PROVIDER)?.adminApiKey ?? '').trim();
+  sessionCache.clear();
+  return api<T>({ ...c, apiKey: admin || c.apiKey }, path, { ...init, method: init.method as 'GET' | 'POST', timeoutMs: 30_000 });
 }
 
 /** One call to the linked session, with the session's id filled in. Reads only — nothing here sends. */
@@ -633,8 +653,8 @@ export const openWaProvider: WhatsAppBusinessProvider = {
   async disconnectAccount() { throw new NotSupportedError(OPENWA_PROVIDER, 'perAgentAccounts'); },
 
   /** Refuse early, with a reason, when the phone is not linked. */
-  async preflight() {
-    const s = await openWaSession({ fresh: true });
+  async preflight(sessionName?: string) {
+    const s = await openWaSession({ fresh: true, name: sessionName });
     if (s.status !== 'ready') {
       throw new OpenWaError(
         `WhatsApp is not connected in OpenWA right now (${describeSessionStatus(s.status)}). Nothing was sent.`,
@@ -652,7 +672,7 @@ export const openWaProvider: WhatsAppBusinessProvider = {
     if (!c) throw notSet();
     const digits = toWaDigits(request.to);
     if (!digits) throw new Error('That number has no country code, so WhatsApp cannot be sure who to send to.');
-    const session = await openWaSession();
+    const session = await openWaSession({ name: request.accountId ?? undefined });
     try {
       const out = await api<{ messageId?: string }>(c, `/api/sessions/${encodeURIComponent(session.id)}/messages/send-text`, {
         method: 'POST',
@@ -687,7 +707,7 @@ export const openWaProvider: WhatsAppBusinessProvider = {
     pendingUploads.delete(request.mediaId);
     const digits = toWaDigits(request.to);
     if (!digits) throw new Error('That number has no country code, so WhatsApp cannot be sure who to send to.');
-    const session = await openWaSession();
+    const session = await openWaSession({ name: request.accountId ?? undefined });
     try {
       const out = await api<{ messageId?: string }>(
         c, `/api/sessions/${encodeURIComponent(session.id)}/messages/${ROUTE_FOR[request.type] ?? 'send-document'}`,
@@ -776,7 +796,7 @@ export const openWaProvider: WhatsAppBusinessProvider = {
 
 /** For tests that swap the configuration between cases. */
 export function __resetOpenWaCaches(): void {
-  sessionCache = null;
+  sessionCache.clear();
   pendingUploads.clear();
 }
 

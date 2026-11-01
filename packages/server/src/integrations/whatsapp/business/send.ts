@@ -27,6 +27,7 @@ import { whyItFailed } from './whyItFailed.js';
 import { templateWording } from './templates.js';
 import { prepareOutgoingMedia } from './media.js';
 import { assertWithinLimits, takeSendSlot } from './openwaGuards.js';
+import { assertNotPaused, chooseNumber, markActive, type WaNumber } from './waNumbers.js';
 import { AUTOMATIC_MESSAGE_TEXT, isAutomationOnlyProvider, laneOfProvider, type Lane } from './channelRoles.js';
 
 export interface BusinessSendInput {
@@ -49,6 +50,10 @@ export interface BusinessSendInput {
    * When given, that route's provider is used and nothing falls back to the other.
    */
   route?: Lane;
+  /** Plain WhatsApp: the number (OpenWA session) to send from. Admins only; everybody else uses their own. */
+  numberId?: string | null;
+  /** The signed-in user is an admin (decides who may pick a number). */
+  isAdmin?: boolean;
 }
 
 export interface BusinessSendResult {
@@ -261,6 +266,24 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     }
   }
 
+  /*
+    Which of the company's numbers carries this message. Decided here, in the one send path:
+    an agent only ever sends from their own number, an admin may pick, and nothing falls back
+    to somebody else's number without the admin choosing it.
+  */
+  let number: WaNumber | null = null;
+  if (linkedDevice) {
+    const owner = input.recordId
+      ? (await db.queryOne<{ owner_id: string | null }>(`SELECT owner_id FROM ipy_record WHERE id = $1`, [input.recordId]))?.owner_id ?? null
+      : null;
+    const isAdmin = input.isAdmin
+      ?? Boolean((await db.queryOne<{ is_admin: boolean }>(`SELECT is_admin FROM ipy_user WHERE id = $1`, [input.userId]))?.is_admin);
+    number = (await chooseNumber({
+      userId: input.userId, isAdmin, requestedId: input.numberId, recordOwnerId: owner,
+    })).number;
+    assertNotPaused(number);
+  }
+
   const conversation = await conversationFor(handle, input.recordId ?? null, input.userId, laneOfProvider(provider.name));
 
   const dialTo = await dialableNumber(conversation.waId, input.to, input.recordId ?? null);
@@ -307,7 +330,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   let releaseSlot: (() => void) | null = null;
   if (linkedDevice) {
     try {
-      await provider.preflight?.();
+      await provider.preflight?.(number?.sessionName);
     } catch (err) {
       // Already worded for a rep ("OpenWA is down", "re-link the phone"); a
       // bare throw would reach the screen as "Something went wrong".
@@ -315,7 +338,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     }
     releaseSlot = await takeSendSlot();
     try {
-      await assertWithinLimits(input.userId, handle);
+      await assertWithinLimits(input.userId, handle, number?.id ?? null);
     } catch (err) {
       releaseSlot();
       throw err;
@@ -330,8 +353,8 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     queued = await db.queryOne<{ id: string }>(
       `INSERT INTO ipy_message
          (conversation_id, direction, channel, type, body, status, provider, route, sent_by,
-          template_name, template_params, media)
-       VALUES ($1, 'outbound', 'whatsapp', $2, $3, 'queued', $4, 'business', $5, $6, $7, $8)
+          template_name, template_params, media, number_id)
+       VALUES ($1, 'outbound', 'whatsapp', $2, $3, 'queued', $4, 'business', $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         conversation.id,
@@ -351,6 +374,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
             mimeType: media.mimeType,
           })
           : null,
+        number?.id ?? null,
       ],
     );
   } finally {
@@ -378,6 +402,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
             to: dialTo,
             type: media.type,
             mediaId: media.mediaId,
+            accountId: number?.sessionName ?? null,
             caption: input.text || undefined,
             filename: media.fileName,
           })
@@ -389,8 +414,9 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
             caption: input.text || undefined,
             filename: media.fileName,
           })
-        : await provider.sendMessage({ accountId: null, to: dialTo, text: input.text ?? '' });
+        : await provider.sendMessage({ accountId: number?.sessionName ?? null, to: dialTo, text: input.text ?? '' });
 
+    if (number) await markActive(number.id);
     // What the screens may quote of this message: nothing, when it is automatic.
     const shown = isAutomationOnlyProvider(provider.name) ? AUTOMATIC_MESSAGE_TEXT : body;
     await transaction(async (conn) => {

@@ -207,6 +207,12 @@ export function authedFileUrl(url: string, params: Record<string, string> = {}):
   return qs ? `${abs}${abs.includes('?') ? '&' : '?'}${qs}` : abs;
 }
 
+export interface WaNumber {
+  id: string; sessionName: string; sessionId: string | null; label: string | null; phone: string | null;
+  userId: string | null; userName: string | null; isDefault: boolean; paused: boolean; pausedAt: string | null;
+  status: string; statusText: string; lastActiveAt: string | null;
+}
+
 const get = <T>(path: string): Promise<T> => request<T>(path);
 const post = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'POST', body });
 const patch = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'PATCH', body });
@@ -1623,6 +1629,19 @@ export const api = {
   waNumberCheckStart: (dailyCap?: number) => post<{ started: boolean; reason?: string }>('/api/whatsapp-business/number-check/start', dailyCap ? { dailyCap } : {}),
   waTestCard: (kind: 'whatsapp' | 'call') => post<{ sent: boolean; realThread?: boolean }>('/api/whatsapp-business/test-card', { kind }),
   waNumberCheckStop: () => post<{ ok: boolean }>('/api/whatsapp-business/number-check/stop', {}),
+  // The company's WhatsApp numbers (one OpenWA session per agent).
+  waNumbersMine: () => get<{ mine: WaNumber | null; numbers: WaNumber[] }>('/api/whatsapp-numbers/mine'),
+  waNumbers: () => get<WaNumber[]>('/api/whatsapp-numbers'),
+  waNumbersRefresh: () => post<WaNumber[]>('/api/whatsapp-numbers/refresh', {}),
+  waNumberCreate: (sessionName: string, label?: string) => post<WaNumber>('/api/whatsapp-numbers', { sessionName, label }),
+  waNumberControl: (id: string, action: 'start' | 'stop' | 'restart' | 'unlink') =>
+    post<WaNumber>(`/api/whatsapp-numbers/${id}/control`, { action }),
+  waNumberQr: (id: string) => get<{ qrCode: string | null; status: string }>(`/api/whatsapp-numbers/${id}/qr`),
+  waNumberAssign: (id: string, userId: string | null) => put<WaNumber>(`/api/whatsapp-numbers/${id}/assign`, { userId }),
+  waNumberDefault: (id: string) => put<WaNumber>(`/api/whatsapp-numbers/${id}/default`, {}),
+  waNumberPause: (id: string, paused: boolean) => put<WaNumber>(`/api/whatsapp-numbers/${id}/pause`, { paused }),
+  waNumberWebhook: (id: string) => post<{ ok: boolean }>(`/api/whatsapp-numbers/${id}/webhook`, {}),
+  waNumberLog: () => get<{ id: string; created_at: string; status: string; body: string; handle: string; sent_by_name: string | null; number_label: string | null }[]>('/api/whatsapp-numbers/log/sends'),
   waGroups: () => get<WaGroupsResponse>('/api/whatsapp-business/groups'),
   waGroupsRefresh: () => post<{ total: number; added: number }>('/api/whatsapp-business/groups/refresh', {}),
   waGroupsEnableAll: () => post<{ enabled: number }>('/api/whatsapp-business/groups/enable-all', {}),

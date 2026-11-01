@@ -163,3 +163,33 @@ All in code, all checked **before** anything reaches OpenWA, all visible on the 
   switched on (Admin → WhatsApp → Group sync). See `WHATSAPP.md`, *Dealer groups, read live*.
 * Tests: `tests/openwa*.test.ts` (pure rules), `tests/integration/openwaBridge.test.ts` (API + database against
   `tests/fakes/fakeOpenWa.ts`), `e2e/openwaChat.spec.ts` (browser against the same fake).
+
+## One number per agent (added 1 November 2026)
+
+Each agent can have their **own** WhatsApp number (their own OpenWA session). Admin → **WhatsApp numbers** is the master:
+add a session, Start it, scan its QR with that agent's phone, then pick the agent from the dropdown. One number is flagged
+**Company number** (the original `harish-phone`); it is the fallback for leads whose agent has no number.
+
+**Rules (the same ones the code enforces, in `business/waNumbers.ts` and `business/send.ts`):**
+
+* An **agent sends only from their own number.** With no number assigned the send is refused with a plain message — it
+  never quietly goes out from somebody else's.
+* An **admin** can send from any number. The default is the lead owner's number; if that agent has none the company number
+  is used and the screen says so. A **paused** number sends nothing (customers' replies still arrive).
+* **Incoming messages** are stamped with the number they arrived on (`ipy_message.number_id`; OpenWA names its session in
+  every webhook). A stranger writing to an agent's own number becomes that agent's chat, not the shared queue's.
+* **Who sees a chat** is unchanged: the lead's owner (and admins). So **re-assigning a lead keeps the whole history** visible
+  to the new owner, each message still showing the number that carried it; **new messages go from the new owner's number**.
+  The customer will see them arrive from a different WhatsApp number — that is expected.
+* **Limits are per number:** the minimum gap between sends and the daily caps are counted for each number separately.
+* **Audit:** every CRM-sent message records who sent it and from which number; the master screen lists the latest.
+
+**Capacity on the Render plan:** the OpenWA server (`ipropy-openwa`, Starter, 512 MB, 1 GB disk at `/app/data`) used about
+300 MB with one linked number. `MAX_CONCURRENT_SESSIONS` is **2** there now. A third number should be preceded by moving the
+service to a bigger instance; change the variable only after that.
+
+**Setup note:** creating/starting/QR from the master screen needs an OpenWA key allowed to manage sessions. If the card's
+key is restricted to one session, add a second key (OpenWA dashboard → API Keys, role ADMIN) as `adminApiKey` on the card.
+
+**Rollback:** `ALTER TABLE ipy_message DROP COLUMN number_id; DROP TABLE ipy_wa_number;` (messages are untouched; the
+migration only tags existing OpenWA messages with the company number).

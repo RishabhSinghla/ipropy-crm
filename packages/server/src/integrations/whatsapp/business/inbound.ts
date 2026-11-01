@@ -89,7 +89,7 @@ async function pruneEvents(conn: Tx): Promise<void> {
  */
 async function conversationFor(
   conn: Tx, handle: string, recordId: string | null, contactName: string | null,
-  waId: string | null, lane: Lane,
+  waId: string | null, lane: Lane, numberUserId: string | null = null,
 ): Promise<{ id: string; assignedTo: string | null }> {
   // A conversation is (number, lane): the same customer on the other route is a different thread.
   // A message-less thread from before lanes (lane NULL) is adopted by whichever lane writes first.
@@ -147,9 +147,10 @@ async function conversationFor(
     `INSERT INTO ipy_conversation (channel, handle, contact_name, record_id, record_module, assigned_to, wa_id, lane)
      VALUES ('whatsapp', $1, $2, $3, $4, $5, $6, $7)
      RETURNING id`,
-    [handle, contactName, recordId, recordId ? MODULE : null, owner?.owner_id ?? null, waId, lane],
+    // A stranger who writes to an agent's own number is that agent's to handle, not the shared queue's.
+    [handle, contactName, recordId, recordId ? MODULE : null, owner?.owner_id ?? numberUserId, waId, lane],
   );
-  return { id: created!.id, assignedTo: owner?.owner_id ?? null };
+  return { id: created!.id, assignedTo: owner?.owner_id ?? numberUserId };
 }
 
 /**
@@ -167,7 +168,7 @@ export async function recordSentElsewhere(provider: string, message: {
   text: string | null;
   media: InboundMessage['media'];
   sentAt: Date;
-}): Promise<boolean> {
+}, numberId: string | null = null): Promise<boolean> {
   const handle = matchKey(message.to);
   if (!handle) return false;
 
@@ -192,8 +193,8 @@ export async function recordSentElsewhere(provider: string, message: {
     await conn.query(
       `INSERT INTO ipy_message
          (conversation_id, direction, channel, type, body, media, status,
-          provider_message_id, provider, route, created_at)
-       VALUES ($1, 'outbound', 'whatsapp', $2, $3, $4, 'sent', $5, $6, 'business', $7)`,
+          provider_message_id, provider, route, created_at, number_id)
+       VALUES ($1, 'outbound', 'whatsapp', $2, $3, $4, 'sent', $5, $6, 'business', $7, $8)`,
       [
         conversation.id,
         message.media ? 'image' : 'text',
@@ -202,6 +203,7 @@ export async function recordSentElsewhere(provider: string, message: {
         message.providerMessageId,
         provider,
         message.sentAt,
+        numberId,
       ],
     );
     await conn.query(
@@ -245,7 +247,7 @@ export interface StoredInbound {
  * handled without pretending anything new arrived.
  */
 export async function receiveInbound(
-  provider: string, message: InboundMessage,
+  provider: string, message: InboundMessage, numberId: string | null = null,
 ): Promise<StoredInbound | null> {
   const handle = matchKey(message.from);
   if (!handle) {
@@ -255,6 +257,9 @@ export async function receiveInbound(
 
   const match = await matchContact(MODULE, message.from);
   const recordId = match.kind === 'one' ? match.recordId : null;
+  const numberUserId = numberId
+    ? (await db.queryOne<{ user_id: string | null }>(`SELECT user_id FROM ipy_wa_number WHERE id = $1`, [numberId]))?.user_id ?? null
+    : null;
 
   const stored = await transaction(async (conn): Promise<StoredInbound | null> => {
     if (!await claimEvent(conn, provider, 'message', message.providerMessageId)) return null;
@@ -265,6 +270,7 @@ export async function receiveInbound(
       // a phone field typed by a person never is.
       String(message.from ?? '').replace(/\D/g, '') || null,
       laneOfProvider(provider),
+      numberUserId,
     );
 
     const body = message.text
@@ -274,8 +280,8 @@ export async function receiveInbound(
     const row = await conn.queryOne<{ id: string }>(
       `INSERT INTO ipy_message
          (conversation_id, direction, channel, type, body, media, status,
-          provider_message_id, provider, route, created_at)
-       VALUES ($1, 'inbound', 'whatsapp', $2, $3, $4, 'delivered', $5, $6, 'business', $7)
+          provider_message_id, provider, route, created_at, number_id)
+       VALUES ($1, 'inbound', 'whatsapp', $2, $3, $4, 'delivered', $5, $6, 'business', $7, $8)
        RETURNING id`,
       [
         conversation.id,
@@ -285,6 +291,7 @@ export async function receiveInbound(
         message.providerMessageId,
         provider,
         message.sentAt,
+        numberId,
       ],
     );
     // A customer writing in is activity on their record.

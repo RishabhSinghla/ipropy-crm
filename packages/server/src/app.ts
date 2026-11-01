@@ -27,6 +27,7 @@ import { reportsRouter } from './api/routes/reports.js';
 import { adminRouter } from './api/routes/admin.js';
 import { commsRouter } from './api/routes/comms.js';
 import { whatsappBusinessRouter } from './api/routes/whatsappBusiness.js';
+import { whatsappNumbersRouter } from './api/routes/whatsappNumbers.js';
 import { deviceRouter } from './api/routes/device.js';
 import { telephonyRouter } from './api/routes/telephony.js';
 import { aiRouter } from './api/routes/ai.js';
@@ -319,6 +320,7 @@ export function createApp(): Express {
   // The official business number, and the only WhatsApp route there is. The
   // per-agent QR-linked one was removed on 19 September 2026.
   app.use('/api/whatsapp-business', whatsappBusinessRouter);
+  app.use('/api/whatsapp-numbers', whatsappNumbersRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/market', marketRouter);
