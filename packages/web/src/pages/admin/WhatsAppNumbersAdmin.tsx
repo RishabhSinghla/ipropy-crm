@@ -57,6 +57,11 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
         {n.isDefault && <Badge>Company number</Badge>}
         {n.paused ? <Badge>Paused</Badge> : <Badge>{ready ? 'Connected' : n.statusText}</Badge>}
         {n.phone && <span className="text-sm text-muted">{n.phone}</span>}
+        {!ready && n.statusSince && (
+          <span className="text-sm font-medium text-negative" data-testid="wa-number-down-since">
+            {n.alerted ? 'Down' : 'Not connected'} since {new Date(n.statusSince).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+          </span>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <label className="text-sm">
