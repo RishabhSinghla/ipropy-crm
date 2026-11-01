@@ -8,6 +8,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, requireAdmin, requireAuth } from '../../middleware/auth.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+import { fleetSummary, saveCapacity } from '../../integrations/whatsapp/business/waFleet.js';
 import {
   assignNumber, chooseNumber, controlSession, createNumber, connectWebhook, listNumbers, numberOfUser, qrFor, setDefaultNumber,
   setPaused, syncFromOpenWa, updateLabel,
@@ -40,6 +41,15 @@ whatsappNumbersRouter.get('/choose', asyncHandler(async (req, res) => {
 
 const admin = Router();
 admin.use(requireAdmin);
+
+/** How many numbers the OpenWA server can hold, how many are connected, and (if the metrics token is set) its memory. */
+admin.get('/capacity', asyncHandler(async (_req, res) => { res.json(await fleetSummary()); }));
+admin.put('/capacity', asyncHandler(async (req, res) => {
+  const body = z.object({ maxLive: z.number().int().min(1).max(40), memoryLimitMb: z.number().int().min(256).max(65536) }).parse(req.body ?? {});
+  logger.info({ by: getUser(req).id, ...body }, 'whatsapp capacity changed');
+  await saveCapacity(body);
+  res.json(await fleetSummary());
+}));
 
 admin.get('/', asyncHandler(async (_req, res) => { res.json(await listNumbers()); }));
 admin.post('/refresh', asyncHandler(async (_req, res) => { res.json(await syncFromOpenWa()); }));

@@ -32,9 +32,24 @@ export interface GuardLimits {
   perUserDaily: number;
   perNumberDaily: number;
   minSpacingSeconds: number;
+  /** Quiet hours in the organisation's timezone: no CRM sends from `quietFrom` (inclusive) to `quietTo` (exclusive), 0-23. Null = off. */
+  quietFrom: number | null;
+  quietTo: number | null;
 }
 
-export const DEFAULT_LIMITS: GuardLimits = { perUserDaily: 60, perNumberDaily: 15, minSpacingSeconds: 10 };
+export const DEFAULT_LIMITS: GuardLimits = { perUserDaily: 60, perNumberDaily: 15, minSpacingSeconds: 10, quietFrom: null, quietTo: null };
+
+function hourOrNull(raw: unknown): number | null {
+  if (raw === '' || raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : null;
+}
+
+/** Pure: is this hour inside the quiet window? The window may wrap midnight (21 to 8). Equal ends mean off. */
+export function inQuietHours(from: number | null, to: number | null, hour: number): boolean {
+  if (from === null || to === null || from === to) return false;
+  return from < to ? hour >= from && hour < to : hour >= from || hour < to;
+}
 
 function clampedNumber(raw: unknown, fallback: number, min: number, max: number): number {
   const n = Number(raw);
@@ -50,6 +65,8 @@ export function guardLimits(): GuardLimits {
     perNumberDaily: clampedNumber(config.dailyCapPerNumber, DEFAULT_LIMITS.perNumberDaily, 1, 100),
     // Never below 3 seconds: the whole point of the gap.
     minSpacingSeconds: clampedNumber(config.minSpacingSeconds, DEFAULT_LIMITS.minSpacingSeconds, 3, 600),
+    quietFrom: hourOrNull(config.quietHoursFrom),
+    quietTo: hourOrNull(config.quietHoursTo),
   };
 }
 
@@ -70,14 +87,22 @@ export interface SendCounts {
   jitter?: number;
   /** When the previous send happened (ms); the jitter is derived from it so retries see the same gap. */
   lastSentAtMs?: number | null;
+  /** The hour of day (0-23) in the organisation's timezone right now. */
+  localHour?: number;
 }
 
 export type GuardVerdict =
   | { ok: true }
-  | { ok: false; code: 'USER_DAILY_CAP' | 'NUMBER_DAILY_CAP' | 'TOO_SOON'; message: string; retryAfterSeconds?: number };
+  | { ok: false; code: 'USER_DAILY_CAP' | 'NUMBER_DAILY_CAP' | 'TOO_SOON' | 'QUIET_HOURS'; message: string; retryAfterSeconds?: number };
 
 /** Pure: the rules, given the counts. Tested without a database. */
 export function decideSend(limits: GuardLimits, counts: SendCounts): GuardVerdict {
+  if (counts.localHour !== undefined && inQuietHours(limits.quietFrom, limits.quietTo, counts.localHour)) {
+    return {
+      ok: false, code: 'QUIET_HOURS',
+      message: `WhatsApp messages from the CRM are paused between ${limits.quietFrom}:00 and ${limits.quietTo}:00 so customers are not messaged at night. Please send after ${limits.quietTo}:00.`,
+    };
+  }
   const gap = limits.minSpacingSeconds + (counts.jitter ?? 0);
   if (counts.secondsSinceLast !== null && counts.secondsSinceLast < gap) {
     const wait = Math.ceil(gap - counts.secondsSinceLast);
@@ -148,6 +173,8 @@ export async function assertWithinLimits(userId: string, handle: string, numberI
   const counts = await currentCounts(userId, handle, numberId);
   // Random-looking but fixed for a given previous send: a retry after the shown wait must not meet a longer gap.
   const seed = counts.lastSentAtMs ?? 0;
-  const verdict = decideSend(limits, { ...counts, jitter: jitterSeconds(limits.minSpacingSeconds, () => (seed % 997) / 997) });
+  const tz = await organisationTimezone();
+  const localHour = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: tz }).format(new Date()));
+  const verdict = decideSend(limits, { ...counts, localHour, jitter: jitterSeconds(limits.minSpacingSeconds, () => (seed % 997) / 997) });
   if (!verdict.ok) throw new BadRequestError(verdict.message);
 }

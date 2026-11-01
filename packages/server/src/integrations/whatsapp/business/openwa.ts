@@ -486,6 +486,19 @@ export async function openWaManage<T>(
   return api<T>({ ...c, apiKey: admin || c.apiKey }, path, { ...init, method: init.method as 'GET' | 'POST', timeoutMs: 30_000 });
 }
 
+/**
+ * OpenWA's own memory figure (Prometheus text), when the admin has set a metrics token on the OpenWA server and on the
+ * card (`metricsToken`). Without it this answers null and the capacity guard falls back to counting numbers.
+ */
+export async function openWaMetricsText(): Promise<string | null> {
+  const c = conf();
+  const token = (getIntegrationCredentials(OPENWA_PROVIDER)?.metricsToken ?? '').trim();
+  if (!c || !token) return null;
+  const res = await fetch(`${c.baseUrl}/metrics`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8_000) });
+  if (!res.ok) return null;
+  return res.text();
+}
+
 /** One call to the linked session, with the session's id filled in. Reads only — nothing here sends. */
 async function onSession<T>(path: (sessionId: string) => string, timeoutMs = 20_000): Promise<T> {
   const c = conf();

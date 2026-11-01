@@ -10,6 +10,7 @@
  *    (ipy_message.number_id), and new messages use the new owner's number.
  */
 import { db } from '../../../db/pool.js';
+import { organisationTimezone } from '../../../core/settings/timezone.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../utils/errors.js';
 import {
   describeSessionStatus, maskPhone, openWaManage, openWaSession, OpenWaError,
@@ -32,18 +33,37 @@ export interface WaNumber {
   /** When the status last changed, and whether admins were told it is down. */
   statusSince: string | null;
   alerted: boolean;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  restartAttempts: number;
+  messagesToday: number;
+  failedToday: number;
 }
 
 interface Row {
   id: string; session_name: string; session_id: string | null; label: string | null; phone: string | null;
   user_id: string | null; user_name: string | null; is_default: boolean; paused: boolean; paused_at: string | null;
   status: string; last_active_at: string | null; status_since: string | null; alerted_at: string | null;
+  last_error: string | null; last_error_at: string | null;
+  restart_attempts: number; messages_today: string; failed_today: string;
 }
 
-const SELECT = `SELECT n.id, n.session_name, n.session_id, n.label, n.phone, n.user_id,
+const selectFor = (dayStart: string): string => `SELECT n.id, n.session_name, n.session_id, n.label, n.phone, n.user_id,
        trim(u.first_name || ' ' || u.last_name) AS user_name,
-       n.is_default, n.paused, n.paused_at, n.status, n.last_active_at, n.status_since, n.alerted_at
+       n.is_default, n.paused, n.paused_at, n.status, n.last_active_at, n.status_since, n.alerted_at,
+       n.last_error, n.last_error_at, n.restart_attempts,
+       (SELECT COUNT(*) FROM ipy_message m WHERE m.number_id = n.id AND m.direction = 'outbound'
+           AND m.created_at >= ${dayStart}) AS messages_today,
+       (SELECT COUNT(*) FROM ipy_message m WHERE m.number_id = n.id AND m.direction = 'outbound' AND m.status = 'failed'
+           AND m.created_at >= ${dayStart}) AS failed_today
   FROM ipy_wa_number n LEFT JOIN ipy_user u ON u.id = n.user_id`;
+
+/** Midnight today in the organisation's timezone, as a SQL expression (the name is checked, never trusted). */
+async function selectSql(): Promise<string> {
+  const tz = await organisationTimezone();
+  const safe = /^[A-Za-z0-9_+\-/]{1,64}$/.test(tz) ? tz : 'UTC';
+  return selectFor(`(date_trunc('day', now() AT TIME ZONE '${safe}') AT TIME ZONE '${safe}')`);
+}
 
 function shape(r: Row): WaNumber {
   return {
@@ -52,22 +72,24 @@ function shape(r: Row): WaNumber {
     isDefault: r.is_default, paused: r.paused, pausedAt: r.paused_at,
     status: r.status, statusText: describeSessionStatus(r.status), lastActiveAt: r.last_active_at,
     statusSince: r.status_since, alerted: r.alerted_at !== null,
+    lastError: r.last_error, lastErrorAt: r.last_error_at,
+    restartAttempts: r.restart_attempts, messagesToday: Number(r.messages_today), failedToday: Number(r.failed_today),
   };
 }
 
 export async function listNumbers(): Promise<WaNumber[]> {
-  const { rows } = await db.query<Row>(`${SELECT} ORDER BY n.is_default DESC, n.created_at`);
+  const { rows } = await db.query<Row>(`${await selectSql()} ORDER BY n.is_default DESC, n.created_at`);
   return rows.map(shape);
 }
 
 /** The one number an agent works from, or null. */
 export async function numberOfUser(userId: string): Promise<WaNumber | null> {
-  const row = await db.queryOne<Row>(`${SELECT} WHERE n.user_id = $1`, [userId]);
+  const row = await db.queryOne<Row>(`${await selectSql()} WHERE n.user_id = $1`, [userId]);
   return row ? shape(row) : null;
 }
 
 export async function numberById(id: string): Promise<WaNumber | null> {
-  const row = await db.queryOne<Row>(`${SELECT} WHERE n.id = $1`, [id]);
+  const row = await db.queryOne<Row>(`${await selectSql()} WHERE n.id = $1`, [id]);
   return row ? shape(row) : null;
 }
 
@@ -137,7 +159,7 @@ export async function chooseNumber(input: {
     const owners = await numberOfUser(input.recordOwnerId);
     if (owners) return { number: owners, fallbackNote: null };
   }
-  const company = await db.queryOne<Row>(`${SELECT} WHERE n.is_default`);
+  const company = await db.queryOne<Row>(`${await selectSql()} WHERE n.is_default`);
   if (!company) throw new BadRequestError('No company WhatsApp number is set. Pick a number in Admin → WhatsApp numbers.');
   return {
     number: shape(company),
@@ -246,6 +268,13 @@ export async function connectWebhook(id: string, url: string): Promise<void> {
 
 export async function controlSession(id: string, action: 'start' | 'stop' | 'restart' | 'unlink'): Promise<WaNumber> {
   const n = await mustHave(id);
+  if (action === 'start' || action === 'restart') {
+    const { assertRoomToStart } = await import('./waFleet.js');
+    await assertRoomToStart(id);
+  }
+  // A deliberate stop or unlink must never be undone by the watchdog; a start or restart hands the number back to it.
+  await db.query(`UPDATE ipy_wa_number SET wanted_running = $2, restart_attempts = 0, next_restart_at = NULL WHERE id = $1`,
+    [id, action === 'start' || action === 'restart']);
   if (action === 'restart') {
     await openWaManage(`/api/sessions/${n.sessionId}/stop`, { method: 'POST' }).catch(() => undefined);
     await openWaManage(`/api/sessions/${n.sessionId}/start`, { method: 'POST' });
