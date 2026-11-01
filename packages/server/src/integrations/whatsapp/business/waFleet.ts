@@ -15,6 +15,10 @@ import { BadRequestError } from '../../../utils/errors.js';
 import { getIntegrationConfig } from '../../../core/settings/integrations.js';
 import { OPENWA_PROVIDER, openWaManage, openWaMetricsText } from './openwa.js';
 import { syncFromOpenWa } from './waNumbers.js';
+import { catchUpNumber } from './waCatchUp.js';
+
+/** True once the first minute after this process started has run (then every ready number is caught up once). */
+let bootCatchUpDone = false;
 
 /** Statuses in which a session holds a Chromium-free but real chunk of memory. */
 const LIVE_STATUSES = ['ready', 'initializing', 'authenticating', 'qr_ready', 'starting'];
@@ -149,11 +153,17 @@ export async function fleetTick(now: Date = new Date()): Promise<void> {
   }>(`SELECT id, session_name, session_id, status, phone, wanted_running, restart_attempts, next_restart_at FROM ipy_wa_number`);
 
   let restartedThisTick = false;
+  const firstLook = !bootCatchUpDone;
+  bootCatchUpDone = true;
   for (const n of rows) {
     if (old.get(n.id) !== n.status) {
       logger.info({ number: n.session_name, from: old.get(n.id) ?? null, to: n.status }, 'whatsapp number status changed');
     }
     if (n.status === 'ready') {
+      // Back from an outage, or the first look since the CRM started: fetch anything that arrived while nobody was listening.
+      if (old.get(n.id) !== 'ready' || firstLook) {
+        void catchUpNumber(n.id).catch((err) => logger.warn({ err, number: n.session_name }, 'whatsapp catch-up failed'));
+      }
       if (n.restart_attempts > 0 || n.next_restart_at) {
         await db.query(`UPDATE ipy_wa_number SET restart_attempts = 0, next_restart_at = NULL, last_error = NULL WHERE id = $1`, [n.id]);
       }

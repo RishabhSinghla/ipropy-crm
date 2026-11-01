@@ -48,6 +48,11 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
     mutationFn: () => api.waNumberWebhook(n.id),
     onSuccess: () => toast.success('Connected', 'This number now reports messages to the CRM.'), onError: fail('Connect'),
   });
+  const catchUp = useMutation({
+    mutationFn: (dryRun: boolean) => api.waCatchUp(n.id, dryRun),
+    onSuccess: (r, dryRun) => toast.success(dryRun ? 'Checked (nothing saved)' : 'Caught up', `Looked back to ${new Date(r.since).toLocaleString('en-IN')}: ${r.fetched} found, ${dryRun ? `${r.stored} would be new` : `${r.stored} new`}, ${r.alreadyHad} already here, ${r.skipped} skipped.`),
+    onError: fail('Catch up'),
+  });
   const ready = n.status === 'ready';
   const trouble = !ready && !n.paused;
   return (
@@ -96,6 +101,7 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
           className="btn-secondary btn-sm"
           onClick={() => { if (window.confirm('Unlink this phone from WhatsApp? A new QR scan is needed after.')) control.mutate('unlink'); }}
         >Unlink</button>
+        <button className="btn-secondary btn-sm" onClick={() => catchUp.mutate(false)} disabled={catchUp.isPending || !ready} title="Fetch customer messages this number received while the CRM was not listening">Catch up messages</button>
         <button className="btn-secondary btn-sm" onClick={() => hook.mutate()} title="Make this number report messages to the CRM">Connect to CRM</button>
         {!n.isDefault && <button className="btn-secondary btn-sm" onClick={() => makeDefault.mutate()}>Make company number</button>}
         <button className={n.paused ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => pause.mutate(!n.paused)}>
