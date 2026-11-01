@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { chooseWaNumber } from './waNumberChoice';
 import type { AuthUser } from '@ipropy/shared';
 import { ApiError, api, tokenStore, type ModuleSummary } from './api';
 import { forgetAll } from './offlineCache';
@@ -343,6 +344,8 @@ export const useApp = create<AppState>((set, get) => ({
       await disableCallSync().catch(() => undefined);
     }
     await api.logout().catch(() => undefined);
+    // An admin's chosen WhatsApp number must not follow the next person who signs in on this tab.
+    chooseWaNumber('');
     // A shared handset on an office desk is normal in this business, so the
     // offline copy must not outlive the session that fetched it.
     await forgetAll().catch(() => undefined);

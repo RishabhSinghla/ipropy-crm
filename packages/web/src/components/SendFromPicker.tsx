@@ -20,12 +20,15 @@ export default function SendFromPicker({ recordId }: { recordId?: string | null 
   const { data: numbers } = useQuery({
     queryKey: ['wa-numbers', 'mine'], queryFn: () => api.waNumbersMine(), enabled: isAdmin, staleTime: 60_000,
   });
+  // The choice only means something for a linked-device provider (OpenWA); the official providers have one sender.
+  const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus(), enabled: isAdmin });
+  const linkedDevice = Boolean(status?.capabilities.includes('linkedDevice'));
   const { data: picked } = useQuery({
     queryKey: ['wa-numbers', 'choose', recordId ?? null],
     queryFn: () => api.waNumberChoose(recordId ?? undefined),
     enabled: isAdmin && !choice,
   });
-  if (!isAdmin || !numbers?.numbers.length) return null;
+  if (!isAdmin || !linkedDevice || !numbers?.numbers.length) return null;
   const options = numbers.numbers;
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] bg-white px-3 pt-2 text-2xs text-muted dark:bg-slate-900" data-testid="send-from">
