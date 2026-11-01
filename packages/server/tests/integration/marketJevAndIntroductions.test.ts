@@ -159,7 +159,9 @@ describe('a dealer group read by Jev and matched across groups', () => {
       .set('Authorization', `Bearer ${adminToken}`).send({ status: 'dismissed' });
     expect(put.status).toBe(200);
     const again = await request(app).get('/api/market/matches?includeWorked=true&limit=500').set('Authorization', `Bearer ${adminToken}`);
-    expect((again.body as typeof rows).find((m) => m.have.posterPhone === sellerPhone)).toBeUndefined();
+    // That pairing, not every pairing with this seller: other tests in the same database can leave the seller matched to another want.
+    const stillThere = (again.body as typeof rows).find((m) => m.want.id === found.want.id && m.have.id === (found as unknown as { have: { id: string } }).have.id);
+    expect(stillThere).toBeUndefined();
     const bad = await request(app).put(`/api/market/matches/${rows[0]?.want.id ?? '00000000-0000-4000-8000-000000000000'}/${rows[0]?.want.id ?? '00000000-0000-4000-8000-000000000000'}`)
       .set('Authorization', `Bearer ${adminToken}`).send({ status: 'sold' });
     expect(bad.status).toBe(422);
