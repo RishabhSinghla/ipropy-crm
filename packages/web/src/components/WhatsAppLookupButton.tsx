@@ -19,7 +19,9 @@ type Found = WaLookupResult & { lookedUpAt?: string };
 export function WhatsAppLookupButton({ module, recordId, number }: { module: string; recordId: string; number: string }): JSX.Element {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [fresh, setFresh] = useState<Found | null>(null);
+  const [freshFor, setFreshFor] = useState<{ key: string; value: Found } | null>(null);
+  const whose = `${module}:${recordId}:${number}`;
+  const fresh = freshFor?.key === whose ? freshFor.value : null;
   const button = useRef<HTMLButtonElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const [spot, setSpot] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
@@ -35,7 +37,8 @@ export function WhatsAppLookupButton({ module, recordId, number }: { module: str
   const look = useMutation({
     mutationFn: () => api.waLookup(number),
     onSuccess: (answer) => {
-      setFresh(answer);
+      if (answer.number && !answer.number.endsWith(number.replace(/\D/g, '').slice(-10))) return;
+      setFreshFor({ key: whose, value: answer });
       if (answer.status === 'on_whatsapp' || answer.status === 'not_on_whatsapp') {
         void queryClient.invalidateQueries({ queryKey: ['wa-lookup-stored', number] });
       }

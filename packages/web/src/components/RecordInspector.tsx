@@ -134,7 +134,8 @@ function WhatsAppBeside({ module, row, field }: { module: string; row: RecordEnv
   if (typeof number !== 'string' || !number) return null;
   return (
     <>
-      <WhatsAppLookupButton module={module} recordId={row.id} number={number} />
+      {/* Keyed by record and number: switching records must remount it, so no popover, result or pending check survives. */}
+      <WhatsAppLookupButton key={`${module}:${row.id}:${number}`} module={module} recordId={row.id} number={number} />
       <WhatsAppIconButton to={number} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-slate-800" />
     </>
   );
