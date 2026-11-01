@@ -104,14 +104,16 @@ test('typing a reply and pressing Send reaches OpenWA, once, to that contact onl
   await expect(page.locator('p', { hasText: 'Yes, it is. Shall we visit on Saturday?' })).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => fake.sends.length, { timeout: 15_000 }).toBe(before + 1);
   expect(fake.sends.at(-1)).toMatchObject({ route: 'send-text', chatId: `91${mobile}@c.us` });
-  await expect(page.getByText(/sent via the business number/i).first()).toBeVisible();
+  // Since the merged thread, a bubble names its lane ("Chat · sent by us") rather than "via the business number".
+  await expect(page.getByText(/chat · sent by us/i).first()).toBeVisible();
 });
 
 test('a read receipt moves the ticks to read', async ({ page }) => {
   const sentId = fake.sends.at(-1)!.id;
   await fake.deliver(WEBHOOK, SECRET, 'message.ack', { id: sentId, status: 'read', chatId: `91${mobile}@c.us` });
   await openChat(page);
-  await expect(page.getByText(/read via the business number/i).first()).toBeVisible({ timeout: 30_000 });
+  // The blue double tick carries aria-label "read" (ticks() in lib/whatsapp.ts).
+  await expect(page.getByLabel('read', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
 });
 
 test('OpenWA\'s own rate limit is shown in plain words and the message is marked not delivered', async ({ page }) => {
@@ -121,7 +123,8 @@ test('OpenWA\'s own rate limit is shown in plain words and the message is marked
   await page.getByLabel('Write a WhatsApp message').fill('This one is paced');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(page.getByText(/try again in about 30 seconds/i).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText('NOT delivered').first()).toBeVisible();
+  // The merged thread marks a refused message with a red "Failed." and the reason under it (WhatsAppTab.tsx).
+  await expect(page.getByText('Failed.', { exact: true }).first()).toBeVisible();
   fake.pacingRetryAfter = null;
 });
 
