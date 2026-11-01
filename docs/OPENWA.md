@@ -184,12 +184,74 @@ add a session, Start it, scan its QR with that agent's phone, then pick the agen
 * **Limits are per number:** the minimum gap between sends and the daily caps are counted for each number separately.
 * **Audit:** every CRM-sent message records who sent it and from which number; the master screen lists the latest.
 
-**Capacity on the Render plan:** the OpenWA server (`ipropy-openwa`, Starter, 512 MB, 1 GB disk at `/app/data`) used about
-300 MB with one linked number. `MAX_CONCURRENT_SESSIONS` is **2** there now. A third number should be preceded by moving the
-service to a bigger instance; change the variable only after that.
+**Capacity on the Render plan:** the OpenWA server (`ipropy-openwa`, Starter, 512 MB, 1 GB disk at `/app/data`).
+Measured 1 Nov 2026 from Render's metrics: with **three** numbers connected it used about **225 MB** of 537 MB, CPU
+under 2% of 0.5; earlier with one number and several hours of uptime it sat near 300 MB, so memory creeps up over time.
+The CRM refuses to **start** a number beyond the limit saved on the numbers screen ("OpenWA server room", default 3,
+setting `whatsapp.capacity`) and says it needs the bigger Render plan. Optionally set a metrics token (below) so the CRM
+also refuses when the server's real memory is above 80%. Estimate for 10 numbers: about 0.8–1.2 GB, so the 2 GB plan.
 
 **Setup note:** creating/starting/QR from the master screen needs an OpenWA key allowed to manage sessions. If the card's
 key is restricted to one session, add a second key (OpenWA dashboard → API Keys, role ADMIN) as `adminApiKey` on the card.
 
 **Rollback:** `ALTER TABLE ipy_message DROP COLUMN number_id; DROP TABLE ipy_wa_number;` (messages are untouched; the
 migration only tags existing OpenWA messages with the company number).
+
+
+---
+
+# Running many numbers (added 1 November 2026)
+
+## Where the logins live, and why a redeploy keeps them
+
+Everything that makes a phone stay linked is on the Render **persistent disk** `disk` (`dsk-dbes8qjrjlhs738ntla0`, 1 GB,
+mounted at `/app/data`): `data/baileys/` (the WhatsApp login keys, one folder per session), `data/main.sqlite` and
+`data/openwa.sqlite` (sessions, API keys, webhooks, OpenWA's own message copy) and `data/media/`. A redeploy or restart
+replaces the container but not the disk.
+
+**Proof (not assumption):** on 1 Nov 2026 12:11 UTC the service was redeployed. OpenWA's own log shows `harish-phone` and
+`yogesh-phone` "Adopted session … from lapsed node" and "Session ready" within 2 and 4 seconds, no QR generated, and the CRM
+kept sending from them. (`deepak-phone` generated a QR in that window because it was being paired for the first time.)
+A link cannot be proved on a throwaway session without a phone to scan it, so no company number was ever restarted for a test.
+
+Rules that keep it true:
+* Never delete the disk, change its mount path (`/app/data`), or move the service to a plan without disks.
+* Run **one** instance only. Two instances on one session risk a forced WhatsApp logout.
+* Keep `AUTO_START_SESSIONS` set on the OpenWA service so linked sessions start by themselves after a restart.
+* Before any risky change take a **disk snapshot** (Render dashboard → ipropy-openwa → Disk → Snapshots).
+
+## Runbook: restart, redeploy, rollback, "agent got logged out"
+
+1. **Restart one number** (the usual fix): Admin → WhatsApp numbers → *Restart*. No QR needed.
+2. **Restart the whole OpenWA server:** Render → ipropy-openwa → Manual Deploy → *Restart service*. Wait about 2 minutes; every
+   number should return to **Connected** by itself. If one stays "disconnected", press *Restart* on it.
+3. **Redeploy a new OpenWA version:** take a disk snapshot first, then Manual Deploy. The service has no zero-downtime deploy
+   (it owns a disk), so WhatsApp chat in the CRM pauses for 1–3 minutes; the CRM keeps working.
+4. **Rollback:** Render → Deploys → pick the previous deploy → *Rollback*. If sessions misbehave afterwards, restore the snapshot.
+5. **"The agent got logged out"** (screen shows *disconnected* / *needs QR* and the watchdog gave up): on the agent's phone open
+   WhatsApp → Settings → Linked devices. If the OpenWA device is gone, press *Show QR* on the number and scan again (Linked
+   devices → Link a device). Nothing in the CRM is lost. WhatsApp logs a linked device out if the main phone is unused for 14 days.
+
+## What the CRM does by itself now
+
+* **Watchdog** (every minute): a number that was linked and has dropped is restarted after 1, 5, 15, 30, 60 minutes, at most five
+  times, one number per minute across the fleet; then it stops and the screen says a person must act. A number an admin stopped or
+  unlinked is never restarted. The counter resets when the number is ready again.
+* **Room check:** a number is only started if the server has room (see capacity above).
+* **Quiet hours:** Admin → Integrations → OpenWA card → "No CRM WhatsApp sends from this hour … until" (organisation timezone).
+* **Per number** the screen shows messages sent today, failures today, last active, status since, last error.
+* Incoming messages are stored once per provider message id (webhook claim plus a unique check); OpenWA retries are harmless.
+* Optional **metrics token:** set `METRICS_TOKEN` on the OpenWA service (Render env) and the same value as "OpenWA metrics token" on
+  the card; the screen then shows OpenWA's real memory. Setting it restarts OpenWA once, so do it in a quiet moment.
+
+## Upgrading the OpenWA server (do this only after the owner says yes)
+
+Price (Render pricing page, 1 Nov 2026): Starter 0.5 CPU / 512 MB **$7**/month → Standard 1 CPU / 2 GB **$25**/month; disk
+$0.25 per GB per month. Steps, about 10 minutes, at a quiet time:
+1. Disk snapshot (Render → Disk → Snapshots).
+2. Render → ipropy-openwa → Settings → Instance Type → **Standard (1 CPU, 2 GB)** → Save. The service restarts once.
+3. Render → Environment → set `MAX_CONCURRENT_SESSIONS` to `12` → Save (one more restart). Optionally raise the disk to 5 GB.
+4. Wait until every number says Connected (no QR should be asked).
+5. CRM → Admin → WhatsApp numbers → "OpenWA server room": set *Most numbers connected at once* to `10`, *Server memory* to `2048`, Save.
+6. Watch memory in Render → Metrics for a day; it should stay under about 1.2 GB with 10 numbers.
+Rollback: Instance Type back to Starter, and set the room limit back to `3`.
