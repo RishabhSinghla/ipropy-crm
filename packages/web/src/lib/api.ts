@@ -213,6 +213,7 @@ export interface WaNumber {
   id: string; sessionName: string; sessionId: string | null; label: string | null; phone: string | null;
   userId: string | null; userName: string | null; isDefault: boolean; paused: boolean; pausedAt: string | null;
   status: string; statusText: string; lastActiveAt: string | null;
+  statusSince: string | null; alerted: boolean;
 }
 
 const get = <T>(path: string): Promise<T> => request<T>(path);

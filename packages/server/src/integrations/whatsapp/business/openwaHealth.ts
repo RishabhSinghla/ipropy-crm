@@ -12,6 +12,7 @@
  */
 import { db } from '../../../db/pool.js';
 import { getIntegrationConfig } from '../../../core/settings/integrations.js';
+import { runNumberWatch } from './numberAlerts.js';
 import { logger } from '../../../utils/logger.js';
 import { organisationTimezone } from '../../../core/settings/timezone.js';
 import {
@@ -144,6 +145,7 @@ export function startOpenWaHealth(): void {
     checking = true;
     void checkOpenWaNow()
       .catch((err) => logger.warn({ err }, 'OpenWA health check failed'))
+      .then(() => runNumberWatch())
       .finally(() => { checking = false; });
   }, EVERY_MS);
   timer.unref?.();

@@ -29,17 +29,20 @@ export interface WaNumber {
   status: string;
   statusText: string;
   lastActiveAt: string | null;
+  /** When the status last changed, and whether admins were told it is down. */
+  statusSince: string | null;
+  alerted: boolean;
 }
 
 interface Row {
   id: string; session_name: string; session_id: string | null; label: string | null; phone: string | null;
   user_id: string | null; user_name: string | null; is_default: boolean; paused: boolean; paused_at: string | null;
-  status: string; last_active_at: string | null;
+  status: string; last_active_at: string | null; status_since: string | null; alerted_at: string | null;
 }
 
 const SELECT = `SELECT n.id, n.session_name, n.session_id, n.label, n.phone, n.user_id,
        trim(u.first_name || ' ' || u.last_name) AS user_name,
-       n.is_default, n.paused, n.paused_at, n.status, n.last_active_at
+       n.is_default, n.paused, n.paused_at, n.status, n.last_active_at, n.status_since, n.alerted_at
   FROM ipy_wa_number n LEFT JOIN ipy_user u ON u.id = n.user_id`;
 
 function shape(r: Row): WaNumber {
@@ -48,6 +51,7 @@ function shape(r: Row): WaNumber {
     phone: maskPhone(r.phone), userId: r.user_id, userName: r.user_name || null,
     isDefault: r.is_default, paused: r.paused, pausedAt: r.paused_at,
     status: r.status, statusText: describeSessionStatus(r.status), lastActiveAt: r.last_active_at,
+    statusSince: r.status_since, alerted: r.alerted_at !== null,
   };
 }
 
@@ -153,7 +157,7 @@ export async function markActive(numberId: string): Promise<void> {
 }
 
 export async function rememberStatus(sessionId: string, status: string): Promise<void> {
-  await db.query(`UPDATE ipy_wa_number SET status = $2 WHERE session_id = $1`, [sessionId, status]);
+  await db.query(`UPDATE ipy_wa_number SET status = $2::text, status_since = CASE WHEN status IS DISTINCT FROM $2::text THEN now() ELSE status_since END WHERE session_id = $1`, [sessionId, status]);
 }
 
 // ---------------------------------------------------------------------------
@@ -169,13 +173,22 @@ export async function syncFromOpenWa(): Promise<WaNumber[]> {
     const name = String(s.name ?? '').trim();
     if (!name) continue;
     await db.query(
-      `INSERT INTO ipy_wa_number (session_name, session_id, phone, status)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO ipy_wa_number (session_name, session_id, phone, status, status_since)
+       VALUES ($1, $2, $3, $4, now())
        ON CONFLICT (session_name) DO UPDATE
          SET session_id = EXCLUDED.session_id,
              phone = COALESCE(EXCLUDED.phone, ipy_wa_number.phone),
+             status_since = CASE WHEN ipy_wa_number.status IS DISTINCT FROM EXCLUDED.status THEN now() ELSE ipy_wa_number.status_since END,
              status = EXCLUDED.status`,
       [name, String(s.id ?? ''), typeof s.phone === 'string' && s.phone ? s.phone : null, String(s.status ?? 'unknown')],
+    );
+  }
+  if (Array.isArray(remote)) {
+    // A session removed from OpenWA is as down as a disconnected one; keep the row, say so.
+    const names = remote.map((s) => String(s.name ?? '').trim()).filter(Boolean);
+    await db.query(
+      `UPDATE ipy_wa_number SET status = 'missing', status_since = now()
+        WHERE status <> 'missing' AND NOT (session_name = ANY($1::text[]))`, [names],
     );
   }
   return listNumbers();
