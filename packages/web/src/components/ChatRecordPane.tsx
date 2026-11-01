@@ -64,7 +64,7 @@ export function ChatRecordPane({ module, record }: {
   for (const field of phoneFields) {
     const raw = record.values[field.name];
     if (typeof raw !== 'string' || !raw.trim()) continue;
-    const code = record.values.country_code;
+    const code = record.values[String(field.config?.countryField ?? 'country_code')];
     phone = toInternational(typeof code === 'string' ? code : null, raw) ?? raw.trim();
     break;
   }
