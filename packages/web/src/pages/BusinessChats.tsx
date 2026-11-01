@@ -12,7 +12,7 @@ import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
 import {
   bubbleTime, composerMode, dayLabel, displayNumber, linkBanner, ticks, wentOut, whyNoTextBox,
-  rowChip, type RowChip, BUBBLE_STYLE, bubbleKind, type BubbleKind,
+  rowChip, senderLine, type RowChip, BUBBLE_STYLE, bubbleKind, type BubbleKind,
 } from '../lib/whatsapp';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { ChatSidePanel, useChatRecord, type ChatCandidate } from '../components/ChatRecordPane';
@@ -87,6 +87,8 @@ interface BizMessage {
   created_at: string;
   route: string | null;
   sent_by_name: string | null;
+  numberName?: string | null;
+  numberPhone?: string | null;
   error_message: string | null;
   /** Loose until `readMessageMedia` has looked at it — it is a JSONB column. */
   media: unknown;
@@ -579,6 +581,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                     <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">
                       {BUBBLE_STYLE[kindOf(message)].label}{message.template_name ? ` · template: ${message.template_name}` : ''}
                     </p>
+                    {senderLine({ ...message, sentByName: message.sent_by_name }) && <p className="mb-0.5 text-[10px] opacity-80" data-testid="sender-line">{senderLine({ ...message, sentByName: message.sent_by_name })}</p>}
                     {message.body && message.body !== `[${message.type}]` && (
                       <p className="whitespace-pre-wrap break-words">{message.body}</p>
                     )}

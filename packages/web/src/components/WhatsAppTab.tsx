@@ -10,7 +10,7 @@ import { cn } from '../lib/utils';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from './WhatsAppMedia';
 import { UnsubscribedPanel, UnsubscribeLink } from './WhatsAppConsent';
 import { BubbleKindFilter, countKinds } from './BubbleKindFilter';
-import { BUBBLE_STYLE, type BubbleKind, bubbleKind, bubbleTime, composerMode, dayLabel, linkBanner, ticks, whyNoTextBox } from '../lib/whatsapp';
+import { BUBBLE_STYLE, type BubbleKind, bubbleKind, bubbleTime, composerMode, dayLabel, linkBanner, senderLine, ticks, whyNoTextBox } from '../lib/whatsapp';
 import { EmptyState, Skeleton, Spinner } from './ui';
 import SendFromPicker from './SendFromPicker';
 
@@ -77,6 +77,9 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         templateName: (row.template_name as string | null) ?? null,
         status: String(row.status ?? ''),
         error: (row.error_message as string | null) ?? null,
+        numberName: (row.numberName as string | null) ?? null,
+        numberPhone: (row.numberPhone as string | null) ?? null,
+        sentByName: (row.sent_by_name as string | null) ?? null,
       })) };
     },
   });
@@ -200,7 +203,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     ...(messages ?? []),
     ...(pending !== null ? [{
       id: 'pending', direction: 'outbound' as const, body: pending, media: null, createdAt: new Date().toISOString(),
-      viaApi: false, templateName: null, status: 'sending', error: null,
+      viaApi: false, templateName: null, status: 'sending', error: null, numberName: null, numberPhone: null, sentByName: null,
     }] : []),
   ];
 
@@ -268,6 +271,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
                   <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">
                     {style.label}{m.templateName ? ` · template: ${m.templateName}` : ''}
                   </p>
+                  {senderLine(m) && <p className="mb-0.5 text-[10px] opacity-80" data-testid="sender-line">{senderLine(m)}</p>}
                   {media && <div className="mb-1 min-w-[12rem]"><WhatsAppMedia media={media} /></div>}
                   {!media && remote && <div className="mb-1 min-w-[12rem]"><WhatsAppRemoteFile messageId={m.id} file={remote} /></div>}
                   {(m.body || !(media || remote)) && (

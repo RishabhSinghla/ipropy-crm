@@ -19,6 +19,7 @@ import { BadRequestError, NotFoundError } from '../../../utils/errors.js';
 import { notify } from '../../../core/notifications/index.js';
 import { replyWindowAlwaysOpen } from './registry.js';
 import { findOwnersOfNumbers, ownerKey, type NumberOwner } from '../numberOwners.js';
+import { withSenderLabels } from './senderLabels.js';
 import { laneClause, redactAutomated, routeClause, type RouteView } from './channelRoles.js';
 
 export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread' | 'unmatched';
@@ -297,7 +298,7 @@ export async function conversationMessages(
   }
   const { rows } = await db.query(
     `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.error_message,
-            m.template_name, m.created_at, m.delivered_at, m.read_at, m.route, m.provider,
+            m.template_name, m.created_at, m.delivered_at, m.read_at, m.route, m.provider, m.number_id,
             trim(u.first_name || ' ' || u.last_name) AS sent_by_name
        FROM ipy_message m
        LEFT JOIN ipy_user u ON u.id = m.sent_by
@@ -306,7 +307,7 @@ export async function conversationMessages(
       LIMIT 500`,
     [conversationId],
   );
-  return redactAutomated(rows, isAdmin);
+  return redactAutomated(await withSenderLabels(rows), isAdmin);
 }
 
 /** Opening a thread is what marks it read — receiving it is not. */
