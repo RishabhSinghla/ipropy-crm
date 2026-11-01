@@ -144,7 +144,7 @@ describe('masking a phone number', () => {
   it('shapes it so a known number is still recognisable', () => {
     expect(maskNumber('9000010004')).toBe('90xxxxxx04');
     // Formatting varies in the wild; the mask should not.
-    expect(maskNumber('+91 90000 10004')).toBe('91xxxxxxxx56');
+    expect(maskNumber('+91 90000 10004')).toBe('91xxxxxxxx04');
     // Too short to be worth hiding, and masking it would just look broken.
     expect(maskNumber('1234')).toBe('1234');
     expect(maskNumber(null)).toBeNull();
