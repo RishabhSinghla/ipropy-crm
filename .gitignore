@@ -81,3 +81,6 @@ opencode.json
 # Xcode's own local state for Swift package resolution.
 packages/app/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 packages/app/ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
+
+# The old Android companion folder: its keystore.properties holds signing passwords and .gradle is build cache. Never commit.
+companion-android/
