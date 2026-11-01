@@ -11,8 +11,8 @@ import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
 import {
-  bubbleTime, composerMode, dayLabel, displayNumber, linkBanner, outboundTone, ticks, wentOut, whyNoTextBox,
-  rowChip, type RowChip,
+  bubbleTime, composerMode, dayLabel, displayNumber, linkBanner, ticks, wentOut, whyNoTextBox,
+  rowChip, type RowChip, BUBBLE_STYLE, bubbleKind, type BubbleKind,
 } from '../lib/whatsapp';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { ChatSidePanel, useChatRecord, type ChatCandidate } from '../components/ChatRecordPane';
@@ -20,6 +20,7 @@ import { HeaderFieldStrip } from '../components/RecordBlocks';
 import { FieldValue } from '../components/FieldRenderer';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { readMessageMedia, readRemoteFile, WhatsAppMedia, WhatsAppRemoteFile } from '../components/WhatsAppMedia';
+import { BubbleKindFilter, countKinds } from '../components/BubbleKindFilter';
 import { UnsubscribedPanel, UnsubscribeLink } from '../components/WhatsAppConsent';
 
 /**
@@ -85,6 +86,8 @@ interface BizMessage {
 export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'api' }): JSX.Element {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>('all');
+  /** Pressed colour-key chips in the open thread; empty shows everything. Resets when another chat opens. */
+  const [kindFilter, setKindFilter] = useState<Set<BubbleKind>>(new Set());
   // Empty means every module. Set from the same dropdown, prefixed so a module
   // name can never be mistaken for a status.
   const [moduleFilter, setModuleFilter] = useState('');
@@ -178,6 +181,10 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
     }
   }
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
+  // Each inbox lives in one lane: the API page holds only automatic sends, the plain page only company-phone chat.
+  const kindOf = (m: { direction: string }): BubbleKind => bubbleKind({ direction: m.direction, viaApi: route === 'api' });
+  const shown = kindFilter.size === 0 ? messages : messages.filter((m) => kindFilter.has(kindOf(m)));
+  useEffect(() => setKindFilter(new Set()), [activeId]);
   /*
     **Both halves, not just the clock.** A free reply needs an open 24-hour
     window *and* a provider that can carry one — some providers' APIs send approved
@@ -463,6 +470,9 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                 </div>
               </div>
             </header>
+            <div className="border-b border-[var(--border)] bg-white px-4 pb-2 dark:bg-slate-900">
+              <BubbleKindFilter active={kindFilter} counts={countKinds(messages.map((m) => ({ direction: m.direction, viaApi: route === 'api' })), bubbleKind)} onChange={setKindFilter} />
+            </div>
 
             {/*
               A tinted canvas, so a white incoming bubble reads as a bubble.
@@ -471,13 +481,16 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
               the familiarity the owner asked for.
             */}
             <div className="flex-1 space-y-2 overflow-y-auto bg-slate-100 p-4 dark:bg-slate-950">
-              {messages.map((message, index) => (
+              {messages.length > 0 && shown.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted" role="status">No messages match. <button type="button" className="font-semibold underline" onClick={() => setKindFilter(new Set())}>Clear filter</button></p>
+              )}
+              {shown.map((message, index) => (
                 <div key={message.id}>
                   {/*
                     The date once, down the middle, the way WhatsApp does it —
                     instead of on all forty bubbles from one afternoon.
                   */}
-                  {dayLabel(message.created_at) !== (index > 0 ? dayLabel(messages[index - 1]!.created_at) : null) && (
+                  {dayLabel(message.created_at) !== (index > 0 ? dayLabel(shown[index - 1]!.created_at) : null) && (
                     <div className="flex justify-center py-2">
                       <span className="rounded-md bg-white px-2.5 py-1 text-2xs font-semibold uppercase tracking-wide text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
                         {dayLabel(message.created_at)}
@@ -487,21 +500,17 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                 <div
                   className={cn('flex', message.direction === 'outbound' ? 'justify-end' : 'justify-start')}
                 >
-                  <div className={cn(
-                    'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm',
-                    // A refused message must not wear the same green as a
-                    // delivered one. Same rule as the record's tab; this is
-                    // the second screen it had to be applied to.
-                    message.direction === 'outbound'
-                      ? `rounded-br-sm text-white ${outboundTone(message.status)}`
-                      : 'rounded-bl-sm bg-white text-slate-800 dark:bg-slate-800 dark:text-slate-100',
+                  <div data-kind={kindOf(message)} className={cn(
+                    'max-w-[70%] rounded-xl border px-3 py-2 text-sm',
+                    BUBBLE_STYLE[kindOf(message)].bubble,
+                    message.direction === 'outbound' && message.status === 'failed' && 'border-rose-500 ring-1 ring-rose-500',
                   )}>
                     {(() => {
                       const media = readMessageMedia(message.media);
                       if (media) {
                         return (
                           <div className="mb-1 min-w-[12rem]">
-                            <WhatsAppMedia media={media} dark={message.direction === 'outbound'} />
+                            <WhatsAppMedia media={media} dark={false} />
                           </div>
                         );
                       }
@@ -509,10 +518,13 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                       const remote = readRemoteFile(message.media);
                       return remote ? (
                         <div className="mb-1 min-w-[12rem]">
-                          <WhatsAppRemoteFile messageId={message.id} file={remote} dark={message.direction === 'outbound'} />
+                          <WhatsAppRemoteFile messageId={message.id} file={remote} dark={false} />
                         </div>
                       ) : null;
                     })()}
+                    <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">
+                      {BUBBLE_STYLE[kindOf(message)].label}{message.template_name ? ` · template: ${message.template_name}` : ''}
+                    </p>
                     {message.body && message.body !== `[${message.type}]` && (
                       <p className="whitespace-pre-wrap break-words">{message.body}</p>
                     )}
@@ -532,7 +544,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                     )}
                     <p className={cn(
                       'mt-1 flex items-center gap-1 text-2xs',
-                      message.direction === 'outbound' ? 'text-white/80' : 'text-slate-400',
+                      'opacity-80',
                     )}>
                       {bubbleTime(message.created_at)}
                       {message.direction === 'outbound' && (
@@ -543,7 +555,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                             : <span className="inline-flex items-center gap-0.5">
                               {ticks(message.status).marks === '✓'
                                 ? <Check className="h-3 w-3" />
-                                : <CheckCheck className={cn('h-3 w-3', ticks(message.status).read && 'text-sky-200')} />}
+                                : <CheckCheck className={cn('h-3 w-3', ticks(message.status).read && 'text-sky-600 dark:text-sky-300')} />}
                               {wentOut(message.status)}
                             </span>}
                           {/* Which road it took, because the business number
@@ -560,7 +572,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
                       and a rep hunting.
                     */}
                     {message.direction === 'outbound' && message.status === 'failed' && (
-                      <p className="mt-1 rounded bg-white/15 px-1.5 py-1 text-2xs leading-snug">
+                      <p className="mt-1 rounded bg-rose-100 px-1.5 py-1 text-2xs leading-snug text-rose-900 dark:bg-rose-950 dark:text-rose-100">
                         {message.error_message ?? 'WhatsApp gave no reason.'}
                       </p>
                     )}
@@ -571,6 +583,11 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
               <div ref={endRef} />
             </div>
 
+            {route === 'api' ? (
+              <footer className="border-t border-[var(--border)] bg-sky-50 px-4 py-3 text-xs text-sky-900 dark:bg-sky-950 dark:text-sky-100" data-testid="api-readonly">
+                <strong>Automatic: sent by workflows.</strong> This inbox is read-only. Replies to customers are sent from the WhatsApp chat inbox.
+              </footer>
+            ) : (
             <footer className="border-t border-[var(--border)] bg-white p-3 dark:bg-slate-900">
               {active.optedOut ? (
                 <UnsubscribedPanel who={who} onSubscribeAgain={() => consent.mutateAsync(true)} />
@@ -671,6 +688,7 @@ export default function BusinessChats({ route = '' }: { route?: '' | 'chat' | 'a
               </>
               )}
             </footer>
+            )}
           </>
         )}
       </section>
