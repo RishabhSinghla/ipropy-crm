@@ -1671,6 +1671,7 @@ export const api = {
     windowExpiresAt: string | null; optedOut: boolean;
     owners: { recordId: string; module: string; moduleLabel: string; label: string; fieldLabel: string }[];
   }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined, route: route || undefined })}`),
+  waBizCounts: (route = '') => get<{ all: number; mine: number; unassigned: number; unread: number }>(`/api/whatsapp-business/conversation-counts${qs({ route: route || undefined })}`),
   waBizMessages: (conversationId: string, route = '') => get<{
     messages: Record<string, unknown>[]; alsoViewing: string[];
   }>(`/api/whatsapp-business/conversations/${conversationId}/messages${qs({ route: route || undefined })}`),

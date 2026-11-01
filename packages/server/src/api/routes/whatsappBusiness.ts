@@ -21,7 +21,7 @@ import {
 } from '../../integrations/whatsapp/business/registry.js';
 import { sendOnBusinessNumber } from '../../integrations/whatsapp/business/send.js';
 import {
-  assign, conversationMessages, listConversations, markRead, markUnread,
+  assign, conversationMessages, inboxCounts, listConversations, markRead, markUnread,
   noteViewing, othersViewing, readableConversation,
 } from '../../integrations/whatsapp/business/inbox.js';
 import { recordConsent } from '../../core/consent/index.js';
@@ -301,6 +301,12 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 const filters = ['all', 'mine', 'unassigned', 'unread', 'unmatched'] as const;
+
+whatsappBusinessRouter.get('/conversation-counts', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const query = z.object({ route: z.enum(['chat', 'api']).optional() }).parse(req.query ?? {});
+  res.json(await inboxCounts({ userId: user.id, isAdmin: user.isAdmin, route: query.route }));
+}));
 
 whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
   const user = getUser(req);
