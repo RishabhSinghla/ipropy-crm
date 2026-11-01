@@ -138,6 +138,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'baseUrl', label: 'OpenWA address', source: 'config', placeholder: 'https://openwa.example.com  (local: http://127.0.0.1:2785)' },
     { key: 'sessionName', label: 'Session name', source: 'config', placeholder: 'company' },
     { key: 'apiKey', label: 'OpenWA API key', source: 'credentials', secret: true },
+    { key: 'adminApiKey', label: 'OpenWA admin key (to add / start / scan numbers from Admin → WhatsApp numbers; optional)', source: 'credentials', secret: true },
     { key: 'webhookSecret', label: 'Webhook secret (at least 16 characters)', source: 'credentials', secret: true },
     { key: 'dailyCapPerUser', label: 'Most messages one CRM user may send a day', source: 'config', placeholder: '60' },
     { key: 'dailyCapPerNumber', label: 'Most messages to one customer a day', source: 'config', placeholder: '15' },

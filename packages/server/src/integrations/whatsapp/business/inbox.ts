@@ -149,6 +149,8 @@ export async function listConversations(input: {
   limit?: number;
   /** An admin's WhatsApp screen: only conversations that went through this route. */
   route?: RouteView;
+  /** Only conversations with a message that went through this WhatsApp number (admin screens). */
+  numberId?: string;
 }): Promise<InboxConversation[]> {
   const params: unknown[] = [];
   const see = visibility(input.userId, input.isAdmin, params.length + 1);
@@ -174,6 +176,11 @@ export async function listConversations(input: {
   if (input.filter === 'unread') where.push(`c.unread_count > 0`);
   // Numbers the CRM has no contact for: the inbox for deciding what to do with a stranger.
   if (input.filter === 'unmatched') where.push(`c.record_id IS NULL`);
+
+  if (input.numberId) {
+    params.push(input.numberId);
+    where.push(`EXISTS (SELECT 1 FROM ipy_message nm WHERE nm.conversation_id = c.id AND nm.number_id = $${params.length}::uuid)`);
+  }
 
   if (input.module?.trim()) {
     params.push(input.module.trim());

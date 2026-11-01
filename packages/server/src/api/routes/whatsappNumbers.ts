@@ -9,7 +9,7 @@ import { blockApiKey, getUser, requireAdmin, requireAuth } from '../../middlewar
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import {
-  assignNumber, controlSession, createNumber, connectWebhook, listNumbers, numberOfUser, qrFor, setDefaultNumber,
+  assignNumber, chooseNumber, controlSession, createNumber, connectWebhook, listNumbers, numberOfUser, qrFor, setDefaultNumber,
   setPaused, syncFromOpenWa, updateLabel,
 } from '../../integrations/whatsapp/business/waNumbers.js';
 
@@ -21,6 +21,21 @@ whatsappNumbersRouter.get('/mine', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const [mine, all] = await Promise.all([numberOfUser(user.id), user.isAdmin ? listNumbers() : Promise.resolve([])]);
   res.json({ mine, numbers: all });
+}));
+
+/** Who will a send from this record go out as, for the signed-in user? The composer shows it before anything is sent. */
+whatsappNumbersRouter.get('/choose', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const recordId = typeof req.query.recordId === 'string' ? req.query.recordId : null;
+  const owner = recordId && /^[0-9a-f-]{36}$/i.test(recordId)
+    ? (await db.queryOne<{ owner_id: string | null }>(`SELECT owner_id FROM ipy_record WHERE id = $1`, [recordId]))?.owner_id ?? null
+    : null;
+  try {
+    const pick = await chooseNumber({ userId: user.id, isAdmin: user.isAdmin, recordOwnerId: owner });
+    res.json({ number: pick.number, fallbackNote: pick.fallbackNote, error: null });
+  } catch (err) {
+    res.json({ number: null, fallbackNote: null, error: (err as Error).message });
+  }
 }));
 
 const admin = Router();

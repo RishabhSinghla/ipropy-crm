@@ -53,11 +53,21 @@ export function guardLimits(): GuardLimits {
   };
 }
 
+/**
+ * A person does not send on a metronome. When the minimum gap is 10 seconds or more, each check asks for up to half
+ * as much again (random), so sends from one number never land at an exact rhythm. Short gaps (used in tests) get none.
+ */
+export function jitterSeconds(minSpacingSeconds: number, random: () => number = Math.random): number {
+  return minSpacingSeconds >= 10 ? Math.round(random() * minSpacingSeconds * 0.5) : 0;
+}
+
 export interface SendCounts {
   userToday: number;
   numberToday: number;
   /** Seconds since the company number last sent anything from the CRM; null when never today. */
   secondsSinceLast: number | null;
+  /** Extra random seconds on top of the minimum gap, decided by the caller. */
+  jitter?: number;
 }
 
 export type GuardVerdict =
@@ -66,8 +76,9 @@ export type GuardVerdict =
 
 /** Pure: the rules, given the counts. Tested without a database. */
 export function decideSend(limits: GuardLimits, counts: SendCounts): GuardVerdict {
-  if (counts.secondsSinceLast !== null && counts.secondsSinceLast < limits.minSpacingSeconds) {
-    const wait = Math.ceil(limits.minSpacingSeconds - counts.secondsSinceLast);
+  const gap = limits.minSpacingSeconds + (counts.jitter ?? 0);
+  if (counts.secondsSinceLast !== null && counts.secondsSinceLast < gap) {
+    const wait = Math.ceil(gap - counts.secondsSinceLast);
     return {
       ok: false, code: 'TOO_SOON', retryAfterSeconds: wait,
       message: `Messages from the company number are spaced out to keep it safe. Please wait ${wait} more second${wait === 1 ? '' : 's'}.`,
@@ -129,6 +140,7 @@ export function takeSendSlot(): Promise<() => void> {
 /** Refuse, with the reason, if this send would break a limit. */
 export async function assertWithinLimits(userId: string, handle: string, numberId: string | null = null): Promise<void> {
   // The spacing and daily caps are counted per number, so one agent's busy day never slows another's.
-  const verdict = decideSend(guardLimits(), await currentCounts(userId, handle, numberId));
+  const limits = guardLimits();
+  const verdict = decideSend(limits, { ...(await currentCounts(userId, handle, numberId)), jitter: jitterSeconds(limits.minSpacingSeconds) });
   if (!verdict.ok) throw new BadRequestError(verdict.message);
 }

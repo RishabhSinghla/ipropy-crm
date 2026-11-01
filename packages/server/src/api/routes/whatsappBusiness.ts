@@ -317,11 +317,14 @@ whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
     module: z.string().regex(/^[a-z_][a-z0-9_]*$/i).max(64).optional(),
     search: z.string().max(120).optional(),
     route: z.enum(['chat', 'api']).optional(),
+    numberId: z.string().uuid().optional(),
     limit: z.coerce.number().int().min(1).max(1000).optional(),
   }).parse(req.query ?? {});
   res.json(await listConversations({
     limit: query.limit,
     route: query.route,
+    // Only an admin may narrow by number; everybody else already sees just their own chats.
+    numberId: user.isAdmin ? query.numberId : undefined,
     userId: user.id,
     isAdmin: user.isAdmin,
     filter: query.filter,

@@ -52,3 +52,16 @@ describe('the one send slot', () => {
     (second as () => void)();
   });
 });
+
+describe('random spacing', () => {
+  it('adds up to half the gap again for a normal gap, and nothing for a short one', async () => {
+    const { jitterSeconds } = await import('../src/integrations/whatsapp/business/openwaGuards.js');
+    expect(jitterSeconds(10, () => 0)).toBe(0);
+    expect(jitterSeconds(10, () => 0.999)).toBe(5);
+    expect(jitterSeconds(3, () => 0.999)).toBe(0);
+  });
+  it('asks for the longer gap when jitter is given', () => {
+    const verdict = decideSend(DEFAULT_LIMITS, { userToday: 0, numberToday: 0, secondsSinceLast: 12, jitter: 4 });
+    expect(verdict.ok).toBe(false);
+  });
+});
