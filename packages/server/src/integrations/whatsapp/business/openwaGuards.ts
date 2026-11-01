@@ -156,14 +156,20 @@ export async function currentCounts(userId: string, handle: string, numberId: st
 // both see "nothing sent yet". (One server process today; if the CRM is ever
 // scaled out, move this to a Postgres advisory lock.)
 let tail: Promise<void> = Promise.resolve();
+let waiting = 0;
+
+/** Sends decided or waiting right now (a monitoring number: it is normally 0 or 1). */
+export function sendQueueDepth(): number { return waiting; }
 
 /** Take the one slot. Call the returned function once the queued row is written (or the send is abandoned). */
 export function takeSendSlot(): Promise<() => void> {
   let release!: () => void;
   const mine = new Promise<void>((resolve) => { release = resolve; });
+  waiting += 1;
   const turn = tail.then(() => release);
   tail = tail.then(() => mine);
-  return turn;
+  // `release` is what the caller calls when done, so wrap it to keep the count honest.
+  return turn.then((done) => () => { waiting = Math.max(0, waiting - 1); done(); });
 }
 
 /** Refuse, with the reason, if this send would break a limit. */

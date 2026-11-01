@@ -16,6 +16,7 @@ import { getIntegrationConfig } from '../../../core/settings/integrations.js';
 import { OPENWA_PROVIDER, openWaManage, openWaMetricsText } from './openwa.js';
 import { syncFromOpenWa } from './waNumbers.js';
 import { catchUpNumber } from './waCatchUp.js';
+import { sendQueueDepth } from './openwaGuards.js';
 
 /** True once the first minute after this process started has run (then every ready number is caught up once). */
 let bootCatchUpDone = false;
@@ -117,7 +118,11 @@ async function currentRssMb(): Promise<number | null> {
   }
 }
 
-export interface FleetSummary { capacity: Capacity; live: number; rssMb: number | null; room: RoomVerdict }
+export interface FleetSummary {
+  capacity: Capacity; live: number; rssMb: number | null; room: RoomVerdict;
+  /** Monitoring hooks (for alerts): sends waiting in the CRM, and numbers that dropped and are not wanted down. */
+  sendQueueDepth: number; droppedNumbers: number;
+}
 
 export async function fleetSummary(numberId?: string): Promise<FleetSummary> {
   const [capacity, rssMb, counts] = await Promise.all([
@@ -129,7 +134,9 @@ export async function fleetSummary(numberId?: string): Promise<FleetSummary> {
          FROM ipy_wa_number`, [LIVE_STATUSES, numberId ?? null]),
   ]);
   const live = Number(counts?.live ?? 0);
-  return { capacity, live, rssMb, room: roomToStart({ capacity, liveCount: live, alreadyLive: Boolean(counts?.mine), rssMb }) };
+  const dropped = await db.queryOne<{ n: string }>(
+    `SELECT COUNT(*) AS n FROM ipy_wa_number WHERE wanted_running AND phone IS NOT NULL AND status = ANY($1)`, [DROPPED_STATUSES]);
+  return { capacity, live, rssMb, sendQueueDepth: sendQueueDepth(), droppedNumbers: Number(dropped?.n ?? 0), room: roomToStart({ capacity, liveCount: live, alreadyLive: Boolean(counts?.mine), rssMb }) };
 }
 
 /** Called before a number is started. Throws the plain-words reason when there is no room. */

@@ -220,7 +220,7 @@ export interface WaNumber {
 
 export interface WaFleetSummary {
   capacity: { maxLive: number; memoryLimitMb: number }; live: number; rssMb: number | null;
-  room: { ok: boolean; reason: string | null };
+  room: { ok: boolean; reason: string | null }; sendQueueDepth: number; droppedNumbers: number;
 }
 
 const get = <T>(path: string): Promise<T> => request<T>(path);
