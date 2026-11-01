@@ -1193,6 +1193,8 @@ export const api = {
   // --- dashboards --------------------------------------------------------
   dashboards: () => get<(Dashboard & { canEdit: boolean })[]>('/api/dashboards'),
   dashboard: (id: string) => get<Dashboard & { canEdit: boolean }>(`/api/dashboards/${id}`),
+  roiReport: (params: Record<string, string>) =>
+    get<Record<string, unknown>>(`/api/dashboards/roi?${new URLSearchParams(params).toString()}`),
   widgetData: (widgetId: string) => get<Record<string, unknown>>(`/api/dashboards/widgets/${widgetId}/data`),
   previewWidget: (type: string, config: Record<string, unknown>) =>
     post<Record<string, unknown>>('/api/dashboards/preview', { type, config }),
