@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+let testEventCode: string | undefined;
+
 vi.mock('../src/core/settings/integrations.js', () => ({
-  getIntegrationConfig: () => ({ datasetId: '515009942931918' }),
+  getIntegrationConfig: () => ({ datasetId: '515009942931918', testEventCode }),
   getIntegrationCredentials: () => ({ accessToken: 'secret-token' }),
 }));
 
@@ -11,7 +13,10 @@ function metaAnswers(status: number, body: unknown): void {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })));
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  testEventCode = undefined;
+});
 
 describe('the Meta Conversions API Test button', () => {
   it('names the dataset when Meta answers', async () => {
@@ -39,5 +44,43 @@ describe('the Meta Conversions API Test button', () => {
     metaAnswers(400, { error: { message: 'Invalid OAuth access token' } });
     const result = await testMetaConversions();
     expect(result.message).not.toContain('secret-token');
+  });
+
+  describe('with a test code on the card', () => {
+    it('sends one made-up event under that code and says where to look', async () => {
+      testEventCode = 'TEST2029';
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({ events_received: 1, fbtrace_id: 'x' }), { status: 200 }));
+      vi.stubGlobal('fetch', fetchMock);
+      const result = await testMetaConversions();
+      expect(result.ok).toBe(true);
+      expect(result.message).toContain('Test events');
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toContain('/515009942931918/events');
+      expect(init.method).toBe('POST');
+      const sent = JSON.parse(String(init.body));
+      expect(sent.test_event_code).toBe('TEST2029');
+      expect(sent.data).toHaveLength(1);
+    });
+
+    it('returns Meta\'s refusal of the test event', async () => {
+      testEventCode = 'TEST2029';
+      metaAnswers(400, { error: { message: '(#100) Invalid parameter' } });
+      const result = await testMetaConversions();
+      expect(result).toEqual({ ok: false, message: 'Meta refused: (#100) Invalid parameter' });
+    });
+
+    it('says so when Meta takes nothing', async () => {
+      testEventCode = 'TEST2029';
+      metaAnswers(200, { events_received: 0 });
+      expect((await testMetaConversions()).ok).toBe(false);
+    });
+  });
+
+  it('never sends an event when there is no test code, only reads the dataset', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: '1', name: "iPropy's" }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await testMetaConversions();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.method).toBe('GET');
   });
 });

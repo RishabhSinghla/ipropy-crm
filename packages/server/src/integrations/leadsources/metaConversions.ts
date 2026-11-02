@@ -102,15 +102,39 @@ async function callMeta(method: 'GET' | 'POST', path: string, token: string, bod
   return json;
 }
 
-/** The Test button: reads the dataset's name. Sends no lead data at all. */
+/**
+ * The Test button.
+ *
+ * With a test code on the card it sends one made-up event under that code, which
+ * Meta shows only in Events Manager → Test events and never in real reporting —
+ * the same call a real lead makes, so it proves what matters: that Meta accepts
+ * this token for sending. Without a test code it sends nothing and only reads
+ * the dataset's name, because an invented event must never reach live data.
+ * (A sending token is often not allowed to read the dataset, so that read can
+ * refuse while sending works; the test event is the better proof.)
+ */
 export async function testMetaConversions(): Promise<{ ok: boolean; message: string }> {
   const conf = getIntegrationConfig('meta_conversions');
   const token = getIntegrationCredentials('meta_conversions')?.accessToken;
   if (!conf?.datasetId || !token) return { ok: false, message: 'Fill in the Dataset ID and the access token first.' };
+  const datasetId = conf.datasetId.trim();
+  const testCode = conf.testEventCode?.trim();
   // Meta's refusal is the answer this button exists to give. Letting it throw
   // reached the admin as "Something went wrong on our end" and hid the reason.
   try {
-    const dataset = await callMeta('GET', `${conf.datasetId.trim()}?fields=id,name`, token);
+    if (testCode) {
+      const body = buildConversionBody({
+        eventName: 'Test',
+        recordId: 'crm-test',
+        leadId: '000000000000000',
+        nowSeconds: Math.floor(Date.now() / 1000),
+        testEventCode: testCode,
+      });
+      const answer = await callMeta('POST', `${datasetId}/events`, token, body);
+      if (Number(answer.events_received) < 1) return { ok: false, message: 'Meta answered but did not take the test event.' };
+      return { ok: true, message: `Meta took a test event under code ${testCode}. Look in Events Manager → Test events. It does not count in real reporting.` };
+    }
+    const dataset = await callMeta('GET', `${datasetId}?fields=id,name`, token);
     return { ok: true, message: `Connected to the Meta dataset "${String(dataset.name ?? dataset.id)}". Nothing was sent.` };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
