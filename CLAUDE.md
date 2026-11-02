@@ -314,7 +314,7 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   declaration. **Live since 2 November 2026** on the dataset **iPropy's (`515009942931918`)**, the
   Test code box emptied at the owner's yes (*"Option 1, go live now"*). The body shape matches Meta's
   CRM payload specification (`developers.facebook.com/documentation/ads-commerce/conversions-api/conversion-leads-integration/payload-specification`,
-  which Firecrawl can read from this container), and Meta answered that it **took** a test event
+  which a plain `curl` and Firecrawl both read, 2 November 2026), and Meta answered that it **took** a test event
   carrying a real lead's id. **Still unseen:** that event never listed on Events Manager → Test events
   (the Website channel showed only the instructions, even with the page open), and no real stage
   change had been reported when it went live. If nothing shows in Events Manager → iPropy's →
@@ -752,9 +752,11 @@ CRM's own ids, never instead of them.
 * **Meta Cloud API** — `POST /{phone-number-id}/messages`, text, media, templates, status
   webhooks, mark-read. The graph version and base URL are **settings, not constants**:
   Meta retires versions on a schedule, and a hard-coded one is a dead integration on a date
-  nobody has in their calendar. Written from knowledge and **not verified against the live
-  reference from here** — `developers.facebook.com` is blocked by this container's egress
-  proxy — so the Test Connection button is what proves it against the real account.
+  nobody has in their calendar. Written from knowledge and **not yet checked line by line against
+  Meta's live reference**. That page *was* unreachable from the remote container this was written
+  in, but **`developers.facebook.com` is reachable now** (2 November 2026: plain `curl` from the
+  developer's Mac answered 200, and Firecrawl reads it too), so the check can be done rather than
+  assumed; the Test Connection button is still what proves it against the real account.
 * **AiSensy** — `POST https://backend.aisensy.com/campaign/t1/api/v2`, which sends an
   **approved template and nothing else**. So its adapter declares `templates` and *not*
   `text`, and a rep typing a free reply is told before they press send rather than after.
@@ -1451,8 +1453,8 @@ cannot see.
 is called: 5MB an image, 16MB audio or video, 100MB a document. A file over them is
 refused with its real size named — "will not carry a video over 16MB, and this one is
 90MB" — rather than failing two minutes later as a vendor error code. The limits are from
-knowledge, not from Meta's page (blocked by this container's proxy), and being slightly
-low is the cheap direction to be wrong in.
+knowledge, not yet checked against Meta's page (reachable as of 2 November 2026, see the Meta
+Cloud API note above), and being slightly low is the cheap direction to be wrong in.
 
 **One renderer for all three screens** (`components/WhatsAppMedia.tsx`): the Chats inbox,
 the contact's WhatsApp tab and the composer. Three copies drift, and the way they drift is
