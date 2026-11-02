@@ -17,6 +17,8 @@ process.env.JWT_SECRET = 'integration-test-secret-long-enough-to-pass-the-startu
 // The scheduler would otherwise start draining queues underneath the tests and
 // mutate rows they are asserting on.
 process.env.ENABLE_SCHEDULER = 'false';
+// Meaning-search is off by default in production; its own suites need it on.
+process.env.SEMANTIC_INDEX_ENABLED = 'true';
 
 // Several suites assert on how AI features behave with **no** provider — the
 // state this install is actually in, and the one with the traps in it (spending

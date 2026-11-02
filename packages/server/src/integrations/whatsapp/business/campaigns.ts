@@ -43,6 +43,7 @@ import { matchKey } from '../matchContact.js';
 import { organisationName, resolveTemplate } from './templates.js';
 import { sendOnBusinessNumber } from './send.js';
 import { activeBusinessProvider } from './registry.js';
+import { isQuietHours } from '../../../utils/quietHours.js';
 
 /** Above this, approving takes a second, explicit confirmation. */
 export const NEEDS_CONFIRMING = 500;
@@ -651,7 +652,8 @@ let sending = false;
 export function startCampaignSending(): void {
   if (timer) return;
   timer = setInterval(() => {
-    if (sending) return;
+    // Quiet hours: an approved campaign simply waits; nothing is dropped.
+    if (sending || isQuietHours()) return;
     sending = true;
     void sendCampaignBatch()
       .then((result) => {

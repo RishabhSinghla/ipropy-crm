@@ -37,6 +37,7 @@ import { marketRouter } from './api/routes/market.js';
 import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
 import { projectWorkspaceRouter } from './api/routes/projectWorkspace.js';
+import { isQuietHours } from './utils/quietHours.js';
 
 /**
  * The policy on the app's own HTML.
@@ -129,7 +130,7 @@ export function securityPolicy(isProd: boolean): string {
   return directives.join('; ');
 }
 
-const databaseIsReachable = makeDatabaseHealth(checkConnection);
+const databaseIsReachable = makeDatabaseHealth(checkConnection, Date.now, isQuietHours);
 
 export function createApp(): Express {
   const app = express();

@@ -17,6 +17,7 @@ import { OPENWA_PROVIDER, openWaManage, openWaMetricsText } from './openwa.js';
 import { syncFromOpenWa } from './waNumbers.js';
 import { catchUpNumber } from './waCatchUp.js';
 import { sendQueueDepth } from './openwaGuards.js';
+import { isQuietHours } from '../../../utils/quietHours.js';
 
 /** True once the first minute after this process started has run (then every ready number is caught up once). */
 let bootCatchUpDone = false;
@@ -213,7 +214,7 @@ let running = false;
 export function startFleetWatch(): void {
   if (timer) return;
   timer = setInterval(() => {
-    if (running || !getIntegrationConfig(OPENWA_PROVIDER)) return;
+    if (running || isQuietHours() || !getIntegrationConfig(OPENWA_PROVIDER)) return;
     running = true;
     void fleetTick()
       .catch((err) => logger.warn({ err }, 'whatsapp fleet check failed'))

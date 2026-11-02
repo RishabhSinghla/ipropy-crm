@@ -23,6 +23,7 @@ import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 import { featureOn } from '../core/settings/aiFeatures.js';
 import { modelFor, jobModel } from '../core/settings/aiModels.js';
+import { config } from '../config.js';
 
 /** What a model is asked to look for, and what nobody ever searches by. */
 const READABLE = /\.(pdf|png|jpe?g|webp|heic|heif)$/i;
@@ -150,6 +151,7 @@ async function indexReading(
   file: Attachment,
   reading: DocumentReading,
 ): Promise<void> {
+  if (!config.semanticIndex.enabled) return;
   const { embed } = await import('./media.js');
   const text = [
     `${reading.kind}. ${file.file_name}.`,
