@@ -107,8 +107,15 @@ export async function testMetaConversions(): Promise<{ ok: boolean; message: str
   const conf = getIntegrationConfig('meta_conversions');
   const token = getIntegrationCredentials('meta_conversions')?.accessToken;
   if (!conf?.datasetId || !token) return { ok: false, message: 'Fill in the Dataset ID and the access token first.' };
-  const dataset = await callMeta('GET', `${conf.datasetId.trim()}?fields=id,name`, token);
-  return { ok: true, message: `Connected to the Meta dataset "${String(dataset.name ?? dataset.id)}". Nothing was sent.` };
+  // Meta's refusal is the answer this button exists to give. Letting it throw
+  // reached the admin as "Something went wrong on our end" and hid the reason.
+  try {
+    const dataset = await callMeta('GET', `${conf.datasetId.trim()}?fields=id,name`, token);
+    return { ok: true, message: `Connected to the Meta dataset "${String(dataset.name ?? dataset.id)}". Nothing was sent.` };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `Meta refused: ${reason}` };
+  }
 }
 
 /** One send, claimed first so two saves racing cannot both tell Meta. */
