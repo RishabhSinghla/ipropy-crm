@@ -105,7 +105,8 @@ async function callMeta(method: 'GET' | 'POST', path: string, token: string, bod
 /**
  * The Test button.
  *
- * With a test code on the card it sends one made-up event under that code, which
+ * With a test code on the card it sends one test event (a real lead's id, since Meta
+ * refuses a made-up one) under that code, which
  * Meta shows only in Events Manager → Test events and never in real reporting —
  * the same call a real lead makes, so it proves what matters: that Meta accepts
  * this token for sending. Without a test code it sends nothing and only reads
@@ -123,10 +124,19 @@ export async function testMetaConversions(): Promise<{ ok: boolean; message: str
   // reached the admin as "Something went wrong on our end" and hid the reason.
   try {
     if (testCode) {
+      // Meta rejects an event whose lead id is not a real lead's ("Invalid parameter"),
+      // so the test borrows the newest real Facebook lead's id. It travels under the
+      // test code only, so it never reaches real reporting.
+      const lead = await db.queryOne<{ external_id: string }>(
+        `SELECT external_id FROM ipy_lead_inbox
+          WHERE source = 'facebook' AND external_id IS NOT NULL
+          ORDER BY received_at DESC LIMIT 1`,
+      );
+      if (!lead) return { ok: false, message: 'No Facebook lead has arrived yet, so there is no real lead id to test with.' };
       const body = buildConversionBody({
         eventName: 'Test',
         recordId: 'crm-test',
-        leadId: '000000000000000',
+        leadId: lead.external_id,
         nowSeconds: Math.floor(Date.now() / 1000),
         testEventCode: testCode,
       });
