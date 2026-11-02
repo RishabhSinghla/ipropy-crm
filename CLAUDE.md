@@ -3585,6 +3585,23 @@ it bites. A silent cap is how all four of these hid.
 
 ---
 
+## Quiet hours and the meaning-search switch (2 November 2026)
+
+Neon suspends the database after five idle minutes, and the CRM's own timers kept it awake
+24 hours a day (about $42 a month). Two switches, both env flags, nothing deleted:
+
+* **`SEMANTIC_INDEX_ENABLED`** (default **off**). Off means no embedding calls: the scheduler's
+  indexer, the document reader's `indexReading` and `search()` in `core/search/semantic.ts` all
+  return empty, and every caller already reads "no hits" as "nothing found". Stored embeddings are
+  kept. Set it to `true` to bring meaning-search back (it also needs a media-AI provider with credit).
+* **Quiet hours** (`utils/quietHours.ts`; `QUIET_HOURS_ENABLED`, `QUIET_HOURS_START` 00:30,
+  `QUIET_HOURS_END` 06:30, `QUIET_HOURS_TZ` Asia/Kolkata). Inside the window the *timers* skip their
+  turn: scheduler tick, WhatsApp poll, campaign sender, OpenWA health and fleet watch,
+  waiting-for-reply watch, Sarvam queue, and `/api/health` reuses its last good answer. **Webhooks and
+  anything a person does are never gated.** A new timer that touches the database must call
+  `isQuietHours()` first. Everything the timers do asks "what is due now", so the first turn after
+  06:30 catches up (the tick is every 15 minutes, so up to 06:45 for scheduled workflows and email).
+
 ## Notifications
 
 **Never `INSERT INTO ipy_notification` directly.** Everything goes through `notify()` /

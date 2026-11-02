@@ -290,6 +290,29 @@ export const config = {
     tickSeconds: num('SCHEDULER_TICK_SECONDS', 900),
   },
 
+  /*
+    Quiet hours: background timers skip their visit to the database inside this
+    window so Neon can power down overnight (it suspends after five idle
+    minutes). Incoming webhooks and anything a person does are never affected.
+    See utils/quietHours.ts. QUIET_HOURS_ENABLED=false turns the whole thing off.
+  */
+  quietHours: {
+    enabled: bool('QUIET_HOURS_ENABLED', true),
+    start: str('QUIET_HOURS_START', '00:30'),
+    end: str('QUIET_HOURS_END', '06:30'),
+    timeZone: str('QUIET_HOURS_TZ', 'Asia/Kolkata'),
+  },
+
+  /*
+    Meaning-search index (embeddings). Off by default since 2 November 2026: the
+    media-AI credits ran out, every run failed, and the retries kept the database
+    awake. Set SEMANTIC_INDEX_ENABLED=true to bring it back; nothing stored is
+    deleted either way.
+  */
+  semanticIndex: {
+    enabled: bool('SEMANTIC_INDEX_ENABLED', false),
+  },
+
   defaults: {
     timezone: str('DEFAULT_TIMEZONE', 'Asia/Kolkata'),
     currency: str('DEFAULT_CURRENCY', 'INR'),

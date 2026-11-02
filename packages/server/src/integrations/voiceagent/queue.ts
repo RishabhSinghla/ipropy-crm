@@ -9,6 +9,7 @@ import { recordService } from '../../core/entity/recordService.js';
 import { logger } from '../../utils/logger.js';
 import { placeAgentCall } from './sarvam.js';
 import { reconcileAndRemember } from './reconcile.js';
+import { isQuietHours } from '../../utils/quietHours.js';
 
 /** Claim and dispatch under a cross-process advisory lock. Never redial a lost response. */
 export async function tickSarvamQueue(): Promise<void> {
@@ -86,6 +87,7 @@ const RECONCILE_EVERY_MS = 10 * 60_000;
 export function startSarvamQueue(): void {
   if (timer) return;
   timer = setInterval(() => {
+    if (isQuietHours()) return; // callbacks still arrive by webhook; reconcile catches up after the window
     if (!inboundBusy && Date.now() - lastInboundCheck >= 60_000) {
       inboundBusy = true; lastInboundCheck = Date.now();
       void syncSarvamInbound().catch((err) => logger.error({ err }, 'Sarvam inbound version sync failed')).finally(() => { inboundBusy = false; });

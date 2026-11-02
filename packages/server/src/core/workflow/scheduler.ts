@@ -24,6 +24,7 @@ import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import {
   buildWhere, quoteIdent, ENTITY_ALIAS, RECORD_ALIAS, SqlParams, type BuildContext,
 } from '../query/builder.js';
+import { isQuietHours } from '../../utils/quietHours.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -82,6 +83,9 @@ export function stopScheduler(): void {
 
 async function tick(): Promise<void> {
   if (running) return; // never overlap ticks
+  // Quiet hours: let the database sleep. Everything on the tick asks "what is
+  // due now", so the first tick after the window catches up on its own.
+  if (isQuietHours()) return;
   running = true;
   try {
     await Promise.allSettled([
@@ -582,6 +586,7 @@ async function morningBriefs(): Promise<void> {
 const INDEX_BUDGET_MS = 60_000;
 
 async function refreshSemanticIndex(): Promise<void> {
+  if (!config.semanticIndex.enabled) return;
   if (Date.now() - lastIndexAt < 5 * 60_000) return;
   lastIndexAt = Date.now();
   const { indexPending } = await import('../search/semantic.js');
