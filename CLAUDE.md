@@ -345,6 +345,29 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   * **"iPROPY CRM Lead Sync" (`2418676505630839`) is not a dataset.** Events Manager lists it beside
     the dataset, but it is the Facebook **app** (its page has an App ID and a Facebook SDK tab, no
     token button). The Conversions API sends to a dataset id, so the card keeps `515009942931918`.
+  * **The stage names must be this CRM's own** (2 November 2026). The card's default list is
+    *Qualified, Site Visit Done, Converted*, and this CRM's statuses are **Qualified, Visit Done and
+    Won** (stored values `Contacted`, `Visit Done`, `Deal Won`), so two of the three defaults matched
+    nothing and a Visit Done or Won lead would never have been reported. The *Lead stages to tell Meta
+    about* box now reads `Qualified, Visit Done, Won`. A stage is matched by stored value or by label;
+    rename a status and this box needs telling.
+  * **Leads already on a stage are sent by `send-existing`.** The live listener only hears changes made
+    after it was switched on. `POST /api/admin/integrations/meta_conversions/send-existing`
+    (`admin.integrations`) takes the Facebook lead-ad leads whose **latest status change** (from
+    `ipy_audit`) left them on a wanted stage and tells Meta once each, skipping what `ipy_meta_conversion`
+    already marks sent. With no body it only counts; it sends only when `confirm` equals that count, so
+    a list that moved between looking and approving stops rather than surprises. It refuses while a Test
+    code is on, because a test event would be recorded as sent and the real one would then never go.
+    Pinned by `tests/metaConversionsWaiting.test.ts`.
+  * **Its window is 6 days, because Meta's is 7.** Meta rejects an event older than 7 days and one old
+    event fails the whole request, so only status changes inside `WAITING_WINDOW_DAYS` (6) are sent, at
+    the time the status changed (never before the lead existed, never in the future). A lead that has
+    sat on a stage longer cannot be reported. The CRM stores no stage-change time apart from the audit
+    row, so a lead's *last edit* is not that time: 39 Facebook leads were on Qualified or Visit Done,
+    and only 2 had moved there inside the window.
+  * **Sent on 2 November 2026: 2 leads, both Qualified, 0 failed.** Meta's reply took both, and a second
+    preview showed 0 waiting. They could not be seen in Events Manager afterwards (Overview empty, no
+    errors in Diagnostics) — possibly only timing, since Meta says up to 30 minutes. Not confirmed.
 * **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
   published); the property somebody wants to send is usually this morning's draft. Every share-link
   failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come
