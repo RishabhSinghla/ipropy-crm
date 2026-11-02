@@ -309,11 +309,29 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   record: one row per (lead, stage), so a lead bouncing between stages is not counted twice, and a
   failed or stuck send is retried the next time that stage is reached. The token goes in an
   `Authorization` header, never the URL. It is a card in Admin → Integrations → Lead capture and
-  **off until somebody fills it in**; the Test button reads the dataset's name and sends nothing.
-  The owner alone creates the Meta dataset and does the India "securities and investments"
+  **off until somebody fills it in** (saving a filled card switches it on by itself); see *Testing it*
+  below for what the Test does. The owner alone creates the Meta dataset and does the India "securities and investments"
   declaration. **Unverified from here:** Meta's reference is blocked by this container, so the
   exact body shape (above all `lead_id` sent as a string) is from knowledge — the card's *Test
   code* box and Events Manager → Test events are how it is proved against the real account.
+  **Testing it (2 November 2026, found while connecting the owner's dataset):**
+  * **A sending token cannot read the dataset.** Reading `GET /{dataset}?fields=id,name` with the
+    token generated for Conversions API answered *"(#100) Missing Permission"*. That refusal says
+    nothing about whether sending works, so a read-only Test is a false alarm for a token that is
+    perfectly good for `POST /{dataset}/events`.
+  * **The Test now sends one test event.** With a *Test code* on the card, `testMetaConversions`
+    posts one made-up event (name `Test`, a fake lead id) under that code; Meta shows it only in
+    Events Manager → Test events, never in real reporting. With no test code it only reads the
+    dataset and **never sends an event to live data**. A Meta refusal comes back as `ok:false`
+    carrying Meta's own words — it used to throw and reach the admin as a 500, *"Something went
+    wrong on our end"*. `tests/metaConversionsTest.test.ts` pins all of it.
+  * **The card has no Test button on the live site.** The route exists
+    (`POST /api/admin/integrations/meta_conversions/test`) and the card has only *Save*, so the
+    Test has been run by calling that route. Do not tell the owner to press a Test button there.
+  * **Going live is emptying the Test code box and saving.** Until then every event is a test
+    event, so nothing is reported to Meta for optimisation. Do that only once a test event has
+    actually appeared in Test events; before that, whether Meta accepts the token for sending is
+    **not proved** (the Test-events page was empty after the first stage change).
 * **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
   published); the property somebody wants to send is usually this morning's draft. Every share-link
   failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come
