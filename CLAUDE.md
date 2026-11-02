@@ -311,17 +311,25 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   `Authorization` header, never the URL. It is a card in Admin → Integrations → Lead capture and
   **off until somebody fills it in** (saving a filled card switches it on by itself); see *Testing it*
   below for what the Test does. The owner alone creates the Meta dataset and does the India "securities and investments"
-  declaration. **Unverified from here:** Meta's reference is blocked by this container, so the
-  exact body shape (above all `lead_id` sent as a string) is from knowledge — the card's *Test
-  code* box and Events Manager → Test events are how it is proved against the real account.
+  declaration. **Live since 2 November 2026** on the dataset **iPropy's (`515009942931918`)**, the
+  Test code box emptied at the owner's yes (*"Option 1, go live now"*). The body shape matches Meta's
+  CRM payload specification (`developers.facebook.com/documentation/ads-commerce/conversions-api/conversion-leads-integration/payload-specification`,
+  which Firecrawl can read from this container), and Meta answered that it **took** a test event
+  carrying a real lead's id. **Still unseen:** that event never listed on Events Manager → Test events
+  (the Website channel showed only the instructions, even with the page open), and no real stage
+  change had been reported when it went live. If nothing shows in Events Manager → iPropy's →
+  Overview after a few leads reach Qualified, look first for the warning *"Meta conversion not
+  delivered"* in the server log and for `failed` rows in `ipy_meta_conversion`.
   **Testing it (2 November 2026, found while connecting the owner's dataset):**
   * **A sending token cannot read the dataset.** Reading `GET /{dataset}?fields=id,name` with the
     token generated for Conversions API answered *"(#100) Missing Permission"*. That refusal says
     nothing about whether sending works, so a read-only Test is a false alarm for a token that is
     perfectly good for `POST /{dataset}/events`.
   * **The Test now sends one test event.** With a *Test code* on the card, `testMetaConversions`
-    posts one made-up event (name `Test`, a fake lead id) under that code; Meta shows it only in
-    Events Manager → Test events, never in real reporting. With no test code it only reads the
+    posts one test event (name `Test`) under that code, using **the newest real Facebook lead's id**
+    from `ipy_lead_inbox`; Meta shows it only under Test events, never in real reporting. **A made-up
+    lead id is refused**: the first version sent `000000000000000` and Meta answered *"Invalid
+    parameter"*, because its spec says an invalid `lead_id` rejects the event. A real id was accepted. With no test code it only reads the
     dataset and **never sends an event to live data**. A Meta refusal comes back as `ok:false`
     carrying Meta's own words — it used to throw and reach the admin as a 500, *"Something went
     wrong on our end"*. `tests/metaConversionsTest.test.ts` pins all of it.
@@ -329,9 +337,14 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
     (`POST /api/admin/integrations/meta_conversions/test`) and the card has only *Save*, so the
     Test has been run by calling that route. Do not tell the owner to press a Test button there.
   * **Going live is emptying the Test code box and saving.** Until then every event is a test
-    event, so nothing is reported to Meta for optimisation. Do that only once a test event has
-    actually appeared in Test events; before that, whether Meta accepts the token for sending is
-    **not proved** (the Test-events page was empty after the first stage change).
+    event, so nothing is reported to Meta for optimisation. It is done; to go back to test-only,
+    refill the box (the owner's test code was `TEST2029`) and save.
+  * **The first stage change was a test event.** The lead moved to Qualified before going live was
+    sent under the test code, and `ipy_meta_conversion` keeps one row per (lead, stage), so that one
+    lead will not be reported again for Qualified. Not checked against the table.
+  * **"iPROPY CRM Lead Sync" (`2418676505630839`) is not a dataset.** Events Manager lists it beside
+    the dataset, but it is the Facebook **app** (its page has an App ID and a Facebook SDK tab, no
+    token button). The Conversions API sends to a dataset id, so the card keeps `515009942931918`.
 * **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
   published); the property somebody wants to send is usually this morning's draft. Every share-link
   failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come
