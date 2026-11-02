@@ -5,7 +5,7 @@ import { CAPABILITIES, toE164 } from '@ipropy/shared';
 import { config } from '../../config.js';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { blockApiKey, getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
+import { blockApiKey, getScope, getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, invalidatePermissions, buildScopeContext, hierarchyVisibleOwnerIds } from '../../core/permissions/index.js';
 import { registry } from '../../core/metadata/registry.js';
@@ -1306,6 +1306,17 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
     return { ok: false, message: err instanceof Error ? err.message : 'Connection failed.' };
   }
 }
+
+/**
+ * Tell Meta about Facebook leads already on a reported stage. With no `confirm` it only
+ * counts; sending needs `confirm` to equal that count (see sendWaitingStages).
+ */
+adminRouter.post('/integrations/meta_conversions/send-existing', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const confirm = typeof req.body?.confirm === 'number' ? req.body.confirm : undefined;
+  const { sendWaitingStages } = await import('../../integrations/leadsources/metaConversions.js');
+  res.json(await sendWaitingStages(getScope(req), confirm));
+}));
 
 adminRouter.post('/integrations/:provider/test', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
