@@ -385,6 +385,7 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
   const integrations = [
     { provider: 'knowlarity', kind: 'telephony', label: 'Knowlarity' },
     { provider: 'facebook_leads', kind: 'lead_source', label: 'Facebook Lead Ads' },
+    { provider: 'meta_conversions', kind: 'lead_source', label: 'Meta Conversions API (tell Meta which leads were good)' },
     { provider: 'google_ads', kind: 'lead_source', label: 'Google Ads Lead Form' },
     { provider: 'zapier', kind: 'lead_source', label: 'Zapier Lead Capture' },
     { provider: 'sarvam_voice', kind: 'telephony', label: 'AI Voice Agent — Sarvam' },

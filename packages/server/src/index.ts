@@ -11,6 +11,7 @@ import { configureSentry } from './core/observability/sentry.js';
 import { recoverInterruptedImports } from './core/market/imports.js';
 import { registerMarketListeners } from './core/market/newBuyerAlert.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
+import { registerMetaConversions } from './integrations/leadsources/metaConversions.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { startWhatsAppPolling, stopWhatsAppPolling } from './integrations/whatsapp/business/pollInbound.js';
 import { startOpenWaHealth, stopOpenWaHealth } from './integrations/whatsapp/business/openwaHealth.js';
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
   }
 
   registerWorkflowHandlers();
+  registerMetaConversions();
   registerMarketListeners();
 
   // Imports live in this process. Anything still marked running at boot died

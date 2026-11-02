@@ -1264,6 +1264,10 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
       }
       case 'facebook_leads':
         return await testFacebookConnection();
+      case 'meta_conversions': {
+        const { testMetaConversions } = await import('../../integrations/leadsources/metaConversions.js');
+        return testMetaConversions();
+      }
       case 'zapier':
         return s.leadSources.zapierWebhookKey
           ? { ok: true, message: 'Zapier webhook secret is set. Send a test lead from Zapier to verify capture.' }

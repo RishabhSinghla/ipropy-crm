@@ -222,6 +222,12 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'pageAccessToken', label: 'Page Access Token', source: 'credentials', secret: true },
     { key: 'verifyToken', label: 'Webhook Verify Token', source: 'config', placeholder: 'ipropy-fb-verify' },
   ],
+  meta_conversions: [
+    { key: 'datasetId', label: 'Dataset ID', source: 'config', placeholder: 'From Meta Events Manager → Data sources → your dataset' },
+    { key: 'accessToken', label: 'Access token', source: 'credentials', secret: true, placeholder: 'Generated on the dataset\u2019s Settings → Conversions API tab' },
+    { key: 'stages', label: 'Lead stages to tell Meta about', source: 'config', placeholder: 'Qualified, Site Visit Done, Converted' },
+    { key: 'testEventCode', label: 'Test code (leave empty when live)', source: 'config', placeholder: 'TEST12345 — events then show only in Events Manager → Test events' },
+  ],
   google_ads: [
     { key: 'webhookKey', label: 'Webhook Key', source: 'credentials', secret: true },
   ],
@@ -502,6 +508,17 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Point Meta at us', help: 'Webhooks → Page → Subscribe to the "leadgen" field, using this callback URL and the verify token above.', copyPath: '/api/webhooks/leads/facebook' },
     ],
   },
+  meta_conversions: {
+    outcome: 'Meta is told which of its Facebook leads became good ones, so its ads find more people like them.',
+    minutes: 10,
+    steps: [
+      { title: 'Meta asks you for two things first', help: 'The India "securities and investments" declaration, and creating a dataset. Both are yours to do in Meta — we cannot do them for you.', href: 'https://business.facebook.com/events_manager2', linkLabel: 'Open Events Manager' },
+      { title: 'Copy the Dataset ID', help: 'Events Manager → Data sources → your dataset → Settings. It is the long number at the top.', field: 'datasetId' },
+      { title: 'Generate an access token', help: 'Same page → Conversions API → Generate access token. Copy it straight into the box — it is shown once.', field: 'accessToken' },
+      { title: 'Choose which stages count', help: 'Only leads that came from a Facebook form are ever reported, each stage once. Leave it as it is to report Qualified, Site Visit Done and Converted.', field: 'stages' },
+      { title: 'Try it with a test code first', help: 'Events Manager → Test events shows a code. Paste it here, move one Facebook lead to Qualified, and check it appears there. Then empty this box to go live.', field: 'testEventCode' },
+    ],
+  },
   google_ads: {
     outcome: 'Leads from Google lead-form extensions arrive in the CRM automatically.',
     minutes: 4,
@@ -617,6 +634,7 @@ const PLAIN_NAMES: Record<string, string> = {
   smtp: 'your own email address',
   imap: 'reading replies',
   facebook_leads: 'Facebook Lead Ads',
+  meta_conversions: 'telling Meta which leads were good',
   google_ads: 'Google Ads lead forms',
   webform: 'your website form',
   ai_gemini: 'Google Gemini',
@@ -683,7 +701,7 @@ const JOBS: JobDef[] = [
     title: 'Lead capture',
     blurb: 'Leads from Facebook, Google and your own website arrive by themselves.',
     icon: Globe,
-    providers: ['facebook_leads', 'google_ads', 'webform'],
+    providers: ['facebook_leads', 'meta_conversions', 'google_ads', 'webform'],
     recommended: 'webform',
     wanted: true,
     short: 'lead capture',

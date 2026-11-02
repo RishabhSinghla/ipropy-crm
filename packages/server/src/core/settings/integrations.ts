@@ -636,6 +636,7 @@ const SECRET_FIELDS: Record<string, string[]> = {
   ai_openai: ['apiKey'],
   stt: ['apiKey'],
   facebook_leads: ['appSecret', 'pageAccessToken'],
+  meta_conversions: ['accessToken'],
   google_ads: ['webhookKey'],
   s3: ['accessKeyId', 'secretAccessKey'],
   onedrive: ['clientSecret'],

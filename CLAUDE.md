@@ -298,6 +298,22 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   leads that arrived before it: it files a form's answers into **empty** fields only and
   clears a "Disqualified" reason from Facebook contacts that are not Lost — through the
   CRM's own save code, so each change is audited.
+* **Good Facebook leads are reported back to Meta** (2 November 2026, owner: Meta offered *"24%
+  lower cost per quality lead if you connect your CRM with Meta's Conversions API"* and he said
+  *"yes build it"*). `integrations/leadsources/metaConversions.ts` listens for `record.updated`;
+  when a lead's status becomes one of the card's stages (default Qualified, Site Visit Done,
+  Converted) it POSTs one event to Meta's `/{dataset}/events`. **Only leads that came from a
+  Facebook lead ad are ever sent** — the ad's own lead id (`ipy_lead_inbox.external_id`) is how
+  Meta matches the result — and the body holds that id, the stage, the time and a SHA-256 hash of
+  the phone and email, nothing else. `ipy_meta_conversion` (migration `234`) is the guard and the
+  record: one row per (lead, stage), so a lead bouncing between stages is not counted twice, and a
+  failed or stuck send is retried the next time that stage is reached. The token goes in an
+  `Authorization` header, never the URL. It is a card in Admin → Integrations → Lead capture and
+  **off until somebody fills it in**; the Test button reads the dataset's name and sends nothing.
+  The owner alone creates the Meta dataset and does the India "securities and investments"
+  declaration. **Unverified from here:** Meta's reference is blocked by this container, so the
+  exact body shape (above all `lead_id` sent as a string) is from knowledge — the card's *Test
+  code* box and Events Manager → Test events are how it is proved against the real account.
 * **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
   published); the property somebody wants to send is usually this morning's draft. Every share-link
   failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come
