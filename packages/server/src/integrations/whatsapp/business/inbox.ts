@@ -342,7 +342,7 @@ export async function conversationMessages(
         ORDER BY created_at ASC`,
       [convo.handle, ...see.params],
     );
-    return redactAutomated(await withSenderLabels(rows), isAdmin);
+    return redactAutomated(await withSenderLabels(rows, isAdmin), isAdmin);
   }
   if (route) {
     const inLane = await db.queryOne(
@@ -361,7 +361,7 @@ export async function conversationMessages(
       LIMIT 500`,
     [conversationId],
   );
-  return redactAutomated(await withSenderLabels(rows), isAdmin);
+  return redactAutomated(await withSenderLabels(rows, isAdmin), isAdmin);
 }
 
 /** Opening a thread is what marks it read — receiving it is not. */

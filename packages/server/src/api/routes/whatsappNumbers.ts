@@ -12,7 +12,7 @@ import { BadRequestError } from '../../utils/errors.js';
 import { catchUpNumber } from '../../integrations/whatsapp/business/waCatchUp.js';
 import { fleetSummary, saveCapacity } from '../../integrations/whatsapp/business/waFleet.js';
 import {
-  assignNumber, chooseNumber, controlSession, createNumber, connectWebhook, listNumbers, numberOfUser, qrFor, setDefaultNumber,
+  assignNumber, chooseNumber, controlSession, createNumber, connectWebhook, forViewer, listNumbers, numberOfUser, qrFor, setDefaultNumber,
   setPaused, syncFromOpenWa, updateLabel,
 } from '../../integrations/whatsapp/business/waNumbers.js';
 
@@ -23,7 +23,7 @@ whatsappNumbersRouter.use(requireAuth, blockApiKey);
 whatsappNumbersRouter.get('/mine', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const [mine, all] = await Promise.all([numberOfUser(user.id), user.isAdmin ? listNumbers() : Promise.resolve([])]);
-  res.json({ mine, numbers: all });
+  res.json({ mine: forViewer(mine, user.isAdmin), numbers: all });
 }));
 
 /**
@@ -44,7 +44,7 @@ whatsappNumbersRouter.post('/mine/start', asyncHandler(async (req, res) => {
   const id = await ownNumberId(getUser(req).id);
   const { action } = z.object({ action: z.enum(['start', 'restart']) }).parse(req.body ?? {});
   logger.info({ by: getUser(req).id, number: id, action }, 'whatsapp number control by its own agent');
-  res.json(await controlSession(id, action));
+  res.json(forViewer(await controlSession(id, action), getUser(req).isAdmin));
 }));
 
 /** Who will a send from this record go out as, for the signed-in user? The composer shows it before anything is sent. */
@@ -56,7 +56,7 @@ whatsappNumbersRouter.get('/choose', asyncHandler(async (req, res) => {
     : null;
   try {
     const pick = await chooseNumber({ userId: user.id, isAdmin: user.isAdmin, recordOwnerId: owner });
-    res.json({ number: pick.number, fallbackNote: pick.fallbackNote, error: null });
+    res.json({ number: forViewer(pick.number, user.isAdmin), fallbackNote: pick.fallbackNote, error: null });
   } catch (err) {
     res.json({ number: null, fallbackNote: null, error: (err as Error).message });
   }

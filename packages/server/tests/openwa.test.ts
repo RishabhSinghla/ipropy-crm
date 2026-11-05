@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  chatIdFor, deliveryFreshness, describeSessionStatus, explainOpenWaRefusal, maskPhone,
+  chatIdFor, deliveryFreshness, describeSessionStatus, explainOpenWaRefusal, fullPhone, maskPhone, phoneForViewer,
   normaliseMessageId, parseOpenWaWebhook, phoneFromJid, toE164, toWaDigits, verifyOpenWaSignature,
 } from '../src/integrations/whatsapp/business/openwa.js';
 
@@ -42,6 +42,11 @@ describe('phone numbers', () => {
     expect(maskPhone('12')).toBe('••••');
     expect(maskPhone(null)).toBeNull();
     expect(maskPhone('919891222206')).not.toContain('9891');
+    // Our own company phones: admins see the whole number, everyone else the masked one.
+    expect(fullPhone('919891222206')).toBe('+91 98912 22206');
+    expect(fullPhone(null)).toBeNull();
+    expect(phoneForViewer('919891222206', true)).toBe('+91 98912 22206');
+    expect(phoneForViewer('919891222206', false)).toBe('+91 ••••• •206');
   });
 });
 
