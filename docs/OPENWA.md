@@ -276,3 +276,24 @@ The CRM can read OpenWA's real memory only if `METRICS_TOKEN` is set on the Open
 on the OpenWA card. Both are secret-store writes, so they are done by the owner: Render → ipropy-openwa → Environment → add `METRICS_TOKEN`
 (any long random string; this restarts OpenWA once, quiet moment, numbers reconnect by themselves), then Admin → Integrations → OpenWA → paste the
 same string → Save. Until then the guard only counts connected numbers.
+
+# Five numbers, one checker (added 5 November 2026)
+
+**What was already there (not rebuilt):** one number per agent with the admin assignment screen (Admin → WhatsApp numbers), server-side
+enforcement in `business/send.ts` (an agent can only send from their own number; admin can use any), the minute watchdog, admin alerts
+when a number drops, and the persistent disk. Render facts checked 5 Nov 2026: `ipropy-openwa` is a paid Starter web service (never
+sleeps), one instance, a 1 GB disk at `/app/data` holding every login, health check `/api/health/ready`. So **Render is not the cause of
+drops**. Real causes are WhatsApp itself: the phone unlinked the device, the phone was off/unused for 14 days, or OpenWA restarted and
+was slow to adopt the sessions. WhatsApp can always log a phone out; no setting makes that impossible.
+
+**New:**
+* **The name/photo checker shares its work across every linked number.** Each number runs its own loop (own random 8–20 s pause, own
+  daily cap, default 150, counted from `ipy_wa_lookup.number_id`), so five numbers do ~5× the work per day while no single number goes
+  faster than before. A number that is not `ready`, is paused, or errors is left out; the rest carry on. Contacts are claimed in
+  memory so two numbers never take the same one. Restarting the job resumes where it stopped (a contact with a result is skipped).
+* **Slow retry:** after the five quick restarts fail the watchdog now tries again every 6 hours while the number stays down (a long
+  OpenWA outage heals by itself); the red alert stays up meanwhile. A number that WhatsApp unlinked still needs a QR.
+* **Room default is 5 numbers** (was 3). If the card already saved a different value, change it on Admin → WhatsApp numbers.
+  Memory on the 512 MB plan with 5 numbers is not yet measured (3 numbers ≈ 225 MB; the service sits ~310–350 MB today). Set the
+  metrics token (see above) so the CRM refuses to start a number when memory passes 80%; upgrade to Standard ($25/mo) only if Render's
+  memory graph stays above ~450 MB.

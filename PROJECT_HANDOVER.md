@@ -1457,3 +1457,8 @@ Two traps specific to testing this code:
 * **The vision and voice workers poll a column, not a job table.** There are ten of these a day, not
   ten thousand. If you find yourself adding a queue table, check that the volume actually justifies
   the moving parts.
+
+## 5 Nov 2026 — OpenWA five numbers
+Checker now round-robins over every ready WhatsApp number (migration 235 adds `ipy_wa_lookup.number_id`); watchdog slow-retries every 6 h
+after 5 quick restarts; default room 5. Details and the memory caveat in `docs/OPENWA.md` ("Five numbers, one checker"). There is no
+`LESSONS.md` in this repo; the lessons live in `CLAUDE.md`.
