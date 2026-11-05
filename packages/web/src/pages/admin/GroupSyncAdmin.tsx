@@ -34,18 +34,26 @@ function NumberCheckCard(): JSX.Element | null {
       <h2 className="text-base font-semibold">WhatsApp name and photo</h2>
       <p className="mt-1 text-sm text-muted">
         Checks which contacts are on WhatsApp and fills <strong>Whatsapp Name</strong> and the profile photo — only where the
-        contact has none. It goes slowly on purpose (one number every 8–20 seconds, at most {data.cap} a day) so the
-        number stays safe. It stops by itself when the phone is not linked, and carries on where it stopped.
+        contact has none. It goes slowly on purpose: each linked phone asks about one contact every 8–20 seconds, at most {data.cap} a
+        day <em>per phone</em>, so every phone stays safe. The work is shared between all linked phones ({data.numbersReady} ready now);
+        a phone that is down or paused is left out and the others carry on. It carries on where it stopped.
       </p>
       <p className="mt-2 text-sm">
         {data.found.toLocaleString('en-IN')} found on WhatsApp · {data.notOnWhatsApp.toLocaleString('en-IN')} not on WhatsApp ·{' '}
         {data.remaining.toLocaleString('en-IN')} still to check · {data.checkedToday} checked today
       </p>
       {data.note && <p className="mt-1 text-sm text-muted" role="status">{data.note}</p>}
+      {data.workers.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-sm text-muted">
+          {data.workers.map((w) => (
+            <li key={w.numberId}>{w.label}: {w.checkedThisRun} this run — {w.state === 'working' ? 'working' : w.note ?? w.state}</li>
+          ))}
+        </ul>
+      )}
       <div className="mt-3 flex gap-2">
         {data.running
           ? <button className="btn-secondary btn-sm" onClick={() => stop.mutate()}>Stop</button>
-          : <button className="btn-primary btn-sm" disabled={start.isPending || data.remaining === 0} onClick={() => start.mutate()}>Start checking</button>}
+          : <button className="btn-primary btn-sm" disabled={start.isPending || data.remaining === 0 || data.numbersReady === 0} onClick={() => start.mutate()}>Start checking</button>}
         {data.running && <span className="text-sm text-muted">Running… {data.checkedThisRun} this run</span>}
       </div>
     </div>

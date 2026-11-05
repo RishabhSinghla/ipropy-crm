@@ -21,9 +21,9 @@ describe('capacity', () => {
     expect(roomToStart({ capacity: { maxLive: 10, memoryLimitMb: 512 }, liveCount: 2, alreadyLive: false, rssMb: 300 }).ok).toBe(true);
   });
   it('clamps nonsense settings', () => {
-    expect(readCapacity({ maxLive: 'x' }).maxLive).toBe(3);
+    expect(readCapacity({ maxLive: 'x' }).maxLive).toBe(5);
     expect(readCapacity({ maxLive: 9999, memoryLimitMb: 1 })).toEqual({ maxLive: 40, memoryLimitMb: 256 });
-    expect(readCapacity(null)).toEqual({ maxLive: 3, memoryLimitMb: 512 });
+    expect(readCapacity(null)).toEqual({ maxLive: 5, memoryLimitMb: 512 });
   });
   it('reads memory from the metrics text', () => {
     expect(rssFromMetrics('# TYPE x gauge\nopenwa_process_resident_memory_bytes 234881024\n')).toBe(234881024);
@@ -45,6 +45,11 @@ describe('watchdog', () => {
   it('waits for the backoff', () => {
     expect(watchdogDecision({ ...dropped, nextRestartAt: new Date(now.getTime() + 60_000) })).toBe('none');
     expect(watchdogDecision({ ...dropped, nextRestartAt: new Date(now.getTime() - 1) })).toBe('restart');
+  });
+  it('after the quick restarts, retries slowly instead of giving up for good', () => {
+    const spent = { ...dropped, attempts: MAX_RESTART_ATTEMPTS };
+    expect(watchdogDecision({ ...spent, nextRestartAt: new Date(now.getTime() - 1000) })).toBe('slow_retry');
+    expect(watchdogDecision({ ...spent, nextRestartAt: new Date(now.getTime() + 60_000) })).toBe('give_up');
   });
   it('stops after the maximum attempts and never loops', () => {
     expect(watchdogDecision({ ...dropped, attempts: MAX_RESTART_ATTEMPTS })).toBe('give_up');

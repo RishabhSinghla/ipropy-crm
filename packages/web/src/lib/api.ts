@@ -1942,6 +1942,8 @@ export interface WaGroupsResponse {
 
 export interface WaNumberCheck {
   running: boolean; cap: number; checkedThisRun: number; note: string | null; stopRequested: boolean;
+  numbersReady: number;
+  workers: Array<{ numberId: string; label: string; checkedThisRun: number; state: 'working' | 'done' | 'stopped'; note: string | null }>;
   checkedToday: number; remaining: number; found: number; notOnWhatsApp: number;
 }
 

@@ -500,10 +500,10 @@ export async function openWaMetricsText(): Promise<string | null> {
 }
 
 /** One call to the linked session, with the session's id filled in. Reads only — nothing here sends. */
-async function onSession<T>(path: (sessionId: string) => string, timeoutMs = 20_000): Promise<T> {
+async function onSession<T>(path: (sessionId: string) => string, timeoutMs = 20_000, sessionName?: string): Promise<T> {
   const c = conf();
   if (!c) throw notSet();
-  const session = await openWaSession();
+  const session = await openWaSession({ name: sessionName });
   return api<T>(c, path(session.id), { timeoutMs });
 }
 
@@ -540,9 +540,9 @@ export async function openWaGroupHistory(groupId: string, limit: number, deep = 
 }
 
 /** Is this number on WhatsApp? One outbound query about a third party: call it slowly (see `numberCheck.ts`). */
-export async function openWaCheckNumber(digits: string): Promise<{ exists: boolean; waId: string | null }> {
+export async function openWaCheckNumber(digits: string, sessionName?: string): Promise<{ exists: boolean; waId: string | null }> {
   const row = await onSession<{ exists?: unknown; whatsappId?: unknown }>(
-    (sid) => `/api/sessions/${sid}/contacts/check/${encodeURIComponent(digits)}`,
+    (sid) => `/api/sessions/${sid}/contacts/check/${encodeURIComponent(digits)}`, 20_000, sessionName,
   );
   return { exists: row.exists === true, waId: typeof row.whatsappId === 'string' ? row.whatsappId : null };
 }
@@ -551,9 +551,9 @@ export async function openWaCheckNumber(digits: string): Promise<{ exists: boole
  * The name this person set for themselves on WhatsApp. Deliberately **not** `name`, which is what the company's
  * own address book calls them: that is the CRM's own data coming back, not a fact about the person.
  */
-export async function openWaPushName(waId: string): Promise<string | null> {
+export async function openWaPushName(waId: string, sessionName?: string): Promise<string | null> {
   try {
-    const row = await onSession<{ pushName?: unknown }>((sid) => `/api/sessions/${sid}/contacts/${encodeURIComponent(waId)}`);
+    const row = await onSession<{ pushName?: unknown }>((sid) => `/api/sessions/${sid}/contacts/${encodeURIComponent(waId)}`, 20_000, sessionName);
     return typeof row.pushName === 'string' && row.pushName.trim() ? row.pushName.trim().slice(0, 120) : null;
   } catch (err) {
     if (err instanceof OpenWaError && err.status === 404) return null;
@@ -562,8 +562,8 @@ export async function openWaPushName(waId: string): Promise<string | null> {
 }
 
 /** The address of the person's profile picture, or null when they have none or hide it. */
-export async function openWaProfilePictureUrl(waId: string): Promise<string | null> {
-  const row = await onSession<{ url?: unknown }>((sid) => `/api/sessions/${sid}/contacts/${encodeURIComponent(waId)}/profile-picture`);
+export async function openWaProfilePictureUrl(waId: string, sessionName?: string): Promise<string | null> {
+  const row = await onSession<{ url?: unknown }>((sid) => `/api/sessions/${sid}/contacts/${encodeURIComponent(waId)}/profile-picture`, 20_000, sessionName);
   return typeof row.url === 'string' && row.url ? row.url : null;
 }
 

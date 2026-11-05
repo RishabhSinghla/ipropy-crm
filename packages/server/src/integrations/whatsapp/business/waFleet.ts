@@ -31,7 +31,7 @@ export const RESTART_WAIT_SECONDS = [60, 300, 900, 1800, 3600];
 export const MAX_RESTART_ATTEMPTS = RESTART_WAIT_SECONDS.length;
 
 export interface Capacity { maxLive: number; memoryLimitMb: number }
-export const DEFAULT_CAPACITY: Capacity = { maxLive: 3, memoryLimitMb: 512 };
+export const DEFAULT_CAPACITY: Capacity = { maxLive: 5, memoryLimitMb: 512 };
 
 export function readCapacity(raw: unknown): Capacity {
   const v = (raw ?? {}) as Record<string, unknown>;
@@ -79,14 +79,20 @@ export function roomToStart(input: { capacity: Capacity; liveCount: number; alre
   return { ok: true, reason: null };
 }
 
-export type WatchdogAction = 'none' | 'restart' | 'give_up';
+/** After the five quick restarts fail, try again this often for as long as it stays down (a long outage heals itself). */
+export const SLOW_RETRY_SECONDS = 6 * 3600;
+
+export type WatchdogAction = 'none' | 'restart' | 'slow_retry' | 'give_up';
 
 export function watchdogDecision(n: {
   status: string; wantedRunning: boolean; hasPhone: boolean; attempts: number; nextRestartAt: Date | null; now: Date;
 }): WatchdogAction {
   if (!n.wantedRunning || !n.hasPhone) return 'none';
   if (!DROPPED_STATUSES.includes(n.status)) return 'none';
-  if (n.attempts >= MAX_RESTART_ATTEMPTS) return 'give_up';
+  if (n.attempts >= MAX_RESTART_ATTEMPTS) {
+    // Quick restarts are used up. Keep the alarm up, but still try quietly every few hours.
+    return n.nextRestartAt && n.nextRestartAt.getTime() <= n.now.getTime() ? 'slow_retry' : 'give_up';
+  }
   if (n.nextRestartAt && n.nextRestartAt.getTime() > n.now.getTime()) return 'none';
   return 'restart';
 }
@@ -181,7 +187,18 @@ export async function fleetTick(now: Date = new Date()): Promise<void> {
       status: n.status, wantedRunning: n.wanted_running, hasPhone: Boolean(n.phone),
       attempts: n.restart_attempts, nextRestartAt: n.next_restart_at, now,
     });
-    if (action === 'give_up') {
+    if (action === 'slow_retry' && !restartedThisTick && n.session_id) {
+      restartedThisTick = true;
+      await db.query(`UPDATE ipy_wa_number SET next_restart_at = now() + ($2 || ' seconds')::interval WHERE id = $1`, [n.id, String(SLOW_RETRY_SECONDS)]);
+      try {
+        await openWaManage(`/api/sessions/${n.session_id}/start`, { method: 'POST' });
+        logger.warn({ number: n.session_name }, 'whatsapp watchdog: slow retry of a number that stayed down');
+      } catch (err) {
+        await recordError(n.id, `Automatic restart failed: ${(err as Error).message}`);
+      }
+      continue;
+    }
+    if (action === 'give_up' || action === 'slow_retry') {
       await recordError(n.id, `Dropped and ${MAX_RESTART_ATTEMPTS} automatic restarts did not bring it back. Press Restart, or scan the QR again.`);
       continue;
     }
