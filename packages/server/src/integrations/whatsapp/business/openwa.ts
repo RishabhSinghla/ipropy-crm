@@ -567,6 +567,20 @@ export async function openWaProfilePictureUrl(waId: string, sessionName?: string
   return typeof row.url === 'string' && row.url ? row.url : null;
 }
 
+/** `+91 98912 22206` — the whole number, for admins only (these are the company's own phones, not customers'). */
+export function fullPhone(digits: string | null): string | null {
+  const d = (digits ?? '').replace(/\D/g, '');
+  if (d.length < 7) return null;
+  if (d.length <= 10) return `+${d}`;
+  const national = d.slice(-10);
+  return `+${d.slice(0, d.length - 10)} ${national.slice(0, 5)} ${national.slice(5)}`;
+}
+
+/** What a viewer may see of one of our own numbers: admins the whole number, everyone else the masked form. */
+export function phoneForViewer(digits: string | null, isAdmin: boolean): string | null {
+  return isAdmin ? fullPhone(digits) : maskPhone(digits);
+}
+
 /** `+91 ••••• ••123` — enough to recognise the number, not enough to copy it. */
 export function maskPhone(digits: string | null): string | null {
   if (!digits) return null;
