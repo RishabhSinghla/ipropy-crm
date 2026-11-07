@@ -17,3 +17,21 @@ describe('mobile identity normalisation', () => {
     for (const value of [null, undefined, '', ' ', '—']) expect(mobileIdentity(value)).toBeNull();
   });
 });
+
+import { readFileSync } from 'node:fs';
+import { REAL_ESTATE } from '../src/db/seed/templates/realEstate.js';
+
+describe('one mobile number, one record across Leads, Inventory and Associates', () => {
+  it('puts all three modules in the same shared-number group on a fresh install', () => {
+    const groups = ['leads', 'properties', 'associates'].map(
+      (name) => REAL_ESTATE.modules.find((m) => m.name === name)?.settings?.mobileIdentityGroup,
+    );
+    expect(groups[0]).toBeTruthy();
+    expect(new Set(groups).size).toBe(1);
+  });
+  it('has a migration that brings the deployed Associates module into the same group', () => {
+    const sql = readFileSync(new URL('../src/db/migrations/238_associates_shared_mobile_identity.sql', import.meta.url), 'utf8');
+    expect(sql).toContain("name = 'associates'");
+    expect(sql).toContain('crm-contact-mobile');
+  });
+});
