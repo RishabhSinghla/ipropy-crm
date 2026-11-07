@@ -1,5 +1,6 @@
 import { type JSX, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api, type WaNumber } from '../../lib/api';
 import { Badge, Skeleton } from '../../components/ui';
 import { toast } from '../../lib/store';
@@ -216,8 +217,9 @@ export default function WhatsAppNumbersAdmin(): JSX.Element {
           official API (automatic messages) is separate and unchanged.
         </p>
         <p className="mt-1 text-sm text-muted">
-          Note: WhatsApp does not officially allow robots on personal numbers. The CRM spaces out sends and caps them per number;
-          never use these numbers for bulk messages.
+          Note: WhatsApp does not officially allow robots on personal numbers. The CRM spaces out sends and caps them per number.
+          The only bulk route on these numbers is the slow, owner-controlled <Link className="underline" to="/admin/whatsapp-drip">WhatsApp drip</Link> —
+          read its warning first.
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-2">
@@ -241,6 +243,7 @@ export default function WhatsAppNumbersAdmin(): JSX.Element {
               <span className="text-muted">{new Date(r.created_at).toLocaleString('en-IN')}</span>
               <strong>{r.sent_by_name ?? '—'}</strong>
               <span>from {r.number_label ?? 'unknown number'}</span>
+              {r.queue_name && <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">drip: {r.queue_name}</span>}
               <span>to …{r.handle.slice(-4)}</span>
               <span className="truncate text-muted">{r.body}</span>
             </div>
