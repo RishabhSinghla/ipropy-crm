@@ -27,6 +27,8 @@ const speed = z.object({
   windowFrom: z.number().int().optional(), windowTo: z.number().int().optional(),
 }).partial();
 const variants = z.array(z.string().max(1000)).min(1).max(6);
+/** Which kind of contact a queue is for. The saved list is read from this module; it defaults to Leads, as before. */
+const dripModule = z.enum(['leads', 'properties', 'associates']).default('leads');
 
 /** Everything the screen needs in one read: the queues, the starting wording, and the limits the code enforces. */
 whatsappDripRouter.get('/', asyncHandler(async (_req, res) => {
@@ -42,14 +44,14 @@ whatsappDripRouter.get('/:id', asyncHandler(async (req, res) => {
 
 /** Who would be in it, and what the first few would read. Sends nothing. */
 whatsappDripRouter.post('/preview', asyncHandler(async (req, res) => {
-  const body = z.object({ view: z.string().min(1), variants: z.array(z.string()).max(6) }).parse(req.body ?? {});
-  res.json(await previewDrip({ ctx: getScope(req), moduleName: 'leads', view: body.view, variants: body.variants }));
+  const body = z.object({ view: z.string().min(1), variants: z.array(z.string()).max(6), moduleName: dripModule }).parse(req.body ?? {});
+  res.json(await previewDrip({ ctx: getScope(req), moduleName: body.moduleName, view: body.view, variants: body.variants }));
 }));
 
 whatsappDripRouter.post('/', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const body = z.object({
-    name: z.string().min(1).max(120), view: z.string().min(1), variants, numberIds: z.array(z.string().uuid()).min(1),
+    name: z.string().min(1).max(120), view: z.string().min(1), moduleName: dripModule, variants, numberIds: z.array(z.string().uuid()).min(1),
     maxTotal: z.number().int().positive().max(60000).nullish(), speed: speed.optional(),
   }).parse(req.body ?? {});
   const made = await createDrip({ ...body, userId: user.id });
