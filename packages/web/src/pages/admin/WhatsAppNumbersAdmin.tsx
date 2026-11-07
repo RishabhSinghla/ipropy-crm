@@ -28,7 +28,7 @@ function QrBox({ id }: { id: string }): JSX.Element {
 
 function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: string }[] }): JSX.Element {
   const qc = useQueryClient();
-  const [qr, setQr] = useState(false);
+  const [qr, setQr] = useState(n.status === 'qr_ready' && !n.paused);
   const refresh = () => qc.invalidateQueries({ queryKey: ['wa-numbers'] });
   const fail = (title: string) => (err: unknown) => toast.error(title, err instanceof Error ? err.message : 'Something went wrong');
   const control = useMutation({
@@ -42,6 +42,11 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
   const pause = useMutation({
     mutationFn: (paused: boolean) => api.waNumberPause(n.id, paused),
     onSuccess: () => void refresh(), onError: fail('Pause'),
+  });
+  const remove = useMutation({
+    mutationFn: () => api.waNumberDelete(n.id),
+    onSuccess: () => { toast.success('Removed', `${n.label || n.sessionName} is gone from the list.`); void refresh(); },
+    onError: fail('Remove'),
   });
   const makeDefault = useMutation({ mutationFn: () => api.waNumberDefault(n.id), onSuccess: () => void refresh(), onError: fail('Default') });
   const hook = useMutation({
@@ -104,11 +109,38 @@ function NumberCard({ n, agents }: { n: WaNumber; agents: { id: string; name: st
         <button className="btn-secondary btn-sm" onClick={() => catchUp.mutate(false)} disabled={catchUp.isPending || !ready} title="Fetch customer messages this number received while the CRM was not listening">Catch up messages</button>
         <button className="btn-secondary btn-sm" onClick={() => hook.mutate()} title="Make this number report messages to the CRM">Connect to CRM</button>
         {!n.isDefault && <button className="btn-secondary btn-sm" onClick={() => makeDefault.mutate()}>Make company number</button>}
+        {!n.isDefault && !ready && (
+          <button
+            className="btn-secondary btn-sm"
+            title="Only for leftover or test numbers that never sent a message"
+            disabled={remove.isPending}
+            onClick={() => { if (window.confirm(`Remove ${n.label || n.sessionName} from the CRM and from OpenWA? This cannot be undone.`)) remove.mutate(); }}
+          >Remove number</button>
+        )}
         <button className={n.paused ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => pause.mutate(!n.paused)}>
           {n.paused ? 'Resume sending' : 'Pause this number'}
         </button>
       </div>
       {qr && <div className="mt-3"><QrBox id={n.id} /></div>}
+    </div>
+  );
+}
+
+/** Numbers that only a person with the phone can bring back: a loud, specific list at the top of the screen. */
+function NeedsScanBanner({ numbers }: { numbers: WaNumber[] }): JSX.Element | null {
+  const stuck = numbers.filter((n) => !n.paused && (n.status === 'qr_ready' || n.status === 'disconnected') && (n.isDefault || n.userId || n.lastActiveAt));
+  if (stuck.length === 0) return null;
+  return (
+    <div role="alert" data-testid="wa-needs-scan" className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
+      <p className="font-semibold">{stuck.length === 1 ? '1 WhatsApp number needs a QR scan' : `${stuck.length} WhatsApp numbers need a QR scan`}</p>
+      <ul className="mt-1 list-disc pl-5">
+        {stuck.map((n) => (
+          <li key={n.id}>
+            {n.label || n.sessionName}{n.userName ? ` (${n.userName})` : ''} is logged out. {n.userName ? `Ask ${n.userName} to open Settings → My WhatsApp and scan the code, or press Show QR on its card and scan it from their phone.` : 'Press Show QR on its card and scan it from the phone.'}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-xs">Restarting cannot fix this: WhatsApp logged the phone out, so it must be linked again.</p>
     </div>
   );
 }
@@ -195,6 +227,7 @@ export default function WhatsAppNumbersAdmin(): JSX.Element {
         <button className="btn-primary btn-sm" disabled={name.trim().length < 2 || create.isPending} onClick={() => create.mutate()}>Add number</button>
         <button className="btn-secondary btn-sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>Refresh from OpenWA</button>
       </div>
+      <NeedsScanBanner numbers={numbers.data ?? []} />
       <CapacityBox />
       {numbers.isLoading ? <Skeleton className="h-32 w-full" /> : (numbers.data ?? []).map((n) => (
         <NumberCard key={n.id} n={n} agents={users.data ?? []} />

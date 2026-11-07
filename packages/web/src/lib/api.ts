@@ -1663,6 +1663,7 @@ export const api = {
   waCapacitySave: (maxLive: number, memoryLimitMb: number) => put<WaFleetSummary>('/api/whatsapp-numbers/capacity', { maxLive, memoryLimitMb }),
   waNumberQr: (id: string) => get<{ qrCode: string | null; status: string }>(`/api/whatsapp-numbers/${id}/qr`),
   waNumberAssign: (id: string, userId: string | null) => put<WaNumber>(`/api/whatsapp-numbers/${id}/assign`, { userId }),
+  waNumberDelete: (id: string) => del<{ ok: boolean }>(`/api/whatsapp-numbers/${id}`),
   waNumberDefault: (id: string) => put<WaNumber>(`/api/whatsapp-numbers/${id}/default`, {}),
   waNumberPause: (id: string, paused: boolean) => put<WaNumber>(`/api/whatsapp-numbers/${id}/pause`, { paused }),
   waNumberWebhook: (id: string) => post<{ ok: boolean }>(`/api/whatsapp-numbers/${id}/webhook`, {}),
