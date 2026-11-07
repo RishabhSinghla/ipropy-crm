@@ -350,3 +350,28 @@ async function mustExist(id: string): Promise<void> {
   const row = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_wa_number WHERE id = $1`, [id]);
   if (!row) throw new NotFoundError('That WhatsApp number was not found.');
 }
+
+/**
+ * Remove a number that is dead weight: a leftover test session, or one OpenWA no longer has.
+ * Refused for the company number, for a number that is connected right now, and for one that has carried messages
+ * (those keep their "from which number" history; stop or unassign such a number instead).
+ */
+export async function deleteNumber(id: string): Promise<void> {
+  const n = await numberById(id);
+  if (!n) throw new NotFoundError('That WhatsApp number was not found.');
+  if (n.isDefault) throw new BadRequestError('This is the company number. Make another number the company number first.');
+  if (n.status === 'ready') throw new BadRequestError('This number is connected. Press Stop first if you really want to remove it.');
+  const used = await db.queryOne<{ n: string }>(`SELECT COUNT(*) AS n FROM ipy_message WHERE number_id = $1`, [id]);
+  if (Number(used?.n ?? 0) > 0) {
+    throw new BadRequestError('This number has sent or received messages, so it is kept for the history. Unassign the agent instead.');
+  }
+  // Take the session out of OpenWA too, so it stops using a seat on the small server. A session already gone is fine.
+  if (n.sessionId && n.status !== 'missing') {
+    try {
+      await openWaManage(`/api/sessions/${n.sessionId}`, { method: 'DELETE' });
+    } catch (err) {
+      if (!(err instanceof OpenWaError && err.status === 404)) throw err;
+    }
+  }
+  await db.query(`DELETE FROM ipy_wa_number WHERE id = $1`, [id]);
+}

@@ -297,3 +297,11 @@ was slow to adopt the sessions. WhatsApp can always log a phone out; no setting 
   Memory on the 512 MB plan with 5 numbers is not yet measured (3 numbers ≈ 225 MB; the service sits ~310–350 MB today). Set the
   metrics token (see above) so the CRM refuses to start a number when memory passes 80%; upgrade to Standard ($25/mo) only if Render's
   memory graph stays above ~450 MB.
+
+# Housekeeping on the numbers screen (7 November 2026)
+
+* **Remove number** (Admin → WhatsApp numbers): deletes a leftover or test session from the list and from OpenWA. Refused for the
+  company number, for a connected number, and for any number that ever carried a message (those keep their history; unassign the agent).
+* **Needs-QR banner:** a number whose phone was logged out (`qr_ready` / `disconnected`) is listed in red at the top with the agent's
+  name. Restarting cannot fix it. The down alert now says so, and the agent gets their own bell notice pointing to Settings → My WhatsApp.
+* A card whose status is `qr_ready` opens its QR code by itself.

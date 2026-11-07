@@ -25,11 +25,18 @@ export interface WatchedNumber {
   status: string;
   statusSince: Date | null;
   alertedAt: Date | null;
+  /** The agent who works from this number, when there is one. */
+  userId?: string | null;
 }
 
 /** A number counts as down for any status that is not "ready"; "unknown" means we have not heard yet. */
 export function isDown(status: string): boolean {
   return status !== 'ready' && status !== 'unknown';
+}
+
+/** These statuses cannot heal by themselves: the phone must scan a QR code again. */
+export function needsScan(status: string): boolean {
+  return status === 'qr_ready' || status === 'disconnected' || status === 'action_required';
 }
 
 export interface Decision { alert: WatchedNumber[]; recover: WatchedNumber[] }
@@ -90,13 +97,13 @@ async function tellAdmins(kind: 'down' | 'back', title: string, body: string): P
     .catch((err) => logger.info({ err: String(err) }, 'WhatsApp alert email not sent'));
 }
 
-interface Row { id: string; session_name: string; label: string | null; status: string; status_since: Date | null; alerted_at: Date | null }
+interface Row { id: string; session_name: string; user_id: string | null; label: string | null; status: string; status_since: Date | null; alerted_at: Date | null }
 
 async function checkNumbers(now: Date): Promise<void> {
-  const { rows } = await db.query<Row>(`SELECT id, session_name, label, status, status_since, alerted_at FROM ipy_wa_number
+  const { rows } = await db.query<Row>(`SELECT id, session_name, user_id, label, status, status_since, alerted_at FROM ipy_wa_number
       WHERE is_default OR user_id IS NOT NULL OR last_active_at IS NOT NULL`); // a spare session nobody has ever used is not an outage
   const numbers: WatchedNumber[] = rows.map((r) => ({
-    id: r.id, name: r.label?.trim() || r.session_name, status: r.status, statusSince: r.status_since, alertedAt: r.alerted_at,
+    id: r.id, name: r.label?.trim() || r.session_name, status: r.status, statusSince: r.status_since, alertedAt: r.alerted_at, userId: r.user_id,
   }));
   const { alert, recover } = decideNumberAlerts(numbers, now);
   for (const n of alert) {
@@ -104,7 +111,16 @@ async function checkNumbers(now: Date): Promise<void> {
     const claimed = await db.query(`UPDATE ipy_wa_number SET alerted_at = $2 WHERE id = $1 AND alerted_at IS NOT DISTINCT FROM $3 RETURNING id`, [n.id, now, n.alertedAt]);
     if (claimed.rowCount === 0) continue;
     await tellAdmins('down', `WhatsApp number "${n.name}" is down`,
-      `${n.name} is ${describeSessionStatus(n.status)}. Down since ${n.statusSince?.toISOString() ?? 'a while ago'}. Messages to and from it are not flowing.`);
+      `${n.name} is ${describeSessionStatus(n.status)}. Down since ${n.statusSince?.toISOString() ?? 'a while ago'}. Messages to and from it are not flowing.`
+      + (needsScan(n.status) ? ' The phone has to scan a new QR code: restarting cannot fix this.' : ''));
+    // A logged-out phone can only be fixed by the person holding it, so tell that person directly.
+    if (n.userId && needsScan(n.status)) {
+      await notify({
+        userId: n.userId, kind: 'whatsapp_down', title: 'Your WhatsApp is logged out of the CRM',
+        body: 'Open Settings → My WhatsApp, press Get QR code, and scan it from WhatsApp → Linked devices → Link a device. Until then your chats cannot send or receive in the CRM.',
+        link: '/settings',
+      }).catch((err) => logger.warn({ err }, 'could not tell an agent their WhatsApp is logged out'));
+    }
   }
   for (const n of recover) {
     const claimed = await db.query(`UPDATE ipy_wa_number SET alerted_at = NULL WHERE id = $1 AND alerted_at IS NOT NULL RETURNING id`, [n.id]);

@@ -12,7 +12,7 @@ import { BadRequestError } from '../../utils/errors.js';
 import { catchUpNumber } from '../../integrations/whatsapp/business/waCatchUp.js';
 import { fleetSummary, saveCapacity } from '../../integrations/whatsapp/business/waFleet.js';
 import {
-  assignNumber, chooseNumber, controlSession, createNumber, connectWebhook, forViewer, listNumbers, numberOfUser, qrFor, setDefaultNumber,
+  assignNumber, chooseNumber, controlSession, createNumber, connectWebhook, deleteNumber, forViewer, listNumbers, numberOfUser, qrFor, setDefaultNumber,
   setPaused, syncFromOpenWa, updateLabel,
 } from '../../integrations/whatsapp/business/waNumbers.js';
 
@@ -102,6 +102,12 @@ admin.post('/:id/control', asyncHandler(async (req, res) => {
   const { action } = z.object({ action: z.enum(['start', 'stop', 'restart', 'unlink']) }).parse(req.body ?? {});
   logger.info({ by: getUser(req).id, number: req.params.id, action }, 'whatsapp number control');
   res.json(await controlSession(req.params.id, action));
+}));
+
+admin.delete('/:id', asyncHandler(async (req, res) => {
+  logger.info({ by: getUser(req).id, number: req.params.id }, 'whatsapp number removed');
+  await deleteNumber(req.params.id);
+  res.json({ ok: true });
 }));
 
 admin.get('/:id/qr', asyncHandler(async (req, res) => { res.json(await qrFor(req.params.id)); }));
