@@ -17,6 +17,7 @@ import { startWhatsAppPolling, stopWhatsAppPolling } from './integrations/whatsa
 import { startOpenWaHealth, stopOpenWaHealth } from './integrations/whatsapp/business/openwaHealth.js';
 import { startFleetWatch, stopFleetWatch } from './integrations/whatsapp/business/waFleet.js';
 import { startCampaignSending, stopCampaignSending } from './integrations/whatsapp/business/campaigns.js';
+import { startBulkSending, stopBulkSending } from './integrations/msg91/bulk.js';
 import { startWaitWatch, stopWaitWatch } from './integrations/whatsapp/business/waitWatch.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
   startOpenWaHealth();
   startFleetWatch();
   startCampaignSending();
+  startBulkSending();
   startWaitWatch();
   startSarvamQueue();
 
@@ -111,6 +113,7 @@ async function main(): Promise<void> {
   stopOpenWaHealth();
   stopFleetWatch();
   stopCampaignSending();
+  stopBulkSending();
   stopWaitWatch();
     stopSarvamQueue();
     closeRealtime();

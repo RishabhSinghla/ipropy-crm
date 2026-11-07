@@ -90,6 +90,15 @@ export interface ResolvedSettings {
     zapierWebhookKey: string;
   };
   rcs: { agentId: string; region: string; serviceAccountJson: string; active: boolean };
+  /** MSG91: one authkey carries both SMS and RCS. */
+  msg91: {
+    authKey: string;
+    /** DLT-approved SMS template (the "flow") that campaigns send unless one is chosen. */
+    smsTemplateId: string;
+    /** The RCS agent's project id from MSG91 → RCS. */
+    rcsProjectId: string;
+    active: boolean;
+  };
   storage: {
     driver: 'local' | 's3' | 'onedrive';
     /** Property folders live in OneDrive regardless of what serves the files. */
@@ -261,6 +270,17 @@ export function getOneDriveProviderSettings(): ResolvedSettings['storage']['oned
     driveId: pickStored(row, 'config', 'driveId', config.storage.onedrive.driveId),
     driveUser: pickStored(row, 'config', 'driveUser', config.storage.onedrive.driveUser),
     rootFolder: pickStored(row, 'config', 'rootFolder', config.storage.onedrive.rootFolder) || 'iPropy Properties',
+  };
+}
+
+/** Saved MSG91 card values, even before the admin switches the card on — "Test connection" needs them. */
+export function getMsg91ProviderSettings(): ResolvedSettings['msg91'] {
+  const row = rows.get('msg91');
+  return {
+    authKey: pickStored(row, 'credentials', 'authKey', ''),
+    smsTemplateId: pickStored(row, 'config', 'smsTemplateId', ''),
+    rcsProjectId: pickStored(row, 'config', 'rcsProjectId', ''),
+    active: Boolean(row?.isActive),
   };
 }
 
@@ -469,6 +489,7 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const webform = map.get('webform');
   const zapier = map.get('zapier');
   const rcs = map.get('google_rcs');
+  const msg91 = map.get('msg91');
   const s3 = map.get('s3');
   const onedrive = map.get('onedrive');
   const n8n = map.get('n8n');
@@ -553,6 +574,12 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       region: pick(rcs, 'config', 'region', 'us'),
       serviceAccountJson: pick(rcs, 'credentials', 'serviceAccountJson', ''),
       active: Boolean(rcs?.isActive),
+    },
+    msg91: {
+      authKey: pick(msg91, 'credentials', 'authKey', ''),
+      smsTemplateId: pick(msg91, 'config', 'smsTemplateId', ''),
+      rcsProjectId: pick(msg91, 'config', 'rcsProjectId', ''),
+      active: Boolean(msg91?.isActive),
     },
     storage: {
       driver: storageDriver,

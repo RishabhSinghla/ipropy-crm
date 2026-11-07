@@ -224,6 +224,12 @@ export interface WaFleetSummary {
 }
 
 const get = <T>(path: string): Promise<T> => request<T>(path);
+export interface BulkInput {
+  name: string; module: string;
+  audience: { view?: string; everyone?: boolean };
+  content: { channel: 'sms' | 'rcs'; templateId?: string; variables?: Record<string, string>; body?: string };
+}
+
 const post = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'POST', body });
 const patch = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'PATCH', body });
 const put = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'PUT', body });
@@ -1753,6 +1759,28 @@ export const api = {
       sendsToday: number; sendsFailedToday: number;
     } | null;
   }>('/api/whatsapp-business/overview'),
+  // SMS and RCS campaigns through MSG91. Same contract as the WhatsApp ones above:
+  // preview writes nothing, approve passes back the number that was shown.
+  bulkStatus: () => get<{
+    connected: boolean; smsReady: boolean; rcsReady: boolean; defaultSmsTemplateId: string;
+  }>('/api/bulk-messages/status'),
+  bulkList: () => get<{
+    id: string; name: string; channel: 'sms' | 'rcs'; moduleName: string;
+    status: 'draft' | 'running' | 'paused' | 'done' | 'cancelled';
+    approvedCount: number | null; approvedAt: string | null; createdAt: string;
+    counts: { pending: number; sent: number; failed: number; skipped: number };
+  }[]>('/api/bulk-messages'),
+  bulkCreate: (data: BulkInput) => post<{ id: string }>('/api/bulk-messages', data),
+  bulkPreview: (data: Omit<BulkInput, 'name'>) => post<{
+    total: number; reachable: number;
+    sample: { recordId: string; label: string; to: string; preview: string }[];
+    skipped: { label: string; reason: string }[];
+    setupProblem: string | null; inSendingHours: boolean;
+  }>('/api/bulk-messages/preview', data),
+  bulkApprove: (id: string, expectedCount: number, confirmLarge?: boolean) =>
+    post<{ frozen: number; skipped: number }>(`/api/bulk-messages/${id}/approve`, { expectedCount, confirmLarge }),
+  bulkSetStatus: (id: string, status: 'paused' | 'running' | 'cancelled') =>
+    post<{ ok: true }>(`/api/bulk-messages/${id}/status`, { status }),
   waBizCampaignRecipients: (id: string, status?: string) => get<{
     recordId: string; label: string; handle: string; status: string;
     error: string | null; sentAt: string | null;

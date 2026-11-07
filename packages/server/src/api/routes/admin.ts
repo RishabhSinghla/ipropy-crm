@@ -1276,6 +1276,10 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         const { testSarvamConnection } = await import('../../integrations/voiceagent/sarvam.js');
         return testSarvamConnection();
       }
+      case 'msg91': {
+        const { testMsg91 } = await import('../../integrations/msg91/client.js');
+        return testMsg91();
+      }
       case 'google_rcs': {
         const { testGoogleRcs } = await import('../../integrations/rcs/google.js');
         return testGoogleRcs();

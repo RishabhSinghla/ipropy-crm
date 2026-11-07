@@ -234,6 +234,11 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   zapier: [
     { key: 'webhookKey', label: 'Zapier Webhook Secret', source: 'credentials', secret: true, placeholder: 'Generate a long random secret' },
   ],
+  msg91: [
+    { key: 'authKey', label: 'Auth Key', source: 'credentials', secret: true, placeholder: 'MSG91 → top bar → AuthKey' },
+    { key: 'smsTemplateId', label: 'SMS template id (DLT)', source: 'config', placeholder: 'MSG91 → SMS → Templates → the approved promotional template\u2019s id' },
+    { key: 'rcsProjectId', label: 'RCS Project ID', source: 'config', placeholder: 'MSG91 → RCS → your approved agent\u2019s project id' },
+  ],
   google_rcs: [
     { key: 'agentId', label: 'RCS Agent ID', source: 'config', placeholder: 'Your launched Google RBM agent ID' },
     { key: 'region', label: 'RBM Region', source: 'config', placeholder: 'us' },
@@ -276,7 +281,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
-  'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'google_rcs', 'sarvam_voice',
+  'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'google_rcs', 'msg91', 'sarvam_voice',
   /*
     The WhatsApp providers. Leaving them out is what let the setup wizard
     finish on "Saved and switched on." — the branch for a provider with no
@@ -325,6 +330,10 @@ const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: 
   zapier: {
     text: 'Create a Zap with Webhooks by Zapier → POST. Map full_name, mobile, email and message; add the secret as X-Zapier-Secret.',
     href: 'https://zapier.com/apps/webhook/integrations', linkLabel: 'Open Zapier',
+  },
+  msg91: {
+    text: 'One key sends both SMS and RCS. Paste the Auth Key, save, switch the card on, then press Test connection. India needs a DLT-approved template for SMS and an approved agent for RCS. Campaigns are built in Admin → SMS & RCS.',
+    href: 'https://control.msg91.com/app/', linkLabel: 'Open MSG91',
   },
   google_rcs: {
     text: 'Requires a launched Google RCS for Business agent. Test devices can receive messages before the agent is launched.',

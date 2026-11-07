@@ -16,6 +16,7 @@ before you work in that area** — each carries traps that have already cost a d
 |---|---|
 | WhatsApp — inbox, templates, campaigns, media, reports, and the OpenWA linked-device connection | [`WHATSAPP.md`](WHATSAPP.md) (OpenWA: [`docs/OPENWA.md`](docs/OPENWA.md)) |
 | The phone app, dialling, call recording, the call console, the dialler screens | [`CALLING.md`](CALLING.md) |
+| SMS or RCS campaigns (MSG91), the `bulk-messages` routes, the SMS & RCS screen | [`MSG91.md`](MSG91.md) |
 | Lists, the split view, tags | [`SCREENS.md`](SCREENS.md) |
 | A deploy, or something misbehaving on production | [`OPERATIONS.md`](OPERATIONS.md) |
 | Anything a person clicks, before calling it done | the `prove-it` skill |
