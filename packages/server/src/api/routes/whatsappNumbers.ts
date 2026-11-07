@@ -137,11 +137,14 @@ admin.get('/log/sends', asyncHandler(async (req, res) => {
   const { rows } = await db.query(
     `SELECT m.id, m.created_at, m.status, left(coalesce(m.body, ''), 120) AS body, c.handle,
             trim(u.first_name || ' ' || u.last_name) AS sent_by_name,
-            coalesce(n.label, n.session_name) AS number_label
+            coalesce(n.label, n.session_name) AS number_label,
+            q.name AS queue_name
        FROM ipy_message m
        JOIN ipy_conversation c ON c.id = m.conversation_id
        LEFT JOIN ipy_user u ON u.id = m.sent_by
        LEFT JOIN ipy_wa_number n ON n.id = m.number_id
+       LEFT JOIN ipy_wa_drip_item qi ON qi.message_id = m.id
+       LEFT JOIN ipy_wa_drip q ON q.id = qi.drip_id
       WHERE m.provider = 'whatsapp_openwa' AND m.direction = 'outbound' AND m.sent_by IS NOT NULL
         AND ($1::uuid IS NULL OR m.number_id = $1::uuid)
       ORDER BY m.created_at DESC LIMIT 200`,

@@ -31,6 +31,7 @@ const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 const BulkMessagesAdmin = lazy(() => import('./BulkMessagesAdmin'));
 const ProjectMastersAdmin = lazy(() => import('./ProjectMastersAdmin'));
 const WhatsAppNumbersAdmin = lazy(() => import('./WhatsAppNumbersAdmin'));
+const WhatsAppDripAdmin = lazy(() => import('./WhatsAppDripAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -97,6 +98,7 @@ const SECTIONS = [
       // Building a campaign is `whatsapp.send`; approving one is `whatsapp.templates` — the server enforces that split.
       { path: 'sms-rcs', capability: 'whatsapp.send', label: 'SMS & RCS campaigns', icon: Megaphone, element: <BulkMessagesAdmin /> },
       { path: 'whatsapp-numbers', capability: 'admin.integrations', label: 'WhatsApp numbers', icon: MessageSquareText, element: <WhatsAppNumbersAdmin /> },
+      { path: 'whatsapp-drip', capability: 'admin.integrations', label: 'WhatsApp drip', icon: MessageSquareText, element: <WhatsAppDripAdmin /> },
       { path: 'templates', capability: 'whatsapp.templates', label: 'Email Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand', icon: Sparkles, element: <BrandAdmin /> },

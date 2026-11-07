@@ -84,10 +84,15 @@ async function adminRecipients(): Promise<Array<{ id: string; email: string | nu
 
 const LINK = '/admin/whatsapp-numbers';
 
-async function tellAdmins(kind: 'down' | 'back', title: string, body: string): Promise<void> {
+/** Tell every active admin (bell, push, and email if one is connected). The slow drip uses it when it pauses itself. */
+export async function alertAdmins(title: string, body: string, link: string = LINK): Promise<void> {
+  await tellAdmins('down', title, body, link);
+}
+
+async function tellAdmins(kind: 'down' | 'back', title: string, body: string, link: string = LINK): Promise<void> {
   const admins = await adminRecipients();
   for (const a of admins) {
-    await notify({ userId: a.id, kind: kind === 'down' ? 'whatsapp_down' : 'whatsapp_back', title, body, link: LINK })
+    await notify({ userId: a.id, kind: kind === 'down' ? 'whatsapp_down' : 'whatsapp_back', title, body, link })
       .catch((err) => logger.warn({ err }, 'could not notify an admin about WhatsApp'));
   }
   const emails = admins.map((a) => a.email).filter((e): e is string => Boolean(e));

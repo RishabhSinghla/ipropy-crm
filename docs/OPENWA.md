@@ -305,3 +305,108 @@ was slow to adopt the sessions. WhatsApp can always log a phone out; no setting 
 * **Needs-QR banner:** a number whose phone was logged out (`qr_ready` / `disconnected`) is listed in red at the top with the agent's
   name. Restarting cannot fix it. The down alert now says so, and the agent gets their own bell notice pointing to Settings → My WhatsApp.
 * A card whose status is `qr_ready` opens its QR code by itself.
+
+
+# The slow drip: one promotional message over many weeks (7 November 2026)
+
+**Read the risk first.** The CRM has no bulk button on the linked phones, on purpose: many messages to many strangers is exactly the
+pattern WhatsApp restricts numbers for. The owner has decided to accept that risk for one promotional message to the CRM's contacts,
+sent very slowly. This section is that exception. It does **not** remove the other guard-rails (above), and it is not a safe
+route — it is a *less risky* one. The safe route for bulk is still the official WhatsApp API with approved templates (WhatsMarketing).
+
+* Even at this pace a linked phone can be **limited or banned**. These are real people's numbers (Harish's is the company number).
+  If WhatsApp limits one, stop using it for promotions and do not try to get round it.
+* **India's rules still apply.** Promotional messages fall under TRAI's rules, and personal data under the DPDP Act. In plain words:
+  message only people who have a real reason to expect it (they enquired, they are in your trade), always give a way to stop, and
+  honour every STOP, everywhere. The drip does the second and third parts for you; the first is your judgement.
+* At this speed **50,000 contacts is a year or more, not weeks**: 4 phones × 20 a day = 80 a day to start, 160 a day at the very most
+  (40 per phone). Start with your best saved lists, not the whole database.
+
+## What it does, in plain words
+
+Admin → **WhatsApp drip** (admins only; API keys are refused). You make a *queue*:
+
+1. **Pick a saved list** of contacts (a saved filter). "Everybody" is not an option; the list must be named.
+2. **Write the message** (it starts with the IPROPY wording, four slightly different versions). Each person gets one version,
+   chosen by their record, plus their **first name when it is a real name** (`{name}`; with none, "Hello," only). Every message ends
+   with **"Reply STOP to stop"**. Links are refused in the wording (a link in a cold message is the quickest way to be reported).
+3. **Tick the phones** to send from (only connected, un-paused ones are offered).
+4. **Press "Who would get this?"** — it shows how many people, who is left out and why, and three sample messages. Nothing is sent.
+5. **Start for N.** The people are copied into the queue *at that moment*, with the count you were shown; if the list has changed
+   since, Start refuses. Editing the saved list later changes nothing for a running queue.
+
+Then the CRM's clock sends **one message at a time**:
+
+| Rule | Value |
+|---|---|
+| Per phone per day | **20** for the first 3 days it really sends, then +5 every 3 days, never above **40** (the code's ceiling; a typed higher number is cut down). A hand-typed chat is still limited to 60 per person per day, separately. |
+| Gap between any two messages | random **60 to 120 seconds** (never under 60, even if set lower) |
+| Hours | **10:00–18:00** in the organisation timezone by default (never before 06:00 or after 21:00) |
+| Which phone | takes turns, the one that sent least recently; a phone that is not ready, paused, restricted or at its cap is skipped for that turn |
+| Each person | **once, ever** — across every queue (a database rule, not carefulness) |
+| Only one queue runs at a time | so the pace cannot double |
+
+## Who is left out (and the screen says how many, per reason)
+
+* no mobile number, or not a valid Indian mobile (ten digits starting 6–9);
+* the same number twice in the list (the second record is left out);
+* **asked not to be messaged** — anyone who replied STOP (see below) or was marked do-not-message by hand; this is checked at Start
+  *and again just before each message*, because somebody can reply STOP in between;
+* a number the queue has already messaged;
+* **not on WhatsApp** — the CRM's number checker result is used if it has one; otherwise it asks WhatsApp once (one lookup, then
+  waits 8–20 seconds before the next action) and remembers the answer;
+* a record that was deleted or archived since Start.
+
+## It stops itself, and never starts itself
+
+The whole queue **pauses** and every admin gets a notice (bell, push, and email if email is connected) when:
+
+* any phone on the queue **drops** (disconnected, logged out, removed) — the message names the phone;
+* WhatsApp reports a **restriction** on a phone (the session's `restriction`, e.g. `reachout_timelock`);
+* **three sends fail** within a day;
+* OpenWA cannot be reached for the phone about to send, or the admin who started it is no longer an active admin.
+
+A paused queue stays paused until a person presses **Resume**. At Resume you can untick a phone that is still down and carry on with
+the rest. **Stop** is final (people not yet messaged are simply never messaged). If the server restarts in the middle of a send, that
+one person is marked *failed – interrupted* and **not retried**: a missed message is better than a double one.
+A phone paused by hand on the WhatsApp numbers screen is simply left out of the turns; it does not pause the queue (unless every phone is paused).
+
+## STOP
+
+Every message ends "Reply STOP to stop". When a customer replies **STOP** (also `unsubscribe`, `stop all`, `opt out`), the existing
+inbound path writes them to the do-not-message list (with an audit row naming the record), and every send on every route — chats,
+campaigns, this queue — refuses them from then on. Only the *whole* reply counts ("don't stop calling me" does not). Other angry
+replies ("remove my number", "who are you?") are **not** auto-detected: read the replies, and use the contact's WhatsApp opt-out
+control by hand. The queue's card counts "N replied STOP".
+
+## Audit trail
+
+* The queue card → **What happened**: every create / start / pause / resume / stop / auto-pause with *who*, *which phone* (for a
+  phone-specific pause) and *when*, the people left out by reason, and the latest sends and failures.
+* **Admin → WhatsApp numbers → Who sent what, from which number**: every drip message appears there too, marked "drip: <queue name>",
+  with the admin who started the queue, the phone and the time. Messages also sit in the contact's chat like any other.
+
+## How to try it (do these in order)
+
+1. Make sure **you** are a contact in the CRM (a lead with your own mobile). The CRM only messages people it has a record for.
+2. Admin → WhatsApp drip → **New queue**. Type your mobile in **"Send me a test"** and press it. Read it on your phone: the wording,
+   the greeting, "Reply STOP to stop". Reply **STOP** from your phone and check you are now left out (the contact shows opted out).
+3. Make a small saved list (5 contacts you know), a new queue with **"Stop after" = 5**, press "Who would get this?", read the sample,
+   then Start. Watch them go out over ten minutes or so. It will say "waiting for daytime" outside 10:00–18:00.
+4. Only then use a bigger list. Keep an eye on the card for the first few days: failures, STOP replies, anything odd.
+5. **To stop right now:** Pause (reversible) or Stop (final) on the queue's card. To stop a single phone: pause that number on
+   the WhatsApp numbers screen.
+
+## Technical notes
+
+* Tables `ipy_wa_drip` (queue + speed settings + state), `ipy_wa_drip_item` (one row per person, frozen at Start; unique on
+  `(drip_id, record_id)` and on `handle` where status is `sending`/`sent`), `ipy_wa_drip_event` (audit). Migration `237_wa_drip.sql`.
+* Code: `integrations/whatsapp/business/dripRules.ts` (pure rules, unit-tested), `drip.ts` (queue, clock, pause logic),
+  `api/routes/whatsappDrip.ts` (admin-only routes — none of them sends a list), UI `WhatsAppDripAdmin.tsx`.
+* Every message goes through `sendOnBusinessNumber` — the one send path. The only change to it is an optional `fromQueue` flag that makes
+  the *per-user daily cap* (about hand-typing) not apply to the queue (which has its own, stricter, per-phone cap) and not count
+  queue messages against the admin's own allowance. Spacing, quiet hours, per-customer cap, opt-out, paused/not-ready number and
+  "must be a record we have" all still apply, and a refusal by one of those brakes just delays the queue (it is not counted as a failure).
+* The clock ticks every 15 seconds and sends at most one message per tick; `next_send_at` lives in the database so a restart loses nothing.
+* Not built, on purpose: sending to "everyone", a faster mode, retrying an interrupted send, auto-resume, and auto-detecting replies
+  that are not the STOP words.
