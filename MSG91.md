@@ -92,3 +92,27 @@ promotional hours, number shapes, wording, MSG91's error shapes). **No live mess
 and the screen has not been driven against a real MSG91 key, because the account has no
 approved template, sender id or RCS agent yet — so the exact request shapes are checked against
 MSG91's published API docs, not against its servers.
+
+## Ready-to-paste wording for the approvals
+
+These are drafts for the owner to adjust. DLT rejects templates that look misleading, so keep
+the company name and one clear offer.
+
+**DLT header (sender id):** six letters, e.g. `IPROPY`.
+
+**Promotional SMS template** (the `{#var#}` blanks are DLT's syntax; in MSG91 they become
+`##name##`, and in the CRM's blanks box you write `name = {{label}}`):
+
+> Hi {#var#}, iPropy has new verified properties in {#var#}. Call {#var#} for site visits. Reply STOP to opt out.
+
+(Three blanks: name, area, phone. In the CRM: `name = {{label}}`, `area = Noida`, `phone = 98xxxxxxxx`.)
+
+**RCS text** (free text, no DLT wording needed):
+
+> Hi {{label}}, new verified properties just listed at iPropy. Reply here or call us for a site visit.
+
+## Trying it before a campaign
+
+On the campaign screen, "Try it on one number first" sends one message to one number with no
+list and no approval. It still refuses an opted-out number and anything that is not an Indian
+mobile. Use it as the very first live check once the card is switched on.

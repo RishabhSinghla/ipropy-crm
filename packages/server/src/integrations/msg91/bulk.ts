@@ -368,6 +368,37 @@ export async function setBulkStatus(id: string, status: 'paused' | 'running' | '
 }
 
 // ---------------------------------------------------------------------------
+// One test message
+// ---------------------------------------------------------------------------
+
+/**
+ * Send one message to one number — the owner's own, before a campaign.
+ *
+ * Deliberately not a campaign: no list, no approval, no row. It still refuses a
+ * number that asked not to be messaged, and still refuses anything that is not
+ * an Indian mobile. Blanks are plain text here (there is no record to read).
+ */
+export async function sendTestMessage(input: { to: string; content: Content }): Promise<{ to: string }> {
+  const problem = contentProblem(input.content);
+  if (problem) throw new BadRequestError(problem);
+  if (!getMsg91ProviderSettings().active) throw new BadRequestError('MSG91 is not switched on.');
+  const digits = toMsg91Number(toInternational(undefined, input.to));
+  if (!digits) throw new BadRequestError('That is not an Indian mobile number.');
+  const handle = `+${digits}`;
+  if ((await filterOptedOut([handle], input.content.channel)).has(handle)) {
+    throw new BadRequestError('That number has asked not to be messaged.');
+  }
+  if (input.content.channel === 'sms') {
+    const templateId = input.content.templateId || getMsg91ProviderSettings().smsTemplateId;
+    await sendSms(templateId, [{ mobile: digits, variables: input.content.variables ?? {} }]);
+  } else {
+    await sendRcsText([digits], input.content.body ?? '');
+  }
+  logger.info({ channel: input.content.channel }, 'MSG91 test message sent');
+  return { to: handle };
+}
+
+// ---------------------------------------------------------------------------
 // Sending
 // ---------------------------------------------------------------------------
 

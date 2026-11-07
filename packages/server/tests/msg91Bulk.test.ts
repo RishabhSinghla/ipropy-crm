@@ -111,3 +111,14 @@ describe('reading MSG91\'s answers', () => {
     expect(whyItFailed('Invalid authkey', 401)).toMatch(/Invalid authkey/);
   });
 });
+
+describe('the one-number test send', () => {
+  it('is refused with a plain reason before anything is called', async () => {
+    const { sendTestMessage } = await import('../src/integrations/msg91/bulk.js');
+    // No MSG91 card is loaded in a unit test, so the first refusal is the setup one.
+    await expect(sendTestMessage({ to: '98765 43210', content: { channel: 'rcs', body: '' } }))
+      .rejects.toThrow(/Write the RCS message first/);
+    await expect(sendTestMessage({ to: '98765 43210', content: { channel: 'sms' } }))
+      .rejects.toThrow(/No SMS template/);
+  });
+});

@@ -1777,6 +1777,8 @@ export const api = {
     skipped: { label: string; reason: string }[];
     setupProblem: string | null; inSendingHours: boolean;
   }>('/api/bulk-messages/preview', data),
+  bulkSendTest: (data: { to: string; content: BulkInput['content'] }) =>
+    post<{ to: string }>('/api/bulk-messages/test', data),
   bulkApprove: (id: string, expectedCount: number, confirmLarge?: boolean) =>
     post<{ frozen: number; skipped: number }>(`/api/bulk-messages/${id}/approve`, { expectedCount, confirmLarge }),
   bulkSetStatus: (id: string, status: 'paused' | 'running' | 'cancelled') =>

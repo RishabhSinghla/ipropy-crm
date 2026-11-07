@@ -187,6 +187,13 @@ function NewCampaign({ onClose }: { onClose: () => void }): JSX.Element {
   const large = (counted?.reachable ?? 0) > 500;
   const reset = (): void => preview.reset();
 
+  const [testTo, setTestTo] = useState('');
+  const sendTest = useMutation({
+    mutationFn: () => api.bulkSendTest({ to: testTo, content }),
+    onSuccess: (r) => toast.success('Test sent', `To ${r.to}. Check the phone, and MSG91 → Logs for delivery.`),
+    onError: (err: Error) => toast.error('Test not sent', err.message),
+  });
+
   return (
     <Modal
       open
@@ -277,6 +284,16 @@ function NewCampaign({ onClose }: { onClose: () => void }): JSX.Element {
               placeholder="Hi {{label}}, new launch in Sector 150 — tap to see plans." />
           </label>
         )}
+
+        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-slate-300 p-2.5 dark:border-slate-700">
+          <label className="block min-w-48 flex-1">
+            <span className="label">Try it on one number first (yours)</span>
+            <input className="input" value={testTo} onChange={(event) => setTestTo(event.target.value)} placeholder="98765 43210" inputMode="tel" />
+          </label>
+          <button className="btn-secondary btn-sm" disabled={!testTo.trim() || sendTest.isPending || !channelReady} onClick={() => sendTest.mutate()}>
+            {sendTest.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Send test
+          </button>
+        </div>
 
         {!channelReady && (
           <p className="text-2xs text-amber-700">

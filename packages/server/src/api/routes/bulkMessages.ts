@@ -13,7 +13,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { assertCapability } from '../../core/permissions/index.js';
 import {
-  approveBulk, bulkRecipients, createBulk, listBulk, previewBulk, setBulkStatus,
+  approveBulk, bulkRecipients, createBulk, listBulk, previewBulk, sendTestMessage, setBulkStatus,
 } from '../../integrations/msg91/bulk.js';
 import { getMsg91ProviderSettings } from '../../core/settings/integrations.js';
 
@@ -71,6 +71,13 @@ bulkMessagesRouter.post('/preview', asyncHandler(async (req, res) => {
     content: contentSchema,
   }).parse(req.body ?? {});
   res.json(await previewBulk({ ctx: getScope(req), ...input }));
+}));
+
+/** One message to one number — yours — so the first real send is not a campaign. */
+bulkMessagesRouter.post('/test', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'whatsapp.templates');
+  const input = z.object({ to: z.string().min(8).max(20), content: contentSchema }).parse(req.body ?? {});
+  res.json(await sendTestMessage(input));
 }));
 
 bulkMessagesRouter.post('/:id/approve', asyncHandler(async (req, res) => {
