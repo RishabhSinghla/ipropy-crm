@@ -216,7 +216,7 @@ export async function placeAgentCall(input: {
   recordModule?: string | null;
   userId?: string | null;
   batchId?: string;
-}): Promise<{ ok: true; attemptId: string } | { ok: false; message: string; uncertain?: boolean; outsideWindow?: boolean }> {
+}): Promise<{ ok: true; attemptId: string } | { ok: false; message: string; uncertain?: boolean; outsideWindow?: boolean; lineLimit?: boolean }> {
   const policy = readSarvamPolicy();
   if (!sarvamCallingAllowed(policy)) return { ok: false, outsideWindow: true,
     message: `Outbound AI calls are allowed only ${policy.callStart}–${policy.callEnd} India time.` };
@@ -284,6 +284,10 @@ export async function placeAgentCall(input: {
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 300);
     logger.warn({ status: res.status, detail }, 'sarvam refused an outbound call');
+    // A refusal because too many calls are live at once made no call; the queue keeps the contact and tells the admin.
+    if (res.status === 429 || /concurren|too many|capacity|line limit|parallel|quota/i.test(detail)) {
+      return { ok: false, lineLimit: true, message: `Sarvam says too many calls are live at once (${res.status}). Your Sarvam plan may allow fewer phone lines. Lower "Calls at a time" on the Sarvam card and press Resume. Sarvam said: ${detail}` };
+    }
     return { ok: false, uncertain: res.status >= 500, message: `Sarvam refused the call (${res.status}): ${detail}` };
   }
   const answer = await res.json() as { attempt_id?: string };

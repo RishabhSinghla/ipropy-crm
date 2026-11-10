@@ -13,7 +13,7 @@ import { isQuietHours } from '../../utils/quietHours.js';
 
 /** Claim and dispatch under a cross-process advisory lock. Never redial a lost response. */
 export async function tickSarvamQueue(): Promise<void> {
-  const claim = await transaction(async (tx) => {
+  const claim = await transaction(async (tx): Promise<ClaimedCall[] | undefined> => {
     const lock = await tx.queryOne<{ locked: boolean }>('SELECT pg_try_advisory_xact_lock(731904218) AS locked');
     if (!lock?.locked) return;
     await tx.query(`UPDATE ipy_sarvam_queue q SET status = CASE WHEN c.status = 'canceled' THEN 'failed' ELSE c.status END,
@@ -34,35 +34,58 @@ export async function tickSarvamQueue(): Promise<void> {
       return;
     }
     await tx.query(`UPDATE ipy_sarvam_batch SET message=NULL WHERE status='running' AND message LIKE 'Waiting for calling hours%'`);
-    // One phone conversation at a time across CRM queues. A missing callback blocks new dialing.
-    const active = await tx.queryOne(`SELECT id FROM ipy_sarvam_queue WHERE status IN ('submitting','waiting','unknown') LIMIT 1`);
-    if (active) return;
-    const item = await tx.queryOne<{ id: string; batch_id: string; record_id: string; phone: string; module: string; user_id: string }>(
-      `SELECT q.*, b.module, b.user_id FROM ipy_sarvam_queue q JOIN ipy_sarvam_batch b ON b.id = q.batch_id
-       WHERE b.status = 'running' AND q.status = 'pending' ORDER BY b.created_at, q.position LIMIT 1 FOR UPDATE OF b, q SKIP LOCKED`);
-    if (!item) return;
-    // Recheck access and do-not-call at dispatch, not just when the batch was prepared.
-    try {
-      const user = await loadUser(item.user_id);
-      if (!user?.isActive) throw new Error('The queue owner is inactive.');
-      await assertCapability(user, 'telephony.call');
-      const record = await recordService.getRecord(await buildScopeContext(user), item.module, item.record_id);
-      if (record.values.do_not_call === true || await isOptedOut(item.phone, 'call', tx)) throw new Error('Do not call is enabled for this contact.');
-    } catch (error) {
-      await tx.query(`UPDATE ipy_sarvam_queue SET status = 'skipped', error = $2, updated_at = now() WHERE id = $1`, [item.id, (error as Error).message]);
-      return;
+    // Up to `callsAtATime` conversations in flight. Unknown outcomes still count as in flight (the call may be live).
+    const limit = policy.callsAtATime;
+    const inFlight = await tx.queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM ipy_sarvam_queue WHERE status IN ('submitting','waiting','unknown')`);
+    let free = limit - (inFlight?.n ?? 0);
+    const claimed: ClaimedCall[] = [];
+    // Skipped contacts do not use a line, so look further, but never loop for ever.
+    for (let looked = 0; free > 0 && looked < 50; looked++) {
+      // Never the same number or record as a call already in flight (this loop's own claims are 'submitting' too).
+      const item = await tx.queryOne<ClaimedCall>(
+        `SELECT q.*, b.module, b.user_id FROM ipy_sarvam_queue q JOIN ipy_sarvam_batch b ON b.id = q.batch_id
+         WHERE b.status = 'running' AND q.status = 'pending'
+           AND NOT EXISTS (SELECT 1 FROM ipy_sarvam_queue a WHERE a.status IN ('submitting','waiting','unknown')
+                           AND (a.phone = q.phone OR a.record_id = q.record_id))
+         ORDER BY b.created_at, q.position LIMIT 1 FOR UPDATE OF b, q SKIP LOCKED`);
+      if (!item) break;
+      // Recheck access and do-not-call at dispatch, not just when the batch was prepared.
+      try {
+        const user = await loadUser(item.user_id);
+        if (!user?.isActive) throw new Error('The queue owner is inactive.');
+        await assertCapability(user, 'telephony.call');
+        const record = await recordService.getRecord(await buildScopeContext(user), item.module, item.record_id);
+        if (record.values.do_not_call === true || await isOptedOut(item.phone, 'call', tx)) throw new Error('Do not call is enabled for this contact.');
+      } catch (error) {
+        await tx.query(`UPDATE ipy_sarvam_queue SET status = 'skipped', error = $2, updated_at = now() WHERE id = $1`, [item.id, (error as Error).message]);
+        continue;
+      }
+      // Commit before contacting the provider. Stop acknowledges that these calls are already claimed.
+      await tx.query(`UPDATE ipy_sarvam_queue SET status = 'submitting', updated_at = now() WHERE id = $1`, [item.id]);
+      claimed.push(item);
+      free--;
     }
-    // Commit before contacting the provider. Stop acknowledges that this one call is already claimed.
-    await tx.query(`UPDATE ipy_sarvam_queue SET status = 'submitting', updated_at = now() WHERE id = $1`, [item.id]);
-    return item;
+    return claimed;
   });
-  if (!claim) return;
+  if (!claim?.length) return;
+  await Promise.all(claim.map((item) => dialOne(item)));
+}
+
+interface ClaimedCall { id: string; batch_id: string; record_id: string; phone: string; module: string; user_id: string }
+
+async function dialOne(claim: ClaimedCall): Promise<void> {
   try {
     const result = await placeAgentCall({ toNumber: claim.phone, publicBaseUrl: config.appUrl.split(',')[0]!.trim(),
       recordId: claim.record_id, recordModule: claim.module, userId: claim.user_id, batchId: claim.batch_id });
     if (!result.ok && result.outsideWindow) {
       await db.query(`UPDATE ipy_sarvam_queue SET status='pending', updated_at=now() WHERE id=$1`, [claim.id]);
       await db.query(`UPDATE ipy_sarvam_batch SET message=$2 WHERE id=$1`, [claim.batch_id, result.message]);
+      return;
+    }
+    if (!result.ok && result.lineLimit) {
+      // No call was made: keep the contact and pause with a plain reason instead of failing it.
+      await db.query(`UPDATE ipy_sarvam_queue SET status='pending', updated_at=now() WHERE id=$1`, [claim.id]);
+      await db.query(`UPDATE ipy_sarvam_batch SET status='paused', message=$2 WHERE id=$1`, [claim.batch_id, result.message]);
       return;
     }
     await db.query(`UPDATE ipy_sarvam_queue SET status = $2, attempt_id = $3, error = $4, updated_at = now() WHERE id = $1`,

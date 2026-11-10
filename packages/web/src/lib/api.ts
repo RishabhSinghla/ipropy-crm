@@ -1963,7 +1963,7 @@ export interface LiveCallState {
   canEndCall: boolean;
 }
 
-export interface SarvamCallingPolicy { batchSize: number; start: string; end: string; enabled: boolean; timezone: string; callingAllowed: boolean }
+export interface SarvamCallingPolicy { batchSize: number; callsAtATime?: number; start: string; end: string; enabled: boolean; timezone: string; callingAllowed: boolean }
 export interface SarvamControl {
   batchTotal: number;
   batchPage: number;

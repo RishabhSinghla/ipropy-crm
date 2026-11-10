@@ -10,6 +10,7 @@ export function SarvamOperations({ config, onChange, onSave, busy, result }: {
 }): JSX.Element {
   const { modules } = useApp();
   const batchSize = config.batchSize ?? '25';
+  const callsAtATime = config.callsAtATime ?? '3';
   const start = config.callStart ?? '10:00';
   const end = config.callEnd ?? '19:00';
   const enabled = config.callingHoursEnabled !== 'false';
@@ -21,6 +22,8 @@ export function SarvamOperations({ config, onChange, onSave, busy, result }: {
     <h3 className="font-semibold">AI calling rules</h3>
     <p className="text-xs text-muted">Either Save button stores all changes on this card. These rules apply before every outbound dial, including individual AI calls. An accepted call can finish after the end time. Waiting queues resume during the next allowed window.</p>
     <label className="block text-sm">Contacts per batch<input aria-label="Contacts per AI batch" className="input mt-1 w-full" type="number" min={1} max={200} value={batchSize} onChange={(e) => change('batchSize', e.target.value)} /></label>
+    <label className="block text-sm">Calls at a time<input aria-label="AI calls at a time" className="input mt-1 w-full" type="number" min={1} max={10} value={callsAtATime} onChange={(e) => change('callsAtATime', e.target.value)} /></label>
+    <p className="text-xs text-muted">How many customers the AI rings at the same moment (1 to 10; 1 = one at a time). The same number is never rung twice at once. If Sarvam says your plan has too few phone lines, the queue pauses with a message: lower this number and press Resume.</p>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={(e) => change('callingHoursEnabled', String(e.target.checked))} />Restrict outbound calling hours</label>
     <div className="grid grid-cols-2 gap-3"><label className="text-sm">Start (India time)<input aria-label="AI calling start time" type="time" className="input mt-1 w-full" value={start} onChange={(e) => change('callStart', e.target.value)} /></label><label className="text-sm">End (India time)<input aria-label="AI calling end time" type="time" className="input mt-1 w-full" value={end} onChange={(e) => change('callEnd', e.target.value)} /></label></div>
     <p className="text-xs text-muted">Timezone: Asia/Kolkata. Start is included; end is excluded. If end is earlier than start, the window continues overnight.</p>

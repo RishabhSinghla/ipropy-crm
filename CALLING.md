@@ -1173,3 +1173,15 @@ opening the list could not tell a buyer who gave a budget from a phone that rang
 conversation (busy, no answer, refused). The first pass stored that as a conversation id and gave 36 calls a recording link
 that plays nothing. A real id looks like `20261020/9f1c…`; `realInteractionId` accepts nothing else, and migration `218`
 cleared the 36. An answer from somebody else's API that is a *placeholder in an id field* is the shape to suspect first.
+
+## AI calls in parallel — 10 November 2026
+
+The Sarvam queue (`integrations/voiceagent/queue.ts`) used to ring one customer at a time. It now keeps up to **"Calls at a time"** in flight (Admin → Integrations → AI voice agent, next to "Contacts per batch"; `callsAtATime`, 1–10, default 3; **1 is the old behaviour**).
+
+* Each tick counts queue rows in `submitting`, `waiting` or `unknown` (an unknown call may still be live, so it uses a line) and claims only as many pending rows as there are free lines, under the same advisory lock and `FOR UPDATE SKIP LOCKED`.
+* **The same number or record is never rung twice at once**: a pending row is skipped while any in-flight row has its phone or record id.
+* Do-not-call, opt-out, capability and calling hours are re-checked per claimed row, as before. A skipped contact uses no line.
+* **One unknown call pauses its own batch**; calls already in flight keep going and finish by webhook or reconcile. Other batches carry on while lines are free.
+* A batch becomes `done` only when nothing is `pending`, `submitting`, `waiting` or `unknown`.
+* **If Sarvam refuses for too many live calls (HTTP 429 or wording about limits/capacity), no call was made**: the contact goes back to `pending`, the batch pauses with a plain message, and the admin lowers "Calls at a time" and presses Resume. Sarvam's free plan may allow fewer phone lines than the setting.
+* Tests: `tests/integration/sarvamParallelCalls.test.ts`; `sarvamCallControl.test.ts` pins `callsAtATime = 1` for its one-at-a-time cases.
