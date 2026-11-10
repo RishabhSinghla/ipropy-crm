@@ -109,7 +109,8 @@ describe('saved Sarvam call control', () => {
     const id = await create(); await post(`sarvam-queues/${id}/resume`);
     const queued = await db.queryOne<{ phone: string }>('SELECT phone FROM ipy_sarvam_queue WHERE batch_id=$1 AND position=0',[id]);
     await recordConsent({ handle: queued!.phone, channel: 'call', action: 'opt_out' });
-    try { await tickSarvamQueue(); expect(dial).not.toHaveBeenCalled(); }
+    // A skipped contact uses no line, so the next contact may be dialled; the opted-out number never is.
+    try { await tickSarvamQueue(); expect(dial.mock.calls.map((c) => c[0].toNumber)).not.toContain(queued!.phone); }
     finally { await recordConsent({ handle: queued!.phone, channel: 'call', action: 'opt_in' }); }
   });
 });
