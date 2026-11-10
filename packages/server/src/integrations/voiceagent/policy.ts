@@ -4,6 +4,8 @@ import { getIntegrationConfig } from '../../core/settings/integrations.js';
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use a time in HH:MM format.');
 export const sarvamPolicySchema = z.object({
   batchSize: z.coerce.number().int().min(1).max(200).default(25),
+  /** How many AI calls may be in flight at once. 1 = one customer at a time. */
+  callsAtATime: z.coerce.number().int().min(1).max(10).default(3),
   callStart: time.default('10:00'),
   callEnd: time.default('19:00'),
   callingHoursEnabled: z.enum(['true', 'false']).default('true'),
@@ -26,6 +28,6 @@ export function sarvamCallingAllowed(policy: Pick<SarvamPolicy, 'callingHoursEna
 }
 export function publicSarvamPolicy() {
   const policy = readSarvamPolicy();
-  return { batchSize: policy.batchSize, start: policy.callStart, end: policy.callEnd,
+  return { batchSize: policy.batchSize, callsAtATime: policy.callsAtATime, start: policy.callStart, end: policy.callEnd,
     enabled: policy.callingHoursEnabled === 'true', timezone: 'Asia/Kolkata', callingAllowed: sarvamCallingAllowed(policy) };
 }

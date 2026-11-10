@@ -1,10 +1,11 @@
 import { recordConsent } from '../../src/core/consent/index.js';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { adminContext, authUser, leadInput, SEEDED, signIn, adminToken } from './fixtures.js';
 import { recordService } from '../../src/core/entity/recordService.js';
+import { saveIntegration } from '../../src/core/settings/integrations.js';
 import { tickSarvamQueue } from '../../src/integrations/voiceagent/queue.js';
 
 const { dial } = vi.hoisted(() => ({ dial: vi.fn() }));
@@ -24,11 +25,14 @@ async function create(): Promise<string> {
   return res.body.id;
 }
 beforeAll(async () => {
+  // These tests describe the one-at-a-time behaviour, which is "Calls at a time" = 1.
+  await saveIntegration('sarvam_voice', { isActive: true, config: { callsAtATime: '1' } });
   app = createApp(); admin = await adminToken(app); agent = await signIn(app, SEEDED.executiveA);
   const ctx = await adminContext();
   for (let i=0; i<2; i++) ids.push((await recordService.createRecord(ctx, 'leads', leadInput({ full_name: `Sarvam queue ${stamp} ${i}` }))).id);
 });
 afterEach(() => { vi.useRealTimers(); });
+afterAll(async () => { await saveIntegration('sarvam_voice', { isActive: false, config: { batchSize: '25' } }); });
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-18T06:00:00Z'));

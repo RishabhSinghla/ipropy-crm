@@ -1236,7 +1236,7 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
     Object.fromEntries(fields.map((f) => [f.key, f.source === 'config' ? (summary.config[f.key] ?? '') : ''])),
   );
   const [sarvamPolicy, setSarvamPolicy] = useState<Record<string, string>>(() => Object.fromEntries(
-    ['batchSize', 'callStart', 'callEnd', 'callingHoursEnabled', 'inboundDeploymentId', 'inboundModule', 'syncInboundVersion']
+    ['batchSize', 'callsAtATime', 'callStart', 'callEnd', 'callingHoursEnabled', 'inboundDeploymentId', 'inboundModule', 'syncInboundVersion']
       .filter((key) => summary.config[key] !== undefined).map((key) => [key, summary.config[key]!]),
   ));
   const [sarvamResult, setSarvamResult] = useState('');

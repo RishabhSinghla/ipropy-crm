@@ -15,7 +15,7 @@ describe('AI outbound calling window in India', () => {
     expect(sarvamCallingAllowed(overnight,new Date('2026-10-19T01:30:00Z'))).toBe(false);
   });
   it('requires valid bounded batches and unambiguous time settings', () => {
-    for (const bad of [{batchSize:0},{batchSize:201},{batchSize:2.5},{callStart:'25:00'},{callStart:'10:00',callEnd:'10:00'}]) expect(sarvamPolicySchema.safeParse(bad).success).toBe(false);
+    for (const bad of [{batchSize:0},{batchSize:201},{batchSize:2.5},{callsAtATime:0},{callsAtATime:11},{callsAtATime:1.5},{callStart:'25:00'},{callStart:'10:00',callEnd:'10:00'}]) expect(sarvamPolicySchema.safeParse(bad).success).toBe(false);
     expect(sarvamCallingAllowed({...policy,callingHoursEnabled:'false'},new Date('2026-10-18T23:00:00Z'))).toBe(true);
   });
 });
