@@ -77,8 +77,6 @@ beforeEach(async () => {
   await db.query(`DELETE FROM ipy_sarvam_batch WHERE origin = 'auto'`);
   await db.query(`DELETE FROM ipy_ai_call_run`);
   await db.query(`UPDATE ipy_ai_call_schedule SET enabled = false, view_id = NULL, owner_user_id = NULL`);
-  vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(SATURDAY_11_10_IST);
 });
 afterEach(() => { vi.useRealTimers(); });
 
@@ -98,6 +96,9 @@ describe('what the AI call status says', () => {
 });
 
 describe('the daily run is off until somebody switches it on', () => {
+  // Fake time only here: the sign-in token above must not be judged against a date days away.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(SATURDAY_11_10_IST); });
+
   it('does nothing at all with the switches off, even at the start time on a chosen day', async () => {
     await tickAutoCalls(SATURDAY_11_10_IST);
     expect((await db.queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM ipy_ai_call_run`))!.n).toBe(0);
