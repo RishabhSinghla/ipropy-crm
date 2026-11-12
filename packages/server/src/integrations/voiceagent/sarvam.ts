@@ -381,6 +381,24 @@ export function sarvamDispositionValue(raw: unknown, options: string[]): string 
   return options.find((option) => normalizedOption(option) === wanted) ?? null;
 }
 
+const IDENTITY_FIELD_NAMES = new Set(['full_name', 'first_name', 'last_name', 'name', 'mobile', 'email', 'whatsapp_number',
+  'alternate_phone', 'alternate_mobile', 'country_code']);
+/** Who the person is and how to reach them. A phone call is never allowed to overwrite these. */
+export function isIdentityField(field: { name: string; uitype?: string }, labelFields: string[] | undefined = []): boolean {
+  return IDENTITY_FIELD_NAMES.has(field.name) || field.uitype === 'phone' || field.uitype === 'email'
+    || (labelFields ?? []).includes(field.name);
+}
+/** A call may fill an identity field only when it is empty or (for names) a placeholder such as a bare number, "Unknown" or "N/A". */
+export function identityValueIsFillable(existing: unknown, reachField = false): boolean {
+  if (existing === null || existing === undefined) return true;
+  const text = String(existing).trim();
+  if (!text) return true;
+  // A phone or email on file is real however it looks; only a name can be a placeholder.
+  if (reachField) return false;
+  if (/^[+\d\s().-]{6,}$/.test(text)) return true;
+  return /^(unknown|unnamed|no name|n\/a|na|none|null|undefined|lead|customer|user|test)$/i.test(text);
+}
+
 /** An inactive CRM service identity for AI-authored updates and notes. */
 async function sarvamSystemContext() {
   const { systemContext } = await import('../../core/workflow/tasks.js');
@@ -513,6 +531,9 @@ async function syncSarvamFeedbackToRecord(input: {
     const fieldName = moduleFieldMap[key] ?? aliases[key] ?? key;
     const field = fields.get(fieldName);
     if (!field || field.isReadonly || field.displayType === 'readonly' || fieldName === 'description' || fieldName === 'requirement') continue;
+    // Whoever answers (a relative, a wrong person) must not rename the contact or change who we can reach them on.
+    // The spoken value is still kept in the call note and feedback block below.
+    if (isIdentityField(field, module.labelFields) && !identityValueIsFillable(record.values[fieldName], field.uitype === 'phone' || field.uitype === 'email' || ['mobile', 'email', 'whatsapp_number', 'alternate_phone', 'alternate_mobile', 'country_code'].includes(fieldName))) continue;
 
     if (field.uitype === 'picklist' || field.uitype === 'multipicklist') {
       const picklistValues = sourceValues.length ? sourceValues : [candidate];

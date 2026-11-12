@@ -86,3 +86,23 @@ describe('Sarvam CRM identity and outcomes', () => {
     expect(sarvamDispositionValue('made up outcome', options)).toBeNull();
   });
 });
+
+import { identityValueIsFillable, isIdentityField } from '../src/integrations/voiceagent/sarvam.js';
+describe('a call never renames a contact or changes how to reach them', () => {
+  it('keeps a real name and fills only empty or placeholder names', () => {
+    expect(identityValueIsFillable('Rohit Sharma')).toBe(false);
+    for (const placeholder of [undefined, null, '', '  ', '9891222206', '+91 98912 22206', 'Unknown', 'N/A', 'Lead']) expect(identityValueIsFillable(placeholder)).toBe(true);
+  });
+  it('never replaces a phone or email on file, even one that looks like a number', () => {
+    expect(identityValueIsFillable('9891222206', true)).toBe(false);
+    expect(identityValueIsFillable('a@b.com', true)).toBe(false);
+    expect(identityValueIsFillable('', true)).toBe(true);
+  });
+  it('treats names, phones, emails and label fields as identity', () => {
+    expect(isIdentityField({ name: 'full_name' })).toBe(true);
+    expect(isIdentityField({ name: 'x', uitype: 'phone' })).toBe(true);
+    expect(isIdentityField({ name: 'x', uitype: 'email' })).toBe(true);
+    expect(isIdentityField({ name: 'owner_name' }, ['owner_name'])).toBe(true);
+    expect(isIdentityField({ name: 'budget', uitype: 'currency' })).toBe(false);
+  });
+});
