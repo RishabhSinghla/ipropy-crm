@@ -313,7 +313,7 @@ export async function replaceValueInRecords(
   every such saved list silently empty.
 */
 const SYSTEM_FILTER_FIELDS: Record<string, string[]> = {
-  call_disposition: ['last_call_disposition'],
+  call_disposition: ['last_call_disposition', 'ai_call_outcome'],
 };
 
 async function renameInFilters(name: string, from: string, to: string, conn: Tx): Promise<number> {

@@ -1,4 +1,4 @@
-import { F, type ModuleDef } from '../helpers.js';
+import { F, type ModuleDef, type ViewDef } from '../helpers.js';
 import type { IndustryTemplate } from './types.js';
 
 /**
@@ -30,6 +30,18 @@ import type { IndustryTemplate } from './types.js';
   here is what makes it stick. `registry.syncUnitMasters` fills `unitOptions`
   from the master on every read, so the master is the only list.
 */
+
+/** The AI agent's ready-made lists. `ai_call_status` is a system field (core/query/builder.ts), so no module declares it. */
+const aiCallViews = (): ViewDef[] => ([
+  ['AI: interested', ['interested']],
+  ['AI: callback requested', ['callback']],
+  ['AI: no answer - retry due', ['no_answer', 'busy', 'voicemail']],
+  ['AI: not interested', ['not_interested']],
+  ['AI: never called', ['never_called']],
+] as const).map(([name, statuses]) => ({
+  name, columns: [], sortBy: 'ai_last_call_at', sortDir: 'desc' as const,
+  filter: { logic: 'AND', conditions: [{ field: 'ai_call_status', operator: 'in', value: [...statuses] }] },
+}));
 
 const MODULES: ModuleDef[] = [
   // =========================================================================
@@ -327,6 +339,7 @@ const MODULES: ModuleDef[] = [
         columns: [],
         filter: { logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] },
       },
+      ...aiCallViews(),
     ],
   },
 
@@ -577,6 +590,7 @@ const MODULES: ModuleDef[] = [
         columns: [],
         filter: { logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] },
       },
+      ...aiCallViews(),
     ],
   },
 

@@ -21,6 +21,7 @@ import { useCallDispositionOptions } from '../lib/callDispositions';
 import { cn } from '../lib/utils';
 import { Avatar, EmptyState, Skeleton } from '../components/ui';
 import { CallDonut } from '../components/CallDonut';
+import { AiCallingProgress } from '../components/AiCallingProgress';
 
 const DIRECTIONS = [
   { key: '', label: 'All calls' },
@@ -195,6 +196,8 @@ export default function Calls(): JSX.Element {
           )}
         </p>
       </div>
+
+      <AiCallingProgress />
 
       <div className="card flex flex-wrap items-end gap-2 p-3">
         <Picker label="Direction" value={direction} onChange={setDirection} options={DIRECTIONS} />

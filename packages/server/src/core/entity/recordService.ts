@@ -38,8 +38,10 @@ import {
   buildSearchClause,
   buildWhere,
   fieldExpr,
+  isSystemField,
   quoteIdent,
   resolveFieldPath,
+  systemFieldExpr,
   type BuildContext,
 } from '../query/builder.js';
 import { evaluateFormula } from './formula.js';
@@ -368,6 +370,22 @@ export async function listRecords(
     for (const row of rows) {
       const disposition = dispositionByRecord.get(row.id);
       if (disposition) row.values.last_call_disposition = disposition;
+    }
+  }
+
+  // The AI-call system fields are computed, like the one above: fill them in for the page with one query,
+  // using the very same expressions the filters read (builder.ts), so a column and a filter cannot disagree.
+  const aiNames = (effectiveColumns ?? []).filter((name) => name.startsWith('ai_') && isSystemField(name));
+  if (aiNames.length && rows.length) {
+    const selects = aiNames.map((name) => `${systemFieldExpr(name)} AS ${quoteIdent(name)}`).join(', ');
+    const aiRows = await conn.query<Record<string, unknown>>(
+      `SELECT ${RECORD_ALIAS}.id, ${selects} FROM ipy_record ${RECORD_ALIAS} WHERE ${RECORD_ALIAS}.id = ANY($1::uuid[])`,
+      [rows.map((row) => row.id)],
+    );
+    const byId = new Map(aiRows.rows.map((r) => [String(r.id), r]));
+    for (const row of rows) {
+      const found = byId.get(row.id);
+      if (found) for (const name of aiNames) row.values[name] = found[name] ?? null;
     }
   }
 

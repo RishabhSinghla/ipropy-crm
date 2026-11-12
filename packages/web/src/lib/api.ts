@@ -803,6 +803,35 @@ export interface AssociateOutcome {
   noModule: boolean;
 }
 
+/** Automatic daily AI calling (server: api/routes/aiCalling.ts). */
+export interface AiCallModuleSchedule {
+  module: string; enabled: boolean; startTime: string; days: number[]; dailyCap: number; viewId: string | null;
+  restDays: number; maxAttempts: number; retryHours: number; ownerUserId: string | null; blockedReason: string | null;
+}
+export interface AiCallSchedule {
+  master: { enabled: boolean };
+  modules: Record<'leads' | 'properties', AiCallModuleSchedule>;
+  health: { sarvam: string | null; owner: string | null };
+  policy: { start: string; end: string; enabled: boolean; callingAllowed: boolean };
+  now: { date: string; time: string; weekday: number };
+}
+export interface AiCallPreview {
+  date: string; considered: number; dailyCap: number; problem: string | null;
+  picks: { recordId: string; label: string; phone: string; why: string }[];
+  skipped: { reason: string; text: string; count: number }[];
+  skippedExamples: { recordId: string; label: string | null; reason: string; text: string }[];
+}
+export interface AiCallStatus {
+  today: string; masterEnabled: boolean; planned: Record<string, number>; blocked: Record<string, string | null>;
+  perDay: { day: string; module: string | null; calls: number; answered: number; interested: number; failed: number }[];
+  runs: { id: string; module: string; run_date: string; trigger: string; status: string; planned: number; skipped: Record<string, number>; message: string | null; batch_id: string | null; created_at: string }[];
+}
+export interface AiCallOnRecord {
+  id: string; started_at: string; duration_seconds: number; status: string; disposition: string | null; ai_summary: string | null;
+  notes: string | null; transcript: string | null; has_recording: boolean; agent_app_id: string | null; ai_status: string;
+  outcome: string | null; feedback: string | null; automatic: boolean | null;
+}
+
 export const api = {
   contactMergePreview: () => get<{ groups: Array<{ key: string; members: Array<{ id: string; module: string; updatedAt: string; label: string }> }>; records: number; review: number }>('/api/contact-merges/preview'),
   contactMergeHistory: () => get<Array<{ key: string; survivor_id: string; created_at: string; label: string; agent: string }>>('/api/contact-merges/history'),
@@ -1276,6 +1305,13 @@ export const api = {
   createSarvamQueue: (module: string, ids: string[]) => post<{ id: string; count: number }>('/api/telephony/sarvam-queues', { module, ids }),
   sarvamQueueAction: (id: string, action: 'pause' | 'resume' | 'retry') => post<{ ok: true }>(`/api/telephony/sarvam-queues/${id}/${action}`, {}),
   resolveSarvamItem: (id: string) => post<{ ok: true }>(`/api/telephony/sarvam-queue-items/${id}/resolve`, { confirmedEnded: true }),
+  aiCallingSchedule: () => get<AiCallSchedule>('/api/ai-calling/schedule'),
+  saveAiCallingSchedule: (body: { master?: { enabled: boolean }; modules?: Record<string, Partial<Omit<AiCallModuleSchedule, 'module' | 'ownerUserId' | 'blockedReason'>>> }) => put<{ ok: true }>('/api/ai-calling/schedule', body),
+  aiCallingViews: (module: string) => get<{ id: string; name: string }[]>(`/api/ai-calling/views?module=${module}`),
+  aiCallingPreview: (module: string, recordIds?: string[]) => post<AiCallPreview>('/api/ai-calling/preview', { module, recordIds }),
+  aiCallingRunNow: (module: string, limit: number, recordIds?: string[]) => post<{ runId: string | null; status: string; planned: number; message: string | null; callingHours: string }>('/api/ai-calling/run-now', { module, limit, recordIds }),
+  aiCallingStatus: () => get<AiCallStatus>('/api/ai-calling/status'),
+  aiCallsOnRecord: (module: string, id: string) => get<{ calls: AiCallOnRecord[] }>(`/api/ai-calling/records/${module}/${id}`),
   sarvamCallStatus: (attemptId: string) =>
     get<{ status: string }>(`/api/telephony/sarvam/${encodeURIComponent(attemptId)}`),
   sarvamTestCall: (phone: string) => post<{ ok: true; attemptId: string }>('/api/admin/integrations/sarvam_voice/test-call', { phone }),

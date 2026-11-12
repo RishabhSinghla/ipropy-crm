@@ -10,6 +10,7 @@ import { logger } from '../../utils/logger.js';
 import { placeAgentCall } from './sarvam.js';
 import { reconcileAndRemember } from './reconcile.js';
 import { isQuietHours } from '../../utils/quietHours.js';
+import { tickAutoCalls } from './autoCalls.js';
 
 /** Claim and dispatch under a cross-process advisory lock. Never redial a lost response. */
 export async function tickSarvamQueue(): Promise<void> {
@@ -105,6 +106,7 @@ let lastInboundCheck = 0;
 let reconcileBusy = false;
 let lastReconcile = 0;
 let reconciledOnce = false;
+let lastAutoCalls = 0;
 /** Sarvam is asked what happened to every recent call this often: a lost callback is found within minutes, not never. */
 const RECONCILE_EVERY_MS = 10 * 60_000;
 export function startSarvamQueue(): void {
@@ -121,6 +123,8 @@ export function startSarvamQueue(): void {
       void reconcileAndRemember({ hours: reconciledOnce ? 24 : 14 * 24 }).then((report) => { reconciledOnce = true; if (report.completed || report.backfilled || report.enriched) logger.info(report, 'sarvam: reconciled with Sarvam'); })
         .catch((err) => logger.error({ err }, 'Sarvam reconciliation failed')).finally(() => { reconcileBusy = false; });
     }
+    // Automatic daily calling (autoCalls.ts) looks once a minute; it is a no-op while its switches are off.
+    if (Date.now() - lastAutoCalls >= 60_000) { lastAutoCalls = Date.now(); void tickAutoCalls(); }
     if (busy) return;
     busy = true;
     void tickSarvamQueue().catch((err) => logger.error({ err }, 'Sarvam queue tick failed')).finally(() => { busy = false; });

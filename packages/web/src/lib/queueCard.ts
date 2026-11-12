@@ -59,7 +59,7 @@ export function queueCardFields(fields: FieldMeta[]): CardFields {
 export function queueCardColumns(fields: FieldMeta[]): string[] {
   // The call outcome sits beside the record name in the queue, even if the
   // current saved view does not include this system field as a visible column.
-  const names: string[] = ['last_call_disposition'];
+  const names: string[] = ['last_call_disposition', 'ai_call_status'];
   for (const field of Object.values(queueCardFields(fields))) {
     names.push(field.name);
     const unitField = field.config.unitField;

@@ -148,6 +148,50 @@ export const SYSTEM_FIELDS: Record<string, SystemField> = {
               WHERE lc.record_id = ${RECORD_ALIAS}.id AND lc.disposition IS NOT NULL
               ORDER BY lc.started_at DESC LIMIT 1)`,
   },
+  /*
+    The AI agent's calls, read from `ipy_call` (source 'sarvam', outbound) and the queue.
+
+    Same reasoning as the two above: a call is not a field on the record, so these four make
+    "who did the AI reach, and how did it go" ordinary filter grammar — one definition for the list, a saved
+    view, a dashboard widget and the daily planner. `ipy_ai_status` (migration 239) is the one place that turns
+    a finished call into the word shown on screen.
+  */
+  ai_call_status: {
+    uitype: 'picklist',
+    label: 'AI Call Status',
+    column: 'ai_call_status',
+    expr: `COALESCE(
+      (SELECT CASE q.status WHEN 'pending' THEN 'queued' ELSE 'ringing' END
+         FROM ipy_sarvam_queue q JOIN ipy_sarvam_batch qb ON qb.id = q.batch_id AND qb.status <> 'done'
+        WHERE q.record_id = ${RECORD_ALIAS}.id AND q.status IN ('pending','submitting','waiting') LIMIT 1),
+      (SELECT ipy_ai_status(ac.status, ac.disposition, ac.sarvam_meta->>'outcome') FROM ipy_call ac
+        WHERE ac.record_id = ${RECORD_ALIAS}.id AND ac.source = 'sarvam' AND ac.direction = 'outbound'
+        ORDER BY ac.started_at DESC, ac.id DESC LIMIT 1),
+      'never_called')`,
+  },
+  ai_last_call_at: {
+    uitype: 'datetime',
+    label: 'Last AI Call',
+    column: 'ai_last_call_at',
+    expr: `(SELECT MAX(ac.started_at) FROM ipy_call ac
+             WHERE ac.record_id = ${RECORD_ALIAS}.id AND ac.source = 'sarvam' AND ac.direction = 'outbound')`,
+  },
+  ai_attempts: {
+    uitype: 'integer',
+    label: 'AI Call Attempts',
+    column: 'ai_attempts',
+    expr: `(SELECT count(*)::int FROM ipy_call ac
+             WHERE ac.record_id = ${RECORD_ALIAS}.id AND ac.source = 'sarvam' AND ac.direction = 'outbound')`,
+  },
+  ai_call_outcome: {
+    uitype: 'picklist',
+    label: 'AI Call Outcome',
+    column: 'ai_call_outcome',
+    expr: `(SELECT ac.disposition FROM ipy_call ac
+              WHERE ac.record_id = ${RECORD_ALIAS}.id AND ac.source = 'sarvam' AND ac.direction = 'outbound'
+                AND ac.disposition IS NOT NULL
+              ORDER BY ac.started_at DESC, ac.id DESC LIMIT 1)`,
+  },
 };
 
 interface SystemField {
