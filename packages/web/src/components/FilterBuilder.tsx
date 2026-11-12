@@ -8,6 +8,7 @@ import { fieldByKey } from '../lib/fields';
 import { cn } from '../lib/utils';
 import { FieldInput } from './FieldRenderer';
 import { Select } from './ui';
+import { AI_STATUS_LABEL } from './AiCallsPanel';
 
 /** System pseudo-fields available on every module. */
 const SYSTEM_FIELDS: FieldMeta[] = ([
@@ -18,6 +19,11 @@ const SYSTEM_FIELDS: FieldMeta[] = ([
   { name: 'updated_at', label: 'Modified At', uitype: 'datetime' },
   { name: 'last_activity_at', label: 'Last Activity', uitype: 'datetime' },
   { name: 'created_by', label: 'Created By', uitype: 'user' },
+  // The AI agent's calls (server: SYSTEM_FIELDS in core/query/builder.ts).
+  { name: 'ai_call_status', label: 'AI Call Status', uitype: 'picklist' },
+  { name: 'ai_call_outcome', label: 'AI Call Outcome', uitype: 'picklist' },
+  { name: 'ai_last_call_at', label: 'Last AI Call', uitype: 'datetime' },
+  { name: 'ai_attempts', label: 'AI Call Attempts', uitype: 'integer' },
 ] as const).map((f) => ({
   ...f,
   id: `sys_${f.name}`, internalId: `sys_${f.name}`, moduleId: '', moduleName: '', blockId: null,
@@ -25,6 +31,9 @@ const SYSTEM_FIELDS: FieldMeta[] = ([
   isMandatory: false, isReadonly: true, isUnique: false, isCustom: false, isActive: true,
   displayType: 'default' as const, defaultValue: null, maxLength: null, helpText: null,
   config: {}, quickCreate: false, massEditable: false, searchable: false,
+  options: f.name === 'ai_call_status'
+    ? Object.entries(AI_STATUS_LABEL).map(([value, label], sequence) => ({ value, label, color: null, sequence, isDefault: false, isActive: true }))
+    : undefined,
 }));
 
 export function FilterBuilder({

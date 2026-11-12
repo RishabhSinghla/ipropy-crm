@@ -32,6 +32,7 @@ import { whatsappNumbersRouter } from './api/routes/whatsappNumbers.js';
 import { whatsappDripRouter } from './api/routes/whatsappDrip.js';
 import { deviceRouter } from './api/routes/device.js';
 import { telephonyRouter } from './api/routes/telephony.js';
+import { aiCallingRouter } from './api/routes/aiCalling.js';
 import { aiRouter } from './api/routes/ai.js';
 import { webhooksRouter } from './api/routes/webhooks.js';
 import { miscRouter } from './api/routes/misc.js';
@@ -328,6 +329,7 @@ export function createApp(): Express {
   app.use('/api/whatsapp-numbers', whatsappNumbersRouter);
   app.use('/api/whatsapp-drip', whatsappDripRouter);
   app.use('/api/telephony', telephonyRouter);
+  app.use('/api/ai-calling', aiCallingRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/market', marketRouter);
   // Project-specific data and dropdown masters, kept out of shared CRM masters.

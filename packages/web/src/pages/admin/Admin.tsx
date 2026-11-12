@@ -3,7 +3,7 @@ import ProfileStrengthAdmin from './ProfileStrengthAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, Blocks, Building2, Database, KeyRound, LayoutTemplate, Link2, MapPin,
+  Activity, Bot, Blocks, Building2, Database, KeyRound, LayoutTemplate, Link2, MapPin,
   ListTree, Megaphone, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -32,6 +32,7 @@ const BulkMessagesAdmin = lazy(() => import('./BulkMessagesAdmin'));
 const ProjectMastersAdmin = lazy(() => import('./ProjectMastersAdmin'));
 const WhatsAppNumbersAdmin = lazy(() => import('./WhatsAppNumbersAdmin'));
 const WhatsAppDripAdmin = lazy(() => import('./WhatsAppDripAdmin'));
+const AiCallingAdmin = lazy(() => import('./AiCallingAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -99,6 +100,7 @@ const SECTIONS = [
       { path: 'sms-rcs', capability: 'whatsapp.send', label: 'SMS & RCS campaigns', icon: Megaphone, element: <BulkMessagesAdmin /> },
       { path: 'whatsapp-numbers', capability: 'admin.integrations', label: 'WhatsApp numbers', icon: MessageSquareText, element: <WhatsAppNumbersAdmin /> },
       { path: 'whatsapp-drip', capability: 'admin.integrations', label: 'WhatsApp drip', icon: MessageSquareText, element: <WhatsAppDripAdmin /> },
+      { path: 'ai-calling', capability: 'admin.integrations', label: 'AI calling schedule', icon: Bot, element: <AiCallingAdmin /> },
       { path: 'templates', capability: 'whatsapp.templates', label: 'Email Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand', icon: Sparkles, element: <BrandAdmin /> },

@@ -17,6 +17,7 @@ import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
 import { CallsTab, FilesTab } from '../pages/RecordDetail';
+import { AI_STATUS_LABEL } from './AiCallsPanel';
 import ComposeModal from './ComposeModal';
 import { EditableField, isInlineEditable } from './EditableField';
 import { NoteComposer } from './RecordBlocks';
@@ -1336,7 +1337,7 @@ export function IpropyWorkspace({
             />
           )}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
-          {shownKey === 'calls' && <CallsTab recordId={active.id} />}
+          {shownKey === 'calls' && <CallsTab recordId={active.id} module={module.name} />}
           {shownKey === 'message' && <LeadChat module={module.name} recordId={active.id} mobile={phoneValue || null} />}
         </div>
       </section>
@@ -1745,7 +1746,7 @@ function QueueCard({
 
         {row.aiCalls && <span className="mt-1 block text-[10px] font-medium text-violet-700 dark:text-violet-300"
           title={`Last AI call: ${new Date(row.aiCalls.lastAt).toLocaleString('en-IN')} · ${row.aiCalls.lastStatus} · ${row.aiCalls.answered} answered`}>
-          AI called · {row.aiCalls.attempts} {row.aiCalls.attempts === 1 ? 'attempt' : 'attempts'} · {row.aiCalls.lastStatus === 'completed' ? 'answered' : row.aiCalls.lastStatus.replaceAll('_',' ')}
+          AI called · {row.aiCalls.attempts} {row.aiCalls.attempts === 1 ? 'attempt' : 'attempts'} · {AI_STATUS_LABEL[String(row.values.ai_call_status ?? '')] ?? (row.aiCalls.lastStatus === 'completed' ? 'answered' : row.aiCalls.lastStatus.replaceAll('_',' '))}
         </span>}
 
         {/* 2. Which unit, cut short with "…" rather than wrapped. A blank line
