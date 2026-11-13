@@ -1,0 +1,11 @@
+[mcp_servers.graft]
+command = "graft"
+args = ["mcp"]
+
+[mcp_servers.rea]
+command = "npx"
+args = [
+    "-y",
+    "rea-agents@6.7.0",
+    "mcp",
+]
