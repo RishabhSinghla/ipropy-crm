@@ -669,9 +669,15 @@ is dropped, so a rebuild later starts from data. Only screens, routes, settings 
 * **Stage 4 (done): Dealer Groups and the EMI / car-loan calculators.** The `/market` feed, the Jev reading of group posts, the
   introductions and call sheet, `/api/market`, the Associates "deal tables" and their Layout Designer sections, the agent's
   `search_market` tool, and `/tools`. The `ipy_market_*` tables, Associates records and the Jev settings card are untouched.
-* **Still to do, in order:** WhatsApp (chat, API, OpenWA, drip, templates, campaigns), Dealer Groups and the
-  market feed, EMI / car-loan tools, and last Meta Lead Capture with the Conversions API (owner confirmed removal, 25 November).
-  Notes, Comments and Android calling stay.
+* **Stage 5 (done): WhatsApp, all of it.** Chats, the business API (Meta Cloud, WhatsMarketing), OpenWA linked numbers, drip,
+  templates, campaigns, the lookup, the WhatsApp tab and buttons on every record, the live message cards, the WhatsApp reports,
+  the `/api/comms` inbox, and the wa.me / SMS / mailto share buttons. Migration `245` deletes the three WhatsApp settings cards.
+  `matchContact` (phone number to contact) moved to `integrations/telephony/matchContact.ts` because Android call matching uses it.
+  Kept on purpose: the `whatsapp_number` and `whatsapp_name` fields on contacts (they are data), every `ipy_conversation`,
+  `ipy_message`, `ipy_wa_*` and campaign table, and the capabilities `whatsapp.send` / `whatsapp.templates` (stored on profiles).
+  **Reports** now has its own entry in the left toolbar, since it used to live inside the WhatsApp page.
+* **Still to do:** Meta Lead Capture with the Conversions API (owner confirmed removal on 25 November). It stops Facebook ad leads arriving.
+  WHATSAPP.md, docs/OPENWA.md and the long WhatsApp sections below are history, not a description of the running CRM.
 
 ---
 

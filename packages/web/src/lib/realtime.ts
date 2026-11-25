@@ -17,7 +17,6 @@ import { apiBase, isNative } from './native';
 import { takePendingDial } from './dialWatch';
 import { chime, claimOnce, desktopNotice, nextCallCard, useLiveCards, type CallCard } from './liveCards';
 import type { LiveCallState } from './api';
-import { announceWhatsApp, askForDesktopNotificationsOnFirstClick, isWhatsAppMessage, type LiveNotification } from './whatsappAlert';
 
 let socket: Socket | null = null;
 
@@ -100,14 +99,8 @@ export function useRealtime(enabled: boolean): void {
         void qc.invalidateQueries({ queryKey: ['record-counts'] });
       }
     };
-    const onNotification = (note?: LiveNotification): void => {
+    const onNotification = (): void => {
       void qc.invalidateQueries({ queryKey: ['notifications'] });
-      if (isWhatsAppMessage(note)) {
-        void qc.invalidateQueries({ queryKey: ['wa-biz'] });
-        // The corner card replaces the plain toast when the server sent the thread details.
-        if (note?.conversationId) announceInCorner(note);
-        else void announceWhatsApp(note!);
-      }
     };
     const onPhone = (live: LiveCallState): void => {
       const next = nextCallCard(currentCallCard(), live, Date.now());
@@ -157,7 +150,6 @@ export function useRealtime(enabled: boolean): void {
     s.on('connect', onConnect);
     window.addEventListener('ipropy:resumed', onResume);
     void takePendingDial();
-    const stopAsking = isNative ? () => {} : askForDesktopNotificationsOnFirstClick();
 
     return () => {
       s.off('record:updated', onRecordChanged);
@@ -177,7 +169,6 @@ export function useRealtime(enabled: boolean): void {
       s.off('device:control', onDial);
       s.off('connect', onConnect);
       window.removeEventListener('ipropy:resumed', onResume);
-      stopAsking();
     };
   }, [enabled, qc]);
 }
@@ -228,13 +219,3 @@ function currentCallCard(): CallCard | null {
   return (useLiveCards.getState().cards.find((c) => c.kind === 'call') as CallCard | undefined) ?? null;
 }
 
-/** A WhatsApp message as a card in the corner, a soft chime, and a desktop notice if the tab is hidden. */
-function announceInCorner(note: LiveNotification): void {
-  const shown = useLiveCards.getState().pushWhatsApp({
-    id: note.id, body: note.body, recordId: note.recordId, conversationId: note.conversationId,
-    handle: note.handle, contactName: note.contactName, module: note.module,
-  });
-  if (!shown) return;
-  if (claimOnce(`c-${note.id}`)) chime('message');
-  void desktopNotice(note.id ?? note.conversationId ?? 'wa', note.title ?? 'New WhatsApp message', note.body ?? '', note.recordId ? `/${note.module ?? 'leads'}?open=${note.recordId}&stream=message` : '/chats');
-}

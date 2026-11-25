@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { HeaderTab } from '@ipropy/shared';
 import { arrangeHeaderTabs } from '../src/lib/headerTabs';
-import { waDigits } from '../src/lib/whatsapp';
 
 describe('arrangeHeaderTabs', () => {
   it('ships Dashboard, the modules and Site visit when nothing is arranged', () => {
     const tabs = arrangeHeaderTabs(null, ['leads', 'properties']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'calls', 'whatsapp', 'capture']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'calls', 'capture']);
   });
 
   /*
@@ -22,30 +21,12 @@ describe('arrangeHeaderTabs', () => {
       { kind: 'module', value: 'leads' },
     ] as unknown as HeaderTab[];
     const tabs = arrangeHeaderTabs(saved, ['leads']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'calls', 'whatsapp']);
-  });
-
-  /*
-    The other half of the same rule, and the reason it is written down: an
-    arrangement saved before WhatsApp existed — which is every arrangement on
-    production — cannot have meant to leave it out, so it is appended rather
-    than being the one screen nobody can reach. That is exactly what happened
-    to Chats.
-  */
-  it('appends WhatsApp to an arrangement saved before the page existed', () => {
-    const saved = [{ kind: 'dashboard' }, { kind: 'module', value: 'leads' }] as HeaderTab[];
-    expect(arrangeHeaderTabs(saved, ['leads']).some((t) => t.kind === 'whatsapp')).toBe(true);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'calls']);
   });
 
   it('appends Calls to an arrangement saved before that page existed too', () => {
     const saved = [{ kind: 'dashboard' }] as HeaderTab[];
     expect(arrangeHeaderTabs(saved, []).some((t) => t.kind === 'calls')).toBe(true);
-  });
-
-  it('does not add a second WhatsApp when the arrangement already names it', () => {
-    const saved = [{ kind: 'whatsapp' }, { kind: 'dashboard' }] as HeaderTab[];
-    const tabs = arrangeHeaderTabs(saved, []);
-    expect(tabs.filter((t) => t.kind === 'whatsapp')).toHaveLength(1);
   });
 
   /*
@@ -63,13 +44,5 @@ describe('arrangeHeaderTabs', () => {
   it('still appends a module the arrangement does not name', () => {
     const tabs = arrangeHeaderTabs([{ kind: 'dashboard' }], ['leads']);
     expect(tabs.some((t) => t.kind === 'module' && t.value === 'leads')).toBe(true);
-  });
-});
-
-describe('waDigits', () => {
-  it('keeps digits only, so a formatted number and a raw one agree', () => {
-    expect(waDigits('+91 98765 43210')).toBe('919876543210');
-    expect(waDigits('(020) 4000-1234')).toBe('02040001234');
-    expect(waDigits('')).toBe('');
   });
 });

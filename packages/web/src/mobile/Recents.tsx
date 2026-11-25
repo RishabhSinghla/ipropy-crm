@@ -209,14 +209,6 @@ export default function MobileRecents(): JSX.Element {
                   <Phone className="h-3.5 w-3.5" />
                   {missed ? 'Return call' : 'Call back'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/chats?to=${encodeURIComponent(number)}`)}
-                  className="flex shrink-0 items-center gap-1.5 rounded-full border border-[#86efac] bg-[#f0fdf4] px-3 py-2 text-[11px] font-semibold text-[#15803d]"
-                >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  WhatsApp
-                </button>
                 {recordId && (
                   <button
                     type="button"

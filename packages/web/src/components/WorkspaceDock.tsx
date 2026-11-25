@@ -23,7 +23,7 @@ import { type JSX, type ReactNode, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { Archive, LayoutDashboard, MessagesSquare, PhoneIncoming, Search, Star, Store, UserRound } from 'lucide-react';
+import { Archive, BarChart3, LayoutDashboard, PhoneIncoming, Star, UserRound } from 'lucide-react';
 import { ThreeContacts } from './ThreeContacts';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -96,11 +96,10 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
       tone: ['leads', 'inventory', 'associates', 'other'][index % 4],
     })),
     { to: '/calls', label: 'Calls', tone: 'calls', icon: <PhoneIncoming className="h-[18px] w-[18px]" />, count: counts?.calls },
+    { to: '/reports', label: 'Reports', tone: 'dashboard', icon: <BarChart3 className="h-[18px] w-[18px]" /> },
     ...(isAdmin ? [
       { to: `/${favouriteModule}?filter=${encodeURIComponent(JSON.stringify({ logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }))}`, label: 'Favourites', tone: 'favourites', icon: <Star className="h-[18px] w-[18px]" />, count: counts?.[`favourites:${favouriteModule}`] },
     ] : []),
-    { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, count: counts?.whatsapp, tone: 'whatsapp' as const },
-    { to: '/whatsapp-lookup', label: 'WhatsApp Lookup', icon: <Search className="h-[18px] w-[18px]" />, tone: 'whatsapp' as const },
   ];
   return (
     <div

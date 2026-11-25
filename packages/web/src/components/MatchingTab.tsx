@@ -739,28 +739,6 @@ function ShareMatchesModal({
             recipient is filled in: who it goes to is the one part of this that
             must stay a deliberate act.
           */}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(`${shareMessage}\n${url}`)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-secondary btn-sm"
-            >
-              <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-            </a>
-            <a
-              href={`sms:?&body=${encodeURIComponent(`${shareMessage} ${url}`)}`}
-              className="btn-secondary btn-sm"
-            >
-              <MessageSquare className="h-3.5 w-3.5" /> Message
-            </a>
-            <a
-              href={`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(`${shareMessage}\n\n${url}`)}`}
-              className="btn-secondary btn-sm"
-            >
-              <Mail className="h-3.5 w-3.5" /> Email
-            </a>
-          </div>
 
           <p className="mt-3 text-2xs text-muted">
             Revoke it any time from the record’s share links.

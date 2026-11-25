@@ -16,7 +16,6 @@ import { followUpChip } from '../lib/followUpDates';
 import { HEADER_CHIP_PAD, HEADER_CHIP_SHAPE, HEADER_CHIP_TONE, headerChipTone } from '../lib/headerChip';
 import { badgeVars } from '../lib/color';
 import { FollowUpBadge } from './FollowUpChip';
-import { useWhatsAppComposer } from './WhatsAppComposer';
 import { EmojiPicker } from './EmojiPicker';
 
 /**
@@ -268,7 +267,6 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
   const queryClient = useQueryClient();
   const [note, setNote] = useState('');
   const snippets = useNoteSnippets();
-  const whatsApp = useWhatsAppComposer();
   const add = useMutation({
     mutationFn: () => api.addComment(module, recordId, note.trim()),
     onSuccess: () => { setNote(''); setRewrite(null); void queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }); toast.success('Comment added'); },
@@ -483,20 +481,6 @@ export function NoteComposer({ module, recordId, look, whatsAppTo }: {
             {docked ? <MessageSquare className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
             {add.isPending ? 'Posting…' : docked ? 'Comment' : 'Post'}
           </button>
-          {/*
-            Only where WhatsApp can actually go: a number on the record and a
-            business provider switched on (the composer context is null
-            without one). The words go with it; nothing is sent from here.
-          */}
-          {docked && whatsAppTo && whatsApp && (
-            <button
-              type="button"
-              onClick={() => { whatsApp.compose(whatsAppTo, note.trim()); setNote(''); }}
-              className="btn-sm inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 font-semibold text-white shadow-xs transition hover:bg-emerald-800"
-            >
-              Send WhatsApp <Send className="h-3.5 w-3.5" />
-            </button>
-          )}
         </span>
       </div>
     </div>

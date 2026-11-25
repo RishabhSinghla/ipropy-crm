@@ -25,7 +25,7 @@
   a tab any more. A saved list that still names it simply drops it, the same
   way it drops anything else this build cannot draw.
 */
-export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls' | 'whatsapp' | DealTabKey;
+export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls' | DealTabKey;
 
 /**
  * An Associate is a dealer, and what a dealer posts in the WhatsApp groups is
@@ -98,7 +98,6 @@ export function allSplitTabs(moduleName: string): SplitTab[] {
   tabs.push(
     { key: 'files', label: 'Files' },
     { key: 'calls', label: 'Calls' },
-    { key: 'whatsapp', label: 'WhatsApp' },
   );
   return tabs;
 }

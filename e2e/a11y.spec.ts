@@ -194,38 +194,12 @@ test.describe('accessibility', () => {
   });
 
   test('reports has no violations', async ({ page }) => {
-    // Both halves: a chart is the easiest place in this CRM to fail a contrast
-    // or a focus rule, and the WhatsApp tab draws a second one.
+    // A chart is the easiest place in this CRM to fail a contrast or a focus rule.
     await page.goto('/reports');
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.recharts-surface').first()).toBeVisible({ timeout: 20_000 });
     const records = await scan(page);
     expect(records.violations, summarise(records.violations)).toEqual([]);
-
-    await page.getByRole('button', { name: 'WhatsApp' }).click();
-    await expect(page.getByText(/sent · .* received|No messages yet/)).toBeVisible({ timeout: 20_000 });
-    const messaging = await scan(page);
-    expect(messaging.violations, summarise(messaging.violations)).toEqual([]);
-  });
-
-  /*
-    The Settings -> WhatsApp tab this used to scan was removed with the
-    QR-linking route on 19 September 2026. A spec for a screen that no longer
-    exists fails for ever and teaches nobody anything, so it goes with it.
-  */
-
-  test('Chats has no violations', async ({ page }) => {
-    await page.goto('/chats');
-    /*
-      Three legitimate states, because /chats renders the business inbox now:
-      no provider connected (which is what a developer's database and CI both
-      look like), a provider with nothing chosen, and a thread open.
-    */
-    await expect(
-      page.getByText(/is not connected yet|Pick a conversation|No messages yet/),
-    ).toBeVisible({ timeout: 20_000 });
-    const { violations } = await scan(page);
-    expect(violations, summarise(violations)).toEqual([]);
   });
 
   test('record detail has no violations', async ({ page }) => {

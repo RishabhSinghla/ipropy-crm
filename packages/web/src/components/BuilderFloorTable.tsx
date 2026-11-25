@@ -36,7 +36,6 @@ import { EditableField, isInlineEditable } from './EditableField';
 import { CallButton } from './CallDisposition';
 import { useLiveCall } from '../lib/liveCall';
 import { useApp } from '../lib/store';
-import { WhatsAppButton } from './WhatsAppButton';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { queueCardFields } from '../lib/queueCard';
 import { Spinner } from './ui';
@@ -392,7 +391,6 @@ export function BuilderFloorTable({ title, filter, emptyLine, module: moduleName
                           <FieldValue field={field} value={row.values?.[field.name]} display={row.display?.[field.name]} plain />
                           {rowPhone(row, field) && <>
                             <CallButton to={rowPhone(row, field)} plain recordId={row.id} module={moduleName} />
-                            <WhatsAppButton to={rowPhone(row, field)} iconOnly />
                           </>}
                         </span>
                       ) : mayEdit && isInlineEditable(field) ? (

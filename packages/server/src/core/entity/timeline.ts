@@ -17,7 +17,6 @@
 import type { TimelineEntry } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { describeChanges } from './auditChanges.js';
-import { isAutomationOnlyProvider } from '../../integrations/whatsapp/business/channelRoles.js';
 
 export interface TimelineOptions {
   /** Admins read automatic WhatsApp messages in full; everyone else gets one line. */
@@ -58,31 +57,7 @@ export async function buildTimeline(
           )
         : empty<CommentRow>(),
 
-      want('message')
-        ? conn.query<MessageRow>(
-            /*
-              `wa_account_id` carries which linked number a WhatsApp message
-              went out from. With one business number that question had no
-              answer worth printing; with a number per agent it is the first
-              thing somebody asks of a message they did not send.
-            */
-            `SELECT m.id::text, m.direction, m.channel, m.type, m.body, m.status,
-                    m.is_ai_generated, m.created_at, m.sent_by, m.media, m.provider,
-                    trim(u.first_name || ' ' || u.last_name) AS user_name,
-                    wa.phone_number AS wa_number,
-                    trim(wu.first_name || ' ' || wu.last_name) AS wa_agent
-             FROM ipy_message m
-             JOIN ipy_conversation cv ON cv.id = m.conversation_id
-             LEFT JOIN ipy_user u ON u.id = m.sent_by
-             LEFT JOIN ipy_wa_account wa ON wa.id = m.wa_account_id
-             LEFT JOIN ipy_user wu ON wu.id = wa.user_id
-             -- The removed phone-sync route's threads (a wa_account_id) are
-             -- reps' own WhatsApp, not the business number — kept, not shown.
-             WHERE cv.record_id = $1 AND cv.wa_account_id IS NULL
-             ORDER BY m.created_at DESC LIMIT $2`,
-            [recordId, limit],
-          )
-        : empty<MessageRow>(),
+      empty<MessageRow>(), // chat messages were removed from the CRM; old rows stay stored but unshown
 
       want('call')
         ? conn.query<CallRow>(
@@ -160,45 +135,6 @@ export async function buildTimeline(
       // The id and the earlier wordings, so the feed can edit a note in place
       // and show what it said before when somebody hovers over it.
       meta: { isPrivate: r.is_private, commentId: r.id, editHistory: r.edit_history ?? [] },
-    });
-  }
-
-  for (const r of messages.rows) {
-    const inbound = r.direction === 'inbound';
-    /*
-      The number this went through, when it was an agent's own. Both halves are
-      wanted: the name answers "who", and the number answers "from which of
-      their phones", which is what a customer saw and what a manager checking a
-      complaint needs.
-    */
-    const via = r.wa_agent || r.wa_number
-      ? `${r.wa_agent ?? ''}${r.wa_agent && r.wa_number ? ' ' : ''}${r.wa_number ? `(${r.wa_number})` : ''}`.trim()
-      : null;
-    if (!inbound && isAutomationOnlyProvider(r.provider)) {
-      const admin = Boolean(opts.viewerIsAdmin);
-      entries.push({
-        id: `msg-${r.id}`, type: 'message', at: r.created_at,
-        actorId: null, actorName: 'Automation',
-        title: 'WhatsApp message sent automatically',
-        body: admin ? r.body : null,
-        icon: 'message-circle',
-        meta: { direction: r.direction, channel: r.channel, automated: true, ...(admin ? { status: r.status } : {}) },
-      });
-      continue;
-    }
-    entries.push({
-      id: `msg-${r.id}`, type: 'message', at: r.created_at,
-      // An inbound WhatsApp is still attributed to the agent whose phone
-      // received it, so a shared record says whose conversation this was.
-      actorId: r.sent_by, actorName: inbound ? 'Customer' : (r.user_name ?? r.wa_agent ?? (r.is_ai_generated ? 'AI Assistant' : 'System')),
-      title: `${inbound ? 'Received' : 'Sent'} ${r.channel === 'whatsapp' ? 'WhatsApp' : r.channel}${
-        via ? ` · ${inbound ? 'on' : 'via'} ${via}` : ''}`,
-      body: r.body ?? (r.media ? `[${r.type}]` : null),
-      icon: r.channel === 'whatsapp' ? 'message-circle' : 'mail',
-      meta: {
-        direction: r.direction, channel: r.channel, status: r.status,
-        isAi: r.is_ai_generated, media: r.media, sentVia: via,
-      },
     });
   }
 

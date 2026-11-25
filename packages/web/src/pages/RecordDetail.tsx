@@ -19,7 +19,6 @@ import { cn, looksLikeHtml, renderMarkdown, restrictionForField, sanitiseRichTex
 import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
 import { StrengthRing } from '../components/StrengthRing';
-import { WhatsAppTab } from '../components/WhatsAppTab';
 import { TagButton, TagChips } from '../components/TagButton';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField } from '../lib/fields';
@@ -33,8 +32,6 @@ import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/
 import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
-import { WhatsAppComposerProvider } from '../components/WhatsAppComposer';
-import { WhatsAppButton } from '../components/WhatsAppButton';
 import { isNative } from '../lib/native';
 import { downloadFromUrl } from '../lib/nativeActions';
 
@@ -354,7 +351,6 @@ function FullRecordPage(): JSX.Element {
     /* Offered wherever the record has a phone. The tab shows the history
        whoever sent it, which is the CRM's own question of who may read this
        record — not a question about whose phone it came from. */
-    ...(supportsCalls ? [{ key: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle className="h-3.5 w-3.5" /> }] : []),
     { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
     ...(moduleName === 'properties' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
   ];
@@ -400,7 +396,7 @@ function FullRecordPage(): JSX.Element {
         ?? meta.fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up')?.name
         ?? 'next_followup_at'}
     >
-    <WhatsAppComposerProvider recordId={record.id} module={moduleName!} recordLabel={record.label}>
+    <>
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
       <div className="card relative mb-4 overflow-visible">
@@ -466,7 +462,6 @@ function FullRecordPage(): JSX.Element {
                 <Star className={cn('h-4 w-4', record.starred && 'fill-amber-400 text-amber-400')} />
               </button>
 
-              {phone && <WhatsAppButton to={phone} />}
               {phone && <CallButton to={phone} recordId={id!} module={moduleName!} />}
 
               <Dropdown
@@ -663,19 +658,6 @@ function FullRecordPage(): JSX.Element {
             />
           )}
           {activeTab === 'calls' && <CallsTab recordId={id!} module={moduleName!} />}
-          {activeTab === 'whatsapp' && (
-            <WhatsAppTab
-              module={moduleName!}
-              recordId={id!}
-              /* The number the CRM holds, through the module's own phone field
-                 rather than a hardcoded name — `mobile` on leads, but a module
-                 an admin reshapes may call it something else. */
-              mobile={(() => {
-                const phone = meta.fields.find((f) => f.uitype === 'phone' && record.values[f.name]);
-                return phone ? String(record.values[phone.name]) : null;
-              })()}
-            />
-          )}
           {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} canEdit={Boolean(record.can?.edit)} />}
         </div>
 
@@ -731,7 +713,7 @@ function FullRecordPage(): JSX.Element {
       />
 
     </div>
-    </WhatsAppComposerProvider>
+    </>
     </CallDispositionProvider>
   );
 }
@@ -879,7 +861,6 @@ function OverviewTab({
  */
 const TIMELINE_FILTERS = [
   { key: 'comment', label: 'Notes' },
-  { key: 'message', label: 'Messages' },
   { key: 'audit', label: 'Changes' },
 ] as const;
 
@@ -924,12 +905,10 @@ export function TimelineTab({ module, id }: { module: string; id: string }): JSX
       ) : !data?.length ? (
         <EmptyState
           icon={<Activity className="h-8 w-8" />}
-          title={filter === 'comment' ? 'No notes yet' : filter === 'message' ? 'No messages yet' : 'No changes yet'}
+          title={filter === 'comment' ? 'No notes yet' : 'No changes yet'}
           body={filter === 'comment'
             ? 'Notes the team writes about this record appear here.'
-            : filter === 'message'
-              ? 'Messages and emails sent to this contact appear here.'
-              : 'Every edit to this record is recorded here.'}
+            : 'Every edit to this record is recorded here.'}
         />
       ) : (
         <div className="p-4">

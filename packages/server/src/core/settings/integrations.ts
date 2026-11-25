@@ -588,10 +588,6 @@ export async function warmup(): Promise<void> {
   // Absent means on, which is the behaviour that existed before it was a choice.
   allowDisabledProviders = row ? row.value !== false : true;
 
-  // Which WhatsApp route does which job; read here so it can never be older than the cards.
-  const { loadChannelRoles } = await import('../../integrations/whatsapp/business/channelRoles.js');
-  await loadChannelRoles();
-
   /*
     Error reporting follows the stored DSN, so pasting one on the integrations
     page turns it on without a redeploy. The environment variable still wins:
@@ -632,13 +628,6 @@ const SECRET_FIELDS: Record<string, string[]> = {
   google_ads: ['webhookKey'],
   s3: ['accessKeyId', 'secretAccessKey'],
   onedrive: ['clientSecret'],
-  // Every WhatsApp business credential is a bearer token or a shared secret:
-  // anything that leaves this list is a key the admin panel would hand back in
-  // plaintext to whoever opened the page.
-  whatsapp_meta: ['accessToken', 'appSecret', 'verifyToken'],
-  whatsapp_whatsmarketing: ['apiToken', 'webhookToken'],
-  // OpenWA: the gateway's API key, and the secret its webhooks are signed with.
-  whatsapp_openwa: ['apiKey', 'webhookSecret'],
 };
 
 function mask(value: string): string {

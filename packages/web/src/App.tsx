@@ -21,7 +21,6 @@ const Layout = lazy(() => import('./components/Layout'));
 const MobileShell = lazy(() => import('./mobile/Shell'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const AskPage = lazy(() => import('./pages/AskPage'));
-const WhatsAppLookupPage = lazy(() => import('./pages/WhatsAppLookup'));
 const ProjectsWorkspacePage = lazy(() => import('./pages/ProjectsWorkspace'));
 
 /** chat.ipropy.com is this same app; on that address the front door is the assistant. */
@@ -61,26 +60,16 @@ const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const SharedPropertyPage = lazy(() => import('./pages/SharedProperty'));
-const ChatsPage = lazy(() => import('./pages/BusinessChats'));
 const SharedMatchesPage = lazy(() => import('./pages/SharedMatches'));
 const PublicFormPage = lazy(() => import('./pages/PublicForm'));
 const SiteCapture = lazy(() => import('./pages/SiteCapture'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
-const WhatsAppPage = lazy(() => import('./pages/WhatsApp'));
 const CallsPage = lazy(() => import('./pages/Calls'));
 const SearchResultsPage = lazy(() => import('./pages/SearchResults'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
 
 /** Pages that only an admin has any use for: everybody else lands on the dashboard. */
-/** The old API-only address: one WhatsApp module now. Chats opens with the API filter on, other tabs keep their place. */
-function WhatsAppApiRedirect(): JSX.Element {
-  const { pathname } = useLocation();
-  const rest = pathname.replace(/^\/whatsapp-api\/?/, '');
-  const target = rest && rest !== 'chats' ? `/whatsapp/${rest}` : '/whatsapp/chats?kind=api';
-  return <Navigate to={target} replace />;
-}
-
 function RequireAdminRoute({ children }: { children: JSX.Element }): JSX.Element {
   const { user } = useApp();
   return user?.isAdmin ? children : <Navigate to="/dashboard" replace />;
@@ -165,15 +154,8 @@ export default function App(): JSX.Element {
               {/* Above the generic `:module` route, like /chats: otherwise
                   "reports" is looked up as a module and 404s. */}
               <Route path="reports" element={<ReportsPage />} />
-              {/* `/*` because the page routes its own tabs. `/chats` still
-                  works and is what the icon beside a number opens — this moves
-                  the door, not the room. */}
-              <Route path="whatsapp/*" element={<WhatsAppPage />} />
-              {/* The official API's own screen, for admins. Everyone else is sent home. */}
-              <Route path="whatsapp-api/*" element={<RequireAdminRoute><WhatsAppApiRedirect /></RequireAdminRoute>} />
               <Route path="calls" element={<CallsPage />} />
               <Route path="search" element={<SearchResultsPage />} />
-              <Route path="whatsapp-lookup" element={<WhatsAppLookupPage />} />
               {/* Projects has its own isolated workspace and masters rather than
                   the generic CRM split-view used by ordinary record modules. */}
               <Route path="projects" element={<ProjectsWorkspacePage />} />
@@ -182,12 +164,6 @@ export default function App(): JSX.Element {
               <Route path="archive" element={<ArchivePage />}>
                 <Route path=":module" element={<ListRoute archive />} />
               </Route>
-              {/* The official business number's shared inbox. Above the generic
-                  `:module` route, which would otherwise treat "chats" as a
-                  module name and 404 on the metadata lookup. It is no longer a
-                  header tab — the WhatsApp icon beside a number is the way in,
-                  and the page says so itself when no provider is switched on. */}
-              <Route path="chats" element={<ChatsPage />} />
               <Route path="admin/*" element={<AdminPage />} />
 
               {/* Generic module routes — every module, seeded or custom, uses these. */}

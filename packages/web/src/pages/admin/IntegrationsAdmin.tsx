@@ -56,59 +56,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
       placeholder: '{ "type": "service_account", "project_id": … }',
     },
   ],
-  /*
-    The official WhatsApp Business route, one card per way of buying it.
-
-    Every key here is one the server actually reads — `metaCloud.ts` and
-    `resellers.ts` — rather than a plausible-looking name. A field the adapter
-    never asks for is worse than a missing one: somebody fills it in, presses
-    Test, and the failure says nothing about why.
-
-    Four cards and not one with a dropdown, because switching reseller should
-    not mean retyping the credentials of the one you may go back to. Only the
-    card that is switched on is used.
-  */
-  whatsapp_meta: [
-    { key: 'accessToken', label: 'Permanent access token', source: 'credentials', secret: true },
-    { key: 'phoneNumberId', label: 'Phone number ID', source: 'config', placeholder: '1234567890123456' },
-    { key: 'wabaId', label: 'WhatsApp Business Account ID', source: 'config' },
-    { key: 'verifyToken', label: 'Webhook verify token', source: 'credentials', secret: true },
-    { key: 'appSecret', label: 'App secret', source: 'credentials', secret: true },
-    { key: 'apiVersion', label: 'Graph API version', source: 'config', placeholder: 'v21.0' },
-  ],
-  /*
-    Read off WhatsMarketing's own API documentation (v1.0), not guessed. Their
-    token is `apiToken` in the form body rather than a Bearer header, and there
-    is no API version in any path — the two fields this used to carry were from
-    the Meta shape they turned out not to use.
-  */
-  whatsapp_whatsmarketing: [
-    { key: 'apiToken', label: 'API Token', source: 'credentials', secret: true },
-    { key: 'phoneNumberId', label: 'Phone Number ID', source: 'config', placeholder: '337228512808270' },
-    { key: 'businessNumber', label: 'Your WhatsApp business number', source: 'config', placeholder: '919876543210' },
-    { key: 'baseUrl', label: 'API base URL', source: 'config', placeholder: 'https://app.whatsmarketing.in/api/v1' },
-    { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
-  ],
-  /*
-    OpenWA, a separate self-hosted gateway linked to the company number. The API
-    key and the webhook secret are secrets; the address, session name and the
-    three send limits are plain settings. The limits are clamped on the server,
-    so a typo cannot switch the brakes off.
-  */
-  whatsapp_openwa: [
-    { key: 'baseUrl', label: 'OpenWA address', source: 'config', placeholder: 'https://openwa.example.com  (local: http://127.0.0.1:2785)' },
-    { key: 'sessionName', label: 'Session name', source: 'config', placeholder: 'company' },
-    { key: 'apiKey', label: 'OpenWA API key', source: 'credentials', secret: true },
-    { key: 'adminApiKey', label: 'OpenWA admin key (to add / start / scan numbers from Admin → WhatsApp numbers; optional)', source: 'credentials', secret: true },
-    { key: 'quietHoursFrom', label: 'No CRM WhatsApp sends from this hour (0-23, optional; for example 21)', source: 'config', placeholder: '21' },
-    { key: 'quietHoursTo', label: '… until this hour (0-23; for example 8)', source: 'config', placeholder: '8' },
-    { key: 'metricsToken', label: 'OpenWA metrics token (optional: lets the CRM read the server\'s memory before starting another number)', source: 'credentials', secret: true },
-    { key: 'webhookSecret', label: 'Webhook secret (at least 16 characters)', source: 'credentials', secret: true },
-    { key: 'dailyCapPerUser', label: 'Most messages one CRM user may send a day', source: 'config', placeholder: '60' },
-    { key: 'dailyCapPerNumber', label: 'Most messages to one customer a day', source: 'config', placeholder: '15' },
-    { key: 'minSpacingSeconds', label: 'Least seconds between any two sends', source: 'config', placeholder: '10' },
-    { key: 'webhookMaxAgeMinutes', label: 'Refuse webhook deliveries older than (minutes)', source: 'config', placeholder: '30' },
-  ],
   smtp: [
     { key: 'host', label: 'SMTP Host', source: 'config', placeholder: 'smtp.yourdomain.com' },
     { key: 'port', label: 'Port', source: 'config', placeholder: '587' },
@@ -214,15 +161,6 @@ const TESTABLE = new Set([
   'smtp', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
   'stt', 'onedrive', 'sentry', 'fcm', 'zapier',
-  /*
-    The WhatsApp providers. Leaving them out is what let the setup wizard
-    finish on "Saved and switched on." — the branch for a provider with no
-    test — so the owner connected WhatsMarketing, read "connected", and
-    nothing had asked WhatsMarketing anything at all. Each adapter has a real
-    `testConnection`; a provider added here without one gets the honest
-    "does not support a connectivity test" from the server instead.
-  */
-  'whatsapp_meta', 'whatsapp_whatsmarketing', 'whatsapp_openwa',
 ]);
 
 /**
@@ -301,44 +239,6 @@ interface Guide {
 }
 
 const GUIDES: Record<string, Guide> = {
-  whatsapp_meta: {
-    outcome: 'Message customers from your own approved business number, inside the CRM, with the whole thread on the contact.',
-    minutes: 15,
-    steps: [
-      { title: 'Create the app and add WhatsApp', help: 'Meta for Developers → Create app → Business → add the WhatsApp product. You need a Meta Business account that owns the number.', href: 'https://developers.facebook.com/apps', linkLabel: 'Open Meta for Developers' },
-      { title: 'Paste the permanent token', help: 'WhatsApp → API Setup gives a temporary 24-hour token. Use System Users in Business Settings to make a permanent one, or you will be reconnecting this every day.', field: 'accessToken' },
-      { title: 'Phone number ID', help: 'On the same API Setup page, under the number you are sending from. It is a long number, not the phone number itself.', field: 'phoneNumberId' },
-      { title: 'WhatsApp Business Account ID', help: 'Also on API Setup. This is what lets the CRM pull your approved templates in.', field: 'wabaId' },
-      { title: 'We made you a verify token', help: 'Meta asks for a password of your choosing when you set up the webhook. Here is one — paste it into Meta in the next step.', field: 'verifyToken', generate: true },
-      { title: 'App secret', help: 'App settings → Basic → App secret. It is what proves an incoming message really came from Meta, so nobody can post fake customer messages into your CRM.', field: 'appSecret' },
-      { title: 'Point Meta at us', help: 'WhatsApp → Configuration → Webhook. Use this callback URL and the verify token above, then subscribe to the "messages" field.', copyPath: '/api/webhooks/whatsapp/meta' },
-    ],
-  },
-  whatsapp_whatsmarketing: {
-    outcome: 'Message buyers from your WhatsMarketing business number, with the whole thread kept on the contact.',
-    minutes: 6,
-    steps: [
-      { title: 'Generate your API token', help: 'Sign in to WhatsMarketing and open Developer Console. Press "Generate API Key" and copy the whole line, including the number and the | before the letters.', href: 'https://app.whatsmarketing.in/api/developer/console', linkLabel: 'Open the Developer Console' },
-      { title: 'Paste the token', help: 'It is only shown to you — the CRM keeps it encrypted and never puts it on a screen again.', field: 'apiToken' },
-      { title: 'Phone Number ID', help: 'WhatsMarketing → Connect Account, then click your connected WhatsApp number. Copy the "Phone Number ID" — a long number, NOT the phone number itself. If you only see the phone number, press Test below anyway and the CRM will tell you what is missing.', field: 'phoneNumberId', href: 'https://app.whatsmarketing.in/connect-manager', linkLabel: 'Open Connect Account' },
-      { title: 'Your WhatsApp business number', help: 'The number itself, digits only with the country code — for example 919876543210. This is what the CRM shows as the number a message went out from.', field: 'businessNumber' },
-      { title: 'We made you a webhook token', help: 'A password WhatsMarketing sends back with each incoming message, so nobody else can post into your CRM.', field: 'webhookToken', generate: true },
-      { title: 'Ask them to point replies at us', help: 'Their documentation has no self-serve webhook page — email support@whatsmarketing.in with this URL and the token above, and ask them to enable incoming message and delivery callbacks.', copyPath: '/api/webhooks/whatsapp/whatsmarketing' },
-    ],
-  },
-  whatsapp_openwa: {
-    outcome: 'Chat one-to-one with buyers from the company WhatsApp number, as a linked device, with the whole thread kept on the contact.',
-    minutes: 10,
-    steps: [
-      { title: 'Run OpenWA', help: 'OpenWA is a separate program that must stay switched on day and night. Follow docs/OPENWA.md in the CRM repository (a small server costs about ₹500–1,000 a month). On your own computer it is http://127.0.0.1:2785.' },
-      { title: 'OpenWA address', help: 'Where the CRM reaches OpenWA. It must be an address the CRM can open — not 127.0.0.1 if the CRM runs on a different machine.', field: 'baseUrl' },
-      { title: 'Session name', help: 'The name of the linked WhatsApp session inside OpenWA, exactly as OpenWA shows it.', field: 'sessionName' },
-      { title: 'Paste the OpenWA API key', help: 'From OpenWA → API keys. The CRM keeps it encrypted and never shows it again.', field: 'apiKey' },
-      { title: 'We made you a webhook secret', help: 'OpenWA signs every message it sends the CRM with this secret, so nobody else can post into your CRM. Paste the same secret into the webhook you add in OpenWA.', field: 'webhookSecret', generate: true },
-      { title: 'Point OpenWA at us', help: 'In OpenWA, add a webhook for your session with this URL, the secret above, and the events message.received, message.sent, message.ack, message.failed and session.status.', copyPath: '/api/webhooks/whatsapp/openwa' },
-      { title: 'Safety limits', help: 'Optional. The defaults (60 a day per person, 15 a day per customer, 10 seconds apart) are deliberately gentle. There is no bulk sending and no campaigns on this connection.', field: 'dailyCapPerUser' },
-    ],
-  },
   smtp: {
     outcome: 'Send email from the CRM using your own address, so replies come back to you.',
     minutes: 4,
@@ -625,29 +525,6 @@ const JOBS: JobDef[] = [
     trouble: 'Lead capture is set up but failing, so new enquiries are not arriving.',
     missing: 'Lead capture is not set up, so enquiries from ads and your website have to be typed in by hand.',
     moreLabel: 'More lead sources',
-  },
-  {
-    /*
-      The job the owner named: *official* WhatsApp, bought however suits — Meta
-      direct or through an Indian reseller. One card, four ways of buying it,
-      because "which BSP" is a purchasing decision and not four separate jobs.
-
-      WhatsMarketing fronts it because that is the plan the business actually
-      bought (19 September 2026). A card that opens on Meta's own Cloud API
-      would send somebody into a Business Manager verification they do not
-      need when they already have a reseller.
-    */
-    id: 'whatsapp',
-    title: 'WhatsApp',
-    blurb: 'Message buyers from your official business number, with every thread on the contact.',
-    icon: MessageCircle,
-    providers: ['whatsapp_whatsmarketing', 'whatsapp_meta', 'whatsapp_openwa'],
-    recommended: 'whatsapp_whatsmarketing',
-    wanted: true,
-    short: 'WhatsApp',
-    trouble: 'WhatsApp is set up but failing its test, so messages are not going out.',
-    missing: 'WhatsApp is not set up, so the CRM cannot message buyers from your business number.',
-    moreLabel: 'More WhatsApp providers',
   },
   {
     id: 'email',

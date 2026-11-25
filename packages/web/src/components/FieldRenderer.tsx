@@ -23,7 +23,6 @@ import { cn } from '../lib/utils';
 import { Avatar, Badge, ScoreChip } from './ui';
 import { PeekLink } from './PeekLink';
 import { useCallDisposition } from './CallDisposition';
-import { WhatsAppIconButton } from './WhatsAppButton';
 
 /**
  * A plain <img src> can't carry the app's Authorization header, and
@@ -185,7 +184,7 @@ export function FieldValue({
       // The WhatsApp way in sits beside the number everywhere the number is
       // shown, and goes to the CRM's own Chats screen rather than `wa.me`.
       if (plain) return <span className="tnum">{shown}</span>;
-      const wa = <WhatsAppIconButton to={display || String(value)} />;
+      const wa = null;
       return callDisposition ? (
         <span className="inline-flex items-center gap-1.5">
           <button

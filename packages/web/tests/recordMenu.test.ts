@@ -14,7 +14,7 @@ import {
   type MenuKey,
 } from '../src/lib/recordMenu';
 
-const ALL: MenuKey[] = ['timeline', 'matching', 'files', 'calls', 'whatsapp', 'comment', 'message', 'audit'];
+const ALL: MenuKey[] = ['timeline', 'matching', 'files', 'calls', 'comment', 'audit'];
 
 describe('what the bar offers', () => {
   it('keeps a saved arrangement in the order it was saved', () => {
@@ -84,16 +84,15 @@ describe('dragging one entry to another place', () => {
 });
 
 describe('which entries are the stream, narrowed', () => {
-  it('names the three that filter the timeline', () => {
+  it('names the two that filter the timeline', () => {
     expect(activityKindOf('comment')).toBe('comment');
-    expect(activityKindOf('message')).toBe('message');
     expect(activityKindOf('audit')).toBe('audit');
   });
 
   it('leaves the tabs that draw their own screen alone', () => {
     // Calls and Files used to appear twice — a tab, and a chip two rows below
     // it. They are tabs; nothing filters the stream to them any more.
-    for (const key of ['timeline', 'matching', 'files', 'calls', 'whatsapp'] as MenuKey[]) {
+    for (const key of ['timeline', 'matching', 'files', 'calls'] as MenuKey[]) {
       expect(activityKindOf(key)).toBeNull();
     }
   });

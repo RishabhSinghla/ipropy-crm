@@ -156,12 +156,6 @@ function LinkRow({
   revoking: boolean;
 }): JSX.Element {
   const url = linkUrl(link.token);
-  // wa.me opens the app on a phone and web on a desktop, with the message
-  // pre-filled and no recipient — so the sender picks the contact themselves
-  // and nothing is sent without them tapping send.
-  // Never put the CRM record label into the message: it commonly contains a
-  // house or unit number that the admin intentionally hid from the share page.
-  const whatsapp = `https://wa.me/?text=${encodeURIComponent(`Property details from iPropy\n${url}`)}`;
 
   return (
     <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
@@ -194,24 +188,6 @@ function LinkRow({
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? 'Copied' : 'Copy'}
         </button>
-        <a
-          href={whatsapp}
-          target="_blank"
-          rel="noreferrer"
-          className="btn-ghost btn-sm flex-1"
-          onClick={(e) => {
-            /*
-              In the app a plain anchor to wa.me loads WhatsApp's web page
-              *inside* the CRM, over the top of it, with no way back — so the
-              hand-off is taken over explicitly. On the web the default
-              target="_blank" is left to do its job.
-            */
-            if (!e.defaultPrevented && isNative) { e.preventDefault(); void openExternal(whatsapp); }
-          }}
-        >
-          <MessageCircle className="h-3.5 w-3.5" />
-          WhatsApp
-        </a>
       </div>
     </div>
   );

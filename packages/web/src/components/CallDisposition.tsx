@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useLiveCall } from '../lib/liveCall';
-import { useChatRecord } from './ChatRecordPane';
+import { useQuery } from '@tanstack/react-query';
 import { dial } from '../lib/nativeActions';
 import { isNative } from '../lib/native';
 
@@ -124,10 +124,17 @@ export function CallDispositionProvider({
     `?dial=1`, so the number to ring is known. Without it the flag sat in the
     address bar for ever and nobody was rung — which had happened.
   */
-  const { module: described, record } = useChatRecord(
-    pendingAutoDial ? module : null,
-    pendingAutoDial,
-  );
+  const { data: described } = useQuery({
+    queryKey: ['module', pendingAutoDial ? module : null],
+    queryFn: () => api.module(module!),
+    enabled: Boolean(pendingAutoDial && module),
+  });
+  const { data: record } = useQuery({
+    queryKey: ['record', pendingAutoDial ? module : null, pendingAutoDial],
+    queryFn: () => api.record(module!, pendingAutoDial!),
+    enabled: Boolean(pendingAutoDial && module),
+    retry: false,
+  });
 
   const startCall = async (number: string, from: 'phone' | 'desk' = 'phone', onRecordId?: string, onModule?: string): Promise<void> => {
     if (placingRef.current) return;

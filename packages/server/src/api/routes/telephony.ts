@@ -53,7 +53,7 @@ telephonyRouter.use(requireAuth);
 telephonyRouter.get('/lookup', asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const phone = String(req.query.phone ?? '');
-  const { matchContact, matchKey } = await import('../../integrations/whatsapp/matchContact.js');
+  const { matchContact, matchKey } = await import('../../integrations/telephony/matchContact.js');
   if (!matchKey(phone)) throw new BadRequestError('A phone number of at least ten digits is needed.');
 
   const match = await matchContact('leads', phone);

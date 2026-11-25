@@ -42,36 +42,10 @@ test('a saved report comes back after a reload, and can be deleted', async ({ pa
   await expect(page.getByRole('button', { name })).toHaveCount(0, { timeout: 15_000 });
 });
 
-test('the WhatsApp half counts what the number did', async ({ page }) => {
-  await page.goto('/reports');
-  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({ timeout: 30_000 });
-
-  await page.getByRole('button', { name: 'WhatsApp' }).click();
-  // Either real numbers or an honest empty state — both are correct answers,
-  // and which one depends on the database this is run against.
-  await expect(
-    page.getByText(/sent · .* received/).or(page.getByText('No messages yet')),
-  ).toBeVisible({ timeout: 20_000 });
-});
-
-/*
-  Reports moved inside the WhatsApp page on 20 September 2026, on the owner's
-  instruction, so it is no longer in the module switcher. The promise this
-  spec exists for is unchanged and is the one that matters: **a screen you can
-  only reach by typing a URL is a screen nobody uses.** So it now walks the
-  route a person actually takes — the green WhatsApp button on the header,
-  then the Reports tab.
-*/
+/* A screen you can only reach by typing a URL is a screen nobody uses, so this walks the left toolbar. */
 test('Reports is reachable from the navigation, not only by URL', async ({ page }) => {
   await page.goto('/dashboard');
-  /*
-    By href, not by name: a dashboard row carrying a phone number has its own
-    "WhatsApp" link on it, and a locator that matches both fails on how the
-    database happens to look rather than on anything about this navigation.
-  */
-  await page.locator('a[href="/whatsapp"]:visible').first().click();
-  await expect(page).toHaveURL(/\/whatsapp\//);
-  await page.getByRole('link', { name: 'Reports' }).click();
-  await expect(page).toHaveURL(/\/whatsapp\/reports$/);
+  await page.getByTestId('workspace-dock').getByRole('link', { name: 'Reports' }).click();
+  await expect(page).toHaveURL(/\/reports$/);
   await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({ timeout: 30_000 });
 });

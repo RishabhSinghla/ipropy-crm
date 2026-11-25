@@ -230,7 +230,6 @@ test('search, filter, sort, edit and call, in the table itself', async ({ page }
   // A number in this table is something to ring, and the call is filed against
   // this row's own house rather than whichever record the pane has open.
   await expect(table.getByRole('button', { name: /^Call / }).first()).toBeVisible();
-  await expect(table.getByRole('button', { name: /^WhatsApp / }).first()).toBeVisible();
 
   /*
     Edited where it stands, through the CRM's one editor — so the validation,
@@ -271,9 +270,6 @@ test('a brochure link can be made from the record, and never for a person', asyn
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('to a buyer');
   await dialog.getByRole('button', { name: /Make a link/i }).click();
-  // The WhatsApp hand-off is an `<a>` to wa.me, not a button: the sender picks
-  // the contact in WhatsApp themselves, so nothing is sent from the CRM.
-  await expect(dialog.getByRole('link', { name: /WhatsApp/i }).first()).toBeVisible({ timeout: 20_000 });
   await expect(dialog.getByRole('button', { name: /Copy/i }).first()).toBeVisible();
 
   await page.goto('/leads');

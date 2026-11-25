@@ -8,7 +8,7 @@ import { toast } from '../lib/store';
 import { Avatar } from './ui';
 import {
   AUTO_DISMISS_MS, chime, dismissEverywhere, listenForDismissals, mayAutoDismiss, useLiveCards,
-  type CallCard, type MessageCard,
+  type CallCard,
 } from '../lib/liveCards';
 
 /** The record's newest photo, if it has one; initials otherwise. */
@@ -25,78 +25,6 @@ function usePhoto(recordId: string | null): string | null {
 }
 
 const SHELL = 'pointer-events-auto w-full overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-float motion-safe:animate-slide-up dark:bg-slate-900';
-
-function MessageCardView({ card }: { card: MessageCard }): JSX.Element {
-  const navigate = useNavigate();
-  const photo = usePhoto(card.recordId);
-  const [hovered, setHovered] = useState(false);
-  const [replying, setReplying] = useState(false);
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
-
-  // Stays up while the person is pointing at it or typing; a new message restarts the clock.
-  useEffect(() => {
-    if (!mayAutoDismiss(card, hovered || replying || sending)) return undefined;
-    const timer = window.setTimeout(() => dismissEverywhere(card.id), AUTO_DISMISS_MS);
-    return () => window.clearTimeout(timer);
-  }, [card, hovered, replying, sending]);
-  useEffect(() => { if (replying) input.current?.focus(); }, [replying]);
-
-  const openChat = (): void => {
-    dismissEverywhere(card.id);
-    navigate(card.recordId ? `/${card.module}?open=${card.recordId}&stream=message` : '/chats');
-  };
-  const send = async (): Promise<void> => {
-    const body = text.trim();
-    if (!body || sending) return;
-    setSending(true);
-    try {
-      await api.waBizSend({ to: card.handle, text: body, recordId: card.recordId ?? undefined });
-      toast.success('Sent', `Your reply to ${card.name} is on its way.`);
-      dismissEverywhere(card.id);
-    } catch (error) {
-      toast.error('Not sent', error instanceof Error ? error.message : 'Try again from the chat.');
-      setSending(false);
-    }
-  };
-
-  return (
-    <article
-      className={SHELL}
-      aria-label={`WhatsApp message from ${card.name}`}
-      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)} onBlur={() => setHovered(false)}
-      onKeyDown={(event) => { if (event.key === 'Escape') dismissEverywhere(card.id); }}
-    >
-      <div className="flex items-start gap-3 p-3">
-        <div className="relative shrink-0">
-          <Avatar name={card.name} src={photo} size={40} />
-          <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-[#25d366] p-0.5 text-white" aria-hidden><MessageCircle className="h-3 w-3" /></span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{card.name}</p>
-          <ul className="mt-0.5 space-y-0.5">
-            {card.messages.map((m) => <li key={m.id} className="line-clamp-2 text-xs text-slate-600 dark:text-slate-300">{m.text}</li>)}
-          </ul>
-        </div>
-        <button type="button" onClick={() => dismissEverywhere(card.id)} aria-label={`Dismiss message from ${card.name}`} title="Dismiss" className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"><X className="h-3.5 w-3.5" /></button>
-      </div>
-      {replying ? (
-        <form className="flex gap-2 border-t border-[var(--border)] p-2" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-          <input ref={input} className="input h-8 flex-1 text-sm" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Reply to ${card.name}`} aria-label={`Reply to ${card.name}`} disabled={sending} />
-          <button type="submit" className="btn-primary btn-sm" disabled={sending || !text.trim()}>{sending ? 'Sending…' : 'Send'}</button>
-        </form>
-      ) : (
-        <div className="flex gap-2 border-t border-[var(--border)] p-2">
-          <button type="button" className="btn-primary btn-sm" onClick={() => setReplying(true)}>Reply</button>
-          <button type="button" className="btn-secondary btn-sm" onClick={openChat}>Open chat</button>
-          <button type="button" className="btn-secondary btn-sm ml-auto" onClick={() => dismissEverywhere(card.id)}>Dismiss</button>
-        </div>
-      )}
-    </article>
-  );
-}
 
 function CallCardView({ card }: { card: CallCard }): JSX.Element {
   const navigate = useNavigate();
@@ -170,7 +98,7 @@ export function LiveCards(): JSX.Element | null {
   if (!cards.length) return null;
   return createPortal(
     <div className="pointer-events-none fixed bottom-4 right-4 z-[65] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2" role="region" aria-label="Live notifications" aria-live="polite">
-      {cards.map((card) => card.kind === 'whatsapp' ? <MessageCardView key={card.id} card={card} /> : <CallCardView key={card.id} card={card} />)}
+      {cards.map((card) => (card.kind === 'call' ? <CallCardView key={card.id} card={card} /> : null))}
       <button type="button" onClick={toggleMute} aria-pressed={muted} className="pointer-events-auto ml-auto flex items-center gap-1 rounded-full border border-[var(--border)] bg-white px-2.5 py-1 text-2xs text-muted shadow-xs hover:text-slate-700 dark:bg-slate-900">
         {muted ? <BellOff className="h-3 w-3" aria-hidden /> : <Bell className="h-3 w-3" aria-hidden />}{muted ? 'Sound off' : 'Sound on'}
       </button>

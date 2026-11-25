@@ -10,12 +10,6 @@ import { configureSentry } from './core/observability/sentry.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { registerMetaConversions } from './integrations/leadsources/metaConversions.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
-import { startWhatsAppPolling, stopWhatsAppPolling } from './integrations/whatsapp/business/pollInbound.js';
-import { startOpenWaHealth, stopOpenWaHealth } from './integrations/whatsapp/business/openwaHealth.js';
-import { startFleetWatch, stopFleetWatch } from './integrations/whatsapp/business/waFleet.js';
-import { startDripSending, stopDripSending } from './integrations/whatsapp/business/drip.js';
-import { startCampaignSending, stopCampaignSending } from './integrations/whatsapp/business/campaigns.js';
-import { startWaitWatch, stopWaitWatch } from './integrations/whatsapp/business/waitWatch.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
 import { recoverOrphanedImports } from './core/import/recover.js';
@@ -80,12 +74,6 @@ async function main(): Promise<void> {
     just written — so this cadence is the feature, not a tuning knob. It costs
     one comparison a minute when no provider is connected.
   */
-  startWhatsAppPolling();
-  startOpenWaHealth();
-  startFleetWatch();
-  startDripSending();
-  startCampaignSending();
-  startWaitWatch();
 
   server.listen(config.port, () => {
     logger.info(`iPropy API listening on http://localhost:${config.port}`);
@@ -103,12 +91,6 @@ async function main(): Promise<void> {
   const shutdown = (signal: string): void => {
     logger.info({ signal }, 'shutting down…');
     stopScheduler();
-  stopWhatsAppPolling();
-  stopOpenWaHealth();
-  stopFleetWatch();
-  stopDripSending();
-  stopCampaignSending();
-  stopWaitWatch();
     closeRealtime();
     server.close(() => {
       void closePool().then(() => process.exit(0));

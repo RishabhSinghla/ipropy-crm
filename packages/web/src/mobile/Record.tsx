@@ -328,13 +328,6 @@ export default function MobileRecord(): JSX.Element {
         {/* ------------------------------------------------------------- */}
         <div className="mt-3 flex justify-between gap-2">
           {phone && <Action icon={<Phone className="h-5 w-5" />} label="Call" onClick={() => dial(phone)} />}
-          {phone && (
-            <Action
-              icon={<MessageCircle className="h-5 w-5" />}
-              label="WhatsApp"
-              onClick={() => void openExternal(`https://wa.me/${phone.replace(/[^\d+]/g, '')}`)}
-            />
-          )}
           {/*
             **"Add task" is the chase date**, not a task record: this CRM has
             no such thing, and `core/workflow/followUp.ts` is the one

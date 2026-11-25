@@ -21,7 +21,6 @@
  * them because a vector happened to be close, and the only thing that reliably
  * enforces that is the same path the record page uses.
  */
-import { automationOnlyRoute } from '../../integrations/whatsapp/business/channelRoles.js';
 import { createHash } from 'node:crypto';
 import { embed, isMediaAiAvailable, rerank } from '../../ai/media.js';
 import { modelFor } from '../settings/aiModels.js';
@@ -146,36 +145,6 @@ async function candidates(limit: number, conn: Tx = db): Promise<Candidate[]> {
     out.push({
       kind: 'note', sourceId: row.id, recordId: row.record_id,
       moduleName: row.module_name, content: clean(row.body),
-    });
-  }
-  if (out.length >= limit) return out.slice(0, limit);
-
-  // A message belongs to a conversation, and the conversation is what carries
-  // the record. Joining straight from the message would be a column that does
-  // not exist, which is what happens when you assume the shape of a table you
-  // have not opened.
-  const messages = await conn.query<{
-    id: string; record_id: string; module_name: string; body: string; channel: string; direction: string;
-  }>(
-    `SELECT m.id::text, c.record_id, r.module_name, m.body, m.channel, m.direction
-       FROM ipy_message m
-       JOIN ipy_conversation c ON c.id = m.conversation_id
-       JOIN ipy_record r ON r.id = c.record_id
-       LEFT JOIN ipy_embedding e ON e.kind = 'message' AND e.source_id = m.id::text
-      WHERE e.id IS NULL AND r.is_deleted = false AND m.body IS NOT NULL AND length(m.body) > 12
-        AND (m.provider IS NULL OR $2::text IS NULL OR m.provider <> $2::text OR m.direction <> 'outbound')
-      ORDER BY m.created_at DESC
-      LIMIT $1`,
-    [limit - out.length, automationOnlyRoute()],
-  );
-  for (const row of messages.rows) {
-    // The channel and direction go into the embedded text on purpose: "what did
-    // they say on WhatsApp" is a question people ask, and it is only answerable
-    // if the words "WhatsApp" and "customer said" are part of what was indexed.
-    const prefix = `${row.direction === 'inbound' ? 'Customer said on' : 'We sent on'} ${row.channel}: `;
-    out.push({
-      kind: 'message', sourceId: row.id, recordId: row.record_id,
-      moduleName: row.module_name, content: clean(prefix + row.body),
     });
   }
   if (out.length >= limit) return out.slice(0, limit);

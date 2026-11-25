@@ -77,7 +77,7 @@ export default function Reports(): JSX.Element {
     [modules],
   );
 
-  const [tab, setTab] = useState<'records' | 'whatsapp'>('records');
+  const [tab, setTab] = useState<'records'>('records');
   const [openId, setOpenId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [type, setType] = useState<string>('bar');
@@ -215,15 +215,6 @@ export default function Reports(): JSX.Element {
 
   const current = saved?.find((r) => r.id === openId);
   const measureLabel = MEASURES.find((m) => m.aggregate === (config.aggregate ?? 'count'))!.label;
-
-  if (tab === 'whatsapp') {
-    return (
-      <div className="p-4 sm:p-6">
-        <ReportTabs tab={tab} onChange={setTab} />
-        <MessagingReport />
-      </div>
-    );
-  }
 
   return (
     <div className="p-4 sm:p-6">
@@ -542,135 +533,10 @@ function ReportResult({
  */
 function ReportTabs({
   tab, onChange,
-}: { tab: 'records' | 'whatsapp'; onChange: (tab: 'records' | 'whatsapp') => void }): JSX.Element {
+}: { tab: 'records'; onChange: (tab: 'records') => void }): JSX.Element {
   return (
     <div className="mb-4 flex items-center gap-4 border-b border-slate-200 dark:border-slate-800">
       <h1 className="pb-2 text-lg font-semibold tracking-tight">Reports</h1>
-      <nav className="flex gap-1" aria-label="Report kind">
-        {([['records', 'Records'], ['whatsapp', 'WhatsApp']] as const).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onChange(key)}
-            aria-current={tab === key}
-            className={cn(
-              'border-b-2 px-3 pb-2 pt-1 text-sm font-semibold transition-colors',
-              tab === key
-                ? 'border-brand-600 text-brand-700 dark:text-brand-300'
-                : 'border-transparent text-muted hover:text-slate-700 dark:hover:text-slate-200',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-    </div>
-  );
-}
-
-const OUTCOME_LABEL: Record<string, string> = {
-  queued: 'Waiting to go',
-  sent: 'Sent',
-  delivered: 'Delivered',
-  read: 'Read',
-  failed: 'Failed',
-};
-
-/** What the business number did: in, out, and how each campaign ended. */
-function MessagingReport(): JSX.Element {
-  const [days, setDays] = useState(30);
-  const { data, isLoading } = useQuery({
-    queryKey: ['wa-biz', 'report', days],
-    queryFn: () => api.waBizReport(days),
-  });
-
-  if (isLoading) return <Skeleton className="h-64 w-full" />;
-  if (!data) return <EmptyState title="Nothing to show" body="No WhatsApp activity yet." />;
-
-  const byDay: Series[] = data.byDay.map((row) => ({
-    key: row.day, label: row.day.slice(5), value: row.outbound + row.inbound,
-  }));
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <label>
-          <span className="label">When</span>
-          <select className="input w-auto" value={days} onChange={(e) => setDays(Number(e.target.value))}>
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 3 months</option>
-          </select>
-        </label>
-        <p className="text-sm text-muted">
-          {data.totals.outbound.toLocaleString('en-IN')} sent ·{' '}
-          {data.totals.inbound.toLocaleString('en-IN')} received ·{' '}
-          {data.totals.conversations.toLocaleString('en-IN')} conversations
-        </p>
-      </div>
-
-      <div className="card p-4">
-        <p className="mb-2 flex flex-wrap items-center gap-x-3 text-xs text-muted">
-          Messages a day
-          <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#2563eb' }} /> sent
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#22c55e' }} /> received
-          </span>
-        </p>
-        {byDay.length ? (
-          <div className="flex h-64 flex-col">
-            <ChartFrame title="Messages a day" series={byDay}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.byDay} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                  <XAxis dataKey="day" tickFormatter={(d: string) => d.slice(5)} tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} width={40} />
-                  <Tooltip />
-                  <Bar dataKey="outbound" stackId="m" fill="#2563eb" maxBarSize={44} />
-                  <Bar dataKey="inbound" stackId="m" fill="#22c55e" maxBarSize={44} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartFrame>
-          </div>
-        ) : (
-          <EmptyState title="No messages yet" body="Nothing has been sent or received on the business number in this period." />
-        )}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="card p-4">
-          <p className="mb-2 text-xs text-muted">What happened to the ones we sent</p>
-          {data.outcomes.length ? (
-            <ul className="space-y-1 text-sm">
-              {data.outcomes.map((outcome) => (
-                <li key={outcome.status} className="flex justify-between gap-3 border-b border-slate-100 py-1 last:border-0 dark:border-slate-800">
-                  <span>{OUTCOME_LABEL[outcome.status] ?? outcome.status}</span>
-                  <span className="font-semibold tnum">{outcome.count.toLocaleString('en-IN')}</span>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="text-sm text-muted">Nothing has been sent yet.</p>}
-        </div>
-
-        <div className="card p-4">
-          <p className="mb-2 text-xs text-muted">Campaigns</p>
-          {data.campaigns.length ? (
-            <ul className="space-y-2 text-sm">
-              {data.campaigns.map((campaign) => (
-                <li key={campaign.id} className="border-b border-slate-100 pb-2 last:border-0 dark:border-slate-800">
-                  <p className="font-semibold">{campaign.name}</p>
-                  <p className="text-xs text-muted tnum">
-                    {campaign.sent.toLocaleString('en-IN')} sent · {campaign.failed} failed ·{' '}
-                    {campaign.skipped} skipped · {campaign.pending} still to go
-                  </p>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="text-sm text-muted">No campaigns in this period.</p>}
-        </div>
-      </div>
     </div>
   );
 }

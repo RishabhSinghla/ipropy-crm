@@ -396,9 +396,6 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
       not mean retyping the one you may go back to. Only one is ever active;
       the registry takes the first switched on.
     */
-    { provider: 'whatsapp_meta', kind: 'messaging', label: 'WhatsApp Business — Meta Cloud API' },
-    { provider: 'whatsapp_whatsmarketing', kind: 'messaging', label: 'WhatsApp Business — whatsmarketing.in' },
-    { provider: 'whatsapp_openwa', kind: 'messaging', label: 'WhatsApp — OpenWA (linked device)' },
     { provider: 'housing', kind: 'lead_source', label: 'Housing.com' },
     { provider: '99acres', kind: 'lead_source', label: '99acres' },
     { provider: 'magicbricks', kind: 'lead_source', label: 'MagicBricks' },

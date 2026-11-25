@@ -28,8 +28,6 @@ const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
 const ProjectMastersAdmin = lazy(() => import('./ProjectMastersAdmin'));
-const WhatsAppNumbersAdmin = lazy(() => import('./WhatsAppNumbersAdmin'));
-const WhatsAppDripAdmin = lazy(() => import('./WhatsAppDripAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -45,18 +43,7 @@ const WhatsAppDripAdmin = lazy(() => import('./WhatsAppDripAdmin'));
   and Import Data lives in here — one blanket check would have taken away the one
   screen they are meant to use.
 */
-/*
-  Screens that moved out of Admin, and where they went. 27 September 2026, the
-  owner: WhatsApp, WhatsApp Templates and Campaigns were each here *and* a tab
-  on the WhatsApp page — the same component twice. They live on the WhatsApp
-  page only now; an old bookmark lands on the right tab rather than on the
-  first admin screen.
-*/
-const MOVED: Record<string, string> = {
-  whatsapp: '/whatsapp/health',
-  'whatsapp-templates': '/whatsapp/templates',
-  campaigns: '/whatsapp/campaigns',
-};
+const MOVED: Record<string, string> = {};
 
 const SECTIONS = [
   {
@@ -93,9 +80,6 @@ const SECTIONS = [
     group: 'Platform',
     items: [
       { path: 'integrations', capability: 'admin.integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
-      // Building a campaign is `whatsapp.send`; approving one is `whatsapp.templates` — the server enforces that split.
-      { path: 'whatsapp-numbers', capability: 'admin.integrations', label: 'WhatsApp numbers', icon: MessageSquareText, element: <WhatsAppNumbersAdmin /> },
-      { path: 'whatsapp-drip', capability: 'admin.integrations', label: 'WhatsApp drip', icon: MessageSquareText, element: <WhatsAppDripAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', capability: 'admin.audit', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },

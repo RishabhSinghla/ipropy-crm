@@ -171,28 +171,6 @@ export default function Layout(): JSX.Element {
             repo already wrote down is that a destination living only in the
             switcher is invisible below 1024px.
           */}
-          <NavLink
-            to="/whatsapp"
-            title="WhatsApp — the team's chats, campaigns and templates"
-            className={({ isActive }) => cn(
-              'flex shrink-0 items-center gap-1.5 lg:hidden rounded-lg border px-2.5 py-1.5 text-sm font-semibold transition-colors',
-              /*
-                A soft green pill everywhere else, and solid green while you
-                are in WhatsApp — the way a selected tab looks, so the change
-                reads as "you are here". It used to go from green to a dark
-                teal (#075E54) on its own page, which the owner found heavy
-                (25 September). #0B8043 is WhatsApp's green darkened until
-                white on it clears AA; the brand's own #25D366 is 1.98:1.
-              */
-              isActive
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100 '
-                  + 'dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
-            )}
-          >
-            <MessagesSquare className="h-4 w-4" />
-            <span className="hidden sm:inline">WhatsApp</span>
-          </NavLink>
 
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-0.5">
@@ -508,9 +486,8 @@ function MobileNav({
             {/* In the drawer as well as the header, because the switcher is
                 `lg:block` and does not exist below 1024px — the rule this
                 repo already learned twice, with Chats and then Reports. */}
-            <DrawerLink to="/whatsapp" icon="message-circle" label="WhatsApp" />
-            <DrawerLink to="/whatsapp-lookup" icon="message-circle" label="WhatsApp Lookup" />
             <DrawerLink to="/calls" icon="phone" label="Calls" />
+            <DrawerLink to="/reports" icon="bar-chart" label="Reports" />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
         </nav>

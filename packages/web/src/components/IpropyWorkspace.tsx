@@ -10,11 +10,8 @@ import {
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
-import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { BuilderFloorTable, localityFilter, matchesForContact, unitsOfProject } from './BuilderFloorTable';
 import { MatchingTab } from './MatchingTab';
-import { WhatsAppTab } from './WhatsAppTab';
-import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
 import { CallsTab, FilesTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
@@ -60,22 +57,8 @@ import { ProgressiveDialerPanel } from './ProgressiveDialerPanel';
   always called itself ("Write a note…"), and one thing with two names is one
   thing a rep has to learn twice.
 */
-/**
- * The "WhatsApp" tab of a record: the real chat with the contact and nothing else. Notes live in the Comments tab
- * (the owner, 29 October 2026, took the Note toggle out of here). The chat is `WhatsAppTab` — the same component the
- * record page uses — so the two cannot drift.
- */
-function LeadChat({ module, recordId, mobile }: { module: string; recordId: string; mobile: string | null }): JSX.Element {
-  return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      <WhatsAppTab module={module} recordId={recordId} mobile={mobile} />
-    </div>
-  );
-}
-
-const STREAM_LABEL: Record<'comment' | 'message' | 'audit', string> = {
+const STREAM_LABEL: Record<'comment' | 'audit', string> = {
   comment: 'Comments',
-  message: 'WhatsApp',
   audit: 'Changes',
 };
 
@@ -313,8 +296,6 @@ export function IpropyWorkspace({
   });
   // Somebody arriving on a link that names a record: open that one.
   useEffect(() => { if (openId) setActiveId(openId); }, [openId]);
-  // A live WhatsApp card's "Open chat" lands on the record's WhatsApp tab.
-  useEffect(() => { if (openId && new URLSearchParams(location.search).get('stream') === 'message') setMenuPick('message'); }, [openId, location.search]);
   /*
     Keep the open record when the queue changes under it — **including one that
     is not in the queue at all.** A record reached from global search or from a
@@ -518,7 +499,7 @@ export function IpropyWorkspace({
   const [savedMenu, setSavedMenu] = useState<MenuKey[] | null>(() => loadRecordMenu(module.name));
   useEffect(() => { setSavedMenu(loadRecordMenu(module.name)); }, [module.name]);
   const availableMenu = useMemo<MenuKey[]>(
-    () => [...tabs.filter((item) => item.key !== 'timeline' && item.key !== 'whatsapp' && !(module.name === 'associates' && item.key.startsWith('deals_'))).map((item) => item.key as MenuKey), 'comment', 'message', 'audit'],
+    () => [...tabs.filter((item) => item.key !== 'timeline' && !(module.name === 'associates' && item.key.startsWith('deals_'))).map((item) => item.key as MenuKey), 'comment', 'audit'],
     [tabs, module.name],
   );
   const menuOrder = useMemo(() => arrangeRecordMenu(availableMenu, savedMenu), [availableMenu, savedMenu]);
@@ -540,7 +521,7 @@ export function IpropyWorkspace({
   /** `null` for a tab that draws its own screen; otherwise the stream, narrowed. */
   const streamKind = activityKindOf(shownKey);
   // 'WhatsApp' is a chat of its own (below), not a filter of the stream.
-  const onTheStream = (streamKind !== null && streamKind !== 'message') || shownKey === 'timeline';
+  const onTheStream = streamKind !== null || shownKey === 'timeline';
 
   /*
     Which field holds the name. `module.labelFields` is what every other
@@ -643,7 +624,6 @@ export function IpropyWorkspace({
     if (key === 'calls') return shown(callRows?.length, 50);
     // The three stream entries count out of the same answer the tabs do, so a
     // badge and the list it labels cannot disagree and nothing is asked twice.
-    if (key === 'message' || key === 'whatsapp') return shown(feed?.filter((entry) => entry.type === 'message' && entry.meta.channel === 'whatsapp').length, FEED_LIMIT);
     const kind = activityKindOf(key);
     if (kind) return shown(feed?.filter((entry) => entry.type === kind).length, FEED_LIMIT);
     return null;
@@ -723,7 +703,7 @@ export function IpropyWorkspace({
     total: neighbours?.total ?? null,
     url: callQueueUrl,
   }}>
-    <WhatsAppComposerProvider recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
+    <>
     <section data-testid="ipropy-workspace" className="bg-[var(--app-bg)] dark:bg-slate-950">
     {/*
       A fixed-height row with one draggable divider, not a min-height one.
@@ -1080,7 +1060,6 @@ export function IpropyWorkspace({
               <TagChips module={module.name} tags={active.tags} className="flex shrink-0 items-center justify-center overflow-hidden" />
             )}
             {phoneValue && <span className="ml-1 inline-flex shrink-0 items-center gap-1" data-testid="middle-header-call-actions">
-              <WhatsAppButton to={phoneValue} iconOnly plain />
               <CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} />
             </span>}
             {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
@@ -1253,7 +1232,7 @@ export function IpropyWorkspace({
         */}
         <div className={cn(
           'flex min-h-0 min-w-0 flex-1 flex-col',
-          onTheStream || shownKey === 'whatsapp' || shownKey === 'message'
+          onTheStream
             ? 'overflow-hidden'
             // `xl:overflow-y-auto`, not `overflow-y-auto`: on a phone the whole
             // record column scrolls as one page, and a scroller inside a
@@ -1303,7 +1282,6 @@ export function IpropyWorkspace({
           )}
           {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownKey === 'calls' && <CallsTab recordId={active.id} />}
-          {shownKey === 'message' && <LeadChat module={module.name} recordId={active.id} mobile={phoneValue || null} />}
         </div>
       </section>
 
@@ -1432,7 +1410,7 @@ export function IpropyWorkspace({
     {/* The CRM's own composer, the same one the record page opens, so a
         reply threads back onto the record either way. */}
     </section>
-    </WhatsAppComposerProvider>
+    </>
   </CallDispositionProvider>;
 }
 

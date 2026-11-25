@@ -207,7 +207,6 @@ export function authedFileUrl(url: string, params: Record<string, string> = {}):
   return qs ? `${abs}${abs.includes('?') ? '&' : '?'}${qs}` : abs;
 }
 
-import { chosenWaNumberId } from './waNumberChoice';
 
 export interface WaNumber {
   id: string; sessionName: string; sessionId: string | null; label: string | null; phone: string | null;
@@ -997,13 +996,6 @@ export const api = {
   deleteView: (module: string, id: string) => del(`/api/views/${module}/${id}`),
 
   // --- reports ------------------------------------------------------------
-  waBizReport: (days: number) => get<{
-    days: number;
-    byDay: { day: string; inbound: number; outbound: number }[];
-    outcomes: { status: string; count: number }[];
-    campaigns: { id: string; name: string; status: string; sent: number; failed: number; skipped: number; pending: number }[];
-    totals: { inbound: number; outbound: number; conversations: number };
-  }>(`/api/whatsapp-business/report?days=${days}`),
   reports: () => get<{
     id: string; name: string; description: string | null; module: string; type: string;
     config: Record<string, unknown>; isShared: boolean; isMine: boolean;
@@ -1116,11 +1108,6 @@ export const api = {
   assignmentRules: () => get<Record<string, unknown>[]>('/api/assignment-rules'),
 
   // --- comms --------------------------------------------------------------
-  conversations: (params: Record<string, unknown> = {}) =>
-    get<Record<string, unknown>[]>(`/api/comms/conversations${qs(params)}`),
-  conversation: (id: string) => get<Record<string, unknown>>(`/api/comms/conversations/${id}`),
-  updateConversation: (id: string, data: Record<string, unknown>) => patch(`/api/comms/conversations/${id}`, data),
-  replySuggestions: (id: string) => get<{ suggestions: string[] }>(`/api/comms/conversations/${id}/suggestions`),
   // --- telephony ----------------------------------------------------------
   setDisposition: (id: string, data: {
     disposition: string; notes?: string; followUpAt?: string | null;
@@ -1368,198 +1355,16 @@ export const api = {
   sharedMatches: (token: string) => get<SharedMatches>(`/api/public/matches/${token}`),
   /** `module` narrows to the tags that module offers; omit it for the whole vocabulary. */
   // --- WhatsApp Business (the official number) -----------------------------
-  waBizStatus: () => get<{
-    connected: boolean; provider: string | null; capabilities: string[]; businessNumber: string | null;
-    /** Two WhatsApp routes with separate jobs are set up (admins then see two screens). */
-    split?: boolean;
-    /** Present only for a linked device (OpenWA): is the phone linked and reachable? */
-    link?: { state: 'ready' | 'needs-link' | 'unreachable' | 'unknown'; message: string; checkedAt: string | null; pausedUntil?: string | null } | null;
-  }>('/api/whatsapp-business/status'),
-  waBizCreateLead: (conversationId: string) => post<{ recordId: string; linkedExisting: boolean }>(
-    `/api/whatsapp-business/conversations/${conversationId}/create-lead`, {},
-  ),
   /** A received file, fetched from OpenWA only now, as a blob the page can show. */
-  waBizMessageFile: async (messageId: string): Promise<Blob> => {
-    const res = await request<Response>(`/api/whatsapp-business/messages/${messageId}/file`, { raw: true });
-    return res.blob();
-  },
-  waBizOpenWaHealth: (fresh = false) => get<{
-    state: string; message: string; checkedAt: string | null; status: string | null; phoneMasked: string | null;
-    lastWebhookAt: string | null; rejectedWebhooks: number; unresolvedSenders: number;
-    sendsToday: number; sendsFailedToday: number;
-  }>(`/api/whatsapp-business/openwa/health${fresh ? '?fresh=1' : ''}`),
-  waLookup: (number: string) => post<WaLookupResult>('/api/whatsapp-business/lookup', { number }),
-  waLookupSave: (number: string, recordId: string) => post<{ savedName: boolean; savedPhoto: boolean }>('/api/whatsapp-business/lookup/save', { number, recordId }),
-  waLookupStored: (number: string) => get<{ result: (WaLookupResult & { lookedUpAt: string }) | null }>(`/api/whatsapp-business/lookup/stored?number=${encodeURIComponent(number)}`),
-  waLookupApply: (body: { number: string; module: string; recordId: string; photo: boolean; name: boolean }) => post<{ savedName: boolean; savedPhoto: boolean }>('/api/whatsapp-business/lookup/apply', body),
-  waLookupLog: () => get<{ rows: Array<{ created_at: string; number: string; result: string; push_name: string | null; from_cache: boolean; user_name: string | null }> }>('/api/whatsapp-business/lookup/log'),
-  waNumberCheck: () => get<WaNumberCheck>('/api/whatsapp-business/number-check'),
-  waNumberCheckStart: (dailyCap?: number) => post<{ started: boolean; reason?: string }>('/api/whatsapp-business/number-check/start', dailyCap ? { dailyCap } : {}),
-  waTestCard: (kind: 'whatsapp' | 'call') => post<{ sent: boolean; realThread?: boolean }>('/api/whatsapp-business/test-card', { kind }),
-  waNumberCheckStop: () => post<{ ok: boolean }>('/api/whatsapp-business/number-check/stop', {}),
   // The company's WhatsApp numbers (one OpenWA session per agent).
-  waNumbersMine: () => get<{ mine: WaNumber | null; numbers: WaNumber[] }>('/api/whatsapp-numbers/mine'),
-  waNumbers: () => get<WaNumber[]>('/api/whatsapp-numbers'),
-  waNumberChoose: (recordId?: string) =>
-    get<{ number: WaNumber | null; fallbackNote: string | null; error: string | null }>(`/api/whatsapp-numbers/choose${qs({ recordId })}`),
-  waNumbersRefresh: () => post<WaNumber[]>('/api/whatsapp-numbers/refresh', {}),
-  waNumberCreate: (sessionName: string, label?: string) => post<WaNumber>('/api/whatsapp-numbers', { sessionName, label }),
-  waNumberControl: (id: string, action: 'start' | 'stop' | 'restart' | 'unlink') =>
-    post<WaNumber>(`/api/whatsapp-numbers/${id}/control`, { action }),
-  waMineQr: () => get<{ qrCode: string | null; status: string }>('/api/whatsapp-numbers/mine/qr'),
-  waMineStart: (action: 'start' | 'restart') => post<WaNumber>('/api/whatsapp-numbers/mine/start', { action }),
-  waCatchUp: (id: string, dryRun: boolean) => post<{ fetched: number; stored: number; alreadyHad: number; skipped: number; since: string }>(`/api/whatsapp-numbers/${id}/catch-up`, { dryRun }),
-  waCapacity: () => get<WaFleetSummary>('/api/whatsapp-numbers/capacity'),
-  waCapacitySave: (maxLive: number, memoryLimitMb: number) => put<WaFleetSummary>('/api/whatsapp-numbers/capacity', { maxLive, memoryLimitMb }),
-  waNumberQr: (id: string) => get<{ qrCode: string | null; status: string }>(`/api/whatsapp-numbers/${id}/qr`),
-  waNumberAssign: (id: string, userId: string | null) => put<WaNumber>(`/api/whatsapp-numbers/${id}/assign`, { userId }),
-  waNumberDelete: (id: string) => del<{ ok: boolean }>(`/api/whatsapp-numbers/${id}`),
-  waNumberDefault: (id: string) => put<WaNumber>(`/api/whatsapp-numbers/${id}/default`, {}),
-  waNumberPause: (id: string, paused: boolean) => put<WaNumber>(`/api/whatsapp-numbers/${id}/pause`, { paused }),
-  waNumberWebhook: (id: string) => post<{ ok: boolean }>(`/api/whatsapp-numbers/${id}/webhook`, {}),
-  waNumberLog: () => get<{ id: string; created_at: string; status: string; body: string; handle: string; sent_by_name: string | null; number_label: string | null; queue_name: string | null }[]>('/api/whatsapp-numbers/log/sends'),
   // --- the slow promotional drip ---------------------------------------------
-  dripList: () => get<{ drips: WaDrip[]; defaults: { variants: string[]; optOutLine: string; hardMaxPerNumberPerDay: number; minGapSeconds: number } }>('/api/whatsapp-drip'),
-  dripDetail: (id: string) => get<WaDripDetail>(`/api/whatsapp-drip/${id}`),
-  dripPreview: (view: string, variants: string[]) => post<WaDripPreview>('/api/whatsapp-drip/preview', { view, variants }),
-  dripCreate: (data: { name: string; view: string; variants: string[]; numberIds: string[]; maxTotal?: number | null; speed?: Record<string, number> }) =>
-    post<{ id: string }>('/api/whatsapp-drip', data),
-  dripStart: (id: string, expectedCount: number, confirmLarge?: boolean) =>
-    post<{ frozen: number; skipped: number }>(`/api/whatsapp-drip/${id}/start`, { expectedCount, confirmLarge }),
-  dripPause: (id: string) => post<{ ok: true }>(`/api/whatsapp-drip/${id}/pause`, {}),
-  dripResume: (id: string, numberIds?: string[]) => post<{ ok: true }>(`/api/whatsapp-drip/${id}/resume`, { numberIds }),
-  dripStop: (id: string) => post<{ ok: true }>(`/api/whatsapp-drip/${id}/stop`, {}),
-  dripTest: (data: { mobile: string; numberId: string; variants: string[] }) => post<{ to: string; text: string }>('/api/whatsapp-drip/test/send', data),
-  waGroups: () => get<WaGroupsResponse>('/api/whatsapp-business/groups'),
-  waGroupsRefresh: () => post<{ total: number; added: number }>('/api/whatsapp-business/groups/refresh', {}),
-  waGroupsEnableAll: () => post<{ enabled: number }>('/api/whatsapp-business/groups/enable-all', {}),
-  waGroupSet: (id: string, enabled: boolean) => put<WaGroup>(`/api/whatsapp-business/groups/${encodeURIComponent(id)}`, { enabled }),
-  waGroupsHistory: (groupId?: string) => post<{ started: boolean; reason?: string }>(
-    '/api/whatsapp-business/groups/import-history', groupId ? { groupId } : {},
-  ),
-  waBizRoles: () => get<{
-    roles: { automation: string | null; chat: string | null };
-    options: { id: string; label: string; active: boolean }[];
-  }>('/api/admin/whatsapp/roles'),
-  waBizSetRoles: (roles: { automation: string | null; chat: string | null }) =>
-    put<{ roles: { automation: string | null; chat: string | null } }>('/api/admin/whatsapp/roles', roles),
-  waBizProviders: () => get<{ id: string; label: string; capabilities: string[]; webhookPath: string }[]>(
-    '/api/whatsapp-business/providers',
-  ),
-  waBizTest: (id: string) => post<{ ok: boolean; detail: string }>(`/api/whatsapp-business/providers/${id}/test`, {}),
-  waBizTemplates: () => get<{
-    name: string; language: string; category: string; status: string;
-    bodyText: string | null; variableCount: number;
-  }[]>('/api/whatsapp-business/templates'),
-  waBizConversations: (filter = 'all', search = '', module = '', route = '', numberId = '', merged = false) => get<{
-    id: string; handle: string; contactName: string | null; recordId: string | null;
-    recordModule: string | null; recordLabel: string | null; assignedTo: string | null;
-    assignedName: string | null; status: string; unreadCount: number;
-    lastMessageAt: string | null; lastMessagePreview: string | null; lastDirection: string | null; lastStatus: string | null; lane: string | null; lanes: string[]; waId: string | null; windowOpen: boolean;
-    windowExpiresAt: string | null; optedOut: boolean;
-    owners: { recordId: string; module: string; moduleLabel: string; label: string; fieldLabel: string }[];
-  }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined, route: route || undefined, numberId: numberId || undefined, merged: merged ? '1' : undefined })}`),
-  waBizCounts: (route = '', merged = false) => get<{ all: number; mine: number; unassigned: number; unread: number }>(`/api/whatsapp-business/conversation-counts${qs({ route: route || undefined, merged: merged ? '1' : undefined })}`),
-  waBizMessages: (conversationId: string, route = '', merged = false) => get<{
-    messages: Record<string, unknown>[]; alsoViewing: string[];
-  }>(`/api/whatsapp-business/conversations/${conversationId}/messages${qs({ route: route || undefined, merged: merged ? '1' : undefined })}`),
-  waBizSend: (data: {
-    to: string; text?: string; recordId?: string; attachmentId?: string; route?: 'chat' | 'api'; numberId?: string;
-    template?: { name: string; language: string; params: string[] };
-  }) => post<{ messageId: string; conversationId: string; status: string }>('/api/whatsapp-business/send', { ...data, numberId: data.numberId ?? chosenWaNumberId() }),
-  waBizRead: (id: string, merged = false) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/read${qs({ merged: merged ? '1' : undefined })}`, {}),
-  waBizUnread: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/unread`, {}),
-  waBizTake: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/take`, {}),
-  waBizAssign: (id: string, to: string | null) =>
-    post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/assign`, { to }),
-  waBizSavedTemplates: () => get<{
-    id: string; name: string; language: string; category: string; status: string;
-    bodyText: string; variableCount: number; variableMap: Record<string, string>;
-    providerTemplateId: string | null; providerRowId: string | null; providerUpdatedAt: string | null;
-  }[]>('/api/whatsapp-business/templates/saved'),
-
   // Campaigns: one approved template to many people. `preview` writes nothing
   // and is what the screen shows before it offers Approve, so the number
   // somebody approves is the number they were shown — `approve` passes it back
   // and the server refuses a mismatch.
-  waBizCampaigns: () => get<{
-    id: string; name: string; moduleName: string; templateId: string; templateName: string;
-    status: 'draft' | 'running' | 'paused' | 'done' | 'cancelled';
-    audience: { view?: string };
-    approvedCount: number | null; approvedAt: string | null; createdAt: string;
-    counts: { pending: number; sent: number; failed: number; skipped: number };
-  }[]>('/api/whatsapp-business/campaigns'),
-  waBizCampaignCreate: (data: { name: string; module: string; templateId: string; audience: { view?: string } }) =>
-    post<{ id: string }>('/api/whatsapp-business/campaigns', data),
-  waBizCampaignPreview: (data: { module: string; templateId: string; audience: { view?: string } }) =>
-    post<{
-      total: number; reachable: number;
-      sample: { recordId: string; label: string; to: string; preview: string; missing: string[] }[];
-      skipped: { label: string; reason: string }[];
-      /** Blanks with nothing mapped to them: unfilled for everybody, so nobody
-          would get the message at all. */
-      unmapped: string[];
-    }>('/api/whatsapp-business/campaigns/preview', data),
-  waBizCampaignApprove: (id: string, expectedCount: number, confirmLarge?: boolean) =>
-    post<{ frozen: number; skipped: number }>(
-      `/api/whatsapp-business/campaigns/${id}/approve`, { expectedCount, confirmLarge }),
-  waBizCampaignStatus: (id: string, status: 'paused' | 'running' | 'cancelled') =>
-    post<{ ok: true }>(`/api/whatsapp-business/campaigns/${id}/status`, { status }),
   // One screen instead of the vendor's dashboard. Read from the CRM's own
   // rows, so it still answers when they are down.
-  waBizOverview: () => get<{
-    provider: string | null; connected: boolean; businessNumber: string | null;
-    capabilities: string[];
-    lastCheck: { at: string; ok: boolean; detail: string } | null;
-    conversations: { total: number; windowOpen: number; unlinked: number; unread: number };
-    messages: { inboundToday: number; outboundToday: number; failedToday: number; deliveredToday: number };
-    templates: { total: number; approved: number; unmapped: number };
-    waiting: { count: number; longestMinutes: number; alertsOn: boolean };
-    stillTheirs: string[];
-    openwa: {
-      state: string; message: string; checkedAt: string | null; status: string | null; phoneMasked: string | null;
-      lastWebhookAt: string | null; rejectedWebhooks: number; unresolvedSenders: number;
-      sendsToday: number; sendsFailedToday: number;
-    } | null;
-  }>('/api/whatsapp-business/overview'),
-  waBizCampaignRecipients: (id: string, status?: string) => get<{
-    recordId: string; label: string; handle: string; status: string;
-    error: string | null; sentAt: string | null;
-  }[]>(`/api/whatsapp-business/campaigns/${id}/recipients${status ? `?status=${status}` : ''}`),
-  waBizSyncTemplates: () => post<{ added: string[]; updated: string[]; removed: string[]; skipped: string }>(
-    '/api/whatsapp-business/templates/sync', {},
-  ),
-  waBizSaveMapping: (id: string, module: string, map: Record<string, string>) =>
-    put<{ ok: true }>(`/api/whatsapp-business/templates/${id}/mapping`, { module, map }),
-  waBizTemplatePreview: (id: string, module: string, recordId: string) => get<{
-    name: string; language: string; params: string[]; preview: string;
-    missing: { slot: string; reason: string }[];
-  }>(`/api/whatsapp-business/templates/${id}/preview${qs({ module, recordId })}`),
-  waBizSendTemplate: (data: { templateId: string; module: string; recordId: string; to: string }) =>
-    post<{ messageId: string; status: string }>('/api/whatsapp-business/send-template', data),
-  waBizShareProperty: (data: {
-    to: string; propertyId: string; contactId?: string | null; note?: string;
-  }) => post<{ messageId: string; conversationId: string; shareUrl: string; propertyLabel: string }>(
-    '/api/whatsapp-business/share-property', data,
-  ),
-  waBizFollowUp: (conversationId: string, on: string, reason?: string) =>
-    post<{ ok: true; on: string }>(
-      `/api/whatsapp-business/conversations/${conversationId}/follow-up`, { on, reason },
-    ),
-  waBizThread: (to: string, module?: string, recordId?: string) => get<{
-    handle: string; conversationId: string | null; windowOpen: boolean;
-    windowExpiresAt: string | null; assignedName: string | null;
-    messages: Record<string, unknown>[];
-  }>(`/api/whatsapp-business/threads/by-number${qs({ to, module, recordId })}`),
-  waBizContactMessages: (module: string, id: string) => get<{
-    messages: Record<string, unknown>[]; optedOut: boolean;
-  }>(`/api/whatsapp-business/contacts/${module}/${id}/messages`),
   /** Unsubscribe somebody from WhatsApp, or put them back. */
-  waBizConversationConsent: (conversationId: string, subscribed: boolean) =>
-    post<{ optedOut: boolean; notedInWhatsMarketing: boolean }>(`/api/whatsapp-business/conversations/${conversationId}/consent`, { subscribed }),
-  waBizContactConsent: (module: string, id: string, subscribed: boolean) =>
-    post<{ optedOut: boolean; notedInWhatsMarketing: boolean }>(`/api/whatsapp-business/contacts/${module}/${id}/consent`, { subscribed }),
-
   tags: (module?: string, owner?: string) => get<{ id: string; name: string; color: string; created_by: string | null; modules: string[]; usage_count: number }[]>(`/api/tags${qs({ module, owner })}`),
   createTag: (body: { name: string; color?: string; modules?: string[] }) => post<{ id: string; name: string; color: string }>('/api/tags', body),
   updateTag: (id: string, body: { name?: string; color?: string; modules?: string[] }) => patch<{ id: string; name: string; color: string }>(`/api/tags/${id}`, body),

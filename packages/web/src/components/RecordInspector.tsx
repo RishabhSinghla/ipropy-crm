@@ -21,8 +21,6 @@ import { EditableField, isInlineEditable } from './EditableField';
 import { FieldValue } from './FieldRenderer';
 import { FollowUpChipCell, HeaderChipValue } from './RecordBlocks';
 import { HeaderPills } from './HeaderPills';
-import { WhatsAppIconButton } from './WhatsAppButton';
-import { WhatsAppLookupButton } from './WhatsAppLookupButton';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { badgeVars } from '../lib/color';
 import { cn, restrictionForField } from '../lib/utils';
@@ -83,7 +81,7 @@ export function RecordInspector({ module, row, canEdit, blocks, rows, assignedFi
                 <HeaderPills module={module} row={row} canEdit={canEdit} size="hero" />
               </Row>
             ) : (
-              <Row key={item.name} label={item.label} mandatory={item.isMandatory} after={<WhatsAppBeside module={module.name} row={row} field={item} />}>
+              <Row key={item.name} label={item.label} mandatory={item.isMandatory}>
                 <PinnedValue
                   module={module}
                   row={item.name === assignedField?.name && assignedName ? { ...row, display: { ...row.display, [item.name]: assignedName } } : row}
@@ -95,7 +93,7 @@ export function RecordInspector({ module, row, canEdit, blocks, rows, assignedFi
               </Row>
             )))}
             {block.fields.map((field) => (
-              <Row key={field.name} label={field.label} mandatory={field.isMandatory} after={<WhatsAppBeside module={module.name} row={row} field={field} />}>
+              <Row key={field.name} label={field.label} mandatory={field.isMandatory}>
                 <PlainValue module={module} row={row} field={field} canEdit={canEdit} />
               </Row>
             ))}
@@ -115,29 +113,6 @@ function Row({ label, mandatory, after, children }: { label: string; mandatory?:
       <div className="min-w-0 flex-1">{children}</div>
       {after}
     </div>
-  );
-}
-
-/**
- * The WhatsApp icon beside a phone number — the way into Chats (or the
- * composer, once a business number is connected), which stays inside the CRM.
- *
- * Outside the value's box, not in it: inside, a click meant for the icon and a
- * click meant to edit the number were one target, and on 27 September that
- * made a number impossible to change. The header used to carry this icon with
- * the number; the number lives here since 30 September, so the icon does too.
- */
-function WhatsAppBeside({ module, row, field }: { module: string; row: RecordEnvelope; field: FieldMeta }): JSX.Element | null {
-  if (field.uitype !== 'phone') return null;
-  // The display value carries the country code, as the header's did.
-  const number = row.display?.[field.name] ?? row.values[field.name];
-  if (typeof number !== 'string' || !number) return null;
-  return (
-    <>
-      {/* Keyed by record and number: switching records must remount it, so no popover, result or pending check survives. */}
-      <WhatsAppLookupButton key={`${module}:${row.id}:${number}`} module={module} recordId={row.id} number={number} />
-      <WhatsAppIconButton to={number} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-slate-800" />
-    </>
   );
 }
 

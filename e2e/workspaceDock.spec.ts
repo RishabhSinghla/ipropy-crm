@@ -19,7 +19,6 @@ test('the header no longer carries the switcher or the WhatsApp button', async (
   await page.goto('/leads');
   await expect(page.getByTestId('workspace-dock')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: 'Switch module' })).toHaveCount(0);
-  await expect(page.locator('header a[href="/whatsapp"]')).toBeHidden();
 });
 
 test('choosing a module goes there, and its icon says so', async ({ page }) => {
@@ -105,7 +104,6 @@ test('the toolbar reads as names, counts and the owner’s own order', async ({ 
 
   // Dashboard first, WhatsApp below Calls, then the non-record destinations.
   expect(rows[0]).toBe('Dashboard');
-  expect(rows.indexOf('WhatsApp')).toBeGreaterThan(rows.indexOf('Calls'));
   expect(rows.slice(-1)).toEqual(['Archive']);
 
   // Every row says what it is, rather than being an icon you learn.
