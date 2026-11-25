@@ -217,11 +217,8 @@ const CAPABILITY_INFO: Record<string, { label: string; hint: string }> = {
   'ai.configure': { label: 'Configure AI', hint: 'Set up AI behaviour and prompts.' },
   'telephony.call': { label: 'Click-to-call', hint: 'Place calls from the CRM.' },
   'telephony.listen_recordings': { label: 'Listen to call recordings', hint: 'Play back recorded calls.' },
-  // The keys still read `whatsapp.` because they are stored on live profile
-  // rows; renaming them would mean rewriting those rows to keep access. They
-  // gate SMS, RCS and email templates now.
-  'whatsapp.send': { label: 'Send messages', hint: 'Message contacts by SMS or RCS.' },
-  'whatsapp.templates': { label: 'Manage message templates', hint: 'Create and edit email templates.' },
+  // `whatsapp.send` and `whatsapp.templates` are no longer offered here: the features were removed.
+  // They stay stored on profile rows, untouched.
   'inventory.block_unit': { label: 'Block inventory units', hint: 'Hold a property unit for a customer.' },
   'inventory.change_price': { label: 'Change inventory prices', hint: 'Edit the price of a property unit.' },
   'bookings.approve_discount': { label: 'Approve booking discounts', hint: 'Sign off discounts on bookings.' },
@@ -269,8 +266,8 @@ const CAP_GROUPS: { id: string; title: string; blurb: string; caps: string[]; cl
   {
     id: 'contact',
     title: 'Reaching customers',
-    blurb: 'Calling, messaging, and what the role may hear afterwards.',
-    caps: ['telephony.call', 'telephony.listen_recordings', 'whatsapp.send', 'whatsapp.templates'],
+    blurb: 'Calling, and what the role may hear afterwards.',
+    caps: ['telephony.call', 'telephony.listen_recordings'],
   },
   {
     id: 'deals',
