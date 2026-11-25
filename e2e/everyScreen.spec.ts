@@ -78,7 +78,7 @@ test.describe('every screen', () => {
     });
   }
 
-  for (const path of ['/dashboard', '/leads', '/properties', '/settings', '/capture']) {
+  for (const path of ['/dashboard', '/leads', '/properties', '/settings']) {
     test(`${path} opens without throwing`, async ({ page }) => {
       const trouble = watch(page);
       await page.goto(path);

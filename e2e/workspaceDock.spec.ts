@@ -104,7 +104,7 @@ test('the toolbar reads as names, counts and the owner’s own order', async ({ 
 
   // Dashboard first, WhatsApp below Calls, then the non-record destinations.
   expect(rows[0]).toBe('Dashboard');
-  expect(rows.slice(-1)).toEqual(['Archive']);
+  expect(rows).not.toContain('Archive');
 
   // Every row says what it is, rather than being an icon you learn.
   expect(rows.every((name) => name.length > 0), `a toolbar row has no name: ${rows.join(', ')}`).toBe(true);

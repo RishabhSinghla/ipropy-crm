@@ -18,7 +18,6 @@ import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
 import { notify } from '../notifications/index.js';
-import { archiveDueLostRecords } from '../entity/lostArchive.js';
 import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import {
   buildWhere, quoteIdent, ENTITY_ALIAS, RECORD_ALIAS, SqlParams, type BuildContext,
@@ -93,7 +92,6 @@ async function tick(): Promise<void> {
       runScheduledWorkflows(),
       runSequences(),
       housekeeping(),
-      archiveDueLostRecords().catch(err => logger.error({ err }, 'Lost record archive failed; will retry next tick')),
     ]);
   } catch (err) {
     logger.error({ err }, 'scheduler tick failed');

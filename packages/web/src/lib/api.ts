@@ -400,31 +400,6 @@ export interface MatchingAdminConfig {
   propertyFields: { id: string; name: string; label: string; uitype: string }[];
 }
 
-/** A site visit — see server/src/core/capture/sessions.ts. */
-export interface CaptureSession {
-  /** Whether a gate recording exists and how far transcription got. */
-  voiceStatus: 'none' | 'pending' | 'done' | 'failed';
-  voiceNoteId: string | null;
-  id: string;
-  recordId: string | null;
-  userId: string;
-  startedAt: string;
-  endedAt: string | null;
-  lat: number | null;
-  lng: number | null;
-  accuracyM: number | null;
-  status: 'capturing' | 'ready' | 'reviewed';
-  transcript: string | null;
-  clientRef: string;
-  deviceLabel: string | null;
-  notes: string | null;
-}
-
-export interface CaptureSessionRow extends CaptureSession {
-  mediaCount: number;
-  recordLabel: string | null;
-}
-
 /**
  * Where a property's media has got to.
  *
@@ -517,56 +492,6 @@ export interface AiAskResponse {
   action?: AiAssistantAction;
   choices?: AiAssistantChoice[];
   remembered?: AiMemory;
-}
-
-/**
- * A shoot with no property on it yet — see server/src/core/capture/grouping.ts.
- *
- * Either a run of photos the clock grouped together with nobody having tapped
- * anything, or a visit somebody opened and never named. The screen treats them
- * identically because the job is identical: point it at a property.
- */
-export interface UnnamedShoot {
-  id: string;
-  origin: 'manual' | 'auto';
-  startedAt: string;
-  endedAt: string | null;
-  mediaCount: number;
-  /** A handful of attachment ids, enough to recognise the place at a glance. */
-  previewIds: string[];
-  transcript: string | null;
-  lat: number | null;
-  lng: number | null;
-  /**
-   * What a model saw in the photos. Null on an install with no AI provider —
-   * which is this one until a key is added — so the screen must read fine
-   * without it.
-   */
-  summary: string | null;
-  features: string[];
-}
-
-/** One parsed detail, as the review screen needs to weigh it. */
-export interface CaptureSuggestion {
-  field: string;
-  label: string;
-  uitype: string;
-  /** What the speaker actually said — the only way to judge a decode. */
-  heard: string | null;
-  value: unknown;
-  formatted: string;
-  current: unknown;
-  currentFormatted: string;
-  /** False when the record already says this; those rows are not worth asking about. */
-  changes: boolean;
-}
-
-export interface CaptureSessionDetail extends CaptureSession {
-  suggestions: CaptureSuggestion[];
-  /** Metadata for the suggested fields, so a wrong value is editable in place. */
-  fields: Record<string, FieldMeta>;
-  unmatched: string[];
-  voiceUrl: string | null;
 }
 
 export interface ModuleSummary {
@@ -834,23 +759,6 @@ export const api = {
     post<{ id: string }>(`/api/meta/modules/${module}/blocks`, data),
   updateBlock: (id: string, data: Record<string, unknown>) => patch(`/api/meta/blocks/${id}`, data),
   deleteBlock: (id: string) => del<{ ok: boolean; deleted?: string }>(`/api/meta/blocks/${id}`),
-  /** Where each person's phone last was, newest fix each. */
-  teamLocations: () => get<{
-    positions: {
-      userId: string; name: string; latitude: number; longitude: number;
-      recordedAt: string; accuracyM: number | null; batteryPct: number | null;
-      atProperty: { id: string; label: string; metres: number } | null;
-      atPropertyMinutes: number | null;
-    }[];
-    settings: {
-      enabled: boolean; everyMinutes: number; fromHour: number; toHour: number;
-      keepDays: number; siteRadiusM: number;
-    };
-  }>('/api/admin/team/locations'),
-  /** One person's path over a window, oldest first. */
-  teamTrail: (userId: string, hours = 12) => get<{
-    trail: { latitude: number; longitude: number; recordedAt: string; accuracyM: number | null; nearLabel: string | null }[];
-  }>(`/api/admin/team/locations/${userId}?hours=${hours}`),
   /**
    * What Android build the CRM is handing out, if any.
    *
@@ -1414,7 +1322,7 @@ export const api = {
   /** A section of a finished import as a downloadable sheet. */
   importResultUrl: (jobId: string, section: ImportSection, name: string) =>
     authedFileUrl(`/api/import/jobs/${jobId}/result.csv`, { section, name }),
-  neighbours: (module: string, id: string, params: { view?: string; sort?: string; dir?: string; search?: string; filter?: string; archive?: string } = {}) =>
+  neighbours: (module: string, id: string, params: { view?: string; sort?: string; dir?: string; search?: string; filter?: string } = {}) =>
     get<{ prevId: string | null; nextId: string | null; position?: number; total?: number }>(
       `/api/records/${module}/${id}/neighbours${qs(params as Record<string, string>)}`,
     ),

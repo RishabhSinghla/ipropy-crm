@@ -1,6 +1,6 @@
 import { LiveCards } from './components/LiveCards';
 import { type JSX, lazy, Suspense, useEffect } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { useApp } from './lib/store';
 import { isInstalledApp } from './lib/native';
 import { Spinner, ToastHost } from './components/ui';
@@ -26,7 +26,6 @@ const ProjectsWorkspacePage = lazy(() => import('./pages/ProjectsWorkspace'));
 /** chat.ipropy.com is this same app; on that address the front door is the assistant. */
 const onChatHost = typeof window !== 'undefined' && window.location.hostname.startsWith('chat.');
 const ListView = lazy(() => import('./pages/ListView'));
-const ArchivePage = lazy(() => import('./pages/Archive'));
 
 /**
  * A list, and a way to arrive at one as if it were a fresh visit.
@@ -50,18 +49,22 @@ const ArchivePage = lazy(() => import('./pages/Archive'));
  * changes the key** — an ordinary filter, sort or page change writes no state,
  * so a rep working a list is never remounted under their own cursor.
  */
-function ListRoute({ archive = false }: { archive?: boolean }): JSX.Element {
+function ArchiveRedirect(): JSX.Element {
+  const { module } = useParams();
+  return <Navigate to={`/${module ?? ''}`} replace />;
+}
+
+function ListRoute(): JSX.Element {
   const { state } = useLocation();
   const arrival = state as { callDeckHandoff?: number; searchHandoff?: number } | null;
   const handoff = arrival?.callDeckHandoff ?? arrival?.searchHandoff;
-  return <ListView key={handoff ? `handoff-${handoff}` : undefined} archive={archive} />;
+  return <ListView key={handoff ? `handoff-${handoff}` : undefined} />;
 }
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const SharedPropertyPage = lazy(() => import('./pages/SharedProperty'));
 const PublicFormPage = lazy(() => import('./pages/PublicForm'));
-const SiteCapture = lazy(() => import('./pages/SiteCapture'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
 const CallsPage = lazy(() => import('./pages/Calls'));
@@ -146,7 +149,6 @@ export default function App(): JSX.Element {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="dashboard/:id" element={<DashboardPage />} />
 
-              <Route path="capture" element={<SiteCapture />} />
 
               <Route path="settings" element={<SettingsPage />} />
               {/* Above the generic `:module` route, like /chats: otherwise
@@ -157,11 +159,8 @@ export default function App(): JSX.Element {
               {/* Projects has its own isolated workspace and masters rather than
                   the generic CRM split-view used by ordinary record modules. */}
               <Route path="projects" element={<ProjectsWorkspacePage />} />
-              {/* The Archive is the same split view as a module, showing only
-                  records archived after 12 hours in Lost. */}
-              <Route path="archive" element={<ArchivePage />}>
-                <Route path=":module" element={<ListRoute archive />} />
-              </Route>
+              {/* The Archive was removed (25 Nov 2026); old bookmarks land on the module list. */}
+              <Route path="archive/:module" element={<ArchiveRedirect />} />
               <Route path="admin/*" element={<AdminPage />} />
 
               {/* Generic module routes — every module, seeded or custom, uses these. */}

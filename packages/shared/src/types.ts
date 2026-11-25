@@ -47,8 +47,6 @@ export interface ListQuery {
   /** kanban grouping */
   groupBy?: string;
   includeDeleted?: boolean;
-  /** Retained Lost records only; normal lists exclude archived records. */
-  archive?: boolean;
 }
 
 export interface ListResult<T = RecordEnvelope> {

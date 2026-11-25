@@ -48,7 +48,6 @@ import MobileRecents from './Recents';
 import MobileInCall from './InCall';
 
 // At a desk in spirit, so they load only if somebody asks for them.
-const SiteCapture = lazy(() => import('../pages/SiteCapture'));
 const Dashboard = lazy(() => import('../pages/Dashboard'));
 const Admin = lazy(() => import('../pages/admin/Admin'));
 
@@ -134,7 +133,6 @@ export default function MobileShell(): JSX.Element {
             <Route path="/in-call" element={<MobileInCall />} />
             <Route path="/settings" element={<MobileYou />} />
             <Route path="/alerts" element={<MobileAlerts />} />
-            <Route path="/capture" element={<SiteCapture />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/dashboard/:id" element={<Dashboard />} />
             <Route path="/admin/*" element={<Admin />} />
@@ -237,7 +235,6 @@ function TabBar(): JSX.Element | null {
       icon: <ModuleTabIcon name={m.icon} />,
     })),
     { to: '/alerts', label: 'Alerts', icon: <BellWithCount /> },
-    { to: '/capture', label: 'Site visit', icon: <Camera className="h-6 w-6" /> },
     { to: '/settings', label: 'You', icon: <CircleUser className="h-6 w-6" /> },
   ];
 

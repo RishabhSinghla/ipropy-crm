@@ -27,7 +27,6 @@ import { SearchOptions } from './SearchOptions';
 
 /* Lazy, because capture carries the camera and EXIF machinery and the shell is
    on every page. Nobody pays for it until they open the menu and choose it. */
-const SiteCapture = lazy(() => import('../pages/SiteCapture'));
 
 /** Resolve a lucide icon by its kebab-case metadata name (see lib/icons.ts for why this is a registry, not a namespace lookup). */
 export function ModuleIcon({ name, className }: { name: string; className?: string }): JSX.Element {
@@ -253,14 +252,6 @@ export default function Layout(): JSX.Element {
 function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element | null {
   const creatable = modules.filter((m) => m.permissions.create);
   const [creating, setCreating] = useState<ModuleSummary | null>(null);
-  /*
-    Capture used to hang off a split button on the Properties list, which meant
-    the one way into it was a page you had to be standing on. It is a way of
-    adding a property, so it belongs with every other way of adding one — here,
-    reachable from wherever you happen to be.
-  */
-  const [capturing, setCapturing] = useState(false);
-  const canCapture = creatable.some((m) => m.name === 'properties');
   const queryClient = useQueryClient();
   const { data: createMeta, isLoading } = useQuery({
     queryKey: ['module', creating?.name],
@@ -268,17 +259,6 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
     enabled: Boolean(creating),
   });
   if (!creatable.length) return null;
-
-  const captureModal = capturing ? (
-    <Modal open onClose={() => setCapturing(false)} title="Capture on site" size="lg">
-      <Suspense fallback={<div className="flex min-h-40 items-center justify-center"><Spinner className="h-5 w-5" /></div>}>
-        <SiteCapture
-          inModal
-          onSaved={() => void queryClient.invalidateQueries({ queryKey: ['records', 'properties'] })}
-        />
-      </Suspense>
-    </Modal>
-  ) : null;
 
   const createModal = creating ? (
     <Modal open onClose={() => setCreating(null)} title={`New ${creating.singularLabel}`} size="lg">
@@ -302,7 +282,7 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
   // One creatable module is a button, not a menu: a dropdown with a single
   // entry is a click spent on confirming there was no choice to make. Unless
   // that module is Properties, which carries Capture as a second way in.
-  if (creatable.length === 1 && !canCapture) {
+  if (creatable.length === 1) {
     const only = creatable[0]!;
     return (
       <>
@@ -345,22 +325,10 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
               New {m.singularLabel}
             </DropdownItem>
           ))}
-          {canCapture && (
-            <>
-              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-              <DropdownItem
-                icon={<MapPin className="h-3.5 w-3.5" />}
-                onClick={() => { close(); setCapturing(true); }}
-              >
-                Capture on site
-              </DropdownItem>
-            </>
-          )}
         </>
       )}
     </Dropdown>
     {createModal}
-    {captureModal}
     </>
   );
 }
@@ -478,7 +446,6 @@ function MobileNav({
                 label={m.label}
               />
             ))}
-            <DrawerLink to="/capture" icon="map-pin" label="Site visit" />
           </div>
           <div className="space-y-0.5">
             <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">Tools</p>
@@ -526,7 +493,6 @@ function BottomTabs({
     { to: '/dashboard', icon: 'layout-dashboard', label: 'Dashboard' },
     leads && { to: `/${leads.name}`, icon: leads.icon, label: leads.label },
     properties && { to: `/${properties.name}`, icon: properties.icon, label: properties.label },
-    { to: '/capture', icon: 'map-pin', label: 'Site visit' },
     { to: '/settings', icon: 'settings', label: 'You' },
   ].filter(Boolean) as { to: string; icon: string; label: string }[];
 
@@ -651,7 +617,6 @@ function NotificationIcon({ kind, link }: { kind: string; link: string | null })
   const to = (icon: JSX.Element, tone: string): JSX.Element => (
     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tone}`}>{icon}</span>
   );
-  if (link?.startsWith('/capture')) return to(<MapPin className={c} />, 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400');
   if (kind === 'ai') return to(<Sparkles className={c} />, 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400');
   if (kind === 'mention') return to(<AtSign className={c} />, 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400');
   if (kind === 'import') return to(<Upload className={c} />, 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400');
@@ -974,7 +939,7 @@ function GlobalSearch(): JSX.Element {
       the Archive. `?open=` is the address the list already understands for a
       record that is not on its current page.
     */
-    navigate(`${hit.archived ? '/archive' : ''}/${hit.module}?open=${hit.id}`);
+    navigate(`/${hit.module}?open=${hit.id}`);
   };
 
   /** Every match in every group, on the full results page. */
@@ -1095,7 +1060,7 @@ function GlobalSearch(): JSX.Element {
                   id={hit.id}
                   label={hit.label}
                   // In its own list beside the rows, or the Archive for an archived one.
-                  to={`${hit.archived ? '/archive' : ''}/${hit.module}?open=${hit.id}`}
+                  to={`/${hit.module}?open=${hit.id}`}
                   // A modified click opens a background tab and the browser leaves
                   // this page alone — so clearing the box would throw away the
                   // results somebody is deliberately working through one at a time.

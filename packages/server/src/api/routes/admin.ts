@@ -784,30 +784,6 @@ adminRouter.get('/ai-models/catalogue', asyncHandler(async (req, res) => {
   res.json({ models: await modelsForJob(job) });
 }));
 
-/**
- * Where everybody is, newest fix each.
- *
- * Deliberately not behind `admin.access`. Visibility follows the role hierarchy
- * exactly as records do — an admin sees everybody, a manager sees their own
- * people, everybody else sees themselves — because a second answer to "who may
- * look" is how one part of a CRM ends up with its own rules.
- */
-adminRouter.get('/team/locations', asyncHandler(async (req, res) => {
-  const { teamPositions, locationSettings } = await import('../../core/locations/index.js');
-  const [positions, settings] = await Promise.all([
-    teamPositions(getUser(req)),
-    locationSettings(),
-  ]);
-  res.json({ positions, settings });
-}));
-
-/** One person's path, for drawing a line rather than a dot. */
-adminRouter.get('/team/locations/:userId', asyncHandler(async (req, res) => {
-  const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 12));
-  const { trail } = await import('../../core/locations/index.js');
-  res.json({ trail: await trail(getUser(req), req.params.userId, hours) });
-}));
-
 adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'admin.access');

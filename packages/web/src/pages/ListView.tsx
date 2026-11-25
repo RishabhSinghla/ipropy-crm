@@ -35,7 +35,6 @@ import { AgentPicker } from '../components/AgentPicker';
 import { NO_DISPOSITION_PICK, type DispositionPick, LAST_CALL_DISPOSITION } from '../components/CallDispositionFilter';
 import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
 import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
-import SiteCapture from './SiteCapture';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
@@ -46,14 +45,7 @@ import { useProgressiveDialer } from '../lib/progressiveDialer';
 import { NO_SORT_BY } from '../lib/listSort';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
-/**
- * `archive` is the Archive's own list: the same split view, timeline and
- * details, showing only records archived after 12 hours in Lost. The owner,
- * 10 October 2026: *"You treated archived Folder as a archived module with full
- * functioned module"*. Changing the status away from Lost brings a record back
- * (`updateLostArchiveDue` clears the stamp in the same save).
- */
-export default function ListView({ archive = false }: { archive?: boolean } = {}): JSX.Element {
+export default function ListView(): JSX.Element {
   const { module: moduleName } = useParams<{ module: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -112,7 +104,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     });
   }, []);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
-  const [showCapture, setShowCapture] = useState(false);
   /** Open when somebody is naming a new view built from what is on screen. */
   const [savingAsView, setSavingAsView] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -424,7 +415,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const stageField = meta ? pipelineFieldOf(meta) : undefined;
   const ownerField = meta ? assignmentField(meta.fields) : undefined;
   // One shared facet request supplies exact status totals for the top ribbon.
-  const showStageRibbon = !archive && ['leads', 'inventory', 'properties', 'associates'].includes(moduleName ?? '') && Boolean(stageField);
+  const showStageRibbon = ['leads', 'inventory', 'properties', 'associates'].includes(moduleName ?? '') && Boolean(stageField);
   const ribbonAgentFilter = useMemo<FilterGroup | undefined>(() => (
     agentPick && ownerField
       ? { logic: 'AND', conditions: [{ field: ownerField.name, operator: 'equals', value: agentPick }] }
@@ -526,7 +517,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     pageSize,
     search: search || undefined,
     filter: countConditions(effectiveFilter) ? canonicalFilter(effectiveFilter) : undefined,
-    ...(archive ? { archive: true } : {}),
     sortBy: effectiveSort.sortBy === NO_SORT_BY ? undefined : effectiveSort.sortBy,
     sortDir: effectiveSort.sortDir,
     /*
@@ -540,7 +530,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       meta?.fields,
       (meta?.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config as { queueFields?: string[] } | undefined)?.queueFields,
     ),
-  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta, archive]);
+  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta]);
   // Prefetch the real first page, not just its count. Clicking New consumes
   // the same cache key immediately; a selected New view shares this request.
   const todayQuery: ListQuery = { ...query, page: 1,
@@ -572,7 +562,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a
   // follow-up queue can supply its own sort even when no sort is named in the
   // URL. Capture the effective list query, not just the address bar.
-  const callQueueSnapshot = useMemo(() => callQueueUrl(moduleName ?? '', query, archive ? '/archive' : ''), [moduleName, query, archive]);
+  const callQueueSnapshot = useMemo(() => callQueueUrl(moduleName ?? '', query), [moduleName, query]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
@@ -933,7 +923,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       fieldMap={fieldMap}
       active={taskQueue}
       onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
-      archive={archive}
       ownerField={ownerField?.name ?? null}
       agent={agentPick}
       onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
@@ -1019,7 +1008,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       )}
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
         {/* Tag cards stay in the global header so they remain beside search. */}
-        {!archive && toolbarSlots.tags && createPortal(
+        {toolbarSlots.tags && createPortal(
           <TagCards moduleName={meta.name} owner={agentPick || undefined} />,
           toolbarSlots.tags,
         )}
@@ -1329,7 +1318,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
               ...(activeView?.id ? { view: activeView.id } : {}),
               ...(search ? { search } : {}),
               ...(countConditions(effectiveFilter) ? { filter: JSON.stringify(effectiveFilter) } : {}),
-              ...(archive ? { archive: '1' } : {}),
             }}
             callQueueUrl={callQueueSnapshot}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
@@ -1471,17 +1459,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         selectedIds={selectedAll ? undefined : selected.size ? [...selected] : undefined}
         allSelected={selectedAll}
       />
-
-      {showCapture && (
-        <Modal
-          open
-          onClose={() => setShowCapture(false)}
-          title="Capture on site"
-          size="lg"
-        >
-          <SiteCapture inModal onSaved={() => void refetch()} />
-        </Modal>
-      )}
 
       {showQuickCreate && (
         <Modal open onClose={() => setShowQuickCreate(false)} title={`New ${meta.singularLabel}`} size="lg">

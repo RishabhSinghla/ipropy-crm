@@ -3,7 +3,7 @@ import ProfileStrengthAdmin from './ProfileStrengthAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, Bot, Blocks, Building2, Database, KeyRound, LayoutTemplate, Link2, MapPin,
+  Activity, Bot, Blocks, Building2, Database, KeyRound, LayoutTemplate, Link2,
   ListTree, Megaphone, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -21,7 +21,6 @@ const SharingAdmin = lazy(() => import('./SharingAdmin'));
 const WorkflowAdmin = lazy(() => import('./WorkflowAdmin'));
 const IntegrationsAdmin = lazy(() => import('./IntegrationsAdmin'));
 const SystemAdmin = lazy(() => import('./SystemAdmin'));
-const TeamMap = lazy(() => import('./TeamMap'));
 const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
@@ -62,7 +61,6 @@ const SECTIONS = [
       { path: 'users', capability: 'admin.users', label: 'Users', icon: Users, element: <UsersAdmin /> },
       { path: 'roles', capability: 'admin.roles', label: 'Roles & Profiles', icon: Shield, element: <RolesProfiles /> },
       { path: 'sharing', capability: 'admin.sharing', label: 'Data Sharing', icon: KeyRound, element: <SharingAdmin /> },
-      { path: 'map', capability: 'admin.users', label: 'Team map', icon: MapPin, element: <TeamMap /> },
     ],
   },
   {

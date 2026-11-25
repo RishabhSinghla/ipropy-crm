@@ -22,7 +22,7 @@ export default function SearchResults(): JSX.Element {
     {groups.map((group) => <section key={group.module} data-search-module={group.module} className="card overflow-hidden">
       <h2 className="flex items-center gap-2 bg-[var(--surface-muted)] px-3 py-2 text-xs font-bold uppercase tracking-wider text-muted">{group.label}<Badge>{group.hits.length}</Badge></h2>
       {group.hits.map((hit) => hit.restricted ? <RestrictedHit key={hit.id} hit={hit} /> :
-        <Link key={hit.id} to={`${hit.archived ? '/archive' : ''}/${hit.module}?open=${hit.id}`} className="flex items-center gap-3 border-t border-[var(--border)] px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+        <Link key={hit.id} to={`/${hit.module}?open=${hit.id}`} className="flex items-center gap-3 border-t border-[var(--border)] px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
           <Avatar name={hit.label} size={32} className="shrink-0" />
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2 text-sm font-semibold"><span className="truncate">{hit.label}</span>{hit.archived && <Badge>Archived</Badge>}{hit.mobile && <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">{hit.mobile}</span>}</span>

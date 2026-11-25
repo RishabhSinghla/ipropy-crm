@@ -118,8 +118,8 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
     id: 'team_location',
     title: 'Where the team is',
     blurb: 'Off until you switch it on. When on, the companion app on each phone sends its position during '
-      + 'the hours below, and Admin → Team map shows it. Tell your team before you turn this on: it is their '
-      + 'personal data, and India\u2019s DPDP Act treats it that way.',
+      + 'the hours below. The Team map screen has been removed, so nothing displays it now; keep this off '
+      + 'unless you need it. It is the team\u2019s personal data, and India\u2019s DPDP Act treats it that way.',
   },
   {
     id: 'house_style',
