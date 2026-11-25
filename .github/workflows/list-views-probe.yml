@@ -1,0 +1,20 @@
+# What saved lists exist on production, and who owns them? Read-only; list names and flags only.
+name: List views probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every saved list
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          printf "BEGIN READ ONLY;\nSELECT m.name AS module, v.name, v.is_system, v.is_public, v.is_default, v.is_active, v.seed_key, (v.owner_id IS NULL) AS no_owner, u.email AS owner, v.overrides_view_id IS NOT NULL AS override, v.created_at::date AS made FROM ipy_view v JOIN ipy_module m ON m.id=v.module_id LEFT JOIN ipy_user u ON u.id=v.owner_id ORDER BY m.name, v.is_system DESC, v.name;\nSELECT module_id, seed_key FROM ipy_view_tombstone;\nCOMMIT;\n" \
+            | psql "$PROD_DATABASE_URL" -X -q -P pager=off 2>&1 || true
