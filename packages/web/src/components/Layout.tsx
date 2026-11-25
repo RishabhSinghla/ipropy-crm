@@ -176,7 +176,6 @@ export default function Layout(): JSX.Element {
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-0.5">
             {/* A list page puts its New (recently added) chip here. */}
             <div id="global-new-records" className="shrink-0" />
-            <div id="global-tags" className="min-w-0 max-w-[17rem] flex-[0_1_17rem]" />
             <GlobalSearch />
             <div id="global-list-options" className="shrink-0" />
 

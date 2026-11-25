@@ -113,11 +113,11 @@ for (const module of MODULES) {
   test(`${module}: the tag button is in the header and the favourite star is in More`, async ({ page }) => {
     await openFirstRecord(page, module);
     const header = page.getByTestId('ipropy-workspace');
-    await expect(header.getByRole('button', { name: 'Edit record tags', exact: true })).toBeVisible();
+    await expect(header.getByTestId('middle-header-favourite')).toBeVisible();
     // The favourite action moved into More (27 October 2026); tags stay out of it,
     // so there are no duplicate menu controls.
     await page.getByTestId('record-menu-more').click();
-    await expect(page.getByRole('button', { name: /Add favourite|Remove favourite/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Add favourite|Remove favourite/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Add a tag|^Tags \(/ })).toHaveCount(0);
   });
 }

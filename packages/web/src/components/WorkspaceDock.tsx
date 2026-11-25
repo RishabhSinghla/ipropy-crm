@@ -23,7 +23,7 @@ import { type JSX, type ReactNode, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { Archive, BarChart3, LayoutDashboard, PhoneIncoming, Star, UserRound } from 'lucide-react';
+import { BarChart3, LayoutDashboard, PhoneIncoming, Star, UserRound } from 'lucide-react';
 import { ThreeContacts } from './ThreeContacts';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -139,9 +139,8 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
               {row.icon}
             </DockLink>
           ))}
-          <div className="mt-auto border-t border-slate-300 pt-3 dark:border-slate-700">
-            <DockLink to="/archive" label="Archive" iconOnly={!expanded}><Archive className="h-[18px] w-[18px]" /></DockLink>
-          </div>
+          {/* Tag cards are drawn here by the list page, right after Favourites. */}
+          <div id="global-tags" className={cn('min-w-0 pt-1', !expanded && 'hidden')} />
         </nav>
       </aside>
     </div>

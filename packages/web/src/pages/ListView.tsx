@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { TagCards } from '../components/TagCards';
 import { canonicalFilter, withCreatedToday } from '../lib/newRecordsQuery';
 import {
-  choiceConditions, chosenWhen, CREATED_CHOICES, CREATED_FIELD, VISIT_CHOICES, withChoice, withoutChoice,
+  choiceConditions, chosenWhen, CREATED_CHOICES, CREATED_FIELD, withChoice, withoutChoice,
 } from '../lib/dateChoices';
 import { localDay } from '../lib/followUpDates';
 import { ChoiceChip } from '../components/ChoiceChip';
@@ -21,7 +21,7 @@ import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
 import { cn } from '../lib/utils';
 import { FieldInput } from '../components/FieldRenderer';
-import { assignmentField, byLabel, followUpFieldOf, pipelineFieldOf, withQueueSubtitle, plannedVisitField } from '../lib/fields';
+import { assignmentField, byLabel, followUpFieldOf, pipelineFieldOf, withQueueSubtitle } from '../lib/fields';
 import { withQueueCardColumns } from '../lib/queueCard';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { countConditions } from '../components/FilterBuilder';
@@ -456,8 +456,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   // Older Inventory workspaces store the same business field as
   // `next_follow_up` in JSON — `followUpFieldOf` knows both.
   const taskField = meta ? followUpFieldOf(meta.fields) : undefined;
-  const visitField = meta ? plannedVisitField(meta.fields) : undefined;
-  const visitWhen = visitField ? chosenWhen(filter, visitField.name, VISIT_CHOICES.map((choice) => choice.key)) : null;
   /*
     The field decides, never a list of module names.
 
@@ -550,11 +548,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const { data: todayRecords } = useQuery({ queryKey: ['records', moduleName, todayQuery],
     queryFn: () => api.list(moduleName!, todayQuery), enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName), staleTime: 60_000 });
 
-  const visitsQuery: ListQuery = { ...query, page: 1, pageSize: 1,
-    filter: { logic: 'AND', conditions: [effectiveFilter, { field: visitField?.name ?? 'created_at', operator: 'today' }] } };
-  const { data: visitRecords } = useQuery({ queryKey: ['visits-today', moduleName, visitsQuery],
-    queryFn: () => api.list(moduleName!, visitsQuery), enabled: Boolean(visitField && hydratedFor === moduleName), staleTime: 60_000 });
-
   // The dropdown totals are independent of the selected date choice, while
   // retaining search, stage, owner, tag and every other active filter.
   const createdChoiceCounts = useQueries({
@@ -575,26 +568,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       };
     }),
   });
-  const visitChoiceCounts = useQueries({
-    queries: VISIT_CHOICES.map(({ key }) => {
-      const field = visitField?.name ?? 'created_at';
-      const countQuery: ListQuery = {
-        ...query, page: 1, pageSize: 1,
-        filter: canonicalFilter(withChoice(
-          withoutChoice(effectiveFilter, field),
-          field,
-          choiceConditions(field, key, localDay(new Date())),
-        )),
-      };
-      return {
-        queryKey: ['records', moduleName, 'visit-choice-count', countQuery],
-        queryFn: () => api.list(moduleName!, countQuery),
-        enabled: Boolean(visitField && moduleName && meta && views && hydratedFor === moduleName),
-        staleTime: 30_000,
-      };
-    }),
-  });
-
   // The call deck must resume this *exact* queue after Save & Next. The URL's
   // ordinary filter omits transient follow-up/status/agent/tag choices, and a
   // follow-up queue can supply its own sort even when no sort is named in the
@@ -966,25 +939,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
     />
   ) : null;
-  const visitControl = visitField ? (
-    <ChoiceChip
-      label="Visits"
-      title="Records by planned visit date"
-      choices={VISIT_CHOICES}
-      active={visitWhen}
-      choiceCounts={Object.fromEntries(VISIT_CHOICES.map((choice, index) => [choice.key, visitChoiceCounts[index]?.data?.total]))}
-      count={visitWhen ? (data?.total ?? 0) : (visitRecords?.total ?? 0)}
-      onPick={(when) => {
-        setFilter(when
-          ? withChoice(filter, visitField.name, choiceConditions(visitField.name, when, localDay(new Date())))
-          : withoutChoice(filter, visitField.name));
-        setPage(1);
-      }}
-      buttonClass={(on) => toolbarButton(on, 'h-6 px-2 text-[10px]')}
-      countClass={(on) => toolbarCount(on)}
-      testId="visits-chip"
-    />
-  ) : null;
   const selectedRibbonAgent = (ribbonAgents as { id?: unknown; fullName?: unknown }[])
     .find((candidate) => String(candidate.id ?? '') === agentPick);
   const ribbonAgentLabel = agentPick
@@ -1045,7 +999,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const ribbonControls = (
     <div className="ml-auto flex shrink-0 items-center gap-2" role="group" aria-label="Record list controls">
       {newRecordsControl}
-      {visitControl}
       {taskControl}
       {callLogControl}
     </div>
@@ -1060,7 +1013,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
       {!controlsInRibbon && (
         <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
-              {visitControl}
           {taskControl}
           {callLogControl}
         </div>
@@ -1178,9 +1130,8 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
                   aria-pressed={selectedStage}
                   title={`${option.label || option.value}: ${(stageCounts.get(option.value) ?? 0).toLocaleString('en-IN')} records`}
                   onClick={() => {
-                    setStagePick((current) => selectedStage
-                      ? current.filter((value) => value !== option.value)
-                      : [...current, option.value]);
+                    // One status at a time: picking another replaces this one.
+                    setStagePick(selectedStage ? [] : [option.value]);
                     setPage(1);
                   }}
                   className={cn(

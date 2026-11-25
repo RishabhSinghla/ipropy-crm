@@ -1017,14 +1017,6 @@ export function IpropyWorkspace({
             squeezing it, which is what `flex-wrap` was already here for.
           */}
           <span className="ml-auto flex shrink-0 basis-full flex-wrap items-center justify-end gap-1.5 xl:basis-auto" data-testid="split-hero-actions-status">
-            {module.fields.filter(field => field.isActive && field.displayType !== 'hidden'
-              && ['date', 'datetime'].includes(field.uitype)
-              && /visit.*plan|plan.*visit/i.test(`${field.name} ${field.label}`)
-              && active.values[field.name]).slice(0, 1).map(field => (
-                <span key={field.id} className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200" title={field.label} data-testid="planned-visit-date">
-                  <CalendarDays className="h-3.5 w-3.5" /> Visit: <FieldValue field={field} value={active.values[field.name]} display={active.display?.[field.name]} />
-                </span>
-              ))}
             {/*
               **The module's name left this header on 3 October 2026** —
               *"Remove inventory/Lead labels/text from this middle header."*
@@ -1039,7 +1031,7 @@ export function IpropyWorkspace({
             {phoneValue && <span className="ml-1 inline-flex shrink-0 items-center gap-1" data-testid="middle-header-call-actions">
               <CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} />
             </span>}
-            {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
+            <button type="button" aria-label={active.starred ? 'Remove favourite' : 'Add favourite'} title={active.starred ? 'Remove favourite' : 'Add favourite'} onClick={() => star.mutate(active)} className="shrink-0 p-1 hover:text-amber-600" data-testid="middle-header-favourite"><Star className={cn('h-4 w-4', active.starred ? 'fill-amber-500 text-amber-500' : 'text-slate-500')} /></button>
               {/*
                 Search within this record. **The icon left this bar on
                 3 October 2026** — *"remove the whatsapp icon and Search icon
@@ -1111,13 +1103,6 @@ export function IpropyWorkspace({
         <RecordMenuBar
           actions={(close) => (
             <>
-              <DropdownItem
-                icon={<Star className={cn('h-3.5 w-3.5', active.starred && 'fill-amber-500 text-amber-500')} />}
-                onClick={() => { star.mutate(active); close(); }}
-              >
-                {active.starred ? 'Remove favourite' : 'Add favourite'}
-              </DropdownItem>
-              <div className="my-1 border-t border-[var(--border)]" />
               {/*
                 Write to them — *"Move email icons from Middle heade pane to
                 Menu bar more tab"* (3 October 2026). It was a circle on the

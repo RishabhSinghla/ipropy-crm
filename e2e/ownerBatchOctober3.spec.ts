@@ -34,9 +34,9 @@ for (const module of MODULES) {
     await expect(page.locator('button[aria-label="More actions"]')).toHaveCount(0);
     // The tag button stays in the header (27 October 2026); the rest of what the
     // three-dot menu held is in the bar's More.
-    await expect(page.getByRole('button', { name: 'Edit record tags', exact: true })).toBeVisible();
+    await expect(page.getByTestId('middle-header-favourite')).toBeVisible();
     await page.getByTestId('record-menu-more').click();
-    for (const row of [/Add favourite|Remove favourite/, /Summarise with AI/, /Delete record/]) {
+    for (const row of [/Summarise with AI/, /Delete record/]) {
       await expect(page.getByRole('button', { name: row })).toBeVisible();
     }
   });

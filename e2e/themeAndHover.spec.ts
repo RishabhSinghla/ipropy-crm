@@ -36,8 +36,6 @@ test.afterAll(async ({ request }) => {
 test('toolbar hover is an overlay; New and tags use the active theme', async ({ page }) => {
   await page.goto('/leads');
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
-  await expect(page.getByTestId('planned-visit-date')).toBeVisible();
-  await expect(page.getByTestId('visits-chip')).toBeVisible();
   const frame = page.getByTestId('workspace-dock-frame');
   const before = await page.getByTestId('ipropy-workspace').boundingBox();
   await frame.hover();
@@ -63,10 +61,6 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
     raised in the report for him to decide.
   */
   await expect(page.getByRole('navigation', { name: 'Record workspace sections' })).not.toContainText("Builder's Inventory");
-  await page.getByTestId('visits-chip').click();
-  await page.getByRole('menuitemradio', { name: 'Today' }).click();
-  await expect(page.getByTestId('visits-chip')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByTestId('planned-visit-date')).toBeVisible();
 });
 
 test('details open on hover and close from their top edge', async ({ page }, testInfo) => {

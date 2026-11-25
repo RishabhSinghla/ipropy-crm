@@ -23,13 +23,6 @@ export const CREATED_CHOICES: { key: CreatedWhen; label: string }[] = [
   { key: 'this_month', label: 'This month' },
 ];
 
-export const VISIT_CHOICES: { key: VisitWhen; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'tomorrow', label: 'Tomorrow' },
-  { key: 'overdue', label: 'Overdue' },
-  { key: 'upcoming', label: 'Upcoming' },
-];
-
 /** The field the New chip reads. Every record has it. */
 export const CREATED_FIELD = 'created_at';
 
