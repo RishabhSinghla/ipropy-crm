@@ -122,6 +122,16 @@ viewsRouter.get('/:module', asyncHandler(async (req, res) => {
 
   const views = rows.rows.map(rowToView);
 
+  // The list this person chose as their own default (POST /:module/:id/default) wins over
+  // the shipped one. Only when it is still a list they can see, or nobody would be left on any.
+  const mine = await db.queryOne<{ chosen: string | null }>(
+    `SELECT preferences #>> $2::text[] AS chosen FROM ipy_user WHERE id = $1`,
+    [user.id, ['defaultViews', module.name]],
+  );
+  if (mine?.chosen && views.some((view) => String(view.id) === mine.chosen)) {
+    for (const view of views) (view as { isDefault: boolean }).isDefault = String(view.id) === mine.chosen;
+  }
+
   // Optional per-view record counts for the badge in the view switcher.
   /*
     How many records each view holds, beside its name in the switcher.

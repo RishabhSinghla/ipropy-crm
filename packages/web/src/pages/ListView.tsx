@@ -38,6 +38,7 @@ import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
+import { ListPicker } from '../components/ListPicker';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
 import { CallLogFilter } from '../components/CallLogFilter';
 import { callQueueUrl } from '../lib/callQueueUrl';
@@ -786,10 +787,12 @@ export default function ListView(): JSX.Element {
 
   const setDefaultView = useMutation({
     mutationFn: async (id: string) => {
-      const source = (views ?? []).find((v) => v.id === id);
-      return api.updateView(moduleName!, id, { isDefault: !source?.isDefault });
+      return api.setDefaultView(moduleName!, id);
     },
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['views', moduleName] }); },
+    onSuccess: () => {
+      toast.success('Default list set', 'This list opens first from now on.');
+      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
+    },
     onError: (err: Error) => toast.error('Could not set the default list', err.message),
   });
 
@@ -1000,6 +1003,55 @@ export default function ListView(): JSX.Element {
       {!controlsInRibbon && newRecordsControl}
     </div>
   );
+  // Saved lists: choose, create, edit, copy, share with the team, delete, make the default.
+  const listControl = meta ? (
+    <Dropdown
+      align="left"
+      className="min-w-[18rem]"
+      trigger={(
+        <button
+          type="button"
+          className={cn(toolbarButton(Boolean(activeView && !activeView.isSystem), 'h-6 shrink-0 px-2 text-[10px]'), 'rounded-md')}
+          aria-label="Choose or manage lists"
+          title={activeView?.name ?? `All ${meta.label}`}
+          data-testid="list-picker"
+        >
+          <span className="max-w-[9rem] truncate">List: {activeView?.name ?? `All ${meta.label}`}</span>
+        </button>
+      )}
+    >
+      {(close) => (
+        <ListPicker
+          views={(views ?? []).map((v) => ({
+            id: v.id, name: v.name, isSystem: v.isSystem, isPublic: v.isPublic,
+            isDefault: v.isDefault, ownerId: v.ownerId,
+            isOverride: (v as { isOverride?: boolean }).isOverride,
+            count: (v as { count?: number }).count,
+          }))}
+          activeViewId={activeView?.id ?? null}
+          activeTag={tagPick}
+          userId={user?.id}
+          isAdmin={Boolean(user?.isAdmin)}
+          moduleLabel={meta.label}
+          onChooseView={(id) => { setTagPick(null); chooseView(id); close(); }}
+          onNew={() => { setEditingView(blankView(moduleName!)); close(); }}
+          onEdit={(id) => {
+            const full = (views ?? []).find((v) => v.id === id);
+            if (full) setEditingView(full as SavedView);
+            close();
+          }}
+          onDuplicate={(id) => { duplicateView.mutate(id); close(); }}
+          onShare={(id) => { shareView.mutate(id); close(); }}
+          onSetDefault={(id) => { setDefaultView.mutate(id); close(); }}
+          onDelete={(id) => {
+            const full = (views ?? []).find((v) => v.id === id);
+            if (full) setConfirmDeleteView(full as CustomView);
+            close();
+          }}
+        />
+      )}
+    </Dropdown>
+  ) : null;
   const queueTools = (
     <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
       {!controlsInRibbon && (
@@ -1088,6 +1140,7 @@ export default function ListView(): JSX.Element {
         >
           <div className="flex min-w-0 items-center justify-between gap-3 pb-0.5" role="group" aria-label="Filter by stage">
             <div className="flex min-w-0 flex-1 items-center gap-2">
+            {listControl}
             {ribbonAgentControl}
             <div className="flex min-w-0 items-center gap-0 overflow-x-auto" role="group" aria-label="Filter by stage options">
             <button

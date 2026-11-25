@@ -881,6 +881,8 @@ export const api = {
   createView: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/views/${module}`, data),
   updateView: (module: string, id: string, data: Record<string, unknown>) => put(`/api/views/${module}/${id}`, data),
   deleteView: (module: string, id: string) => del(`/api/views/${module}/${id}`),
+  /** This person's own default list for the module. */
+  setDefaultView: (module: string, id: string) => post(`/api/views/${module}/${id}/default`, {}),
 
   // --- reports ------------------------------------------------------------
   reports: () => get<{
