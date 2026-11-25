@@ -22,7 +22,6 @@ import {
 } from '../../integrations/leadsources/capture.js';
 import { verifyMetaSignature } from '../../integrations/leadsources/metaSignature.js';
 import { queueFacebookDeliveries, nudgeFacebookRecovery } from '../../integrations/leadsources/facebookRecovery.js';
-import { recordOpen } from '../../integrations/email/service.js';
 import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
 import { notifyMany } from '../../core/notifications/index.js';
@@ -352,15 +351,6 @@ const PIXEL = Buffer.from(
   'base64',
 );
 
-webhooksRouter.get('/email/open/:trackingId.gif', asyncHandler(async (req, res) => {
-  void recordOpen(req.params.trackingId).catch(() => undefined);
-  res.set({
-    'Content-Type': 'image/gif',
-    'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-    Pragma: 'no-cache',
-  });
-  res.send(PIXEL);
-}));
 
 // ---------------------------------------------------------------------------
 // Generic inbound webhook (bring your own source)

@@ -400,8 +400,6 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   create_event: 'Create an event',
   assign_owner: 'Assign an owner',
   notify_user: 'Notify a user',
-  send_email: 'Send email',
-  send_sms: 'Send SMS',
   send_whatsapp_template: 'Send a WhatsApp template',
   webhook: 'Call a webhook',
   add_tag: 'Add tags',
@@ -727,20 +725,6 @@ function TaskConfigFields({
           <input className="input" value={(task.config.title as string) ?? ''} onChange={(e) => set({ title: e.target.value })} />
           <label className="label mt-2">Body</label>
           <textarea className="input" rows={2} value={(task.config.body as string) ?? ''} onChange={(e) => set({ body: e.target.value })} placeholder="Supports {{merge_field}}" />
-        </div>
-      );
-
-    case 'send_email':
-      return (
-        <div className="space-y-2">
-          <label className="label">To</label>
-          <input className="input" value={(task.config.to as string) ?? '{{email}}'} onChange={(e) => set({ to: e.target.value })} />
-          <label className="label mt-2">Template name (optional — otherwise uses subject/body below)</label>
-          <input className="input" value={(task.config.template as string) ?? ''} onChange={(e) => set({ template: e.target.value || undefined })} />
-          <label className="label mt-2">Subject</label>
-          <input className="input" value={(task.config.subject as string) ?? ''} onChange={(e) => set({ subject: e.target.value })} />
-          <label className="label mt-2">Body (HTML)</label>
-          <textarea className="input font-mono text-xs" rows={3} value={(task.config.html as string) ?? ''} onChange={(e) => set({ html: e.target.value })} />
         </div>
       );
 

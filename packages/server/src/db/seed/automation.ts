@@ -405,7 +405,6 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'magicbricks', kind: 'lead_source', label: 'MagicBricks' },
     { provider: 'nobroker', kind: 'lead_source', label: 'NoBroker' },
     { provider: 'smtp', kind: 'email', label: 'Outbound Email (SMTP)' },
-    { provider: 'imap', kind: 'email', label: 'Inbound Email (IMAP)' },
     { provider: 'anthropic', kind: 'ai', label: 'Claude (Anthropic)' },
     // Alternatives to Anthropic, all spoken to over the OpenAI chat-completions
     // shape. Several have a free tier, so the AI features work without a budget.

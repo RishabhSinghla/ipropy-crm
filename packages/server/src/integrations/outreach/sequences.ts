@@ -336,21 +336,9 @@ async function runStep(
     case 'whatsapp':
       logger.info({ step: step.id }, 'sequence whatsapp step skipped — WhatsApp has been removed');
       break;
-    case 'email': {
-      if (!enrolment.record_id) break;
-      const lead = await db.queryOne<{ email: string | null }>(
-        `SELECT email FROM ipy_e_leads WHERE record_id = $1`, [enrolment.record_id],
-      );
-      if (!lead?.email) break;
-      const { sendEmail } = await import('../email/service.js');
-      await sendEmail({
-        to: lead.email,
-        subject: step.subject ?? sequence.name,
-        html: `<p>${body.replace(/\n/g, '<br>')}</p>`,
-        recordId: enrolment.record_id,
-      });
+    case 'email':
+      logger.info({ step: step.id }, 'sequence email step skipped — email sending has been removed');
       break;
-    }
     case 'task': {
       // A step a machine should not do on its own — "ring them and ask about
       // the loan" — lands on the owner as a dated follow-up with the step's

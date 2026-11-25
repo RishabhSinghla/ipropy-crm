@@ -96,16 +96,7 @@ export async function buildTimeline(
           )
         : empty<CallRow>(),
 
-      want('email')
-        ? conn.query<EmailRow>(
-            `SELECT e.id::text, e.subject, e.direction, e.status, e.to_addresses,
-                    e.opened_at, e.open_count, e.created_at, e.sent_by,
-                    trim(u.first_name || ' ' || u.last_name) AS user_name
-             FROM ipy_email_log e LEFT JOIN ipy_user u ON u.id = e.sent_by
-             WHERE e.record_id = $1 ORDER BY e.created_at DESC LIMIT $2`,
-            [recordId, limit],
-          )
-        : empty<EmailRow>(),
+      empty<EmailRow>(), // email was removed from the CRM; old rows stay stored but unshown
 
       want('attachment')
         ? conn.query<AttachmentRow>(

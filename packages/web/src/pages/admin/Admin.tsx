@@ -27,7 +27,6 @@ const BrandAdmin = lazy(() => import('./BrandAdmin'));
 const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
-const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 const ProjectMastersAdmin = lazy(() => import('./ProjectMastersAdmin'));
 const WhatsAppNumbersAdmin = lazy(() => import('./WhatsAppNumbersAdmin'));
 const WhatsAppDripAdmin = lazy(() => import('./WhatsAppDripAdmin'));
@@ -97,7 +96,6 @@ const SECTIONS = [
       // Building a campaign is `whatsapp.send`; approving one is `whatsapp.templates` — the server enforces that split.
       { path: 'whatsapp-numbers', capability: 'admin.integrations', label: 'WhatsApp numbers', icon: MessageSquareText, element: <WhatsAppNumbersAdmin /> },
       { path: 'whatsapp-drip', capability: 'admin.integrations', label: 'WhatsApp drip', icon: MessageSquareText, element: <WhatsAppDripAdmin /> },
-      { path: 'templates', capability: 'whatsapp.templates', label: 'Email Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', capability: 'admin.audit', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },

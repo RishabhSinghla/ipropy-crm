@@ -17,7 +17,6 @@ import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
 import { CallsTab, FilesTab } from '../pages/RecordDetail';
-import ComposeModal from './ComposeModal';
 import { EditableField, isInlineEditable } from './EditableField';
 import { NoteComposer } from './RecordBlocks';
 import { ActivityFeed, FEED_LIMIT, useActivityEntries } from './ActivityFeed';
@@ -549,7 +548,6 @@ export function IpropyWorkspace({
     edit writes to cannot disagree.
   */
   /** The email dialog, open against the record on screen. */
-  const [composing, setComposing] = useState(false);
   /** The tag dialog, opened from *More actions* since the header's icon went (2 October 2026). */
   const [tagging, setTagging] = useState(false);
 
@@ -1087,7 +1085,6 @@ export function IpropyWorkspace({
               <CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} />
             </span>}
             {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
-            {emailValue && <button type="button" aria-label="Send email" title={`Email ${emailValue}`} onClick={() => setComposing(true)} className="p-1 text-slate-500 hover:text-brand-600"><Mail className="h-4 w-4" /></button>}
               {/*
                 Search within this record. **The icon left this bar on
                 3 October 2026** — *"remove the whatsapp icon and Search icon
@@ -1447,17 +1444,6 @@ export function IpropyWorkspace({
 
     {/* The CRM's own composer, the same one the record page opens, so a
         reply threads back onto the record either way. */}
-    {composing && active && (
-      <ComposeModal
-        module={module.name}
-        record={active}
-        onClose={() => setComposing(false)}
-        onSent={() => {
-          setComposing(false);
-          invalidateRecordQueries(queryClient, module.name, active.id);
-        }}
-      />
-    )}
     </section>
     </WhatsAppComposerProvider>
   </CallDispositionProvider>;

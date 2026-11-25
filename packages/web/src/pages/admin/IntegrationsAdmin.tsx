@@ -117,12 +117,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'password', label: 'Password', source: 'credentials', secret: true },
     { key: 'from', label: 'From address', source: 'config', placeholder: 'iPropy CRM <no-reply@yourdomain.com>' },
   ],
-  imap: [
-    { key: 'host', label: 'IMAP Host', source: 'config' },
-    { key: 'port', label: 'Port', source: 'config', placeholder: '993' },
-    { key: 'user', label: 'Username', source: 'credentials' },
-    { key: 'password', label: 'Password', source: 'credentials', secret: true },
-  ],
   anthropic: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
     { key: 'model', label: 'Model', source: 'config', placeholder: 'claude-sonnet-5', model: true },
@@ -220,7 +214,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 };
 
 const TESTABLE = new Set([
-  'smtp', 'imap', 'facebook_leads',
+  'smtp', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
   'stt', 'onedrive', 'sentry', 'fcm', 'zapier',
   /*
@@ -358,17 +352,6 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Username', help: 'Usually the full email address you are sending from.', field: 'user' },
       { title: 'Password', help: 'For Gmail and Microsoft 365 this must be an app password, not your normal one — your account password will be rejected.', field: 'password', href: 'https://myaccount.google.com/apppasswords', linkLabel: 'Create a Gmail app password' },
       { title: 'What should recipients see?', help: 'The name and address your email appears to come from, e.g. iPropy Realty <sales@yourdomain.com>.', field: 'from' },
-    ],
-  },
-  imap: {
-    outcome: 'Replies to your emails appear against the right lead automatically.',
-    minutes: 3,
-    steps: [
-      { title: 'Find your provider\'s IMAP details', help: 'Google Workspace: imap.gmail.com, port 993. Microsoft 365: outlook.office365.com, port 993.' },
-      { title: 'IMAP host', help: 'The server address from the step above.', field: 'host' },
-      { title: 'Port', help: '993 for almost everyone.', field: 'port' },
-      { title: 'Username', help: 'The full email address of the inbox to read.', field: 'user' },
-      { title: 'Password', help: 'An app password again, not the account password.', field: 'password' },
     ],
   },
   ai_gemini: {
@@ -570,7 +553,6 @@ function healthOf(summary: IntegrationSummary): IntegrationHealth {
 /** Card faces speak to the owner, not to the database: plain names, no provider ids. */
 const PLAIN_NAMES: Record<string, string> = {
   smtp: 'your own email address',
-  imap: 'reading replies',
   facebook_leads: 'Facebook Lead Ads',
   meta_conversions: 'telling Meta which leads were good',
   google_ads: 'Google Ads lead forms',
@@ -673,9 +655,9 @@ const JOBS: JobDef[] = [
   {
     id: 'email',
     title: 'Email',
-    blurb: 'Send from your own address, and replies land on the right lead.',
+    blurb: 'The address password-reset and alert emails are sent from.',
     icon: Mail,
-    providers: ['smtp', 'imap'],
+    providers: ['smtp'],
     recommended: 'smtp',
     wanted: true,
     short: 'email',
@@ -1245,13 +1227,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
         await queryClient.invalidateQueries({ queryKey: ['lead-inbox'] });
         return;
       }
-      const result = await api.syncImapInbound(50);
-      setTestResult({
-        ok: result.errors.length === 0,
-        message: result.errors[0]
-          ?? `Imported ${result.imported} of ${result.checked} messages${result.matched ? `, linked to records` : ''}.`,
-      });
-      await queryClient.invalidateQueries({ queryKey: ['integrations'] });
     } catch (err) {
       setTestResult({ ok: false, message: (err as Error).message });
     } finally {
@@ -1364,7 +1339,7 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
             {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
           </button>
         )}
-        {(summary.provider === 'imap' || summary.provider === 'facebook_leads') && (
+        {summary.provider === 'facebook_leads' && (
           <button className="btn-secondary btn-sm" disabled={syncing} onClick={() => void syncNow()}>
             {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} Sync now
           </button>

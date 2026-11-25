@@ -248,20 +248,12 @@ const notifyUser: TaskHandler = async (config, ctx) => {
   replacement is `send_whatsapp_template` (whatsappTemplateStep.ts): approved
   templates only.
 */
-const sendEmail: TaskHandler = async (config, ctx) => {
-  const { sendTemplatedEmail } = await import('../../integrations/email/service.js');
-  const scope = await buildMergeScope(ctx);
-  const to = await resolveEmail(String(config.to ?? '{{email}}'), ctx, scope);
-  if (!to) return;
-
-  await sendTemplatedEmail({
-    to,
-    templateName: config.template ? String(config.template) : undefined,
-    subject: config.subject ? render(String(config.subject), scope) : undefined,
-    html: config.html ? render(String(config.html), scope) : undefined,
-    recordId: ctx.recordId,
-    scope,
-  });
+/*
+  `send_email` went with the CRM's email feature on 25 November 2026 (owner's instruction). A workflow
+  still carrying that step gets a clear failure in its run log and carries on with its other steps.
+*/
+const sendEmail: TaskHandler = async () => {
+  throw new Error('Sending email from workflows has been removed from the CRM.');
 };
 
 const sendSms: TaskHandler = async (config, ctx) => {

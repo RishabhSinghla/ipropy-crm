@@ -659,7 +659,11 @@ is dropped, so a rebuild later starts from data. Only screens, routes, settings 
   AI-calling schedule, the AI-call filter/panel/buttons and the `ai_call_*` filter fields). Old AI-call rows in `ipy_call`
   (`source = 'sarvam'`) are hidden from the Calls page and timeline, not deleted. Migrations `240`-`242` delete the three settings
   cards and any saved list, tile or report that named an `ai_*` filter field.
-* **Still to do, in order:** AI Summary, Email, WhatsApp (chat, API, OpenWA, drip, templates, campaigns), Dealer Groups and the
+* **Stage 2 (done): Email.** Compose window, the Email buttons on records, Admin -> Email Templates, the mailbox (IMAP) reader and
+  its settings card (migration `243`), the open-tracking pixel, the `send_email` workflow step (it now fails with a clear message in
+  the run log, as `send_whatsapp` did) and email in the timeline. **SMTP sending stays**: password-reset and alert emails use it.
+  Old emails stay in `ipy_email_log`, hidden.
+* **Still to do, in order:** AI Summary, WhatsApp (chat, API, OpenWA, drip, templates, campaigns), Dealer Groups and the
   market feed, EMI / car-loan tools, and last Meta Lead Capture with the Conversions API (owner confirmed removal, 25 November).
   Notes, Comments and Android calling stay.
 

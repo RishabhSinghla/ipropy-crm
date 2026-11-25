@@ -14,7 +14,6 @@ import {
   getSettings, getOneDriveProviderSettings, listIntegrations, getIntegrationSummary, saveIntegration, recordIntegrationResult, setIntegrationActive,
 } from '../../core/settings/integrations.js';
 import { verifyConnection as verifySmtpConnection } from '../../integrations/email/service.js';
-import { syncInboundEmails, testImapConnection } from '../../integrations/email/inbound.js';
 import { testAiProvider } from '../../ai/client.js';
 import {
   getShareAdminConfig, saveShareConfig,
@@ -1185,11 +1184,6 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         const result = await verifySmtpConnection();
         return result.ok ? { ok: true, message: 'Connected — SMTP server accepted the credentials.' } : { ok: false, message: result.error ?? 'Connection failed.' };
       }
-      case 'imap': {
-        const result = await testImapConnection();
-        if (!result.ok) return { ok: false, message: result.error ?? 'Connection failed.' };
-        return { ok: true, message: `Connected — ${result.unseen ?? 0} unseen messages waiting.` };
-      }
       case 'anthropic':
         return testAiProvider('anthropic');
       case 'ai_gemini':
@@ -1259,11 +1253,3 @@ adminRouter.post('/integrations/:provider/test', asyncHandler(async (req, res) =
   res.json(result);
 }));
 
-/** Pull the configured mailbox now instead of waiting for the scheduler. */
-adminRouter.post('/integrations/imap/sync', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  const result = await syncInboundEmails({ max: Number(req.query.max) || 25 });
-  const ok = result.errors.length === 0;
-  await recordIntegrationResult('imap', ok, ok ? undefined : result.errors[0]);
-  res.json(result);
-}));

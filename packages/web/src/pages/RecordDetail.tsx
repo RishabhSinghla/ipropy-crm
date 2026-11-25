@@ -30,7 +30,6 @@ import {
 } from '../components/ui';
 import {} from '../components/Layout';
 import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
-import ComposeModal from '../components/ComposeModal';
 import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
@@ -112,7 +111,6 @@ function FullRecordPage(): JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | 'associates' | null>(null);
   const [sharing, setSharing] = useState(false);
-  const [compose, setCompose] = useState<'email' | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summarising, setSummarising] = useState(false);
 
@@ -471,12 +469,6 @@ function FullRecordPage(): JSX.Element {
 
               {phone && <WhatsAppButton to={phone} />}
               {phone && <CallButton to={phone} recordId={id!} module={moduleName!} />}
-              {email && (
-                <button onClick={() => setCompose('email')} className="btn-secondary btn-sm" title="Email">
-                  <Send className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Email</span>
-                </button>
-              )}
 
               <Dropdown
                 className="min-w-[15rem]"
@@ -766,14 +758,6 @@ function FullRecordPage(): JSX.Element {
         confirmLabel={moveMutation.isPending ? 'Moving…' : 'Move record'}
       />
 
-      {compose && (
-        <ComposeModal
-          module={moduleName!}
-          record={record}
-          onClose={() => setCompose(null)}
-          onSent={() => { setCompose(null); void refetch(); }}
-        />
-      )}
     </div>
     </WhatsAppComposerProvider>
     </CallDispositionProvider>

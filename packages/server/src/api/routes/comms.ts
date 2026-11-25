@@ -5,7 +5,6 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability } from '../../core/permissions/index.js';
-import { sendEmail, sendTemplatedEmail, verifyConnection } from '../../integrations/email/service.js';
 import { suggestReplies, draftMessage } from '../../ai/drafting.js';
 import { redactAutomated } from '../../integrations/whatsapp/business/channelRoles.js';
 import { recordService } from '../../core/entity/recordService.js';
@@ -181,101 +180,4 @@ commsRouter.post('/draft', asyncHandler(async (req, res) => {
   const draft = await draftMessage({ ...input, userId: user.id });
   if (!draft) throw new NotFoundError('Could not generate a draft — check that the AI key is configured');
   res.json(draft);
-}));
-
-// ---------------------------------------------------------------------------
-// Email
-// ---------------------------------------------------------------------------
-
-commsRouter.post('/email', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  const input = z.object({
-    to: z.union([z.string().email(), z.array(z.string().email())]),
-    cc: z.array(z.string().email()).optional(),
-    subject: z.string().min(1),
-    html: z.string().min(1),
-    recordId: z.string().uuid().nullable().optional(),
-  }).parse(req.body);
-
-  res.json(await sendEmail({ ...input, recordId: input.recordId ?? null, sentBy: user.id }));
-}));
-
-commsRouter.post('/email/template', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  const input = z.object({
-    to: z.union([z.string().email(), z.array(z.string().email())]),
-    templateName: z.string(),
-    recordId: z.string().uuid(),
-    module: z.string(),
-  }).parse(req.body);
-
-  const { buildRecordSummary } = await import('../../ai/drafting.js');
-  const { registry } = await import('../../core/metadata/registry.js');
-  const meta = await registry.requireModule(input.module);
-
-  const row = await db.queryOne<Record<string, unknown>>(
-    `SELECT r.label, e.* FROM ipy_record r JOIN ${meta.tableName} e ON e.record_id = r.id WHERE r.id = $1`,
-    [input.recordId],
-  );
-
-  res.json(await sendTemplatedEmail({
-    to: input.to,
-    templateName: input.templateName,
-    recordId: input.recordId,
-    sentBy: user.id,
-    scope: {
-      record: row ?? {},
-      contact: row ?? {},
-      owner: { full_name: user.fullName, phone: user.phone, email: user.email },
-      summary: await buildRecordSummary(input.recordId, input.module),
-    },
-  }));
-}));
-
-commsRouter.get('/email/templates', asyncHandler(async (_req, res) => {
-  const rows = await db.query(
-    `SELECT t.id, t.name, t.subject, t.body_html, t.category, t.is_active, m.name AS module
-     FROM ipy_email_template t LEFT JOIN ipy_module m ON m.id = t.module_id
-     WHERE t.is_active ORDER BY t.name`,
-  );
-  res.json(rows.rows);
-}));
-
-// Email templates carry the same merge-field syntax as the rest of outbound
-// copy, so an administrator should not have to ask a developer to change it.
-//
-// The capability is still called `whatsapp.templates`. It gates message
-// templates of every channel and is stored on live profile rows; renaming it
-// would mean rewriting those rows to keep the team's access.
-commsRouter.post('/email/templates', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'whatsapp.templates');
-  const input = z.object({
-    name: z.string().regex(/^[a-z0-9_]+$/, 'Use lower case letters, numbers and underscores'),
-    subject: z.string().min(1),
-    bodyHtml: z.string().min(1),
-    category: z.string().max(60).default('general'),
-  }).parse(req.body);
-
-  const row = await db.queryOne<{ id: string }>(
-    `INSERT INTO ipy_email_template (name, subject, body_html, category, is_active)
-     VALUES ($1,$2,$3,$4,true)
-     ON CONFLICT (name) DO UPDATE SET subject = EXCLUDED.subject, body_html = EXCLUDED.body_html,
-       category = EXCLUDED.category, is_active = true
-     RETURNING id`,
-    [input.name, input.subject, input.bodyHtml, input.category],
-  );
-  res.status(201).json({ id: row?.id });
-}));
-
-commsRouter.delete('/email/templates/:id', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'whatsapp.templates');
-  // A soft delete keeps historical sent-message links valid, while immediately
-  // taking the template out of every compose picker.
-  await db.query(`UPDATE ipy_email_template SET is_active = false WHERE id = $1`, [req.params.id]);
-  res.json({ ok: true });
-}));
-
-commsRouter.get('/email/status', asyncHandler(async (req, res) => {
-  if (!getUser(req).isAdmin) throw new ForbiddenError();
-  res.json(await verifyConnection());
 }));

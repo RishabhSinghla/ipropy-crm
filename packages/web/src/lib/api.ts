@@ -1277,8 +1277,6 @@ export const api = {
   saveFacebookAssignment: (data: { strategy: 'specific_user' | 'round_robin'; userIds: string[] }) =>
     put('/api/admin/integrations/facebook_leads/assignment', data),
   retryFacebookDeliveries: () => post('/api/admin/integrations/facebook_leads/retry', {}),
-  syncImapInbound: (max?: number) => post<{ checked: number; imported: number; matched: number; skipped: number; errors: string[] }>(
-    `/api/admin/integrations/imap/sync${max ? `?max=${max}` : ''}`, {}),
 
   // --- workflows ----------------------------------------------------------
   workflows: () => get<{ workflows: Record<string, unknown>[]; taskTypes: string[] }>('/api/workflows'),
@@ -1298,9 +1296,6 @@ export const api = {
   conversation: (id: string) => get<Record<string, unknown>>(`/api/comms/conversations/${id}`),
   updateConversation: (id: string, data: Record<string, unknown>) => patch(`/api/comms/conversations/${id}`, data),
   replySuggestions: (id: string) => get<{ suggestions: string[] }>(`/api/comms/conversations/${id}/suggestions`),
-  emailTemplates: () => get<Record<string, unknown>[]>('/api/comms/email/templates'),
-  createEmailTemplate: (data: Record<string, unknown>) => post<{ id: string }>('/api/comms/email/templates', data),
-  deleteEmailTemplate: (id: string) => del(`/api/comms/email/templates/${id}`),
   // --- telephony ----------------------------------------------------------
   setDisposition: (id: string, data: {
     disposition: string; notes?: string; followUpAt?: string | null;
