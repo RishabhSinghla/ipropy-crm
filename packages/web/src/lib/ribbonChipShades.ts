@@ -1,9 +1,9 @@
 /**
- * Trial: the four ribbon chips (New, Task, Call Log, Lost reason) each in
+ * Trial: the six ribbon chips (New, Task, Call Log, Lost reason, List, Agent) each in
  * their own dark shade, with white text.
  *
  * **25 November 2026, the owner:** asked for this "for trial purpose" and said
- * that if he does not like it, all four go back.
+ * that if he does not like it, all six go back.
  *
  * Roll back by setting `DARK_RIBBON_CHIP_SHADES` to `false` — every chip then
  * wears the ordinary `toolbarButton` look again. Nothing else was changed.
@@ -15,7 +15,7 @@ import { toolbarButton, toolbarCount } from './toolbarButton';
 
 export const DARK_RIBBON_CHIP_SHADES = true;
 
-export type RibbonChipKind = 'new' | 'task' | 'calllog' | 'lost';
+export type RibbonChipKind = 'new' | 'task' | 'calllog' | 'lost' | 'list' | 'agent';
 
 // Resting = a dark shade; on = one step darker, with a ring so it still reads as chosen.
 const REST: Record<RibbonChipKind, string> = {
@@ -23,12 +23,16 @@ const REST: Record<RibbonChipKind, string> = {
   task: 'border-emerald-800 bg-emerald-700 text-white hover:bg-emerald-800',
   calllog: 'border-sky-800 bg-sky-700 text-white hover:bg-sky-800',
   lost: 'border-rose-800 bg-rose-700 text-white hover:bg-rose-800',
+  list: 'border-violet-800 bg-violet-700 text-white hover:bg-violet-800',
+  agent: 'border-amber-900 bg-amber-800 text-white hover:bg-amber-900',
 };
 const ON: Record<RibbonChipKind, string> = {
   new: 'border-indigo-950 bg-indigo-900 text-white ring-2 ring-indigo-300 hover:bg-indigo-900',
   task: 'border-emerald-950 bg-emerald-900 text-white ring-2 ring-emerald-300 hover:bg-emerald-900',
   calllog: 'border-sky-950 bg-sky-900 text-white ring-2 ring-sky-300 hover:bg-sky-900',
   lost: 'border-rose-950 bg-rose-900 text-white ring-2 ring-rose-300 hover:bg-rose-900',
+  list: 'border-violet-950 bg-violet-900 text-white ring-2 ring-violet-300 hover:bg-violet-900',
+  agent: 'border-amber-950 bg-amber-950 text-white ring-2 ring-amber-300 hover:bg-amber-950',
 };
 
 /** A ribbon chip's class list. With the trial off it is exactly the old button. */

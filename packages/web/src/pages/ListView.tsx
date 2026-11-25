@@ -32,7 +32,6 @@ import RecordForm from '../components/RecordForm';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import { AgentPicker } from '../components/AgentPicker';
 import { NO_DISPOSITION_PICK, type DispositionPick, LAST_CALL_DISPOSITION } from '../components/CallDispositionFilter';
-import { toolbarButton } from '../lib/toolbarButton';
 import { ribbonChip, ribbonCount } from '../lib/ribbonChipShades';
 import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
 import { useOfflineMeta } from '../lib/useOfflineList';
@@ -946,7 +945,7 @@ export default function ListView(): JSX.Element {
       trigger={(
         <button
           type="button"
-          className={cn(toolbarButton(Boolean(agentPick), 'h-6 shrink-0 px-2 text-[10px]'), 'rounded-md')}
+          className={cn(ribbonChip('agent', Boolean(agentPick), 'h-6 shrink-0 px-2 text-[10px]'), 'rounded-md')}
           aria-label="Filter ribbon by agent"
           aria-pressed={Boolean(agentPick)}
           data-testid="ribbon-agent-filter"
@@ -1029,7 +1028,7 @@ export default function ListView(): JSX.Element {
       trigger={(
         <button
           type="button"
-          className={cn(toolbarButton(Boolean(activeView && !activeView.isSystem), 'h-6 shrink-0 px-2 text-[10px]'), 'rounded-md')}
+          className={cn(ribbonChip('list', Boolean(activeView && !activeView.isSystem), 'h-6 shrink-0 px-2 text-[10px]'), 'rounded-md')}
           aria-label="Choose or manage lists"
           title={activeView?.name ?? `All ${meta.label}`}
           data-testid="list-picker"
