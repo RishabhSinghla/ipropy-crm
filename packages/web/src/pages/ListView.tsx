@@ -32,7 +32,8 @@ import RecordForm from '../components/RecordForm';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import { AgentPicker } from '../components/AgentPicker';
 import { NO_DISPOSITION_PICK, type DispositionPick, LAST_CALL_DISPOSITION } from '../components/CallDispositionFilter';
-import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { toolbarButton } from '../lib/toolbarButton';
+import { ribbonChip, ribbonCount } from '../lib/ribbonChipShades';
 import { TOOLBAR_ICON_SIZE, toolbarIcon } from '../lib/toolbarIcon';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile } from '../lib/nativeActions';
@@ -915,8 +916,8 @@ export default function ListView(): JSX.Element {
           : withoutChoice(filter, CREATED_FIELD));
         setPage(1);
       }}
-      buttonClass={(on) => toolbarButton(on, 'h-6 px-2 text-[10px]')}
-      countClass={(on) => toolbarCount(on)}
+      buttonClass={(on) => ribbonChip('new', on, 'h-6 px-2 text-[10px]')}
+      countClass={(on) => ribbonCount(on)}
       testId="new-records-chip"
     />
   );

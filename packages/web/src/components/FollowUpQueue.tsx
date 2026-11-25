@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Clock3, Sparkles } from 'lucide-react';
 import type { FieldMeta, FilterGroup, ListQuery } from '@ipropy/shared';
 import { api } from '../lib/api';
-import { filterIcon, toolbarButton } from '../lib/toolbarButton';
+import { filterIcon } from '../lib/toolbarButton';
+import { ribbonChip } from '../lib/ribbonChipShades';
 import { cn } from '../lib/utils';
 import { Dropdown } from './ui';
 import { AgentPicker } from './AgentPicker';
@@ -132,7 +133,7 @@ export function FollowUpQueue({
             /* One shape for every filter button on this row — see
                `lib/toolbarButton.ts`. Two idioms for "this one is on" is the
                toolbar reading as two toolbars. */
-            className={toolbarButton(Boolean(active))}
+            className={ribbonChip('task', Boolean(active))}
           >
             {/* *"'Follow-ups' to Task"* — the owner's word for it, 28
                 September 2026. The field is still whatever the module calls

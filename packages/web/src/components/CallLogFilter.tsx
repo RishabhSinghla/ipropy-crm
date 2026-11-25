@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useCallDispositionOptions } from '../lib/callDispositions';
 import { cn } from '../lib/utils';
-import { toolbarButton, toolbarCount } from '../lib/toolbarButton';
+import { ribbonChip } from '../lib/ribbonChipShades';
 import { Dropdown } from './ui';
 import { AgentPicker } from './AgentPicker';
 import { dispositionIsOn, LAST_CALL_DISPOSITION, type DispositionPick } from './CallDispositionFilter';
@@ -50,7 +50,7 @@ export function CallLogFilter({
 
   return (
     <Dropdown align="right" className="w-72" trigger={(
-      <button type="button" className={toolbarButton(active, 'h-6 px-2 text-[10px]')} aria-label="Call Log filter" aria-pressed={active} data-testid="call-log-filter">
+      <button type="button" className={ribbonChip('calllog', active, 'h-6 px-2 text-[10px]')} aria-label="Call Log filter" aria-pressed={active} data-testid="call-log-filter">
         <PhoneCall className="h-3 w-3" aria-hidden="true" />
         <span className="max-w-24 truncate">{selectedText}</span>
       </button>

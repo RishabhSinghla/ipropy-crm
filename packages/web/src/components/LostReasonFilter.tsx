@@ -4,7 +4,7 @@ import { Check } from 'lucide-react';
 import type { FilterGroup } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
-import { toolbarButton } from '../lib/toolbarButton';
+import { ribbonChip } from '../lib/ribbonChipShades';
 import { Dropdown } from './ui';
 
 /**
@@ -37,7 +37,7 @@ export function LostReasonFilter({
 
   return (
     <Dropdown align="right" className="w-72" trigger={(
-      <button type="button" className={toolbarButton(Boolean(picked), 'h-6 px-2 text-[10px]')} aria-label="Lost reason filter" aria-pressed={Boolean(picked)} data-testid="lost-reason-filter">
+      <button type="button" className={ribbonChip('lost', Boolean(picked), 'h-6 px-2 text-[10px]')} aria-label="Lost reason filter" aria-pressed={Boolean(picked)} data-testid="lost-reason-filter">
         <span className="max-w-32 truncate">{picked ? label(picked) : 'Lost reason'}</span>
       </button>
     )}>
