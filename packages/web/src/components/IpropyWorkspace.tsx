@@ -29,7 +29,6 @@ import { ShareLinksPanel } from './ShareLinks';
 import { canShareRecords } from '../lib/sharing';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { RecordAvatar, StrengthBar } from './RecordAvatar';
-import { SHOW_RECORD_FACES } from '../lib/recordFaces';
 import {
   ON_THE_BAR, activityKindOf, arrangeRecordMenu, loadRecordMenu, moveEntry, saveRecordMenu, splitMenu,
   type MenuKey,
@@ -943,17 +942,15 @@ export function IpropyWorkspace({
           chat header met once and is written down against it.
         */}
         <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-slate-200/80 bg-white px-3 py-2 shadow-2xs xl:flex-nowrap dark:border-slate-800 dark:bg-slate-900" data-testid="split-hero-layout">
-          {SHOW_RECORD_FACES && (
-            <span className="shrink-0" data-testid="split-hero-avatar">
-              <RecordAvatar
-                module={module.name}
-                recordId={active.id}
-                name={active.label}
-                canEdit={canEdit}
-                size={40}
-              />
-            </span>
-          )}
+          <span className="shrink-0" data-testid="split-hero-avatar">
+            <RecordAvatar
+              module={module.name}
+              recordId={active.id}
+              name={active.label}
+              canEdit={canEdit}
+              size={40}
+            />
+          </span>
           <span className="flex min-w-[8rem] flex-1 flex-col justify-center gap-0.5 overflow-hidden">
             {/*
               **Which field carries the name is `module.labelFields`**, not the
@@ -1547,8 +1544,7 @@ function QueueCard({
              the height of Left pane record Height from Auto adjust, even the
              Middle row blank or not."* So the rows are always drawn, an empty
              one as a blank line, and the card never grows or shrinks. */
-          'relative block min-h-[76px] w-full cursor-pointer py-2 pr-3 text-left transition-colors',
-          SHOW_RECORD_FACES ? 'pl-[3.75rem]' : 'pl-10',
+          'relative block min-h-[76px] w-full cursor-pointer py-2 pl-[3.75rem] pr-3 text-left transition-colors',
           /*
             **27 September 2026, the owner:** *"Remove highlight box and shadow
             of box, We Need highlight whole box with only light colour for
@@ -1704,12 +1700,10 @@ function QueueCard({
         The box only shows on hover or once ticked, so the row reads as a name
         and a price until somebody reaches for a bulk action.
       */}
-      <span className={cn('absolute left-3 top-1/2 z-[2] -translate-y-1/2', !SHOW_RECORD_FACES && 'block h-5 w-5')}>
-        {SHOW_RECORD_FACES && (
-          <span data-testid="queue-record-avatar" className={cn('pointer-events-none block rounded-full', checked && 'ring-2 ring-slate-900 ring-offset-2 dark:ring-slate-100 dark:ring-offset-slate-900')}>
-            <RecordAvatar module={moduleName} recordId={row.id} name={row.label} canEdit={false} size={40} />
-          </span>
-        )}
+      <span className="absolute left-3 top-1/2 z-[2] -translate-y-1/2">
+        <span data-testid="queue-record-avatar" className={cn('pointer-events-none block rounded-full', checked && 'ring-2 ring-slate-900 ring-offset-2 dark:ring-slate-100 dark:ring-offset-slate-900')}>
+          <RecordAvatar module={moduleName} recordId={row.id} name={row.label} canEdit={false} size={40} />
+        </span>
         <button
           type="button"
           aria-label={`${checked ? 'Unselect' : 'Select'} ${row.label}`}
