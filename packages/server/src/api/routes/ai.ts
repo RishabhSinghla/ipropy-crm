@@ -14,7 +14,7 @@ import {
 import { scoreLead } from '../../ai/leadScoring.js';
 import { matchForRecord, matchProperties, matchBuyersForProperty, loadRequirement } from '../../ai/matching.js';
 import { matchingConfig } from '../../core/settings/matching.js';
-import { draftMessage, summariseRecord } from '../../ai/drafting.js';
+import { draftMessage } from '../../ai/drafting.js';
 import { analyseTranscript, coachingReport } from '../../ai/callAnalysis.js';
 import { ask, dailyDigest, dashboardInsight, parseNaturalQuery } from '../../ai/assistant.js';
 import {
@@ -272,16 +272,6 @@ aiRouter.post('/draft', modelLimiter, asyncHandler(async (req, res) => {
     );
   }
   res.json(draft);
-}));
-
-aiRouter.post('/summarise/:module/:id', modelLimiter, asyncHandler(async (req, res) => {
-  const scope = getScope(req);
-  const { module, id } = req.params;
-  if (!(await canAccessRecord(scope, module, id, 'view'))) throw new NotFoundError();
-  const visible = await readableAiFields(scope.user, module);
-  const summary = await summariseRecord(id, module, scope.user.id, visible ? new Set(visible) : undefined);
-  if (!summary) throw new BadRequestError('AI summarisation is unavailable');
-  res.json({ summary });
 }));
 
 // ---------------------------------------------------------------------------

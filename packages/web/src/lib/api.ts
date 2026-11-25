@@ -1397,7 +1397,6 @@ export const api = {
   buyersForProperty: (propertyId: string, narrative = false, limit = 10) =>
     get<{ buyers: BuyerMatch[] }>(`/api/ai/buyers-for/${propertyId}${qs({ narrative, limit })}`),
   draft: (data: Record<string, unknown>) => post<{ subject?: string; body: string }>('/api/ai/draft', data),
-  summarise: (module: string, id: string) => post<{ summary: string }>(`/api/ai/summarise/${module}/${id}`),
   insights: (recordId: string) => get<Record<string, unknown>[]>(`/api/ai/insights/${recordId}`),
   dismissInsight: (id: string) => post(`/api/ai/insights/${id}/dismiss`),
   askAi: (question: string, context?: { contextRecordId?: string; contextModule?: string; threadId?: string }) =>

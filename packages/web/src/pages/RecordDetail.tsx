@@ -111,7 +111,6 @@ function FullRecordPage(): JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | 'associates' | null>(null);
   const [sharing, setSharing] = useState(false);
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summarising, setSummarising] = useState(false);
 
   const { data: meta } = useQuery({
@@ -476,19 +475,6 @@ function FullRecordPage(): JSX.Element {
               >
                 {(close) => (
                   <>
-                    <DropdownItem
-                      icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                      onClick={() => {
-                        close();
-                        setSummarising(true);
-                        void api.summarise(moduleName!, id!)
-                          .then((result) => setAiSummary(result.summary))
-                          .catch((e: Error) => toast.error('Summary failed', e.message))
-                          .finally(() => setSummarising(false));
-                      }}
-                    >
-                      {summarising ? 'Summarising…' : 'Summarise with AI'}
-                    </DropdownItem>
                     {/*
                       "Send to a buyer" is not on this menu any more.
 
@@ -721,20 +707,6 @@ function FullRecordPage(): JSX.Element {
       </Modal>
 
 
-      <Modal
-        open={Boolean(aiSummary)}
-        onClose={() => setAiSummary(null)}
-        title={`Summary of ${record.label}`}
-      >
-        <div className="space-y-3">
-          <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4 text-sm leading-6 text-slate-700 dark:border-brand-900 dark:bg-brand-950/30 dark:text-slate-200">
-            <SummaryText text={aiSummary ?? ''} />
-          </div>
-          <p className="text-xs text-muted">
-            Built only from the CRM fields and activity you are allowed to see; missing facts are not invented.
-          </p>
-        </div>
-      </Modal>
 
       <ConfirmDialog
         open={confirmDelete}
@@ -1096,15 +1068,6 @@ function CallTranscript({ callId, transcript, summary }: {
         {text && (
           <button onClick={() => setOpen(!open)} className="btn-ghost btn-sm px-2">
             {open ? 'Hide' : 'Read'} transcript
-          </button>
-        )}
-        {text && !gist && (
-          <button
-            onClick={() => void summarise()}
-            disabled={busy !== null}
-            className="btn-secondary btn-sm"
-          >
-            {busy === 'summarise' && <Spinner />} Summarise
           </button>
         )}
       </div>

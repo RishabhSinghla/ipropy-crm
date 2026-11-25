@@ -663,7 +663,10 @@ is dropped, so a rebuild later starts from data. Only screens, routes, settings 
   its settings card (migration `243`), the open-tracking pixel, the `send_email` workflow step (it now fails with a clear message in
   the run log, as `send_whatsapp` did) and email in the timeline. **SMTP sending stays**: password-reset and alert emails use it.
   Old emails stay in `ipy_email_log`, hidden.
-* **Still to do, in order:** AI Summary, WhatsApp (chat, API, OpenWA, drip, templates, campaigns), Dealer Groups and the
+* **Stage 3 (done): AI Summary.** The "Summarise with AI" menu item and its summary window (record page and split view), the call
+  "Summarise" button, `POST /api/ai/summarise` and the `summarise_record` workflow action. Lead scoring and the AI Insights panel
+  stay, because only the summary was named.
+* **Still to do, in order:** WhatsApp (chat, API, OpenWA, drip, templates, campaigns), Dealer Groups and the
   market feed, EMI / car-loan tools, and last Meta Lead Capture with the Conversions API (owner confirmed removal, 25 November).
   Notes, Comments and Android calling stay.
 

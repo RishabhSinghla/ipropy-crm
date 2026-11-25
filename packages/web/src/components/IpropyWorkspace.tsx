@@ -673,7 +673,6 @@ export function IpropyWorkspace({
     record the queue has open. The dialogs are the record page's own
     components rather than copies: one Share-with-team panel, one confirm.
   */
-  const [summarising, setSummarising] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | 'associates' | null>(null);
 
@@ -1162,18 +1161,6 @@ export function IpropyWorkspace({
               >
                 {active.starred ? 'Remove favourite' : 'Add favourite'}
               </DropdownItem>
-              <DropdownItem
-                icon={<Sparkles className="h-3.5 w-3.5" />}
-                disabled={summarising}
-                onClick={() => {
-                  setSummarising(true);
-                  void api.summarise(module.name, active.id)
-                    .then((result) => setSummary(result.summary))
-                    .catch((err: Error) => toast.error('Summary failed', err.message))
-                    .finally(() => setSummarising(false));
-                  close();
-                }}
-              >{summarising ? 'Summarising…' : 'Summarise with AI'}</DropdownItem>
               <div className="my-1 border-t border-[var(--border)]" />
               {/*
                 Write to them — *"Move email icons from Middle heade pane to

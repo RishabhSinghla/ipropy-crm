@@ -9,7 +9,7 @@ import type { TaskContext } from '../core/workflow/tasks.js';
 import { notify } from '../core/notifications/index.js';
 import { scoreLead } from './leadScoring.js';
 import { matchForRecord, matchBuyersForProperty } from './matching.js';
-import { draftMessage, summariseRecord } from './drafting.js';
+import { draftMessage } from './drafting.js';
 import { saveInsight, complete, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
 
 type WriteMap = Record<string, string>;
@@ -74,18 +74,6 @@ export async function runAiWorkflowAction(
           body: draft.body,
           data: { channel: config.channel ?? 'sms', subject: draft.subject },
         });
-      }
-      break;
-    }
-
-    case 'summarise_record': {
-      const summary = await summariseRecord(ctx.recordId, ctx.module);
-      if (summary) {
-        await saveInsight({
-          recordId: ctx.recordId, module: ctx.module, kind: 'summary',
-          title: 'Record summary', body: summary, replace: true,
-        });
-        await writeBack(ctx, writeTo.summary, summary);
       }
       break;
     }
