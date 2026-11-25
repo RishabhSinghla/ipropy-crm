@@ -139,8 +139,6 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
               {row.icon}
             </DockLink>
           ))}
-          {/* Tag cards are drawn here by the list page, right after Favourites. */}
-          <div id="global-tags" className={cn('min-w-0 pt-1', !expanded && 'hidden')} />
         </nav>
       </aside>
     </div>

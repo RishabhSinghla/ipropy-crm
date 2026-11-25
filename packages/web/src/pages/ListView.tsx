@@ -96,11 +96,10 @@ export default function ListView(): JSX.Element {
   // every record the current view/filter matches, not just this page's ids.
   const [selectedAll, setSelectedAll] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
-  const [toolbarSlots, setToolbarSlots] = useState<{ options: HTMLElement | null; tags: HTMLElement | null }>({ options: null, tags: null });
+  const [toolbarSlots, setToolbarSlots] = useState<{ options: HTMLElement | null }>({ options: null });
   useEffect(() => {
     setToolbarSlots({
       options: document.getElementById('global-list-options'),
-      tags: document.getElementById('global-tags'),
     });
   }, []);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
@@ -985,11 +984,14 @@ export default function ListView(): JSX.Element {
       count={data?.total ?? 0}
     />
   );
+  // One chip per tag, right after the call-log button (the left-toolbar slot flickered the window).
+  const tagControl = meta ? <TagCards moduleName={meta.name} owner={agentPick || undefined} /> : null;
   const ribbonControls = (
     <div className="ml-auto flex shrink-0 items-center gap-2" role="group" aria-label="Record list controls">
       {newRecordsControl}
       {taskControl}
       {callLogControl}
+      {tagControl}
     </div>
   );
   const controlsInRibbon = Boolean(showStageRibbon && stageField);
@@ -1004,14 +1006,10 @@ export default function ListView(): JSX.Element {
         <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
           {taskControl}
           {callLogControl}
+          {tagControl}
         </div>
       )}
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
-        {/* Tag cards stay in the global header so they remain beside search. */}
-        {toolbarSlots.tags && createPortal(
-          <TagCards moduleName={meta.name} owner={agentPick || undefined} />,
-          toolbarSlots.tags,
-        )}
         {toolbarSlots.options && createPortal(
             <Dropdown
               trigger={<button className={toolbarIcon('exchange')} aria-label="Import, export and list options" title="Import / Export"><FileUp className={TOOLBAR_ICON_SIZE} /></button>}

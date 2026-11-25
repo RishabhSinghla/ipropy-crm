@@ -93,7 +93,7 @@ export function TagCards({ moduleName, owner }: { moduleName?: string; owner?: s
   if (!cards.length) return null;
 
   return (
-    <div className="flex w-fit max-w-full items-center overflow-x-auto rounded-full border border-slate-200 bg-slate-50 divide-x divide-slate-200" data-testid="tag-cards">
+    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1" data-testid="tag-cards">
       {cards.map((tag) => {
         const { module } = tag;
         const narrowed = location.pathname.startsWith(`/${module}`)
@@ -131,7 +131,7 @@ export function TagCards({ moduleName, owner }: { moduleName?: string; owner?: s
               in a browser, in dark mode, on the element that has it.
             */
             className={cn(
-              'flex h-7 max-w-[10rem] shrink-0 items-center justify-center gap-1 border-0 px-1.5 py-0.5 text-left transition hover:brightness-95 first:rounded-l-full last:rounded-r-full',
+              'flex h-6 max-w-[10rem] shrink-0 items-center justify-center gap-1 rounded-full border-0 px-2 py-0.5 text-left transition hover:brightness-95',
               narrowed ? 'bg-brand-700 text-white font-bold' : 'badge-tinted',
             )}
           >
