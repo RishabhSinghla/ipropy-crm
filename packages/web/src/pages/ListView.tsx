@@ -1,6 +1,5 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { TagCards } from '../components/TagCards';
 import { canonicalFilter, withCreatedToday } from '../lib/newRecordsQuery';
 import {
   choiceConditions, chosenWhen, CREATED_CHOICES, CREATED_FIELD, withChoice, withoutChoice,
@@ -9,7 +8,7 @@ import { localDay } from '../lib/followUpDates';
 import { ChoiceChip } from '../components/ChoiceChip';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type CustomView, type FieldMeta, type FilterGroup, type ListQuery, type RecordEnvelope } from '@ipropy/shared';
+import { isLostReasonField, type CustomView, type FieldMeta, type FilterGroup, type ListQuery, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowLeftRight, FileUp, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Compass, Download, Filter,
   Bot, PhoneCall, Users,
@@ -41,6 +40,7 @@ import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor'
 import { ListPicker } from '../components/ListPicker';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
 import { CallLogFilter } from '../components/CallLogFilter';
+import { LostReasonFilter } from '../components/LostReasonFilter';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 import { NO_SORT_BY } from '../lib/listSort';
@@ -76,6 +76,7 @@ export default function ListView(): JSX.Element {
   const [searchInput, setSearchInput] = useState('');
   const [taskQueue, setTaskQueue] = useState<TaskQueue | null>(null);
   const [stagePick, setStagePick] = useState<string[]>([]);
+  const [lostPick, setLostPick] = useState<string | null>(null);
   const [agentPick, setAgentPick] = useState<string | null>(null);
   const [tagPick, setTagPick] = useState<string | null>(null);
   const [dispositionPick, setDispositionPick] = useState<DispositionPick>(NO_DISPOSITION_PICK);
@@ -447,6 +448,7 @@ export default function ListView(): JSX.Element {
   // Older Inventory workspaces store the same business field as
   // `next_follow_up` in JSON — `followUpFieldOf` knows both.
   const taskField = meta ? followUpFieldOf(meta.fields) : undefined;
+  const lostReasonField = meta?.fields.find((field) => field.isActive && field.displayType !== 'hidden' && isLostReasonField(field));
   /*
     The field decides, never a list of module names.
 
@@ -477,6 +479,7 @@ export default function ListView(): JSX.Element {
       ...(stagePick.length && stageField
         ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }]
         : []),
+      ...(lostPick && lostReasonField ? [{ field: lostReasonField.name, operator: 'in' as const, value: [lostPick] }] : []),
       ...(agentPick && ownerField
         ? [{ field: ownerField.name, operator: 'equals' as const, value: agentPick }]
         : []),
@@ -491,7 +494,7 @@ export default function ListView(): JSX.Element {
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions), ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, dispositionPick]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick, dispositionPick, lostPick, lostReasonField?.name]);
 
 
   /*
@@ -974,12 +977,15 @@ export default function ListView(): JSX.Element {
       ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
     ],
   };
+  const callLogFilterWithLost: FilterGroup = lostPick && lostReasonField
+    ? { logic: 'AND', conditions: [...callLogBaseFilter.conditions, { field: lostReasonField.name, operator: 'in' as const, value: [lostPick] }] }
+    : callLogBaseFilter;
   const callLogControl = (
     <CallLogFilter
       module={moduleName}
       view={activeView?.id}
       search={search || undefined}
-      filter={countConditions(callLogBaseFilter) ? canonicalFilter(callLogBaseFilter) : undefined}
+      filter={countConditions(callLogFilterWithLost) ? canonicalFilter(callLogFilterWithLost) : undefined}
       agent={agentPick}
       onAgent={(id) => { setAgentPick(id); setPage(1); }}
       disposition={dispositionPick}
@@ -987,14 +993,25 @@ export default function ListView(): JSX.Element {
       count={data?.total ?? 0}
     />
   );
-  // One chip per tag, right after the call-log button (the left-toolbar slot flickered the window).
-  const tagControl = meta ? <TagCards moduleName={meta.name} owner={agentPick || undefined} /> : null;
+  // Lost reason, one at a time, right after the call-log button. Counts sit in its dropdown.
+  const lostReasonControl = meta && lostReasonField ? (
+    <LostReasonFilter
+      module={meta.name}
+      fieldName={lostReasonField.name}
+      options={lostReasonField.options ?? []}
+      view={activeView?.id}
+      search={search || undefined}
+      filter={countConditions(callLogBaseFilter) ? canonicalFilter(callLogBaseFilter) : undefined}
+      picked={lostPick}
+      onPick={(value) => { setLostPick(value); setPage(1); }}
+    />
+  ) : null;
   const ribbonControls = (
     <div className="ml-auto flex shrink-0 items-center gap-2" role="group" aria-label="Record list controls">
       {newRecordsControl}
       {taskControl}
       {callLogControl}
-      {tagControl}
+      {lostReasonControl}
     </div>
   );
   const controlsInRibbon = Boolean(showStageRibbon && stageField);
@@ -1058,7 +1075,7 @@ export default function ListView(): JSX.Element {
         <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
           {taskControl}
           {callLogControl}
-          {tagControl}
+          {lostReasonControl}
         </div>
       )}
       <div className="flex items-center gap-1.5 bg-white p-2 dark:bg-slate-900">
@@ -1175,7 +1192,7 @@ export default function ListView(): JSX.Element {
                     setPage(1);
                   }}
                   className={cn(
-                    'relative flex h-6 shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-semibold transition-colors',
+                    'relative flex h-6 shrink-0 items-center justify-center gap-1 pl-4 pr-2 text-[10px] font-semibold transition-colors',
                   selectedStage ? 'z-[1] text-white' : 'text-slate-800 hover:z-[1]',
                   )}
                   style={{ backgroundColor: selectedStage ? `color-mix(in srgb, ${color} 78%, #111827)` : `color-mix(in srgb, ${color} 12%, white)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}

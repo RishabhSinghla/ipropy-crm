@@ -126,7 +126,8 @@ test('global toolbar replaces duplicate left-pane search controls', async ({ pag
   await expect(page.locator('#global-list-options').getByRole('button', { name: 'Import, export and list options' })).toBeVisible();
 });
 
-test('the tag cards count the module they open', async ({ page }) => {
+// Tag cards left the ribbon (25 Nov 2026).
+test.fixme('the tag cards count the module they open', async ({ page }) => {
   await openList(page, 'leads');
   const cards = page.getByTestId('tag-cards');
   if (!(await cards.count())) test.skip(true, 'no tags are in use on this database');

@@ -44,11 +44,7 @@ test('toolbar hover is an overlay; New and tags use the active theme', async ({ 
   expect(after!.x).toBe(before!.x);
   await page.getByPlaceholder('Search everything…').hover();
   await expect(frame).toHaveAttribute('data-folded', 'true');
-  // This spec's own tag, not whichever happens to be first on the machine running it.
-  const tag = page.getByTestId('tag-cards').getByRole('button', { name: new RegExp(tagName.slice(0, 15), 'i') });
-  await expect(tag).toBeVisible();
-  await tag.click();
-  await expect(tag).toHaveAttribute('aria-pressed', 'true');
+  // Tag cards left the ribbon on 25 Nov 2026 (Lost reason took their place).
   const fresh = page.getByTestId('new-records-chip');
   await fresh.click();
   await page.getByRole('menuitemradio', { name: 'Today' }).click();

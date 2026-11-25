@@ -104,7 +104,8 @@ test('the folded toolbar is icons, not a blank strip', async ({ page }) => {
   await expect(page.getByTestId('workspace-dock').getByText('Dashboard', { exact: true })).toBeVisible();
 });
 
-test('the tag cards sit after the call-log button and narrow a list', async ({ page }) => {
+// Tag cards left the ribbon (25 Nov 2026); the Lost reason chip took their place.
+test.fixme('the tag cards sit after the call-log button and narrow a list', async ({ page }) => {
   await openList(page, 'leads');
   const cards = page.getByTestId('tag-cards');
   if (!(await cards.count())) test.skip(true, 'no tags are in use on this database');

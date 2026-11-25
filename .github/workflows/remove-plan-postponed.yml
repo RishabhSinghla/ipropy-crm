@@ -1,0 +1,35 @@
+# Owner's yes, 25 Nov 2026: take "Plan Postponed" out of the Lost Reason dropdown and leave the field
+# blank on every record that had it. Type "apply" to write; anything else only counts.
+name: Remove Plan Postponed
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Type apply to write. Anything else only counts.'
+        default: look
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Count, then write if told to
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          if [ "$APPLY" = "apply" ]; then
+            npm run picklists:remove -w @ipropy/server -- lost_reason "Plan Postponed" --apply
+          else
+            npm run picklists:remove -w @ipropy/server -- lost_reason "Plan Postponed"
+          fi

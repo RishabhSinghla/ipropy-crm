@@ -830,7 +830,7 @@ const MODULES: ModuleDef[] = [
     */
     views: [
       {
-        name: 'On the Market', isDefault: true, columns: [],
+        name: 'On the Market', columns: [],
         filter: {
           logic: 'AND',
           conditions: [{ field: 'floor_status', operator: 'not_in', value: ['Sold', 'Not for Sale'] }],
@@ -840,7 +840,8 @@ const MODULES: ModuleDef[] = [
         name: 'Sold', columns: [],
         filter: { logic: 'AND', conditions: [{ field: 'floor_status', operator: 'in', value: ['Sold'] }] },
       },
-      { name: 'All Builder Floors', columns: [] },
+      // The default: every status shows when the module opens (owner, 25 Nov 2026).
+      { name: 'All Builder Floors', isDefault: true, columns: [] },
       {
         name: 'My Builder Floors', columns: [],
         filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] },

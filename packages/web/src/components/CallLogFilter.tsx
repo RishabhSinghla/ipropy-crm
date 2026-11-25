@@ -53,7 +53,6 @@ export function CallLogFilter({
       <button type="button" className={toolbarButton(active, 'h-6 px-2 text-[10px]')} aria-label="Call Log filter" aria-pressed={active} data-testid="call-log-filter">
         <PhoneCall className="h-3 w-3" aria-hidden="true" />
         <span className="max-w-24 truncate">{selectedText}</span>
-        <span className={toolbarCount(active)}>{active ? count : total}</span>
       </button>
     )}>
       {(close) => (

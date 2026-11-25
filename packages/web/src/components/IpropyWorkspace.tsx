@@ -1032,6 +1032,7 @@ export function IpropyWorkspace({
               <CallButton to={phoneValue} iconOnly plain active={onCall} recordId={active.id} module={module.name} />
             </span>}
             <button type="button" aria-label={active.starred ? 'Remove favourite' : 'Add favourite'} title={active.starred ? 'Remove favourite' : 'Add favourite'} onClick={() => star.mutate(active)} className="shrink-0 p-1 hover:text-amber-600" data-testid="middle-header-favourite"><Star className={cn('h-4 w-4', active.starred ? 'fill-amber-500 text-amber-500' : 'text-slate-500')} /></button>
+            {canEdit && <button type="button" aria-label="Edit record tags" title="Tags" onClick={() => setTagging(true)} className={cn('p-1 hover:text-blue-800', active.tags?.length ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500')}><Tag className={cn('h-4 w-4', active.tags?.length && 'fill-blue-600 stroke-white dark:stroke-blue-100')} /></button>}
               {/*
                 Search within this record. **The icon left this bar on
                 3 October 2026** — *"remove the whatsapp icon and Search icon

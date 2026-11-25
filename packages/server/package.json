@@ -12,6 +12,7 @@
     "start:worker": "node dist/worker.js",
     "check:prod": "tsx src/checkProdConfig.ts",
     "picklists:align": "tsx src/scripts/alignPicklistValues.ts",
+    "picklists:remove": "tsx src/scripts/removePicklistValue.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
