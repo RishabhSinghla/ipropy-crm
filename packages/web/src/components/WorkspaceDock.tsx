@@ -23,7 +23,7 @@ import { type JSX, type ReactNode, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { Archive, Calculator, LayoutDashboard, MessagesSquare, PhoneIncoming, Search, Star, Store, UserRound } from 'lucide-react';
+import { Archive, LayoutDashboard, MessagesSquare, PhoneIncoming, Search, Star, Store, UserRound } from 'lucide-react';
 import { ThreeContacts } from './ThreeContacts';
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -101,9 +101,6 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
     ] : []),
     { to: '/whatsapp', label: 'WhatsApp', icon: <MessagesSquare className="h-[18px] w-[18px]" />, count: counts?.whatsapp, tone: 'whatsapp' as const },
     { to: '/whatsapp-lookup', label: 'WhatsApp Lookup', icon: <Search className="h-[18px] w-[18px]" />, tone: 'whatsapp' as const },
-    ...(isAdmin ? [
-      { to: '/market', label: 'Dealer groups', tone: 'associates', icon: <Store className="h-[18px] w-[18px]" /> },
-    ] : []),
   ];
   return (
     <div
@@ -144,7 +141,6 @@ export function WorkspaceDock({ counts, folded, onFoldChange }: {
             </DockLink>
           ))}
           <div className="mt-auto border-t border-slate-300 pt-3 dark:border-slate-700">
-            <DockLink to="/tools" label="Tools" iconOnly={!expanded}><Calculator className="h-[18px] w-[18px]" /></DockLink>
             <DockLink to="/archive" label="Archive" iconOnly={!expanded}><Archive className="h-[18px] w-[18px]" /></DockLink>
           </div>
         </nav>

@@ -34,7 +34,6 @@ import { telephonyRouter } from './api/routes/telephony.js';
 import { aiRouter } from './api/routes/ai.js';
 import { webhooksRouter } from './api/routes/webhooks.js';
 import { miscRouter } from './api/routes/misc.js';
-import { marketRouter } from './api/routes/market.js';
 import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
 import { projectWorkspaceRouter } from './api/routes/projectWorkspace.js';
@@ -326,7 +325,6 @@ export function createApp(): Express {
   app.use('/api/whatsapp-drip', whatsappDripRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
-  app.use('/api/market', marketRouter);
   // Project-specific data and dropdown masters, kept out of shared CRM masters.
   app.use('/api/project-workspace', projectWorkspaceRouter);
   // Connected assistants. Mounted before miscRouter's catch-all /api paths.

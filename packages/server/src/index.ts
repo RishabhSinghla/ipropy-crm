@@ -7,8 +7,6 @@ import { checkConnection, closePool, db } from './db/pool.js';
 import { registry } from './core/metadata/registry.js';
 import { warmup as warmupIntegrationSettings, getSettings } from './core/settings/integrations.js';
 import { configureSentry } from './core/observability/sentry.js';
-import { recoverInterruptedImports } from './core/market/imports.js';
-import { registerMarketListeners } from './core/market/newBuyerAlert.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { registerMetaConversions } from './integrations/leadsources/metaConversions.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
@@ -65,13 +63,11 @@ async function main(): Promise<void> {
 
   registerWorkflowHandlers();
   registerMetaConversions();
-  registerMarketListeners();
 
   // Imports live in this process. Anything still marked running at boot died
   // with the previous container — say so on the import screen rather than
   // leaving a job that looks alive.
   await recoverOrphanedImports(db);
-  await recoverInterruptedImports();
 
   const app = createApp();
   const server = createServer(app);

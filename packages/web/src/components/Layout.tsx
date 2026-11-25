@@ -511,8 +511,6 @@ function MobileNav({
             <DrawerLink to="/whatsapp" icon="message-circle" label="WhatsApp" />
             <DrawerLink to="/whatsapp-lookup" icon="message-circle" label="WhatsApp Lookup" />
             <DrawerLink to="/calls" icon="phone" label="Calls" />
-            {isAdmin && <DrawerLink to="/market" icon="users" label="Dealer groups" />}
-            <DrawerLink to="/tools" icon="calculator" label="Calculators" />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
         </nav>

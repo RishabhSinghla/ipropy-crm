@@ -21,7 +21,6 @@ const Layout = lazy(() => import('./components/Layout'));
 const MobileShell = lazy(() => import('./mobile/Shell'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const AskPage = lazy(() => import('./pages/AskPage'));
-const MarketFeedPage = lazy(() => import('./pages/MarketFeed'));
 const WhatsAppLookupPage = lazy(() => import('./pages/WhatsAppLookup'));
 const ProjectsWorkspacePage = lazy(() => import('./pages/ProjectsWorkspace'));
 
@@ -71,7 +70,6 @@ const ReportsPage = lazy(() => import('./pages/Reports'));
 const WhatsAppPage = lazy(() => import('./pages/WhatsApp'));
 const CallsPage = lazy(() => import('./pages/Calls'));
 const SearchResultsPage = lazy(() => import('./pages/SearchResults'));
-const ToolsPage = lazy(() => import('./pages/Tools'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
 
 /** Pages that only an admin has any use for: everybody else lands on the dashboard. */
@@ -176,12 +174,9 @@ export default function App(): JSX.Element {
               <Route path="calls" element={<CallsPage />} />
               <Route path="search" element={<SearchResultsPage />} />
               <Route path="whatsapp-lookup" element={<WhatsAppLookupPage />} />
-              {/* Dealer-group deals. Above `:module`, which would read "market" as a module. */}
-              <Route path="market" element={<RequireAdminRoute><MarketFeedPage /></RequireAdminRoute>} />
               {/* Projects has its own isolated workspace and masters rather than
                   the generic CRM split-view used by ordinary record modules. */}
               <Route path="projects" element={<ProjectsWorkspacePage />} />
-              <Route path="tools" element={<ToolsPage />} />
               {/* The Archive is the same split view as a module, showing only
                   records archived after 12 hours in Lost. */}
               <Route path="archive" element={<ArchivePage />}>
