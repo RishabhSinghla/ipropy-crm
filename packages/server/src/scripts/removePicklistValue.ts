@@ -13,7 +13,7 @@
  */
 import { db, pool, transaction } from '../db/pool.js';
 import {
-  countRecordsWithValue, fieldsThatCannotBeCleared, replaceValueInRecords,
+  countRecordsWithValue, fieldsThatCannotBeCleared, fieldsUsingPicklist, matchExpr, replaceValueInRecords,
 } from '../core/metadata/picklists.js';
 
 async function main(): Promise<void> {
@@ -35,6 +35,19 @@ async function main(): Promise<void> {
   if (!apply) { console.log('looked only. Add --apply to write.'); return; }
 
   await transaction(async (tx) => {
+    // Which records had it, kept so this can be undone: a cleared value is otherwise gone for good.
+    await tx.query(`CREATE TABLE IF NOT EXISTS ipy_cleared_picklist_value (
+      picklist TEXT NOT NULL, value TEXT NOT NULL, module TEXT NOT NULL, field TEXT NOT NULL,
+      record_id UUID NOT NULL, cleared_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (picklist, value, field, record_id))`);
+    for (const use of await fieldsUsingPicklist(name)) {
+      await tx.query(
+        `INSERT INTO ipy_cleared_picklist_value (picklist, value, module, field, record_id)
+         SELECT $2, $1, $3, $4, record_id FROM ${use.tableName.replace(/[^A-Za-z0-9_]/g, '')} WHERE ${matchExpr(use)}
+         ON CONFLICT DO NOTHING`,
+        [value, name, use.module, use.field],
+      );
+    }
     if (usage.total > 0) await replaceValueInRecords(name, value, null, tx);
     await tx.query(`DELETE FROM ipy_picklist_value WHERE picklist_id = $1 AND value = $2`, [picklist.id, value]);
     await tx.query(

@@ -167,7 +167,7 @@ const SYSTEM_USES: Record<string, { table: string; column: string; module: strin
 };
 
 /** A SQL predicate matching rows whose value for `use` is `$1`. */
-function matchExpr(use: PicklistFieldUse): string {
+export function matchExpr(use: PicklistFieldUse): string {
   if (use.storage === 'column') {
     const col = quoteIdent(use.columnName);
     return use.isMulti ? `${col} @> to_jsonb(ARRAY[$1]::text[])` : `${col} = $1`;
