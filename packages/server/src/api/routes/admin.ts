@@ -1276,10 +1276,6 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         const { testSarvamConnection } = await import('../../integrations/voiceagent/sarvam.js');
         return testSarvamConnection();
       }
-      case 'google_rcs': {
-        const { testGoogleRcs } = await import('../../integrations/rcs/google.js');
-        return testGoogleRcs();
-      }
       /*
         Every WhatsApp Business provider, through the adapter that owns it.
 

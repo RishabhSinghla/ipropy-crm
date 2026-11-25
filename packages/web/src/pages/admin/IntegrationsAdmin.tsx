@@ -234,11 +234,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   zapier: [
     { key: 'webhookKey', label: 'Zapier Webhook Secret', source: 'credentials', secret: true, placeholder: 'Generate a long random secret' },
   ],
-  google_rcs: [
-    { key: 'agentId', label: 'RCS Agent ID', source: 'config', placeholder: 'Your launched Google RBM agent ID' },
-    { key: 'region', label: 'RBM Region', source: 'config', placeholder: 'us' },
-    { key: 'serviceAccountJson', label: 'Google Service Account JSON', source: 'credentials', secret: true, placeholder: '{ "client_email": "…", "private_key": "…" }' },
-  ],
   typesafe_jev: [
     { key: 'apiKey', label: 'TypeSafe API key', source: 'credentials', secret: true, placeholder: 'From console.typesafe.ai/keys — Jev is then reached directly, not through OpenRouter' },
   ],
@@ -276,7 +271,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
-  'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'google_rcs', 'sarvam_voice',
+  'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'sarvam_voice',
   /*
     The WhatsApp providers. Leaving them out is what let the setup wizard
     finish on "Saved and switched on." — the branch for a provider with no
@@ -325,10 +320,6 @@ const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: 
   zapier: {
     text: 'Create a Zap with Webhooks by Zapier → POST. Map full_name, mobile, email and message; add the secret as X-Zapier-Secret.',
     href: 'https://zapier.com/apps/webhook/integrations', linkLabel: 'Open Zapier',
-  },
-  google_rcs: {
-    text: 'Requires a launched Google RCS for Business agent. Test devices can receive messages before the agent is launched.',
-    href: 'https://developers.google.com/business-communications/rcs-business-messaging/guides/overview', linkLabel: 'RCS setup guide',
   },
   sarvam_voice: {
     text: 'Managed voice agent: copy the org, workspace, agent, and telephony connection IDs from Sarvam. Save and enable this card, then test the connection. The CRM sends its callback address automatically when it starts each outbound call.',

@@ -7,7 +7,6 @@ import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability } from '../../core/permissions/index.js';
 import { sendEmail, sendTemplatedEmail, verifyConnection } from '../../integrations/email/service.js';
 import { suggestReplies, draftMessage } from '../../ai/drafting.js';
-import * as googleRcs from '../../integrations/rcs/google.js';
 import { redactAutomated } from '../../integrations/whatsapp/business/channelRoles.js';
 import { recordService } from '../../core/entity/recordService.js';
 
@@ -121,37 +120,7 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
 
 // WhatsApp sending was removed on 17 September 2026 on the owner's
 // instruction, and with it the two routes that posted a message into a
-// conversation. The Inbox still reads every thread; RCS and email below still
-// send. See CLAUDE.md.
-
-/** Send a transactional/promotional message through the connected Google RBM agent. */
-commsRouter.post('/rcs/messages', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  await assertCapability(user, 'whatsapp.send');
-  const input = z.object({
-    to: z.string().min(8), text: z.string().min(1).max(3072),
-    trafficType: z.enum(['PROMOTION', 'TRANSACTION', 'AUTHENTICATION']).default('TRANSACTION'),
-    recordId: z.string().uuid().nullable().optional(), module: z.string().optional(),
-  }).parse(req.body);
-  if (input.recordId) await recordService.getRecord(getScope(req), input.module ?? 'leads', input.recordId);
-  const sent = await googleRcs.sendText(input.to, input.text, input.trafficType);
-  const conversation = await db.queryOne<{ id: string }>(
-    `INSERT INTO ipy_conversation (channel, handle, record_id, record_module, assigned_to, last_message_at, last_message_preview)
-     VALUES ('rcs',$1,$2,$3,$4,now(),$5)
-     -- The predicate is required, not decoration: since migration 156 the old
-     -- (channel, handle) unique is a *partial* index, and Postgres will not
-     -- infer a partial index unless the statement repeats its WHERE clause.
-     ON CONFLICT (channel, handle) WHERE wa_account_id IS NULL AND lane IS NULL
-       DO UPDATE SET last_message_at = now(), last_message_preview = EXCLUDED.last_message_preview
-     RETURNING id`, [input.to, input.recordId ?? null, input.module ?? null, user.id, input.text.slice(0, 240)],
-  );
-  await db.query(
-    `INSERT INTO ipy_message (conversation_id, direction, channel, type, body, status, provider_message_id, provider, sent_by)
-     VALUES ($1,'outbound','rcs','text',$2,'sent',$3,'google_rcs',$4)`,
-    [conversation!.id, input.text, sent.providerMessageId, user.id],
-  );
-  res.status(201).json(sent);
-}));
+// conversation. The Inbox still reads every thread. See CLAUDE.md.
 
 commsRouter.patch('/conversations/:id', asyncHandler(async (req, res) => {
   const input = z.object({
