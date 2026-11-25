@@ -1294,16 +1294,6 @@ export const api = {
   updateFile: (id: string, data: { fileName?: string; category?: string | null }) =>
     patch<{ id: string; file_name: string; category: string | null }>(`/api/files/${id}`, data),
   deleteFile: (id: string) => del(`/api/files/${id}`),
-  /**
-   * Everything attached to a record, as a zip of ordinary folders.
-   *
-   * A URL rather than a fetch: the response streams and can be gigabytes, so
-   * the browser's own downloader should handle it instead of buffering the lot
-   * into memory as a Blob. It navigates rather than XHRs, hence `access_token`
-   * — same reason embeds use it.
-   */
-  archiveUrl: (recordId: string, set: 'all' | 'originals' | 'branded' | 'web' = 'branded') =>
-    authedFileUrl(`/api/records/${recordId}/archive`, { set }),
   shareLinks: (module: string, id: string) =>
     get<ShareLink[]>(`/api/records/${module}/${id}/share-links`),
   createShareLink: (module: string, id: string, body: { label?: string; expiresInDays?: number }) =>

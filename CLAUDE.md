@@ -686,8 +686,7 @@ is dropped, so a rebuild later starts from data. Only screens, routes, settings 
   the saved-matching and feedback routes, the `match_properties` / `match_buyers` workflow actions and the seeded buyer-alert
   workflows, and Admin -> Matching Setup. **Kept:** `core/settings/matching.ts` and its seeded mapping, because the price field and
   the property folder names read it; the Matching screen to edit it is gone, so it holds its last saved values. The **Files tab**
-  is removed from the screens only. **The Files backend is untouched on purpose**: the same attachment rows serve the property
-  photos on the public website, the share links, the contact photo and site capture. Removing that is the owner's call, not a tidy-up.
+  is removed from the screens only. **Files backend, 25 November 2026 (owner: "go head"):** only the Files tab's own route is gone, `GET /api/records/:id/archive` (download everything as a zip) and `api.archiveUrl`. **The upload, view, rename, delete, list and reorder routes (`/api/files`, `/api/records/:id/files`) stay on purpose**: the same rows serve the property photos on the public website, shared links, contact avatars, the brand logo, site capture and image fields, so removing them would break those. Nothing stored was deleted.
   Saved layouts that still name `matching` or `files` simply drop them. Tables and rows are untouched.
 * WHATSAPP.md, docs/OPENWA.md and the long WhatsApp / Facebook / Meta sections below are history, not a description of the running CRM.
 
