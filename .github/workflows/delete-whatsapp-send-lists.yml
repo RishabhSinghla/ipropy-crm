@@ -1,0 +1,47 @@
+# One-off, at the owner's yes (25 Nov 2026): remove the two leftover "WhatsApp send: ..." saved lists.
+# Deletes list definitions only, never records. Refuses unless exactly those two are found.
+name: Delete the two WhatsApp send lists
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Type "apply" to delete; anything else only looks
+        required: false
+        default: look
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Look, then delete
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          set -e
+          cat > look.sql <<'SQL'
+          SELECT v.id, m.name AS module, v.name, v.is_system, v.is_public FROM ipy_view v JOIN ipy_module m ON m.id = v.module_id
+           WHERE v.is_system = false AND v.name IN ('WhatsApp send: Buyers and Tenants', 'WhatsApp send: Dealers and Builders');
+          SQL
+          psql "$PROD_DATABASE_URL" -X -q -P pager=off -f look.sql
+          if [ "$APPLY" != "apply" ]; then echo "looked only"; exit 0; fi
+          cat > del.sql <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN;
+          DO $$
+          DECLARE n integer;
+          BEGIN
+            DELETE FROM ipy_view
+             WHERE is_system = false AND name IN ('WhatsApp send: Buyers and Tenants', 'WhatsApp send: Dealers and Builders');
+            GET DIAGNOSTICS n = ROW_COUNT;
+            IF n <> 2 THEN RAISE EXCEPTION 'expected exactly 2 lists, found %', n; END IF;
+          END $$;
+          COMMIT;
+          SQL
+          psql "$PROD_DATABASE_URL" -X -q -P pager=off -f del.sql
+          echo "after:"; psql "$PROD_DATABASE_URL" -X -q -P pager=off -f look.sql
