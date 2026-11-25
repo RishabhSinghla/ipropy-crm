@@ -41,7 +41,6 @@ import { ListPicker } from '../components/ListPicker';
 import { IpropyWorkspace } from '../components/IpropyWorkspace';
 import { CallLogFilter } from '../components/CallLogFilter';
 import { LostReasonFilter } from '../components/LostReasonFilter';
-import { DARK_GREY_RIBBON } from '../lib/ribbonTrial';
 import { callQueueUrl } from '../lib/callQueueUrl';
 import { useProgressiveDialer } from '../lib/progressiveDialer';
 import { NO_SORT_BY } from '../lib/listSort';
@@ -1154,12 +1153,7 @@ export default function ListView(): JSX.Element {
         <section
           aria-label={`${meta?.label ?? 'Record'} stages`}
           data-testid="pipeline-stage-ribbon"
-          className={cn(
-            'shrink-0 border-b px-2 py-1 sm:px-3',
-            DARK_GREY_RIBBON
-              ? 'border-slate-600 bg-slate-700 dark:border-slate-700 dark:bg-slate-800'
-              : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900',
-          )}
+          className="shrink-0 border-b border-slate-200 bg-white px-2 py-1 sm:px-3 dark:border-slate-800 dark:bg-slate-900"
         >
           <div className="flex min-w-0 items-center justify-between gap-3 pb-0.5" role="group" aria-label="Filter by stage">
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1173,13 +1167,13 @@ export default function ListView(): JSX.Element {
               className={cn(
                 'flex h-6 shrink-0 items-center gap-1 px-2 text-[10px] font-semibold transition-colors',
                 stagePick.length === 0
-                  ? (DARK_GREY_RIBBON ? 'bg-white text-slate-900' : 'bg-slate-700 text-white')
+                  ? 'bg-slate-700 text-white'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300',
               )}
               style={{ clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)' }}
             >
               <span>All</span>
-              <span className={cn('px-1 text-[9px] tabular-nums', stagePick.length === 0 ? (DARK_GREY_RIBBON ? 'text-slate-600' : 'text-white/80') : 'text-slate-500 dark:text-slate-400')}>
+              <span className={cn('px-1 text-[9px] tabular-nums', stagePick.length === 0 ? 'text-white/80' : 'text-slate-500 dark:text-slate-400')}>
                 {stageTotal?.toLocaleString('en-IN') ?? '—'}
               </span>
             </button>
@@ -1198,7 +1192,7 @@ export default function ListView(): JSX.Element {
                     setPage(1);
                   }}
                   className={cn(
-                    'relative flex h-6 shrink-0 items-center justify-center gap-1 pl-4 pr-2 text-[10px] font-semibold transition-colors',
+                    'relative -ml-[6px] flex h-6 shrink-0 items-center justify-center gap-1 pl-4 pr-2 text-[10px] font-semibold transition-colors',
                   selectedStage ? 'z-[1] text-white' : 'text-slate-800 hover:z-[1]',
                   )}
                   style={{ backgroundColor: selectedStage ? `color-mix(in srgb, ${color} 78%, #111827)` : `color-mix(in srgb, ${color} 12%, white)`, clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}
