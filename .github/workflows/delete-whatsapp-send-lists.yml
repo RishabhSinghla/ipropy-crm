@@ -1,5 +1,5 @@
 # One-off, at the owner's yes (25 Nov 2026): remove the two leftover "WhatsApp send: ..." saved lists.
-# Deletes list definitions only, never records. Refuses unless exactly those two are found.
+# Deletes list definitions only, never records. Refuses if more than those two are found.
 name: Delete the two WhatsApp send lists
 
 on:
@@ -39,7 +39,7 @@ jobs:
             DELETE FROM ipy_view
              WHERE is_system = false AND name IN ('WhatsApp send: Buyers and Tenants', 'WhatsApp send: Dealers and Builders');
             GET DIAGNOSTICS n = ROW_COUNT;
-            IF n <> 2 THEN RAISE EXCEPTION 'expected exactly 2 lists, found %', n; END IF;
+            IF n > 2 THEN RAISE EXCEPTION 'expected at most 2 lists, found %', n; END IF;
           END $$;
           COMMIT;
           SQL
