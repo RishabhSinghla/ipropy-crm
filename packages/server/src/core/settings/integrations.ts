@@ -81,7 +81,6 @@ export interface ResolvedSettings {
     n8nCallbackSecret: string;
   };
   leadSources: {
-    facebook: { appId: string; appSecret: string; pageAccessToken: string; verifyToken: string };
     googleAdsWebhookKey: string;
     /** One secret for every property portal. None of them signs a request. */
     portalWebhookKey: string;
@@ -463,7 +462,6 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const smtp = map.get('smtp');
   const imap = map.get('imap');
   const sttRow = map.get('stt');
-  const fb = map.get('facebook_leads');
   const google = map.get('google_ads');
   const webform = map.get('webform');
   const zapier = map.get('zapier');
@@ -535,12 +533,6 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       n8nCallbackSecret: pick(n8n, 'credentials', 'callbackSecret', config.automation.n8nCallbackSecret),
     },
     leadSources: {
-      facebook: {
-        appId: pick(fb, 'config', 'appId', config.leadSources.facebook.appId),
-        appSecret: pick(fb, 'credentials', 'appSecret', config.leadSources.facebook.appSecret),
-        pageAccessToken: pick(fb, 'credentials', 'pageAccessToken', config.leadSources.facebook.pageAccessToken),
-        verifyToken: pick(fb, 'config', 'verifyToken', config.leadSources.facebook.verifyToken) || config.leadSources.facebook.verifyToken,
-      },
       googleAdsWebhookKey: pick(google, 'credentials', 'webhookKey', config.leadSources.googleAdsWebhookKey),
       portalWebhookKey: pick(map.get('webform'), 'credentials', 'portalWebhookKey', config.leadSources.portalWebhookKey),
       webformPublicKey: pick(webform, 'config', 'key', config.leadSources.webformPublicKey) || config.leadSources.webformPublicKey,
@@ -623,8 +615,6 @@ const SECRET_FIELDS: Record<string, string[]> = {
   ai_openrouter: ['apiKey'],
   ai_openai: ['apiKey'],
   stt: ['apiKey'],
-  facebook_leads: ['appSecret', 'pageAccessToken'],
-  meta_conversions: ['accessToken'],
   google_ads: ['webhookKey'],
   s3: ['accessKeyId', 'secretAccessKey'],
   onedrive: ['clientSecret'],

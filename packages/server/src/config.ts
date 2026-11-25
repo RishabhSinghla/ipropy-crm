@@ -243,12 +243,6 @@ export const config = {
   },
 
   leadSources: {
-    facebook: {
-      appId: str('FACEBOOK_APP_ID'),
-      appSecret: str('FACEBOOK_APP_SECRET'),
-      pageAccessToken: str('FACEBOOK_PAGE_ACCESS_TOKEN'),
-      verifyToken: str('FACEBOOK_VERIFY_TOKEN', 'ipropy-fb-verify'),
-    },
     googleAdsWebhookKey: str('GOOGLE_ADS_WEBHOOK_KEY'),
     portalWebhookKey: str('PORTAL_WEBHOOK_KEY'),
     webformPublicKey: str('WEBFORM_PUBLIC_KEY', 'ipropy-public-webform'),

@@ -17,7 +17,6 @@ import { columnsOf, fieldText } from '../../core/entity/payloadColumns.js';
 import { AUTOMATION_USER_ID } from '../../core/auth/systemAccounts.js';
 import { getModule } from '../../core/metadata/registry.js';
 import { parseBudget } from './parseBudget.js';
-import { mapFacebookAnswers, type FacebookAnswer } from './facebookAnswers.js';
 
 const SYSTEM_USER: AuthUser = {
   id: '00000000-0000-0000-0000-000000000000',
@@ -70,16 +69,7 @@ export async function captureLead(
   normalized: NormalizedLead,
   opts: { externalId?: string; ownerId?: string; assignRuleId?: string; createdBy?: AuthUser } = {},
 ): Promise<CaptureResult> {
-  if (source !== 'facebook') return captureOnce(source, raw, normalized, opts);
-  const id = opts.externalId ?? normalized.externalId ?? submissionFingerprint(source, normalized);
-  // All Facebook entry points share this lock. A restart releases it, allowing
-  // a durable delivery to recover an inbox row left pending by that process.
-  return transaction(async (tx) => {
-    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`facebook:${id}`]);
-    await db.query(`UPDATE ipy_lead_inbox SET status = 'failed' WHERE source = 'facebook'
-      AND external_id = $1 AND status = 'pending'`, [id]);
-    return captureOnce(source, raw, normalized, opts);
-  });
+  return captureOnce(source, raw, normalized, opts);
 }
 
 async function captureOnce(
@@ -122,20 +112,12 @@ async function captureOnce(
     // exactly 10 digits". Splitting is the other half of the migration-026
     // breakage that lost every inbound enquiry.
     const parts = splitPhone(normalized.mobile);
-    // Administrators can rename both the stored value and its display label.
-    // Match the active Facebook option instead of assuming the seeded template.
-    const sourceField = source === 'facebook'
-      ? (await getModule('leads'))?.fields.find((f) => ['source', 'lead_source'].includes(f.name) && f.isActive)
-      : undefined;
-    const facebookSource = sourceField?.options?.find((o) =>
-      [o.value, o.label].some((v) => /^facebook(?: lead ads?)?$/i.test(v.trim())));
-
     // Dedupe against recent leads on the same number/email.
     const windowDays = await getSetting<number>('leads.duplicate_window_days', 90);
-    const existing = await findRecentLead(mobile, normalized.email, source === 'facebook' ? null : windowDays);
+    const existing = await findRecentLead(mobile, normalized.email, windowDays);
 
     if (existing) {
-      await enrichExistingLead(existing.record_id, normalized, source === 'facebook');
+      await enrichExistingLead(existing.record_id, normalized);
       await db.query(
         `UPDATE ipy_lead_inbox SET status = 'duplicate', record_id = $2, processed_at = now() WHERE id = $1`,
         [inbox.id, existing.record_id],
@@ -177,7 +159,7 @@ async function captureOnce(
       // API actually send to, and it has no per-country length rule.
       whatsapp_number: mobile,
       status: 'New',
-      lead_source: facebookSource?.value ?? normalized.source,
+      lead_source: normalized.source,
       sub_source: normalized.subSource ?? null,
       interested_project: normalized.projectName ?? null,
       configuration: normalized.configuration ?? [],
@@ -197,30 +179,10 @@ async function captureOnce(
       description: normalized.message ?? null,
       ...(normalized.extra ?? {}),
     };
-    // File each Facebook answer in the field its question is asking about. Done
-    // here, once, so the webhook, the sync and the recovery job all get it. A
-    // mapping bug must cost the answer a place, never the lead.
-    if (source === 'facebook') {
-      try {
-        const leadsModule = await getModule('leads');
-        const answers = (raw as { field_data?: FacebookAnswer[] } | null)?.field_data;
-        Object.assign(values, mapFacebookAnswers(answers, leadsModule?.fields ?? [], values));
-      } catch (err) {
-        logger.warn({ err }, 'could not map the Facebook form answers; the lead is kept with them in its note');
-      }
-    }
-    // Live CRM uses `source`; the original template uses `lead_source`.
-    // Routing happens before recordService translates legacy field names.
-    if (sourceField) values[sourceField.name] = facebookSource?.value ?? normalized.source;
-
     // Owner: explicit → assignment rules → unassigned (a manager picks it up).
     let ownerId = opts.ownerId ?? null;
-    const facebookRule = source === 'facebook'
-      ? await db.queryOne<{ assignment_rule_id: string | null }>('SELECT assignment_rule_id FROM ipy_facebook_health WHERE id = true')
-      : null;
-    if (!ownerId && (facebookRule?.assignment_rule_id || await getSetting('leads.auto_assign', true))) {
-      ownerId = await assignOwner('leads', values, { ruleId: facebookRule?.assignment_rule_id ?? undefined });
-      if (facebookRule?.assignment_rule_id && !ownerId) throw new Error('No selected Facebook agent is active and accepting leads.');
+    if (!ownerId && await getSetting('leads.auto_assign', true)) {
+      ownerId = await assignOwner('leads', values, {});
     }
     values.owner_id = ownerId;
 
@@ -228,16 +190,10 @@ async function captureOnce(
       ? { user: opts.createdBy, subordinateIds: [], groupIds: [], system: true, source: 'lead_capture' }
       : systemContext();
     const record = await createRecord(ctx, 'leads', values, {
-      skipDuplicateCheck: true, workflowInBackground: source === 'facebook',
+      skipDuplicateCheck: true,
       // Never lose a lead over a mandatory field the source cannot answer.
       skipMandatory: true,
     });
-
-    if (source === 'facebook' && normalized.message) {
-      await db.query(`INSERT INTO ipy_comment (record_id, user_id, body, facebook_lead_id) VALUES ($1, $2, $3, $4)
-        ON CONFLICT (facebook_lead_id) WHERE facebook_lead_id IS NOT NULL DO NOTHING`,
-        [record.id, AUTOMATION_USER_ID, normalized.message, opts.externalId ?? normalized.externalId ?? null]);
-    }
 
     await db.query(
       `UPDATE ipy_lead_inbox SET status = 'processed', record_id = $2, processed_at = now() WHERE id = $1`,
@@ -252,21 +208,6 @@ async function captureOnce(
     return { status: 'created', recordId: record.id };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // A number on an Inventory contact (or an alternate phone) is protected by
-    // the shared identity rule. Keep the enquiry on that contact; never bypass
-    // the rule, move its module, or replace its owner to make an import pass.
-    if (source === 'facebook' && message.includes('This mobile number already exists')) {
-      const hits = await findMobileDuplicates(systemContext(), 'leads', { mobile: normalized.mobile });
-      const existing = hits.find((hit) => ['leads', 'properties', 'associates'].includes(hit.module));
-      if (existing) {
-        await db.query(`INSERT INTO ipy_comment (record_id, user_id, body, facebook_lead_id) VALUES ($1, $2, $3, $4)
-          ON CONFLICT (facebook_lead_id) WHERE facebook_lead_id IS NOT NULL DO NOTHING`,
-          [existing.id, AUTOMATION_USER_ID, `[Facebook enquiry from ${normalized.firstName} ${normalized.lastName ?? ''}] ${normalized.message ?? ''}`, opts.externalId ?? normalized.externalId ?? null]);
-        await db.query(`UPDATE ipy_lead_inbox SET status = 'duplicate', record_id = $2,
-          error = NULL, processed_at = now() WHERE id = $1`, [inbox.id, existing.id]);
-        return { status: 'duplicate', recordId: existing.id, message: 'Enquiry linked to existing contact' };
-      }
-    }
     logger.error({ err, source }, 'lead capture failed');
     await db.query(
       `UPDATE ipy_lead_inbox SET status = 'failed', error = $2, processed_at = now() WHERE id = $1`,
@@ -430,53 +371,6 @@ async function getSetting<T>(key: string, fallback: T): Promise<T> {
 // ---------------------------------------------------------------------------
 // Source-specific normalisers
 // ---------------------------------------------------------------------------
-
-/** Facebook Lead Ads — field_data is an array of {name, values[]}. */
-export function normalizeFacebook(payload: {
-  id?: string;
-  field_data?: { name: string; values: string[] }[];
-  form_id?: string;
-  campaign_id?: string;
-  campaign_name?: string;
-  leadgen_id?: string;
-  ad_id?: string;
-  form_name?: string;
-}): NormalizedLead {
-  const fields = new Map(
-    (payload.field_data ?? []).map((f) => [f.name.toLowerCase(), f.values?.[0] ?? '']),
-  );
-  const fullName = fields.get('full_name') ?? fields.get('name') ?? '';
-  const [firstName, ...rest] = fullName.split(/\s+/);
-
-  return {
-    firstName: fields.get('first_name') ?? firstName ?? 'Facebook',
-    lastName: fields.get('last_name') ?? rest.join(' '),
-    email: fields.get('email'),
-    mobile: fields.get('phone_number') ?? fields.get('phone'),
-    source: 'Facebook',
-    subSource: 'Paid',
-    projectName: fields.get('project') ?? fields.get('property_interested'),
-    message: [fields.get('message') ?? fields.get('comments'),
-      ...[...fields].filter(([key, value]) => value && !['full_name', 'name', 'first_name', 'last_name', 'email', 'phone_number', 'phone'].includes(key))
-        .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${value.replace(/_/g, ' ')}`),
-      payload.form_name ? `Facebook form: ${payload.form_name} (${payload.form_id})` : undefined,
-      payload.campaign_name || payload.campaign_id ? `Facebook campaign: ${payload.campaign_name ?? payload.campaign_id}` : undefined,
-    ].filter(Boolean).join('\n'),
-    // Any question that says "budget" — forms word it differently ("…budget?",
-    // "…budget_range?") — and repeat enquiries read this, not the field mapper.
-    budgetMax: parseBudget([...fields].find(([question]) => question.includes('budget'))?.[1]),
-    // No timeline here: it is a dropdown, and a raw answer that is not one of its
-    // options would fail validation and lose the lead. `mapFacebookAnswers` files
-    // it only when it matches an option.
-    externalId: payload.leadgen_id ?? payload.id,
-    // The ad platform's own campaign name (or its id) is the attribution — it
-    // lands in `utm_campaign` on the lead, which is where reporting reads it.
-    utm: {
-      utm_source: 'facebook', utm_medium: 'paid_social',
-      utm_campaign: payload.campaign_name ?? payload.campaign_id ?? '',
-    },
-  };
-}
 
 /** Google Ads lead form extension. */
 export function normalizeGoogleAds(payload: {

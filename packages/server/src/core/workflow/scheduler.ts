@@ -18,7 +18,6 @@ import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
 import { notify } from '../notifications/index.js';
-import { runFacebookRecovery } from '../../integrations/leadsources/facebookRecovery.js';
 import { archiveDueLostRecords } from '../entity/lostArchive.js';
 import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import {
@@ -94,7 +93,6 @@ async function tick(): Promise<void> {
       runScheduledWorkflows(),
       runSequences(),
       housekeeping(),
-      runFacebookRecovery(),
       archiveDueLostRecords().catch(err => logger.error({ err }, 'Lost record archive failed; will retry next tick')),
     ]);
   } catch (err) {

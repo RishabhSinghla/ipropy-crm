@@ -9,12 +9,10 @@ import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Badge, EmptyState, Modal, Skeleton, Spinner, Tabs, Toggle } from '../../components/ui';
 import { copyText } from '../../lib/nativeActions';
-import FacebookLeadMaster from './FacebookLeadMaster';
 
 const API_BASE = window.location.origin;
 
 const WEBHOOK_ENDPOINTS = [
-  { label: 'Facebook Lead Ads', path: '/api/webhooks/leads/facebook', icon: Globe, note: 'Subscribe your page to the leadgen field.' },
   { label: 'Google Ads lead form', path: '/api/webhooks/leads/google', icon: Globe, note: 'Paste as the webhook URL; the key must match what you set below, under Google Ads.' },
   { label: 'Zapier lead capture', path: '/api/webhooks/leads/zapier', icon: Webhook, note: 'Use this in Zapier Webhooks by Zapier. Send the secret below as the X-Zapier-Secret header.' },
   { label: '99acres', path: '/api/webhooks/leads/portal/99acres', icon: Globe, note: 'Give this URL to your portal account manager.' },
@@ -118,18 +116,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'dsn', label: 'DSN', source: 'config', placeholder: 'https://…@o0.ingest.sentry.io/0' },
     { key: 'environment', label: 'Environment name', source: 'config', placeholder: 'production' },
   ],
-  facebook_leads: [
-    { key: 'appId', label: 'App ID', source: 'config' },
-    { key: 'appSecret', label: 'App Secret', source: 'credentials', secret: true },
-    { key: 'pageAccessToken', label: 'Page Access Token', source: 'credentials', secret: true },
-    { key: 'verifyToken', label: 'Webhook Verify Token', source: 'config', placeholder: 'ipropy-fb-verify' },
-  ],
-  meta_conversions: [
-    { key: 'datasetId', label: 'Dataset ID', source: 'config', placeholder: 'From Meta Events Manager → Data sources → your dataset' },
-    { key: 'accessToken', label: 'Access token', source: 'credentials', secret: true, placeholder: 'Generated on the dataset\u2019s Settings → Conversions API tab' },
-    { key: 'stages', label: 'Lead stages to tell Meta about', source: 'config', placeholder: 'Qualified, Site Visit Done, Converted' },
-    { key: 'testEventCode', label: 'Test code (leave empty when live)', source: 'config', placeholder: 'TEST12345 — events then show only in Events Manager → Test events' },
-  ],
   google_ads: [
     { key: 'webhookKey', label: 'Webhook Key', source: 'credentials', secret: true },
   ],
@@ -158,7 +144,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 };
 
 const TESTABLE = new Set([
-  'smtp', 'facebook_leads',
+  'smtp',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
   'stt', 'onedrive', 'sentry', 'fcm', 'zapier',
 ]);
@@ -314,29 +300,6 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Pick the model', help: 'Both Groq Whisper models are free. whisper-large-v3 is the accurate one and the right choice for Hindi and English mixed together; whisper-large-v3-turbo is faster and noticeably rougher on the same audio.', field: 'model' },
     ],
   },
-  facebook_leads: {
-    outcome: 'Leads from your Facebook and Instagram lead-ad forms arrive in the CRM the moment someone submits.',
-    minutes: 8,
-    steps: [
-      { title: 'Open your app on Meta', help: 'Meta for Developers → your app → Settings → Basic.', href: 'https://developers.facebook.com/apps', linkLabel: 'Open Meta for Developers' },
-      { title: 'Copy the App ID', help: 'At the top of Settings → Basic.', field: 'appId' },
-      { title: 'Copy the App Secret', help: 'Just below it — press Show.', field: 'appSecret' },
-      { title: 'Create a page access token', help: 'Graph API Explorer → pick your Page → request the leads_retrieval and pages_show_list permissions → Generate. Then extend it to a long-lived token.', field: 'pageAccessToken' },
-      { title: 'We made you a verify token', help: 'Meta asks for a password of your choosing. Here is one — paste it into Meta in the next step.', field: 'verifyToken', generate: true },
-      { title: 'Point Meta at us', help: 'Webhooks → Page → Subscribe to the "leadgen" field, using this callback URL and the verify token above.', copyPath: '/api/webhooks/leads/facebook' },
-    ],
-  },
-  meta_conversions: {
-    outcome: 'Meta is told which of its Facebook leads became good ones, so its ads find more people like them.',
-    minutes: 10,
-    steps: [
-      { title: 'Meta asks you for two things first', help: 'The India "securities and investments" declaration, and creating a dataset. Both are yours to do in Meta — we cannot do them for you.', href: 'https://business.facebook.com/events_manager2', linkLabel: 'Open Events Manager' },
-      { title: 'Copy the Dataset ID', help: 'Events Manager → Data sources → your dataset → Settings. It is the long number at the top.', field: 'datasetId' },
-      { title: 'Generate an access token', help: 'Same page → Conversions API → Generate access token. Copy it straight into the box — it is shown once.', field: 'accessToken' },
-      { title: 'Choose which stages count', help: 'Only leads that came from a Facebook form are ever reported, each stage once. Leave it as it is to report Qualified, Site Visit Done and Converted.', field: 'stages' },
-      { title: 'Try it with a test code first', help: 'Events Manager → Test events shows a code. Paste it here, move one Facebook lead to Qualified, and check it appears there. Then empty this box to go live.', field: 'testEventCode' },
-    ],
-  },
   google_ads: {
     outcome: 'Leads from Google lead-form extensions arrive in the CRM automatically.',
     minutes: 4,
@@ -450,8 +413,6 @@ function healthOf(summary: IntegrationSummary): IntegrationHealth {
 /** Card faces speak to the owner, not to the database: plain names, no provider ids. */
 const PLAIN_NAMES: Record<string, string> = {
   smtp: 'your own email address',
-  facebook_leads: 'Facebook Lead Ads',
-  meta_conversions: 'telling Meta which leads were good',
   google_ads: 'Google Ads lead forms',
   webform: 'your website form',
   ai_gemini: 'Google Gemini',
@@ -516,9 +477,9 @@ const JOBS: JobDef[] = [
   {
     id: 'leads',
     title: 'Lead capture',
-    blurb: 'Leads from Facebook, Google and your own website arrive by themselves.',
+    blurb: 'Leads from Google and your own website arrive by themselves.',
     icon: Globe,
-    providers: ['facebook_leads', 'meta_conversions', 'google_ads', 'webform'],
+    providers: ['google_ads', 'webform'],
     recommended: 'webform',
     wanted: true,
     short: 'lead capture',
@@ -1013,7 +974,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
   );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const hasModelFields = fields.some((field) => field.model);
@@ -1083,28 +1043,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
       await queryClient.invalidateQueries({ queryKey: ['integrations'] });
     } catch (err) {
       toast.error('Could not update', (err as Error).message);
-    }
-  };
-
-  const syncNow = async (): Promise<void> => {
-    setSyncing(true);
-    setTestResult(null);
-    try {
-      if (summary.provider === 'facebook_leads') {
-        const result = await api.syncFacebookLeads();
-        setTestResult({
-          ok: result.forms.every((form) => form.failed === 0 && form.errors.length === 0),
-          message: result.forms.map((form) => `${form.formName}: ${form.fetched} fetched, ${form.created} created, ${form.duplicate} already in CRM, ${form.failed} failed. ${form.campaigns.join(', ')} ${form.errors.join('; ')}`).join('\n')
-            + '\nOwners: ' + result.owners.map((owner) => `${owner.owner}: ${owner.count}`).join(', '),
-        });
-        await queryClient.invalidateQueries({ queryKey: ['integrations'] });
-        await queryClient.invalidateQueries({ queryKey: ['lead-inbox'] });
-        return;
-      }
-    } catch (err) {
-      setTestResult({ ok: false, message: (err as Error).message });
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -1186,7 +1124,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
           {summary.lastError}
         </div>
       )}
-      {summary.provider === 'facebook_leads' && <FacebookLeadMaster />}
       {testResult && (
         <div className={cn(
           'mx-4 mb-3 flex items-start gap-1.5 rounded-lg border p-2.5 text-xs',
@@ -1211,11 +1148,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
         {TESTABLE.has(summary.provider) && (
           <button className="btn-secondary btn-sm" disabled={testing} onClick={() => void test()}>
             {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
-          </button>
-        )}
-        {summary.provider === 'facebook_leads' && (
-          <button className="btn-secondary btn-sm" disabled={syncing} onClick={() => void syncNow()}>
-            {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} Sync now
           </button>
         )}
       </div>

@@ -14,49 +14,13 @@ import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { NotFoundError, ServiceUnavailableError, UnauthorizedError } from '../../utils/errors.js';
 import {
-  captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
+  captureLead, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
-import { verifyMetaSignature } from '../../integrations/leadsources/metaSignature.js';
-import { queueFacebookDeliveries, nudgeFacebookRecovery } from '../../integrations/leadsources/facebookRecovery.js';
 import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
 import { notifyMany } from '../../core/notifications/index.js';
 
 export const webhooksRouter = Router();
-
-webhooksRouter.get('/leads/facebook', (req, res) => {
-  if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === getSettings().leadSources.facebook.verifyToken) {
-    res.status(200).send(req.query['hub.challenge']);
-    return;
-  }
-  res.sendStatus(403);
-});
-
-webhooksRouter.post('/leads/facebook', asyncHandler(async (req, res) => {
-  /*
-    Meta signs every delivery. Nothing checked it.
-    
-    This endpoint has to be public — Meta cannot hold a secret of ours — so the
-    signature is the only thing separating a real lead from an invented one.
-    Without it, anyone who learned this URL could post a leadgen id and have the
-    CRM fetch, create, assign, score and greet a lead that never existed. The
-    The check is against the Facebook app's own secret.
-  */
-  const raw = (req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body));
-  const appSecret = getSettings().leadSources.facebook.appSecret;
-  if (!verifyMetaSignature(raw, req.headers['x-hub-signature-256'] as string | undefined, appSecret)) {
-    logger.warn('rejected a facebook lead webhook with an invalid signature');
-    res.sendStatus(401);
-    return;
-  }
-
-  const body = req.body as {
-    entry?: { changes?: { field?: string; value?: { leadgen_id?: string; form_id?: string; page_id?: string; campaign_id?: string } }[] }[];
-  };
-  await queueFacebookDeliveries(body);
-  res.sendStatus(200);
-  nudgeFacebookRecovery();
-}));
 
 /*
   Lead sources authenticate, and an unconfigured one is refused rather than

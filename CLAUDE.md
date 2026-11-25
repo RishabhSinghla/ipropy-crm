@@ -676,8 +676,11 @@ is dropped, so a rebuild later starts from data. Only screens, routes, settings 
   Kept on purpose: the `whatsapp_number` and `whatsapp_name` fields on contacts (they are data), every `ipy_conversation`,
   `ipy_message`, `ipy_wa_*` and campaign table, and the capabilities `whatsapp.send` / `whatsapp.templates` (stored on profiles).
   **Reports** now has its own entry in the left toolbar, since it used to live inside the WhatsApp page.
-* **Still to do:** Meta Lead Capture with the Conversions API (owner confirmed removal on 25 November). It stops Facebook ad leads arriving.
-  WHATSAPP.md, docs/OPENWA.md and the long WhatsApp sections below are history, not a description of the running CRM.
+* **Stage 6 (done): Meta Lead Capture and the Conversions API.** The Facebook lead webhook, the sync, the recovery job, the form-answer
+  mapping, the assignment screen, the Meta Conversions sender and both settings cards (migration `246`). **New Facebook leads no
+  longer arrive.** Leads already captured, `ipy_lead_inbox`, `ipy_facebook_*` and `ipy_meta_conversion` stay in the database. The
+  five `.github/workflows` that read Meta's API were deleted with it. Website, Google Ads, Zapier and portal capture are unchanged.
+* WHATSAPP.md, docs/OPENWA.md and the long WhatsApp / Facebook / Meta sections below are history, not a description of the running CRM.
 
 ---
 
