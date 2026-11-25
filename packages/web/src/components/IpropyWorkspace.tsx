@@ -205,7 +205,7 @@ export function IpropyWorkspace({
   /** The list's own ordering, so the queue's menu drives the same query the table does. */
   sortBy?: string; sortDir?: 'asc' | 'desc';
   /** The active list's filters, so record navigation follows the queue in view. */
-  neighbourContext?: { aiCalls?: ListQuery['aiCalls']; view?: string; search?: string; filter?: string; archive?: string };
+  neighbourContext?: { view?: string; search?: string; filter?: string; archive?: string };
   /** Snapshot of the effective queue, including unsaved quick-filter choices. */
   callQueueUrl: string;
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
@@ -326,11 +326,10 @@ export function IpropyWorkspace({
   const groupField = queueGroupField(module);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const groupScope = useMemo(() => ({
-    aiCalls: neighbourContext?.aiCalls,
     view: neighbourContext?.view,
     search: neighbourContext?.search,
     filter: neighbourContext?.filter ? JSON.parse(neighbourContext.filter) : undefined,
-  }), [neighbourContext?.aiCalls, neighbourContext?.view, neighbourContext?.search, neighbourContext?.filter]);
+  }), [neighbourContext?.view, neighbourContext?.search, neighbourContext?.filter]);
   const { data: linkedGroupRecord } = useQuery({
     queryKey: ['record', module.name, openId],
     queryFn: () => api.record(module.name, openId!),
@@ -677,7 +676,6 @@ export function IpropyWorkspace({
     components rather than copies: one Share-with-team panel, one confirm.
   */
   const [summarising, setSummarising] = useState(false);
-  const [startingAiCall, setStartingAiCall] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | 'associates' | null>(null);
 
@@ -1167,22 +1165,6 @@ export function IpropyWorkspace({
               >
                 {active.starred ? 'Remove favourite' : 'Add favourite'}
               </DropdownItem>
-              {phoneValue && <DropdownItem
-                icon={<Bot className="h-3.5 w-3.5" />}
-                disabled={startingAiCall || onCall}
-                onClick={() => {
-                  setStartingAiCall(true);
-                  void api.createSarvamQueue(module.name, [active.id])
-                    .then(async (queue) => {
-                      window.dispatchEvent(new CustomEvent('sarvam-control-open', { detail: queue.id }));
-                      await api.sarvamQueueAction(queue.id, 'resume');
-                      toast.success('AI call queued', 'The saved calling rules will decide when it can dial.');
-                    })
-                    .catch((error: Error) => toast.error('Could not start AI call', error.message))
-                    .finally(() => setStartingAiCall(false));
-                  close();
-                }}
-              >{startingAiCall ? 'Starting AI call…' : 'Start AI call'}</DropdownItem>}
               <DropdownItem
                 icon={<Sparkles className="h-3.5 w-3.5" />}
                 disabled={summarising}
@@ -1742,11 +1724,6 @@ function QueueCard({
             </span>
           )}
         </span>
-
-        {row.aiCalls && <span className="mt-1 block text-[10px] font-medium text-violet-700 dark:text-violet-300"
-          title={`Last AI call: ${new Date(row.aiCalls.lastAt).toLocaleString('en-IN')} · ${row.aiCalls.lastStatus} · ${row.aiCalls.answered} answered`}>
-          AI called · {row.aiCalls.attempts} {row.aiCalls.attempts === 1 ? 'attempt' : 'attempts'} · {row.aiCalls.lastStatus === 'completed' ? 'answered' : row.aiCalls.lastStatus.replaceAll('_',' ')}
-        </span>}
 
         {/* 2. Which unit, cut short with "…" rather than wrapped. A blank line
             when there is nothing to say, so every card is the same height. */}

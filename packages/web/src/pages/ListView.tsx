@@ -58,7 +58,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const [aiCallFilter, setAiCallFilter] = useState<ListQuery['aiCalls']>();
   const { user } = useApp();
 
 
@@ -169,8 +168,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
         // malformed/tampered query param — fall back to no filter rather than crash
       }
     }
-    const savedAi = searchParams.get('aiCalls');
-    setAiCallFilter(savedAi === 'called' || savedAi === 'not_called' || savedAi === 'unsuccessful' ? savedAi : undefined);
     const restoredSearch = searchParams.get('q') ?? '';
     const restoredSort = searchParams.get('sort');
     adoptedView.current = null;
@@ -364,7 +361,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     const next = new URLSearchParams();
     if (activeView?.id) next.set('view', activeView.id);
     if (search) next.set('q', search);
-    if (aiCallFilter) next.set('aiCalls', aiCallFilter);
     if (sortBy) next.set('sort', sortBy);
     if (sortBy && sortDir !== 'desc') next.set('dir', sortDir);
     if (page > 1) next.set('page', String(page));
@@ -403,7 +399,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true, state: location.state });
     }
-  }, [moduleName, hydratedFor, activeView?.id, aiCallFilter, search, sortBy, sortDir, page, pageSize, filter, taskQueue, tagPick, searchParams, location.state]);
+  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, taskQueue, tagPick, searchParams, location.state]);
 
   /**
    * Owner defaults to whoever is adding the record. Status and stage come from
@@ -527,7 +523,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   ), [taskQueue, sortBy, sortDir, taskField?.name]);
 
   const query: ListQuery = useMemo(() => ({
-    aiCalls: aiCallFilter,
     view: activeView?.id,
     page,
     pageSize,
@@ -547,7 +542,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       meta?.fields,
       (meta?.layouts?.find((layout) => layout.type === 'detail' && layout.is_default)?.config as { queueFields?: string[] } | undefined)?.queueFields,
     ),
-  }), [aiCallFilter, activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta, archive]);
+  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, meta, archive]);
   // Prefetch the real first page, not just its count. Clicking New consumes
   // the same cache key immediately; a selected New view shares this request.
   const todayQuery: ListQuery = { ...query, page: 1,
@@ -617,23 +612,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       every switch between Contacts and Inventories).
     */
     placeholderData: (prev, previousQuery) => (previousQuery?.queryKey[1] === moduleName ? prev : undefined),
-  });
-  const aiCallFilterChoices = [
-    ['', 'All AI Calls'],
-    ['called', 'AI called'],
-    ['not_called', 'Not AI called'],
-    ['unsuccessful', 'Unsuccessful call'],
-  ] as const;
-  const aiCallCounts = useQueries({
-    queries: aiCallFilterChoices.map(([value]) => {
-      const countQuery: ListQuery = { ...query, page: 1, pageSize: 1, aiCalls: value || undefined };
-      return {
-        queryKey: ['ai-call-filter-count', moduleName, countQuery],
-        queryFn: () => api.list(moduleName!, countQuery),
-        enabled: Boolean(moduleName && meta && views && hydratedFor === moduleName),
-        staleTime: 30_000,
-      };
-    }),
   });
 
   /*
@@ -1007,9 +985,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       testId="visits-chip"
     />
   ) : null;
-  const aiCallFilterLabel = aiCallFilter === 'called' ? 'AI called'
-    : aiCallFilter === 'not_called' ? 'Not AI called'
-      : aiCallFilter === 'unsuccessful' ? 'Unsuccessful call' : 'All AI Calls';
   const selectedRibbonAgent = (ribbonAgents as { id?: unknown; fullName?: unknown }[])
     .find((candidate) => String(candidate.id ?? '') === agentPick);
   const ribbonAgentLabel = agentPick
@@ -1044,43 +1019,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
       )}
     </Dropdown>
   ) : null;
-  const aiCallControl = (
-    <Dropdown
-      align="right"
-      className="w-44"
-      trigger={(
-        <button type="button" className={toolbarButton(Boolean(aiCallFilter), 'h-6 px-2 text-[10px]')} aria-label="AI call history filter" data-testid="ai-call-history-filter">
-          <PhoneCall className="h-3 w-3" />
-          <span>{aiCallFilterLabel}</span>
-          <ChevronDown className="h-3 w-3" />
-        </button>
-      )}
-    >
-      {(close) => (
-        <div className="py-1" role="menu" aria-label="AI call history filter">
-          {aiCallFilterChoices.map(([value, label], index) => (
-            <DropdownItem key={label} onClick={() => { setAiCallFilter((value || undefined) as ListQuery['aiCalls']); setPage(1); close(); }}>
-              <span>{label}</span>
-              <span className="ml-auto flex items-center gap-2 text-xs tabular-nums text-muted">
-                {(aiCallCounts[index]?.data?.total ?? 0).toLocaleString('en-IN')}
-                {(aiCallFilter ?? '') === value && <span className="text-brand-700">✓</span>}
-              </span>
-            </DropdownItem>
-          ))}
-        </div>
-      )}
-    </Dropdown>
-  );
-  const bulkCallControl = meta.fields.some((field) => field.uitype === 'phone' && field.isActive)
-    && selected.size === 0 && !selectedAll ? (
-      <SarvamBulkCallButton
-        module={moduleName}
-        fieldMap={fieldMap}
-        ids={[]}
-        allQuery={query}
-        allCount={data?.total ?? 0}
-      />
-    ) : null;
   const callLogBaseFilter: FilterGroup = {
     logic: 'AND',
     conditions: [
@@ -1107,7 +1045,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const ribbonControls = (
     <div className="ml-auto flex shrink-0 items-center gap-2" role="group" aria-label="Record list controls">
       {newRecordsControl}
-      {aiCallControl}
       {visitControl}
       {taskControl}
       {callLogControl}
@@ -1117,15 +1054,13 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
   const queueHeaderActions = (
     <div className="flex shrink-0 items-center gap-1.5">
       {!controlsInRibbon && newRecordsControl}
-      {bulkCallControl}
     </div>
   );
   const queueTools = (
     <div className="shrink-0 border-b border-[var(--border)]" data-testid="queue-tools">
       {!controlsInRibbon && (
         <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-visible bg-[var(--surface-muted)] px-2.5 py-1.5 dark:bg-slate-800/40">
-          {aiCallControl}
-          {visitControl}
+              {visitControl}
           {taskControl}
           {callLogControl}
         </div>
@@ -1348,15 +1283,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             </button>
           )}
           <div className="ml-auto flex gap-2">
-            {meta.fields.some((field) => field.uitype === 'phone' && field.isActive) && (
-              <SarvamBulkCallButton
-                module={moduleName}
-                fieldMap={fieldMap}
-                ids={[...selected]}
-                allQuery={selectedAll ? query : null}
-                allCount={data?.total ?? 0}
-              />
-            )}
             <button
               className="btn-primary btn-sm"
               disabled={selectedAll}
@@ -1418,7 +1344,7 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             key={meta.name}
             module={meta}
             rows={rows}
-            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { setAiCallFilter(undefined); setAgentPick(null); setStagePick([]); setTaskQueue(null); setTagPick(null); setDispositionPick(NO_DISPOSITION_PICK); setFilter(EMPTY_FILTER); setSearchInput(''); setSearch(''); setPage(1); }}>Clear search and filters</button>}
+            emptyAction={<button className="btn-secondary btn-sm" onClick={() => { setAgentPick(null); setStagePick([]); setTaskQueue(null); setTagPick(null); setDispositionPick(NO_DISPOSITION_PICK); setFilter(EMPTY_FILTER); setSearchInput(''); setSearch(''); setPage(1); }}>Clear search and filters</button>}
             // `?open=` — a record named in the address, from global search, a
             // chat, or Save & Next. It may not be on this page at all.
             openId={searchParams.get('open')}
@@ -1449,7 +1375,6 @@ export default function ListView({ archive = false }: { archive?: boolean } = {}
             sortBy={effectiveSort.sortBy}
             sortDir={effectiveSort.sortDir}
             neighbourContext={{
-              ...(aiCallFilter ? { aiCalls: aiCallFilter } : {}),
               ...(activeView?.id ? { view: activeView.id } : {}),
               ...(search ? { search } : {}),
               ...(countConditions(effectiveFilter) ? { filter: JSON.stringify(effectiveFilter) } : {}),
@@ -1790,154 +1715,6 @@ function ExportWizard({ open, onClose, module, fields, filter, selectedIds, allS
  * currency accepts "1.5 cr", and a per-field validation mistake is caught the
  * same way it would be one record at a time.
  */
-
-type SarvamQueueItem = { id: string; label: string; number: string };
-
-/** Confirmed, sequential Sarvam batches from explicit rows or the current filtered list. */
-function SarvamBulkCallButton({
-  module, fieldMap, ids, allQuery, allCount,
-}: {
-  module: string;
-  fieldMap: Map<string, FieldMeta>;
-  ids: string[];
-  allQuery: ListQuery | null;
-  allCount: number;
-}): JSX.Element {
-  const { data: callingPolicy } = useQuery({ queryKey: ['sarvam-policy'], queryFn: api.sarvamPolicy, staleTime: 30_000 });
-  const batchSize = callingPolicy?.batchSize ?? 25;
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState<SarvamQueueItem[]>([]);
-  const [missing, setMissing] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [calling, setCalling] = useState(false);
-  const [finished, setFinished] = useState(false);
-  const phoneFields = useMemo(() => [...fieldMap.values()].filter((field) => field.isActive && field.uitype === 'phone'), [fieldMap]);
-  const phoneNames = useMemo(() => {
-    const preferred = ['mobile', 'mobile_phone', 'phone', 'phone_number', 'primary_phone'];
-    return [...phoneFields].sort((a, b) => {
-      const ai = preferred.indexOf(a.name.toLowerCase());
-      const bi = preferred.indexOf(b.name.toLowerCase());
-      return (ai < 0 ? preferred.length : ai) - (bi < 0 ? preferred.length : bi);
-    }).map((field) => field.name);
-  }, [phoneFields]);
-  const total = allQuery ? allCount : ids.length;
-  const batchNumber = Math.floor(offset / batchSize) + 1;
-  const batchCount = Math.max(1, Math.ceil(total / batchSize));
-
-  const loadBatch = async (nextOffset: number): Promise<void> => {
-    setLoading(true);
-    setOffset(nextOffset);
-    setItems([]);
-    setMissing(0);
-    setFinished(false);
-    try {
-      let records: RecordEnvelope[];
-      if (allQuery) {
-        const result = await api.list(module, {
-          ...allQuery,
-          page: Math.floor(nextOffset / batchSize) + 1,
-          pageSize: batchSize,
-          columns: [...new Set([...(allQuery.columns ?? []), ...phoneNames])],
-        });
-        records = result.rows;
-      } else {
-        records = await Promise.all(ids.slice(nextOffset, nextOffset + batchSize).map((id) => api.record(module, id)));
-      }
-      const queue: SarvamQueueItem[] = [];
-      let skipped = 0;
-      for (const record of records) {
-        const number = phoneNames.map((name) => record.values[name]).find((value) => typeof value === 'string' && value.trim());
-        if (typeof number !== 'string') skipped += 1;
-        else queue.push({ id: record.id, label: record.label, number: number.trim() });
-      }
-      setItems(queue);
-      setMissing(skipped);
-    } catch (error) {
-      toast.error('Could not prepare the AI call batch', (error as Error).message);
-      setOpen(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const start = async (): Promise<void> => {
-    if (!items.length || calling) return;
-    setCalling(true);
-    try {
-      const queue = await api.createSarvamQueue(module, items.map((item) => item.id));
-      setOpen(false);
-      setFinished(true);
-      window.dispatchEvent(new CustomEvent('sarvam-control-open', { detail: queue.id }));
-      // The saved queue stays reviewable even if another running batch prevents resume.
-      await api.sarvamQueueAction(queue.id, 'resume');
-      toast.success(`AI call queue started · ${queue.count} contacts`);
-    } catch (error) {
-      toast.error('Could not start the saved AI queue', (error as Error).message);
-    } finally {
-      setCalling(false);
-    }
-  };
-
-  const openBatch = (): void => {
-    setOpen(true);
-    void loadBatch(finished && offset + batchSize < total ? offset + batchSize : 0);
-  };
-
-  return (
-    <>
-      <button
-        type="button"
-        className={toolbarButton(false, 'h-7 w-7 justify-center p-0')}
-        onClick={openBatch}
-        title={`AI calls · batch ${batchNumber} of ${batchCount}`}
-        aria-label={`AI calls · batch ${batchNumber} of ${batchCount}`}
-      >
-        <Bot className="h-5 w-5" />
-      </button>
-      <Modal
-        open={open}
-        onClose={() => { if (!calling && !loading) setOpen(false); }}
-        title={`AI calls · batch ${batchNumber} of ${batchCount}`}
-        size="md"
-        footer={(
-          <>
-            <button className="btn-secondary" disabled={calling || loading} onClick={() => setOpen(false)}>Close</button>
-            {calling ? (
-              <button className="btn-secondary" disabled>Saving queue…</button>
-            ) : finished && offset + batchSize < total ? (
-              <button className="btn-secondary" disabled={loading} onClick={() => void loadBatch(offset + batchSize)}>Load next batch</button>
-            ) : !finished && (
-              <button className="btn-primary" disabled={loading || !items.length} onClick={() => void start()}>
-                <Sparkles className="h-4 w-4" /> Confirm and call {items.length}
-              </button>
-            )}
-          </>
-        )}
-      >
-        <div className="space-y-3">
-          {loading ? <div className="flex items-center gap-2 text-sm text-slate-500"><Spinner /> Preparing this batch…</div> : (
-            <>
-              <p className="text-sm text-slate-700 dark:text-slate-200">
-                {allQuery
-                  ? `${total.toLocaleString('en-IN')} records match this view. This batch includes up to ${batchSize} records.`
-                  : `${total} selected record${total === 1 ? '' : 's'}. This batch includes up to ${batchSize}.`}
-                {' '}Calls begin only after you confirm. Each call is submitted one at a time.
-              </p>
-              {missing > 0 && <p className="text-xs text-amber-700">{missing} record{missing === 1 ? ' has' : 's have'} no phone number and will be skipped.</p>}
-              <div className="max-h-56 space-y-1 overflow-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">
-                {items.map((item) => <div key={item.id} className="truncate text-xs text-slate-600 dark:text-slate-300">{item.label} · •••• {item.number.slice(-4)}</div>)}
-                {!items.length && <p className="p-2 text-sm text-slate-500">No callable contacts in this batch.</p>}
-              </div>
-              {calling && <p className="text-sm text-violet-700">Saving your queue…</p>}
-              {finished && <p className="text-sm">Queue saved. Use AI calls to view progress and stop further calls.</p>}
-            </>
-          )}
-        </div>
-      </Modal>
-    </>
-  );
-}
 
 function BulkEditButton({
   module, fieldMap, ids, allQuery, allCount, onDone,

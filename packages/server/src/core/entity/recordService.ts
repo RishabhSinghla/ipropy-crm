@@ -281,13 +281,6 @@ export async function prepareList(ctx: ServiceContext, moduleName: string, q: Li
     for (const j of where.joins) joinMap.set(j, j);
   }
 
-  if (q.aiCalls) {
-    const moduleParam = params.add(module.name);
-    const callMatch = `c.record_id = ${RECORD_ALIAS}.id AND c.record_module = ${moduleParam} AND c.source = 'sarvam' AND c.direction = 'outbound'`;
-    if (q.aiCalls === 'unsuccessful') clauses.push(`(SELECT c.status FROM ipy_call c WHERE ${callMatch} ORDER BY c.started_at DESC, c.id DESC LIMIT 1) IN ('busy','no_answer','failed','canceled')`);
-    else clauses.push(`${q.aiCalls === 'not_called' ? 'NOT ' : ''}EXISTS (SELECT 1 FROM ipy_call c WHERE ${callMatch})`);
-  }
-
   if (q.search?.trim()) {
     clauses.push(buildSearchClause(q.search, params, true));
   }
@@ -368,19 +361,6 @@ export async function listRecords(
     for (const row of rows) {
       const disposition = dispositionByRecord.get(row.id);
       if (disposition) row.values.last_call_disposition = disposition;
-    }
-  }
-
-  if (rows.length) {
-    const history = await conn.query<{ record_id: string; attempts: number; answered: number; last_at: string; last_status: string }>(
-      `SELECT record_id, count(*)::int AS attempts, count(*) FILTER (WHERE status='completed')::int AS answered,
-       max(started_at) AS last_at, (array_agg(status ORDER BY started_at DESC,id DESC))[1] AS last_status
-       FROM ipy_call WHERE source='sarvam' AND direction='outbound' AND record_module=$1 AND record_id=ANY($2::uuid[]) GROUP BY record_id`,
-      [module.name, rows.map((row) => row.id)]);
-    const byRecord = new Map(history.rows.map((h) => [h.record_id, h]));
-    for (const row of rows) {
-      const h = byRecord.get(row.id);
-      if (h) row.aiCalls = { attempts: h.attempts, answered: h.answered, lastAt: h.last_at, lastStatus: h.last_status };
     }
   }
 

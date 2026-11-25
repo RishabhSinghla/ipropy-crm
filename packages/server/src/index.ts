@@ -1,4 +1,3 @@
-import { startSarvamQueue, stopSarvamQueue } from './integrations/voiceagent/queue.js';
 import { createServer } from 'node:http';
 import { mkdir } from 'node:fs/promises';
 import { config, validateProductionConfig } from './config.js';
@@ -89,7 +88,6 @@ async function main(): Promise<void> {
   startFleetWatch();
   startCampaignSending();
   startWaitWatch();
-  startSarvamQueue();
 
   server.listen(config.port, () => {
     logger.info(`iPropy API listening on http://localhost:${config.port}`);
@@ -112,7 +110,6 @@ async function main(): Promise<void> {
   stopFleetWatch();
   stopCampaignSending();
   stopWaitWatch();
-    stopSarvamQueue();
     closeRealtime();
     server.close(() => {
       void closePool().then(() => process.exit(0));

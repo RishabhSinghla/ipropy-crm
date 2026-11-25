@@ -13,12 +13,11 @@ describe('call deck queue handoff', () => {
       ],
     };
     const snapshot = callQueueUrl('leads', {
-      aiCalls: 'not_called', view: 'team', page: 5, pageSize: 25, search: 'sector', filter,
+      view: 'team', page: 5, pageSize: 25, search: 'sector', filter,
       sortBy: 'next_follow_up', sortDir: 'asc',
     });
     const destination = new URL(saveNextUrl(snapshot, 'leads', 'next-row', 103), 'https://crm.local');
     expect(destination.pathname).toBe('/leads');
-    expect(destination.searchParams.get('aiCalls')).toBe('not_called');
     expect(destination.searchParams.get('filter')).toBe(JSON.stringify(filter));
     expect(destination.searchParams.get('sort')).toBe('next_follow_up');
     expect(destination.searchParams.get('dir')).toBe('asc');

@@ -91,7 +91,7 @@ export async function buildTimeline(
                     c.from_number, c.to_number, c.transcript,
                     trim(u.first_name || ' ' || u.last_name) AS user_name
              FROM ipy_call c LEFT JOIN ipy_user u ON u.id = c.user_id
-             WHERE c.record_id = $1 ORDER BY c.started_at DESC LIMIT $2`,
+             WHERE c.record_id = $1 AND c.source IS DISTINCT FROM 'sarvam' ORDER BY c.started_at DESC LIMIT $2`,
             [recordId, limit],
           )
         : empty<CallRow>(),

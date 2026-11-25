@@ -1044,36 +1044,6 @@ adminRouter.get('/integrations', asyncHandler(async (req, res) => {
   res.json(await listIntegrations());
 }));
 
-adminRouter.post('/integrations/sarvam_voice/sync-inbound', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  const { syncSarvamInbound } = await import('../../integrations/voiceagent/inbound.js');
-  res.json(await syncSarvamInbound());
-}));
-
-/** Is the AI caller properly connected: every check a person can act on, in one answer. */
-adminRouter.get('/integrations/sarvam_voice/health', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  const { sarvamHealth } = await import('../../integrations/voiceagent/reconcile.js');
-  res.json({ checks: await sarvamHealth(config.appUrl.split(',')[0]!.trim()) });
-}));
-
-/** Ask Sarvam what happened to every recent call and make the CRM agree; nothing is dialled. */
-adminRouter.post('/integrations/sarvam_voice/reconcile', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  const { hours } = z.object({ hours: z.coerce.number().int().min(1).max(336).default(72) }).parse(req.body ?? {});
-  const { reconcileAndRemember } = await import('../../integrations/voiceagent/reconcile.js');
-  res.json(await reconcileAndRemember({ hours }));
-}));
-
-adminRouter.get('/integrations/sarvam_voice/context-hook', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  const { readSarvamSettings, sarvamWebhookUrl } = await import('../../integrations/voiceagent/sarvam.js');
-  const read = readSarvamSettings();
-  if ('missing' in read) throw new BadRequestError(read.missing);
-  const baseUrl = config.appUrl.split(',')[0]!.trim();
-  res.json({ url: `${sarvamWebhookUrl(baseUrl, read.settings.webhookSecret)}/context` });
-}));
-
 /** Live provider catalogue for the model pickers; secrets never leave here. */
 adminRouter.get('/integrations/:provider/models', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
@@ -1165,10 +1135,6 @@ adminRouter.put('/integrations/:provider', asyncHandler(async (req, res) => {
   const existing = await getIntegrationSummary(req.params.provider);
   if (!existing) throw new NotFoundError(`Unknown integration provider '${req.params.provider}'`);
 
-  if (req.params.provider === 'sarvam_voice' && input.config) {
-    const { sarvamPolicySchema } = await import('../../integrations/voiceagent/policy.js');
-    sarvamPolicySchema.parse({ ...existing.config, ...input.config });
-  }
   await saveIntegration(req.params.provider, input);
   await keepOneWhatsAppProviderOn(req.params.provider);
   if (req.params.provider === 'facebook_leads') {
@@ -1207,19 +1173,6 @@ adminRouter.post('/integrations/facebook_leads/retry', asyncHandler(async (req, 
   await assertCapability(getUser(req), 'admin.integrations');
   await retryFacebookFailures();
   res.json({ ok: true });
-}));
-
-/** Rings the number an admin types with the AI agent: the real proof the card works. */
-adminRouter.post('/integrations/sarvam_voice/test-call', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  await assertCapability(user, 'admin.integrations');
-  const phone = toE164(z.object({ phone: z.string().min(8) }).parse(req.body).phone);
-  if (!phone) { res.status(400).json({ message: 'That is not a phone number.' }); return; }
-  const { placeAgentCall } = await import('../../integrations/voiceagent/sarvam.js');
-  const result = await placeAgentCall({
-    toNumber: phone, publicBaseUrl: config.appUrl.split(',')[0]!.trim(), userId: user.id,
-  });
-  res.status(result.ok ? 200 : 400).json(result);
 }));
 
 /** Lightweight, read-only connectivity check per provider. Never throws. */
@@ -1272,10 +1225,6 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         return s.leadSources.zapierWebhookKey
           ? { ok: true, message: 'Zapier webhook secret is set. Send a test lead from Zapier to verify capture.' }
           : { ok: false, message: 'Generate or enter a Zapier webhook secret first.' };
-      case 'sarvam_voice': {
-        const { testSarvamConnection } = await import('../../integrations/voiceagent/sarvam.js');
-        return testSarvamConnection();
-      }
       /*
         Every WhatsApp Business provider, through the adapter that owns it.
 

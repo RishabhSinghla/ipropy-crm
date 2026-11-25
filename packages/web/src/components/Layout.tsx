@@ -1,4 +1,3 @@
-import { SarvamControl } from './SarvamControl';
 import { type CSSProperties, type JSX, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -220,7 +219,6 @@ export default function Layout(): JSX.Element {
         />
 
         <LiveCallDeck />
-        <SarvamControl />
 
         {/* The bottom tab bar is fixed, so without this the last 64px of every
             page — a form's Save button included — sits behind it. */}

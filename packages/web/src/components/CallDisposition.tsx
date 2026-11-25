@@ -34,7 +34,6 @@ interface CallActions {
    * rather than inheriting the pane's answer.
    */
   startCall: (number: string, from?: 'phone' | 'desk', onRecordId?: string, onModule?: string) => Promise<void>;
-  startSarvamCall: (number: string, onRecordId?: string, onModule?: string) => Promise<void>;
 }
 
 const CallDispositionContext = createContext<CallActions | null>(null);
@@ -204,33 +203,6 @@ export function CallDispositionProvider({
     }
   };
 
-  const startSarvamCall = async (number: string, onRecordId?: string, onModule?: string): Promise<void> => {
-    if (placingRef.current) return;
-    if (live) {
-      toast.info('Finish the current call first', 'Save its outcome before starting an AI call.');
-      return;
-    }
-    if (!userId) {
-      toast.error('Could not place the call', 'Your CRM session is still loading. Please try again.');
-      return;
-    }
-    const callOn = onRecordId || recordId;
-    const callModule = onModule || module;
-    if (!callOn || !callModule) {
-      toast.error('Could not place the call', 'Open a CRM record before starting an AI call.');
-      return;
-    }
-    placingRef.current = true;
-    try {
-      const result = await api.sarvamCall({ to: number, recordId: callOn, module: callModule });
-      toast.success('AI is calling the customer', `Call attempt ${result.attemptId} is linked to this record.`);
-    } catch (err) {
-      toast.error('Could not start the AI call', (err as Error).message);
-    } finally {
-      placingRef.current = false;
-    }
-  };
-
   /*
     Arriving from Save & Next: ring this person straight away, once, and take
     the flag off the address so a refresh does not re-dial somebody already
@@ -252,7 +224,7 @@ export function CallDispositionProvider({
   }, [pendingAutoDial, recordId, autoNumber, live]);
 
   return (
-    <CallDispositionContext.Provider value={{ startCall, startSarvamCall }}>
+    <CallDispositionContext.Provider value={{ startCall }}>
       {children}
     </CallDispositionContext.Provider>
   );
@@ -264,7 +236,6 @@ export function CallButton({ to, iconOnly = false, round = false, plain = false,
   /** The record this call is about, when it is not the one the pane has open. */
   recordId?: string; module?: string }): JSX.Element {
   const calls = useCallDisposition();
-  const [aiPending, setAiPending] = useState(false);
   return (
     <span className="inline-flex items-center gap-1">
       <button
@@ -289,25 +260,6 @@ export function CallButton({ to, iconOnly = false, round = false, plain = false,
         {!textOnly && <Phone className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-blue-600'} />}
         {textOnly ? 'Call' : !iconOnly && !round && <span className="hidden sm:inline">Call</span>}
       </button>
-      {calls && (
-        <button
-          type="button"
-          className={plain ? 'inline-flex items-center justify-center p-1 text-violet-600 hover:text-violet-800 dark:text-violet-300' : round
-            ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-600 hover:text-white dark:border-violet-900 dark:bg-violet-950 dark:text-violet-200'
-            : cn('btn-secondary btn-sm text-violet-700 dark:text-violet-300', iconOnly && 'h-9 w-9 justify-center px-0')}
-          title={`AI call ${to}`}
-          aria-label={`AI call ${to}`}
-          disabled={aiPending}
-          onClick={() => {
-            setAiPending(true);
-            void calls.startSarvamCall(to, recordId, module).finally(() => setAiPending(false));
-          }}
-        >
-          {aiPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PhoneCall className="h-3.5 w-3.5" />}
-          {textOnly && <span className="ml-1">AI</span>}
-          {!iconOnly && !round && !textOnly && <span className="hidden sm:inline">AI call</span>}
-        </button>
-      )}
     </span>
   );
 }

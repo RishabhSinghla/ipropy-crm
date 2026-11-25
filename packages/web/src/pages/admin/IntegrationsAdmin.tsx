@@ -1,5 +1,3 @@
-import { SarvamOperations } from '../../components/SarvamOperations';
-import SarvamHealth from '../../components/SarvamHealth';
 import { Fragment, type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
@@ -34,43 +32,6 @@ interface FieldDef {
   placeholder?: string;
   /** Load real choices from the provider, while still allowing a custom id. */
   model?: boolean;
-}
-
-type SarvamAgentModule = {
-  module: string;
-  label: string;
-  appId: string;
-  appVersion: string;
-  connectionId: string;
-  agentPhoneNumber: string;
-  agentUrl: string;
-  fieldMapText: string;
-};
-
-const DEFAULT_SARVAM_AGENTS: SarvamAgentModule[] = [
-  { module: 'leads', label: 'Buyer', appId: 'Conversatio-8f6aa4cd-427c', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: 'https://indus.sarvam.ai/samvaad/build/update-agent/Conversatio-8f6aa4cd-427c', fieldMapText: '' },
-  { module: 'properties', label: 'Seller', appId: 'For-Seller-a03e2ca1-8f9c', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: 'https://indus.sarvam.ai/samvaad/build/update-agent/For-Seller-a03e2ca1-8f9c', fieldMapText: '' },
-];
-
-function readSarvamAgentRows(config: Record<string, string>): SarvamAgentModule[] {
-  try {
-    const parsed = JSON.parse(config.agentsByModule ?? '{}') as Record<string, Record<string, unknown>>;
-    const rows = Object.entries(parsed).map(([module, value]) => ({
-      module,
-      label: typeof value.label === 'string' ? value.label : module,
-      appId: typeof value.appId === 'string' ? value.appId : '',
-      appVersion: String(value.appVersion ?? 1),
-      connectionId: typeof value.connectionId === 'string' ? value.connectionId : '',
-      agentPhoneNumber: typeof value.agentPhoneNumber === 'string' ? value.agentPhoneNumber : '',
-      agentUrl: typeof value.agentUrl === 'string' ? value.agentUrl : '',
-      fieldMapText: value.fieldMap && typeof value.fieldMap === 'object' && !Array.isArray(value.fieldMap)
-        ? JSON.stringify(value.fieldMap, null, 2)
-        : '',
-    }));
-    return rows.length ? rows : DEFAULT_SARVAM_AGENTS;
-  } catch {
-    return DEFAULT_SARVAM_AGENTS;
-  }
 }
 
 const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
@@ -237,16 +198,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   typesafe_jev: [
     { key: 'apiKey', label: 'TypeSafe API key', source: 'credentials', secret: true, placeholder: 'From console.typesafe.ai/keys — Jev is then reached directly, not through OpenRouter' },
   ],
-  sarvam_voice: [
-    { key: 'apiKey', label: 'Sarvam API key', source: 'credentials', secret: true },
-    { key: 'webhookSecret', label: 'Webhook secret', source: 'credentials', secret: true, placeholder: 'Use a long random value; Sarvam receives it in the callback URL' },
-    { key: 'orgId', label: 'Organisation ID', source: 'config' },
-    { key: 'workspaceId', label: 'Workspace ID', source: 'config' },
-    { key: 'appId', label: 'Agent (app) ID', source: 'config' },
-    { key: 'appVersion', label: 'Agent version', source: 'config', placeholder: '1' },
-    { key: 'connectionId', label: 'Telephony connection ID', source: 'config' },
-    { key: 'agentPhoneNumber', label: 'Sarvam agent phone number', source: 'config', placeholder: '+91…' },
-  ],
   s3: [
     { key: 'driver', label: 'Where files are saved — type "s3" to use the cloud, "local" for this server', source: 'config', placeholder: 'local' },
     { key: 'bucket', label: 'Bucket name', source: 'config', placeholder: 'ipropy-files' },
@@ -271,7 +222,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
-  'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'sarvam_voice',
+  'stt', 'onedrive', 'sentry', 'fcm', 'zapier',
   /*
     The WhatsApp providers. Leaving them out is what let the setup wizard
     finish on "Saved and switched on." — the branch for a provider with no
@@ -320,10 +271,6 @@ const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: 
   zapier: {
     text: 'Create a Zap with Webhooks by Zapier → POST. Map full_name, mobile, email and message; add the secret as X-Zapier-Secret.',
     href: 'https://zapier.com/apps/webhook/integrations', linkLabel: 'Open Zapier',
-  },
-  sarvam_voice: {
-    text: 'Managed voice agent: copy the org, workspace, agent, and telephony connection IDs from Sarvam. Save and enable this card, then test the connection. The CRM sends its callback address automatically when it starts each outbound call.',
-    href: 'https://docs.sarvam.ai/voice-agents/api/instant-outbound/create', linkLabel: 'Sarvam outbound call guide',
   },
 };
 
@@ -757,15 +704,6 @@ const JOBS: JobDef[] = [
     providers: ['stt'],
     short: 'transcription',
     trouble: 'Speech to text is set up but failing, so recordings stay as audio.',
-  },
-  {
-    id: 'voice-agent',
-    title: 'AI voice agent',
-    blurb: 'Sarvam\'s AI rings customers, talks to them in their language and reports back here.',
-    icon: Mic,
-    providers: ['sarvam_voice'],
-    short: 'AI voice agent',
-    trouble: 'The AI voice agent is set up but failing its test, so it cannot ring anyone.',
   },
   {
     id: 'storage',
@@ -1217,20 +1155,11 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
   const [values, setValues] = useState<Record<string, string>>(
     Object.fromEntries(fields.map((f) => [f.key, f.source === 'config' ? (summary.config[f.key] ?? '') : ''])),
   );
-  const [sarvamPolicy, setSarvamPolicy] = useState<Record<string, string>>(() => Object.fromEntries(
-    ['batchSize', 'callStart', 'callEnd', 'callingHoursEnabled', 'inboundDeploymentId', 'inboundModule', 'syncInboundVersion']
-      .filter((key) => summary.config[key] !== undefined).map((key) => [key, summary.config[key]!]),
-  ));
-  const [sarvamResult, setSarvamResult] = useState('');
-  const [sarvamAgents, setSarvamAgents] = useState<SarvamAgentModule[]>(() => readSarvamAgentRows(summary.config));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [testPhone, setTestPhone] = useState('');
-  const [callingTestPhone, setCallingTestPhone] = useState(false);
-  const [copyingSarvamContextUrl, setCopyingSarvamContextUrl] = useState(false);
   const hasModelFields = fields.some((field) => field.model);
   const modelCatalogue = useQuery({
     queryKey: ['integration-models', summary.provider],
@@ -1245,7 +1174,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
   const save = async (): Promise<void> => {
     setSaving(true);
     setTestResult(null);
-    setSarvamResult('');
     try {
       const configPatch: Record<string, string> = {};
       const credentialsPatch: Record<string, string> = {};
@@ -1253,49 +1181,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
         const v = values[f.key] ?? '';
         if (f.source === 'config') configPatch[f.key] = v;
         else if (v) credentialsPatch[f.key] = v; // blank credential = leave unchanged
-      }
-      if (summary.provider === 'sarvam_voice') {
-        if (sarvamPolicy.syncInboundVersion === 'true' && !sarvamPolicy.inboundDeploymentId?.trim()) {
-          throw new Error('Add the existing inbound deployment ID from Sarvam.');
-        }
-        Object.assign(configPatch, sarvamPolicy);
-        if (configPatch.inboundDeploymentId) configPatch.inboundDeploymentId = configPatch.inboundDeploymentId.trim();
-        const mapping: Record<string, Omit<SarvamAgentModule, 'module' | 'fieldMapText'> & { fieldMap: Record<string, string> }> = {};
-        for (const row of sarvamAgents) {
-          const module = row.module.trim();
-          if (!module) continue;
-          const appVersion = Number(row.appVersion || '1');
-          if (!Number.isInteger(appVersion) || appVersion < 1) {
-            toast.error('Invalid Sarvam agent version', `${row.label || module}: enter a committed version number (1 or higher).`);
-            setSaving(false);
-            return;
-          }
-          let fieldMap: Record<string, string> = {};
-          if (row.fieldMapText.trim()) {
-            try {
-              const parsed = JSON.parse(row.fieldMapText) as unknown;
-              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
-                || Object.entries(parsed).some(([source, target]) => !source.trim() || typeof target !== 'string' || !target.trim())) {
-                throw new Error('Use an object of Sarvam variable names to CRM field keys.');
-              }
-              fieldMap = parsed as Record<string, string>;
-            } catch (error) {
-              toast.error('Invalid Sarvam field mapping', `${row.label || module}: ${(error as Error).message}`);
-              setSaving(false);
-              return;
-            }
-          }
-          mapping[module] = {
-            label: row.label.trim() || module,
-            appId: row.appId.trim(),
-            appVersion: String(appVersion),
-            connectionId: row.connectionId.trim(),
-            agentPhoneNumber: row.agentPhoneNumber.trim(),
-            agentUrl: row.agentUrl.trim(),
-            fieldMap,
-          };
-        }
-        configPatch.agentsByModule = JSON.stringify(mapping);
       }
       await api.saveIntegration(summary.provider, { config: configPatch, credentials: credentialsPatch });
       // "Saved" means stored — that is all. The Test button is what proves the
@@ -1311,21 +1196,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
         return next;
       });
       await queryClient.invalidateQueries({ queryKey: ['integrations'] });
-      if (summary.provider === 'sarvam_voice') {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['sarvam-policy'] }),
-          queryClient.invalidateQueries({ queryKey: ['sarvam-control'] }),
-        ]);
-        setSarvamResult('Calling rules saved.');
-        if (sarvamPolicy.syncInboundVersion === 'true') {
-          try {
-            const inbound = await api.syncSarvamInbound();
-            setSarvamResult(`Calling rules saved. Inbound deployment verified: v${inbound.version} · ${inbound.status}. Future CRM version changes sync automatically.`);
-          } catch (error) {
-            setSarvamResult(`Calling rules saved. Inbound sync needs attention: ${(error as Error).message}`);
-          }
-        }
-      }
       if (hasModelFields) {
         await queryClient.invalidateQueries({ queryKey: ['integration-models', summary.provider] });
       }
@@ -1347,32 +1217,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
       setTestResult({ ok: false, message: (err as Error).message });
     } finally {
       setTesting(false);
-    }
-  };
-
-  const callTestPhone = async (): Promise<void> => {
-    setCallingTestPhone(true);
-    setTestResult(null);
-    try {
-      const result = await api.sarvamTestCall(testPhone);
-      setTestResult({ ok: true, message: `Sarvam accepted the test call (attempt ${result.attemptId}).` });
-    } catch (err) {
-      setTestResult({ ok: false, message: (err as Error).message });
-    } finally {
-      setCallingTestPhone(false);
-    }
-  };
-
-  const copySarvamContextUrl = async (): Promise<void> => {
-    setCopyingSarvamContextUrl(true);
-    try {
-      const { url } = await api.sarvamContextHook();
-      await copyText(url);
-      toast.success('CRM context URL copied', 'Paste it into each Sarvam agent’s on-start API hook.');
-    } catch (err) {
-      toast.error('Could not prepare the CRM context URL', (err as Error).message);
-    } finally {
-      setCopyingSarvamContextUrl(false);
     }
   };
 
@@ -1462,16 +1306,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
                 onChange={(e) => setField(f.key, e.target.value)}
                 placeholder={preview?.set ? `Saved (${preview.preview}) — leave blank to keep` : f.placeholder}
               />
-              {summary.provider === 'sarvam_voice' && f.key === 'webhookSecret' && (
-                <button
-                  type="button"
-                  className="mt-1 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
-                  onClick={() => {
-                    const bytes = crypto.getRandomValues(new Uint8Array(32));
-                    setField('webhookSecret', Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(''));
-                  }}
-                >Generate a secure secret</button>
-              )}
               {f.model && (
                 <>
                   <datalist id={listId}>
@@ -1497,87 +1331,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
         })}
       </div>
 
-      {summary.provider === 'sarvam_voice' && <SarvamOperations config={sarvamPolicy} busy={saving} result={sarvamResult}
-        onChange={(next) => { setSarvamPolicy(next); setSarvamResult(''); }} onSave={() => void save()} />}
-      {summary.provider === 'sarvam_voice' && (
-        <div className="mx-4 mb-4 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium">Agent by CRM module</p>
-              <p className="text-xs text-muted">Calls from each module use its mapped agent. Module keys must match the CRM module name, such as leads or properties.</p>
-            </div>
-            <button
-              type="button"
-              className="btn-secondary btn-sm shrink-0"
-              onClick={() => setSarvamAgents((rows) => [...rows, { module: '', label: '', appId: '', appVersion: '1', connectionId: '', agentPhoneNumber: '', agentUrl: '', fieldMapText: '' }])}
-            >Add module</button>
-          </div>
-          <div className="mt-3 space-y-3">
-            {sarvamAgents.map((agent, index) => (
-              <div key={`${index}-${agent.module}`} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold">{agent.label || agent.module || `Agent ${index + 1}`}</p>
-                  {agent.agentUrl && <a className="text-xs text-brand-600 hover:underline dark:text-brand-400" href={agent.agentUrl} target="_blank" rel="noreferrer noopener">Open in Sarvam ↗</a>}
-                  <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => setSarvamAgents((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}>Remove</button>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {([
-                    ['module', 'CRM module key', 'leads'],
-                    ['label', 'Agent name', 'Buyer'],
-                    ['appId', 'Sarvam app / agent ID', 'Copy the app ID from Sarvam'],
-                    ['connectionId', 'Telephony connection ID', 'Use shared value above if blank'],
-                    ['agentPhoneNumber', 'Agent phone number', 'Use shared value above if blank'],
-                  ] as const).map(([key, label, placeholder]) => (
-                    <div key={key}>
-                      <label className="label">{label}</label>
-                      <input
-                        className="input"
-                        value={agent[key]}
-                        placeholder={placeholder}
-                        onChange={(event) => setSarvamAgents((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: event.target.value } : row))}
-                      />
-                    </div>
-                  ))}
-                  <div>
-                    <label className="label">Sarvam agent version</label>
-                    <input
-                      className="input"
-                      type="number"
-                      min={1}
-                      step={1}
-                      inputMode="numeric"
-                      value={agent.appVersion}
-                      placeholder="1"
-                      onChange={(event) => setSarvamAgents((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, appVersion: event.target.value } : row))}
-                    />
-                    <p className="mt-1 text-2xs text-muted">Enter a committed version from this agent in Sarvam. Calls from this module use that exact version.</p>
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="label">Sarvam agent page</label>
-                    <input
-                      className="input"
-                      value={agent.agentUrl}
-                      placeholder="https://indus.sarvam.ai/..."
-                      onChange={(event) => setSarvamAgents((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, agentUrl: event.target.value } : row))}
-                    />
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="label">Custom CRM field mapping (optional)</label>
-                    <textarea
-                      className="input min-h-20 font-mono text-xs"
-                      value={agent.fieldMapText}
-                      placeholder={'{\n  "site_visit_slot": "visit_planned_date",\n  "seller_price": "demand"\n}'}
-                      onChange={(event) => setSarvamAgents((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, fieldMapText: event.target.value } : row))}
-                    />
-                    <p className="mt-1 text-2xs text-muted">Map a Sarvam output variable name to a CRM field key. Leave blank to use the built-in Buyer / Seller mappings. Values are still checked against each CRM field’s type and picklist choices.</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {summary.lastError && !testResult && (
         <div className="mx-4 mb-3 flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
           <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -1585,41 +1338,6 @@ export function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.
         </div>
       )}
       {summary.provider === 'facebook_leads' && <FacebookLeadMaster />}
-      {summary.provider === 'sarvam_voice' && (
-        <div className="mx-4 mb-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs dark:border-slate-700 dark:bg-slate-800/30">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="min-w-0 flex-1 font-medium">Connect CRM fields to the agent</p>
-            <button type="button" className="btn-secondary btn-sm" disabled={copyingSarvamContextUrl} onClick={() => void copySarvamContextUrl()}>
-              {copyingSarvamContextUrl ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
-              Copy CRM context URL
-            </button>
-          </div>
-          <p className="mt-1 text-muted">In each Sarvam agent, add an <strong>on-start</strong> API hook using this URL. Map <code>user_name</code>, <code>crm_context</code>, <code>crm_module</code>, <code>crm_record_id</code>, and <code>lead_phone</code> as input variables. The call’s captured output values return through the end callback and are written to the matching CRM record.</p>
-        </div>
-      )}
-      {summary.provider === 'sarvam_voice' && <SarvamHealth />}
-      {summary.provider === 'sarvam_voice' && (
-        <div className="flex flex-wrap items-end gap-2 px-4 pb-3">
-          <div className="min-w-56 flex-1">
-            <label className="label">Test call to</label>
-            <input
-              className="input"
-              type="tel"
-              value={testPhone}
-              onChange={(e) => setTestPhone(e.target.value)}
-              placeholder="+91 98765 43210"
-            />
-          </div>
-          <button
-            className="btn-secondary btn-sm"
-            disabled={callingTestPhone || !testPhone.trim()}
-            onClick={() => void callTestPhone()}
-          >
-            {callingTestPhone ? <Loader2 className="h-3 w-3 animate-spin" /> : <PhoneCall className="h-3 w-3" />}
-            Call my phone
-          </button>
-        </div>
-      )}
       {testResult && (
         <div className={cn(
           'mx-4 mb-3 flex items-start gap-1.5 rounded-lg border p-2.5 text-xs',

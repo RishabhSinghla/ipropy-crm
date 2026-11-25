@@ -1260,20 +1260,6 @@ export const api = {
   saveIntegration: (provider: string, data: { config?: Record<string, string>; credentials?: Record<string, string>; isActive?: boolean }) =>
     put<IntegrationSummary>(`/api/admin/integrations/${provider}`, data),
   testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),
-  sarvamCall: (data: { to: string; recordId: string; module: string }) =>
-    post<{ ok: true; attemptId: string }>('/api/telephony/sarvam', data),
-  sarvamHealth: () => get<{ checks: Array<{ label: string; status: 'ok' | 'warn' | 'fail'; detail: string }> }>('/api/admin/integrations/sarvam_voice/health'),
-  sarvamReconcile: (hours: number) => post<{ ok: boolean; message: string; checked: number; completed: number; backfilled: number; enriched: number }>('/api/admin/integrations/sarvam_voice/reconcile', { hours }),
-  syncSarvamInbound: () => post<{ enabled: boolean; version?: number; status?: string }>('/api/admin/integrations/sarvam_voice/sync-inbound', {}),
-  sarvamPolicy: () => get<SarvamCallingPolicy>('/api/telephony/sarvam-policy'),
-  sarvamControl: (batchPage = 0) => get<SarvamControl>(`/api/telephony/sarvam-control?batchPage=${batchPage}`),
-  createSarvamQueue: (module: string, ids: string[]) => post<{ id: string; count: number }>('/api/telephony/sarvam-queues', { module, ids }),
-  sarvamQueueAction: (id: string, action: 'pause' | 'resume' | 'retry') => post<{ ok: true }>(`/api/telephony/sarvam-queues/${id}/${action}`, {}),
-  resolveSarvamItem: (id: string) => post<{ ok: true }>(`/api/telephony/sarvam-queue-items/${id}/resolve`, { confirmedEnded: true }),
-  sarvamCallStatus: (attemptId: string) =>
-    get<{ status: string }>(`/api/telephony/sarvam/${encodeURIComponent(attemptId)}`),
-  sarvamTestCall: (phone: string) => post<{ ok: true; attemptId: string }>('/api/admin/integrations/sarvam_voice/test-call', { phone }),
-  sarvamContextHook: () => get<{ url: string }>('/api/admin/integrations/sarvam_voice/context-hook'),
   syncFacebookLeads: () => post<{ pageName: string; forms: { formName: string; fetched: number; created: number; duplicate: number; failed: number; errors: string[]; campaigns: string[] }[]; owners: { owner: string; count: number }[] }>('/api/admin/integrations/facebook_leads/sync', {}),
   facebookHealth: () => get<{
     last_checked_at: string | null; last_reconciled_at: string | null;
@@ -1891,7 +1877,7 @@ export const api = {
   /** A section of a finished import as a downloadable sheet. */
   importResultUrl: (jobId: string, section: ImportSection, name: string) =>
     authedFileUrl(`/api/import/jobs/${jobId}/result.csv`, { section, name }),
-  neighbours: (module: string, id: string, params: { aiCalls?: string; view?: string; sort?: string; dir?: string; search?: string; filter?: string; archive?: string } = {}) =>
+  neighbours: (module: string, id: string, params: { view?: string; sort?: string; dir?: string; search?: string; filter?: string; archive?: string } = {}) =>
     get<{ prevId: string | null; nextId: string | null; position?: number; total?: number }>(
       `/api/records/${module}/${id}/neighbours${qs(params as Record<string, string>)}`,
     ),
@@ -1918,17 +1904,6 @@ export interface LiveCallState {
   updatedSecondsAgo: number | null;
   canControlCall: boolean;
   canEndCall: boolean;
-}
-
-export interface SarvamCallingPolicy { batchSize: number; start: string; end: string; enabled: boolean; timezone: string; callingAllowed: boolean }
-export interface SarvamControl {
-  batchTotal: number;
-  batchPage: number;
-  policy: SarvamCallingPolicy;
-  totals: { attempted: number; completed: number; unsuccessful: number; awaiting_result: number; today: number };
-  batches: { attempt_count: number; id: string; module: string; user_id: string; status: string; message: string | null; created_at: string }[];
-  items: { id: string; batch_id: string; record_id: string; label: string; phone: string; status: string; attempt_id: string | null; error: string | null; updated_at: string }[];
-  calls: { direction: string; batch_id: string | null; id: string; record_id: string | null; record_module: string | null; label: string | null; phone: string; status: string; started_at: string; duration_seconds: number; notes: string | null }[];
 }
 
 export interface WaGroup {

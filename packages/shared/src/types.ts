@@ -20,7 +20,6 @@ export interface RecordEnvelope {
   isDeleted: boolean;
   starred?: boolean;
   tags?: string[];
-  aiCalls?: { attempts: number; answered: number; lastAt: string; lastStatus: string };
   /** flat field-name → value map, values already cast to JS types */
   values: Record<string, unknown>;
   /** display values for reference/picklist fields, keyed by field name */
@@ -37,7 +36,6 @@ export interface RecordPermissions {
 }
 
 export interface ListQuery {
-  aiCalls?: 'called' | 'not_called' | 'unsuccessful';
   view?: string;
   page?: number;
   pageSize?: number;
