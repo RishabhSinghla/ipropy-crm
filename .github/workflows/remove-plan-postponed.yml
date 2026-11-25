@@ -23,6 +23,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm run build -w @ipropy/shared
       - name: Count, then write if told to
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
