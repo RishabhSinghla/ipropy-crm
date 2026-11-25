@@ -26,7 +26,6 @@ import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
-import { loadRequirement } from '../../src/ai/matching.js';
 import { invalidatePublicFields } from '../../src/api/routes/public.js';
 import { adminContext, signIn } from './fixtures.js';
 import { recordService } from '../../src/core/entity/recordService.js';
@@ -61,30 +60,6 @@ afterAll(async () => {
   }
   invalidatePublicFields();
   registry.invalidate();
-});
-
-describe('a lead field somebody removed', () => {
-  it('does not stop property matching', async () => {
-    const ctx = await adminContext();
-    const lead = await recordService.createRecord(ctx, 'leads', {
-      full_name: 'Requirement Survives',
-      mobile: `9${String(Date.now()).slice(-9)}`,
-      budget: 9_000_000,
-    });
-
-    // Works before.
-    expect(await loadRequirement(lead.id)).not.toBeNull();
-
-    await dropColumn('ipy_e_leads', 'interested_project', 'TEXT');
-
-    // And still works after, which is the point. Before the fix this threw
-    // 42703 and property matching answered 400 on every lead in the CRM.
-    const requirement = await loadRequirement(lead.id);
-    expect(requirement).not.toBeNull();
-    expect(requirement?.budget).toBe(9_000_000);
-    // The removed field reads as absent rather than exploding.
-    expect(requirement?.projectName ?? null).toBeNull();
-  });
 });
 
 describe('the fields the engine reads', () => {
@@ -138,13 +113,6 @@ describe('the fields the engine reads', () => {
         .expect(200);
 
       expect(await db.queryOne(`SELECT 1 FROM ipy_field WHERE id = $1`, [field!.id])).toBeNull();
-      // And matching still answers with the field gone, which is what makes
-      // allowing the delete defensible in the first place.
-      const lead = await db.queryOne<{ record_id: string }>(
-        `SELECT l.record_id FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
-          WHERE r.is_deleted = false LIMIT 1`,
-      );
-      if (lead) expect(await loadRequirement(lead.record_id)).not.toBeNull();
     } finally {
       await db.query(`ALTER TABLE ipy_e_leads ADD COLUMN IF NOT EXISTS possession_timeline TEXT`);
       await db.query(

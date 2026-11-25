@@ -106,18 +106,3 @@ describe('an insight belongs to the record it was made about', () => {
     expect(res.body).not.toHaveProperty('ok', true);
   });
 });
-
-describe('the AI matching surface checks the module it reads', () => {
-  it('gates the ad-hoc inventory search behind properties.view', async () => {
-    // An executive without properties.view gets 403, not a price list.
-    // (The seeded executive profile carries properties view; if it does not,
-    // the admin token would still answer 200, so assert the route answers
-    // and does not 500 — the gate is the capability check, which the 401
-    // case above already proves fires.)
-    const res = await request(app)
-      .post('/api/ai/match')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ budget: 5000000 });
-    expect([200, 400]).toContain(res.status);
-  });
-});

@@ -25,7 +25,7 @@
   a tab any more. A saved list that still names it simply drops it, the same
   way it drops anything else this build cannot draw.
 */
-export type SplitTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls' | DealTabKey;
+export type SplitTabKey = 'timeline' | 'builders' | 'units' | 'calls' | DealTabKey;
 
 /**
  * An Associate is a dealer, and what a dealer posts in the WhatsApp groups is
@@ -60,20 +60,12 @@ export interface SplitTab {
   label: string;
 }
 
-/** Matching exists only between the two modules that can be matched. */
-function hasMatching(moduleName: string): boolean {
-  return moduleName === 'leads' || moduleName === 'properties';
-}
-
 /** Every tab the split view can draw for this module, in its shipped order and wording. */
 export function allSplitTabs(moduleName: string): SplitTab[] {
   const tabs: SplitTab[] = [
     // "Activity" since 1 October 2026, the owner's word for it.
     { key: 'timeline', label: 'Activity' },
   ];
-  if (hasMatching(moduleName)) {
-    tabs.push({ key: 'matching', label: moduleName === 'leads' ? 'Matching inventory' : 'Matching leads' });
-  }
   /*
     **Builder's Inventory** — 5 October 2026, the owner: *"we can use this
     Builder's Inventory as a matching builder's inventory in Lead Manager as
@@ -96,7 +88,6 @@ export function allSplitTabs(moduleName: string): SplitTab[] {
   // Only Associates: they are the people who post in the dealer groups.
   if (moduleName === 'associates') tabs.push(...DEAL_TABS);
   tabs.push(
-    { key: 'files', label: 'Files' },
     { key: 'calls', label: 'Calls' },
   );
   return tabs;

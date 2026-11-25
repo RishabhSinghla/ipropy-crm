@@ -29,7 +29,6 @@ import {
 } from '../components/ui';
 import {} from '../components/Layout';
 import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
-import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
 import { isNative } from '../lib/native';
@@ -187,28 +186,6 @@ function FullRecordPage(): JSX.Element {
     staleTime: 30_000,
   });
 
-  /*
-    The match list is fetched while the record is still being read.
-
-    Scoring the inventory is a single indexed query — tens of milliseconds —
-    but it only started when somebody clicked the Matching tab, so the tab
-    always opened on skeletons and always felt slow, which is how it was
-    reported. Warming it on arrival costs one cheap request on a page that is
-    already making several, and the tab then paints from cache. Same key and
-    same default depth (10) as the tab's own query, or this would warm a cache
-    entry nothing reads.
-  */
-  useEffect(() => {
-    if (!moduleName || !id || (moduleName !== 'leads' && moduleName !== 'properties')) return;
-    void queryClient.prefetchQuery({
-      queryKey: ['matching', moduleName, id, 10],
-      queryFn: (): Promise<{ matches?: PropertyMatch[]; buyers?: BuyerMatch[] }> => (moduleName === 'leads'
-        ? api.matchProperties(moduleName, id, false, 10)
-        : api.buyersForProperty(id, false, 10)),
-      staleTime: 60_000,
-    });
-  }, [moduleName, id]);
-
   const prevId = remote?.prevId ?? sessionPrev;
   const nextId = remote?.nextId ?? sessionNext;
 
@@ -335,13 +312,6 @@ function FullRecordPage(): JSX.Element {
   const availableTabs = [
     { key: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
     { key: 'timeline', label: 'Activity', icon: <Activity className="h-3.5 w-3.5" /> },
-    ...(moduleName === 'leads' || moduleName === 'properties' ? [{
-      key: 'matching',
-      // The owner asked for these two labels by name: on a contact, the units
-      // that fit; on a property, the people who fit.
-      label: moduleName === 'leads' ? 'Matching inventory' : 'Matching leads',
-      icon: <Link2 className="h-3.5 w-3.5" />,
-    }] : []),
     ...meta.relations.map((r) => ({
       key: `rel:${r.name}`,
       label: r.label,
@@ -351,7 +321,6 @@ function FullRecordPage(): JSX.Element {
     /* Offered wherever the record has a phone. The tab shows the history
        whoever sent it, which is the CRM's own question of who may read this
        record — not a question about whose phone it came from. */
-    { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
     ...(moduleName === 'properties' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
   ];
   const availableByKey = new Map(availableTabs.map((item) => [item.key, item]));
@@ -638,8 +607,8 @@ function FullRecordPage(): JSX.Element {
         and are not what somebody came to this tab for: they are picking which
         six units to send, and they need to see the columns to do it.
       */}
-      <div className={cn('grid gap-4', activeTab !== 'matching' && 'lg:grid-cols-3')}>
-        <div className={cn('space-y-4', activeTab !== 'matching' && 'lg:col-span-2')}>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
           {activeTab === 'overview' && (
             <OverviewTab
               meta={meta}
@@ -650,7 +619,6 @@ function FullRecordPage(): JSX.Element {
             />
           )}
           {activeTab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
-          {activeTab === 'matching' && <MatchingTab module={moduleName!} id={id!} returnQuery={returnQuery} recordLabel={record.label} />}
           {activeTab.startsWith('rel:') && (
             <RelatedTab
               meta={meta} module={moduleName!} id={id!}
@@ -658,7 +626,6 @@ function FullRecordPage(): JSX.Element {
             />
           )}
           {activeTab === 'calls' && <CallsTab recordId={id!} module={moduleName!} />}
-          {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} canEdit={Boolean(record.can?.edit)} />}
         </div>
 
         {/* Notes first, on every module.
@@ -669,7 +636,7 @@ function FullRecordPage(): JSX.Element {
             the duplicate panels, far enough down that people stopped writing in
             it. Same column, same order, both modules — photos come directly
             below the notes they get discussed in. */}
-        <div className={cn('space-y-4', activeTab === 'matching' && 'hidden')}>
+        <div className="space-y-4">
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.id ?? ''} />
           {moduleName === 'properties' && (
             <PropertyPhotoCarousel recordId={id!} canEdit={Boolean(record.can?.edit)} />
@@ -1299,29 +1266,6 @@ function RelatedTab({
   );
 }
 
-/**
- * One choice of download set.
- *
- * An `<a download>` rather than a button with an onClick: the browser then
- * treats it as a file transfer from the start — progress in the downloads
- * shelf, resumable, and never held in the tab's memory.
- */
-function DownloadItem(
-  { recordId, set, label, hint }:
-  { recordId: string; set: 'all' | 'originals' | 'branded' | 'web'; label: string; hint: string },
-): JSX.Element {
-  return (
-    <a
-      href={api.archiveUrl(recordId, set)}
-      download
-      className="flex w-full flex-col px-3 py-1.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-    >
-      <span>{label}</span>
-      <span className="text-xs text-muted">{hint}</span>
-    </a>
-  );
-}
-
 interface FileRow {
   id: string;
   file_name: string;
@@ -1334,270 +1278,6 @@ interface FileRow {
   ai_category?: string | null;
   ai_caption?: string | null;
 }
-
-export function FilesTab({ module, id, canEdit }: { module: string; id: string; canEdit: boolean }): JSX.Element {
-  const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({
-    queryKey: ['files', id],
-    queryFn: () => api.files(id),
-  });
-  const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<ViewableFile | null>(null);
-  const [editing, setEditing] = useState<FileRow | null>(null);
-  const [deleting, setDeleting] = useState<FileRow | null>(null);
-
-  // The API returns snake_case rows; the viewer takes a narrow shape. Both are
-  // needed here — the list still shows uploader and date, which the viewer
-  // has no use for.
-  const files = (data ?? []) as unknown as FileRow[];
-  const raw = useMemo(
-    () => new Map(files.map((row) => [row.id, row])),
-    [data],
-  );
-  const viewables: ViewableFile[] = useMemo(
-    () => files.map((row) => {
-      return { id: row.id, fileName: row.file_name, mimeType: row.mime_type, fileSize: row.size };
-    }),
-    [data],
-  );
-
-  const upload = async (file: File): Promise<void> => {
-    setUploading(true);
-    try {
-      // Photos are shrunk; documents and everything else pass straight through,
-      // which the compressor decides for itself.
-      const result = await compressImage(file);
-      await api.uploadFile(result.file, id, module);
-      toast.success(
-        'File uploaded',
-        result.compressed
-          ? `${file.name} — resized from ${formatBytes(result.originalBytes)} to ${formatBytes(result.finalBytes)}.`
-          : file.name,
-      );
-      void queryClient.invalidateQueries({ queryKey: ['files', id] });
-      void queryClient.invalidateQueries({ queryKey: ['timeline', module, id] });
-    } catch (err) {
-      toast.error('Upload failed', (err as Error).message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <div className="card">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
-        {canEdit && <label className="btn-secondary btn-sm cursor-pointer">
-          {uploading ? <Spinner /> : <Paperclip className="h-3.5 w-3.5" />}
-          Upload file
-          <input
-            type="file"
-            className="hidden"
-            disabled={uploading}
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }}
-          />
-        </label>}
-
-        {/*
-          Downloading is a plain navigation, not a fetch — the zip streams and
-          can be several GB, so the browser's downloader should take it rather
-          than the page holding it all in memory.
-
-          "Branded" leads because it is what you actually send someone: the
-          full-size web copies, and small. Originals are offered separately and
-          labelled as large, so nobody starts a multi-gigabyte download by
-          reaching for the obvious button.
-        */}
-        {data?.length ? (
-          <Dropdown
-            align="left"
-            trigger={(
-              <span className="btn-secondary btn-sm">
-                <Download className="h-3.5 w-3.5" />
-                Download all
-              </span>
-            )}
-          >
-            <DownloadItem recordId={id} set="branded" label="Watermarked" hint="What you'd send a client" />
-            <DownloadItem recordId={id} set="web" label="Website & WhatsApp sizes" hint="Smaller, faster to send" />
-            <DownloadItem recordId={id} set="originals" label="Originals only" hint="Full quality — large" />
-            <DownloadItem recordId={id} set="all" label="Everything" hint="Every folder — largest" />
-          </Dropdown>
-        ) : null}
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-2 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
-      ) : !data?.length ? (
-        <EmptyState icon={<Paperclip className="h-8 w-8" />} title="No files" body="Attach brochures, KYC documents or agreements." />
-      ) : (
-        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-          {viewables.map((file) => {
-            const meta = raw.get(file.id)!;
-            const previewable = isPreviewable(file);
-            return (
-              <li key={file.id} className="flex items-center gap-3 p-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
-                  <FileText className="h-4 w-4 text-slate-500" />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPreview(file)}
-                  className="min-w-0 flex-1 text-left"
-                  title={previewable ? 'Open preview' : 'No in-browser preview — opens with the reason'}
-                >
-                  <p className="truncate text-sm font-medium hover:text-brand-600 dark:hover:text-brand-400">
-                    {file.fileName}
-                  </p>
-                  <p className="text-2xs text-muted">
-                    {(meta.size / 1024).toFixed(0)} KB · {meta.uploaded_by_name ?? 'Unknown'} · {relativeTime(meta.created_at)}
-                  </p>
-                  {(meta.category || meta.ai_category || (meta.cull_state && meta.cull_state !== 'keep')) && (
-                    <p className="mt-0.5 flex flex-wrap gap-1 text-2xs text-muted">
-                      {meta.category && <Badge>{meta.category}</Badge>}
-                      {meta.ai_category && <Badge color="#0ea5e9">{meta.ai_category.replaceAll('_', ' ')}</Badge>}
-                      {meta.cull_state && meta.cull_state !== 'keep' && <Badge color="#f59e0b">flagged: {meta.cull_state}</Badge>}
-                    </p>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreview(file)}
-                  className="btn-ghost btn-sm"
-                  aria-label={`Preview ${file.fileName}`}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                </button>
-                <a
-                  href={authedFileUrl(`/api/files/${file.id}`, { download: '1' })}
-                  className="btn-ghost btn-sm"
-                  aria-label={`Download ${file.fileName}`}
-                  onClick={(e) => {
-                    // Inert inside the app, and on a phone the relative path
-                    // would not even reach the server. Fetch and share instead.
-                    if (isNative) {
-                      e.preventDefault();
-                      void downloadFromUrl(authedFileUrl(`/api/files/${file.id}`, { download: '1' }), file.fileName).catch(() => undefined);
-                    }
-                  }}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </a>
-                {canEdit && (
-                  <Dropdown trigger={<button className="btn-ghost btn-sm" aria-label={`Manage ${file.fileName}`}><MoreHorizontal className="h-3.5 w-3.5" /></button>}>
-                    {(close) => (
-                      <>
-                        <DropdownItem icon={<Edit3 className="h-3.5 w-3.5" />} onClick={() => { setEditing(meta); close(); }}>
-                          Rename or categorise
-                        </DropdownItem>
-                        <DropdownItem icon={<Trash2 className="h-3.5 w-3.5" />} danger onClick={() => { setDeleting(meta); close(); }}>
-                          Delete file
-                        </DropdownItem>
-                      </>
-                    )}
-                  </Dropdown>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {preview && (
-        <DocumentViewer
-          file={preview}
-          files={viewables}
-          onNavigate={setPreview}
-          onClose={() => setPreview(null)}
-        />
-      )}
-
-      {editing && (
-        <EditFileModal
-          file={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            void queryClient.invalidateQueries({ queryKey: ['files', id] });
-          }}
-        />
-      )}
-
-      <ConfirmDialog
-        open={Boolean(deleting)}
-        onClose={() => setDeleting(null)}
-        onConfirm={async () => {
-          if (!deleting) return;
-          await api.deleteFile(deleting.id);
-          toast.success('File deleted', deleting.file_name);
-          setPreview((current) => current?.id === deleting.id ? null : current);
-          await queryClient.invalidateQueries({ queryKey: ['files', id] });
-        }}
-        title={`Delete ${deleting?.file_name ?? 'file'}?`}
-        body="This removes the original and every generated copy from connected storage. This cannot be undone."
-        confirmLabel="Delete file"
-        danger
-      />
-    </div>
-  );
-}
-
-function EditFileModal({
-  file, onClose, onSaved,
-}: { file: FileRow; onClose: () => void; onSaved: () => void }): JSX.Element {
-  const [fileName, setFileName] = useState(file.file_name);
-  const [category, setCategory] = useState(file.category ?? '');
-  const [saving, setSaving] = useState(false);
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title="File details"
-      size="sm"
-      footer={(
-        <>
-          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={saving || !fileName.trim()}
-            onClick={() => {
-              setSaving(true);
-              void api.updateFile(file.id, { fileName: fileName.trim(), category: category.trim() || null })
-                .then(() => { toast.success('File updated'); onSaved(); })
-                .catch((err: Error) => toast.error('Could not update file', err.message))
-                .finally(() => setSaving(false));
-            }}
-          >
-            {saving && <Spinner />} Save
-          </button>
-        </>
-      )}
-    >
-      <div className="space-y-3">
-        <label>
-          <span className="label">File name</span>
-          <input className="input" value={fileName} onChange={(event) => setFileName(event.target.value)} maxLength={255} />
-        </label>
-        <label>
-          <span className="label">Category</span>
-          <input
-            className="input"
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            placeholder="Photo, Brochure, KYC, Agreement…"
-            maxLength={80}
-          />
-        </label>
-        <p className="text-xs text-muted">Renaming changes the CRM label only; the untouched original bytes stay exactly as uploaded.</p>
-      </div>
-    </Modal>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar panels
-// ---------------------------------------------------------------------------
 
 /*
   The "Photos and videos → open the folder → press Finish" panel was removed on

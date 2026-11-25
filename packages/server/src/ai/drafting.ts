@@ -7,7 +7,6 @@ import { formatIndianPrice } from '@ipropy/shared';
 import type { ScopeContext } from '../core/permissions/index.js';
 import { db } from '../db/pool.js';
 import { complete, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
-import { matchForRecord } from './matching.js';
 import { jobModel } from '../core/settings/aiModels.js';
 import { fenceId, fenced, untrustedRule } from './untrusted.js';
 
@@ -166,16 +165,7 @@ export async function draftMessage(input: DraftInput): Promise<DraftResult | nul
   );
   if (!ctx) return null;
 
-  let propertyBlock = '';
-  if (input.includeProperties) {
-    const matches = await matchForRecord(input.recordId, { limit: 3, persist: false, scope: input.scope });
-    if (matches.length) {
-      propertyBlock = `\n## Matching inventory you may reference (do not invent others)\n${matches
-        .map((m) => `- ${m.propertyLabel} — ${m.bedrooms != null ? `${m.bedrooms} BHK` : ''} — ${m.price ? formatIndianPrice(m.price) : ''}${
-          m.reasons.length ? ` (${m.reasons[0]})` : ''}`)
-        .join('\n')}`;
-    }
-  }
+  const propertyBlock = '';
 
   // Everything here came from the customer: their name, their history, and the
   // message they just sent, which is the most obvious place to try this.

@@ -162,7 +162,7 @@ test.describe('lead details', () => {
     // The app bar's title is not a heading element, so it is addressed as text.
     await expect(page.getByText('Lead details').first()).toBeVisible({ timeout: 30_000 });
 
-    for (const tab of ['Matching', 'Files', 'Details']) {
+    for (const tab of ['Details']) {
       await expect(page.getByRole('button', { name: new RegExp(`^${tab}`) })).toBeVisible();
     }
     await expect(page.getByRole('button', { name: /^Notes \(\d+\)/ })).toBeVisible();

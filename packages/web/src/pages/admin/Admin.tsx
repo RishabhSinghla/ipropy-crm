@@ -24,7 +24,6 @@ const SystemAdmin = lazy(() => import('./SystemAdmin'));
 const TeamMap = lazy(() => import('./TeamMap'));
 const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
-const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
 const ProjectMastersAdmin = lazy(() => import('./ProjectMastersAdmin'));
@@ -71,7 +70,6 @@ const SECTIONS = [
     items: [
       { path: 'workflows', capability: 'admin.workflows', label: 'Workflows', icon: Workflow, element: <WorkflowAdmin /> },
       { path: 'import', capability: 'records.import', label: 'Import Data', icon: Database, element: <ImportAdmin /> },
-      { path: 'matching', capability: 'admin.access', label: 'Matching Setup', icon: Link2, element: <MatchingSetupAdmin /> },
       { path: 'units', capability: 'admin.fields', label: 'Area & Pricing Units', icon: Ruler, element: <UnitMasterAdmin /> },
       { path: 'profile-strength', capability: 'admin.fields', label: 'Profile Strength', icon: SlidersHorizontal, element: <ProfileStrengthAdmin /> },
     ],

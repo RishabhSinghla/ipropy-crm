@@ -12,7 +12,6 @@ import {
   isSttConfigured, SttError, transcribeAudio, transcribeRecording,
 } from '../../core/stt/index.js';
 import { scoreLead } from '../../ai/leadScoring.js';
-import { matchForRecord, matchProperties, matchBuyersForProperty, loadRequirement } from '../../ai/matching.js';
 import { matchingConfig } from '../../core/settings/matching.js';
 import { draftMessage } from '../../ai/drafting.js';
 import { analyseTranscript, coachingReport } from '../../ai/callAnalysis.js';
@@ -132,100 +131,6 @@ aiRouter.post('/score-lead/:id', modelLimiter, asyncHandler(async (req, res) => 
 // ---------------------------------------------------------------------------
 // Property matching
 // ---------------------------------------------------------------------------
-
-// The match tabs need field labels, but the admin matching-config endpoint is
-// intentionally unavailable to ordinary users. Share only readable mapped
-// field names/labels here, never the admin settings or hidden field metadata.
-aiRouter.get('/matching-fields', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  await Promise.all([
-    assertModuleAccess(user, 'leads', 'view'),
-    assertModuleAccess(user, 'properties', 'view'),
-  ]);
-  const [config, leadPermissions, propertyPermissions] = await Promise.all([
-    matchingConfig(),
-    getFieldPermissions(user, 'leads'),
-    getFieldPermissions(user, 'properties'),
-  ]);
-  res.json(config.fieldMap
-    .filter((pair) => leadPermissions.get(pair.contactField) !== 'hidden'
-      && propertyPermissions.get(pair.propertyField) !== 'hidden')
-    .map((pair) => ({
-      contactField: pair.contactField,
-      propertyField: pair.propertyField,
-      contactLabel: pair.contactLabel ?? pair.contactField,
-      propertyLabel: pair.propertyLabel ?? pair.propertyField,
-    })));
-}));
-
-aiRouter.get('/match/:module/:id', modelLimiter, asyncHandler(async (req, res) => {
-  const scope = getScope(req);
-  const { module, id } = req.params;
-  if (!(await canAccessRecord(scope, module, id, 'view'))) throw new NotFoundError();
-
-  /*
-    The explanation costs a model call; the matches do not.
-
-    This defaulted to *writing* one — `narrative !== 'false'` — while the
-    ad-hoc sibling twenty lines below defaults it off, and the web app has
-    always passed `narrative=false` explicitly. So the only callers paying for
-    it were the ones that did not know to ask: the MCP tool asks for matches
-    with `?limit=5` and nothing else, and on production that answer takes five
-    and a quarter seconds against four tenths for every other screen.
-
-    Off unless asked, like its sibling. `narrative=true` still returns them.
-  */
-  const matches = await matchForRecord(id, {
-    // Up to 50, because the tab now lets a rep widen the list and work it
-    // themselves rather than trusting the top handful. The scorer reads a
-    // fixed candidate pool either way, so this only changes how much of the
-    // ranking is returned.
-    limit: Math.min(50, Number(req.query.limit) || 6),
-    withNarrative: req.query.narrative === 'true',
-    persist: true,
-    // Matched units are properties: the caller must see the rows the scorer
-    // would rank, not just the lead the matches belong to.
-    scope,
-  });
-  res.json({ matches: await readableMatchFields(matches, scope.user), requirement: await loadRequirement(id) });
-}));
-
-/** Ad-hoc matching from a requirement the rep types in. */
-aiRouter.post('/match', modelLimiter, asyncHandler(async (req, res) => {
-  const scope = getScope(req);
-  // An inventory search answers with unit ids, labels and prices — the same
-  // things a properties list gives, so it is gated by the same capability.
-  await assertModuleAccess(scope.user, 'properties', 'view');
-  const input = z.object({
-    budgetMin: z.number().nullable().optional(),
-    budgetMax: z.number().nullable().optional(),
-    configurations: z.array(z.string()).optional(),
-    locations: z.array(z.string()).optional(),
-    carpetAreaMin: z.number().nullable().optional(),
-    carpetAreaMax: z.number().nullable().optional(),
-    possessionTimeline: z.string().nullable().optional(),
-    projectId: z.string().uuid().nullable().optional(),
-    purpose: z.string().nullable().optional(),
-    limit: z.number().int().max(20).default(6),
-    withNarrative: z.boolean().default(false),
-  }).parse(req.body);
-
-  const matches = await matchProperties(input, { limit: input.limit, withNarrative: input.withNarrative, scope });
-  res.json({ matches: await readableMatchFields(matches, scope.user) });
-}));
-
-/** Reverse match: who should we pitch this unit to? */
-aiRouter.get('/buyers-for/:propertyId', modelLimiter, asyncHandler(async (req, res) => {
-  const scope = getScope(req);
-  if (!(await canAccessRecord(scope, 'properties', req.params.propertyId, 'view'))) throw new NotFoundError();
-  // The buyer list is a leads list by another name — names, budgets and
-  // owners — so it is scoped like one.
-  const limit = Math.min(50, Number(req.query.limit) || 10);
-  const buyers = await matchBuyersForProperty(req.params.propertyId, limit, scope, {
-    withNarrative: req.query.narrative !== 'false',
-  });
-  res.json({ buyers: await readableMatchFields(buyers, scope.user) });
-}));
 
 // ---------------------------------------------------------------------------
 // Drafting & summarising

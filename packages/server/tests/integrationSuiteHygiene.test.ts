@@ -118,13 +118,7 @@ const CHURNED = /\b(ipy_record|ipy_e_leads|ipy_e_properties)\b/i;
  * is which of the two cases above it is.
  */
 const ACKNOWLEDGED: { file: string; borrows: number; why: string }[] = [
-  { file: 'aiDegradesWithoutAProvider.test.ts', borrows: 1, why: 'needs any lead; asserts no match carries a narrative' },
   { file: 'consentSurvivesDeletedFields.test.ts', borrows: 3, why: 'asserts the do-not-call read answers rather than raising 42703' },
-  { file: 'deletedFields.test.ts', borrows: 1, why: 'loadRequirement answers for any lead row; the point is that it answers' },
-  { file: 'matchingAgreesBothWays.test.ts', borrows: 2, why: 'wants the richest lead by budget; the assertion is that both directions agree on it' },
-  { file: 'matchingReadsTheMappedPrice.test.ts', borrows: 1, why: 'needs any property; the lead it asserts on it creates itself' },
-  { file: 'matchingSurvivesDeletedFields.test.ts', borrows: 3, why: 'asserts matching answers with a field deleted, whichever record it runs on' },
-  { file: 'matchingSurvivesScalarLists.test.ts', borrows: 1, why: 'asserts a scalar stored where a list is expected does not raise' },
   { file: 'publicCatalogueSurvivesTheModel.test.ts', borrows: 1, why: 'needs any published property; asserts the catalogue query answers' },
   { file: 'websiteEnquiryLands.test.ts', borrows: 1, why: 'reads back the enquiry the test just submitted, matched on its own number' },
 ];

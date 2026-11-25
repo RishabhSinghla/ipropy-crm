@@ -9,7 +9,7 @@ describe('splitTabsFor', () => {
       after the tab he compared it to.
     */
     expect(splitTabsFor('leads', undefined).map((tab) => tab.key))
-      .toEqual(['timeline', 'matching', 'files', 'calls']);
+      .toEqual(['timeline', 'calls']);
   });
 
   it('gives Builder Floors the same tab, showing its own locality instead', () => {
@@ -48,26 +48,22 @@ describe('splitTabsFor', () => {
   });
 
   it('drops the overview a saved list may still name — it lives in the right pane now', () => {
-    expect(splitTabsFor('leads', [{ key: 'overview', label: 'Overview' }, { key: 'files', label: 'Files' }]))
-      .toEqual([{ key: 'files', label: 'Files' }]);
+    expect(splitTabsFor('leads', [{ key: 'overview', label: 'Overview' }, { key: 'calls', label: 'Calls' }]))
+      .toEqual([{ key: 'calls', label: 'Calls' }]);
   });
 
-  it('drops tabs this build cannot draw, duplicates, and matching where there is none', () => {
+  it('drops tabs this build cannot draw (a saved list may still name Matching or Files) and duplicates', () => {
     const tabs = splitTabsFor('other', [
       { key: 'rel:projects', label: 'Projects' },
       { key: 'matching', label: 'Matching' },
-      { key: 'files', label: 'Docs' },
-      { key: 'files', label: 'Again' },
+      { key: 'calls', label: 'Docs' },
+      { key: 'calls', label: 'Again' },
     ]);
-    expect(tabs).toEqual([{ key: 'files', label: 'Docs' }]);
+    expect(tabs).toEqual([{ key: 'calls', label: 'Docs' }]);
   });
 
   it('never leaves a record with no tabs', () => {
     expect(splitTabsFor('properties', [{ key: 'nonsense', label: 'x' }])).toEqual(allSplitTabs('properties'));
-  });
-
-  it('names matching after the other module', () => {
-    expect(allSplitTabs('properties').find((tab) => tab.key === 'matching')?.label).toBe('Matching leads');
   });
 });
 

@@ -27,7 +27,7 @@ import { test, expect, type Page } from '@playwright/test';
 */
 const ADMIN_SCREENS = [
   'modules', 'fields', 'layouts', 'header', 'picklists', 'users',
-  'roles', 'sharing', 'map', 'workflows', 'import', 'matching', 'units',
+  'roles', 'sharing', 'map', 'workflows', 'import', 'units',
   'integrations', 'settings', 'brand', 'system',
 ];
 

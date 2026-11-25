@@ -38,11 +38,11 @@ test('designer tab and header settings persist and render in the split view', as
   await resetToDefault(page);
   try {
     const tabs = page.getByTestId('zone-tabs');
-    // The timeline is first by default, so moving Matching up makes it the
+    // The timeline is first by default, so moving Calls up makes it the
     // tab a record opens on, and renaming the timeline proves the name is read.
-    await tabs.getByRole('button', { name: /^Move Matching.* up$/ }).click();
+    await tabs.getByRole('button', { name: /^Move Calls.* up$/ }).click();
     await tabs.getByLabel('Name of the timeline tab').fill('History');
-    await expect(tabs).toContainText('opens on Matching');
+    await expect(tabs).toContainText('opens on Calls');
 
     // Whichever field is offered first — the test must not depend on this
     // database having a particular field.
@@ -61,14 +61,14 @@ test('designer tab and header settings persist and render in the split view', as
     // The tab is available in the live workspace. Menu order may have a
     // separate per-agent override, so verify the designer's saved order in its
     // own control after confirming the tab renders here.
-    await expect(nav.getByRole('button', { name: /^Matching/ })).toBeVisible();
+    await expect(nav.getByRole('button', { name: /^Calls/ })).toBeVisible();
     // Pinned facts sit at the top of the right pane now, not in the header.
     await expect(page.getByTestId('record-inspector')).toContainText(added, { ignoreCase: true });
 
     await page.goto('/admin/layouts');
     const savedTabs = page.getByTestId('zone-tabs');
     await expect(savedTabs).toBeVisible({ timeout: 20_000 });
-    await expect(savedTabs).toContainText(/opens on Matching/);
+    await expect(savedTabs).toContainText(/opens on Calls/);
     await expect(savedTabs.getByLabel('Name of the timeline tab')).toHaveValue('History');
   } finally {
     await resetToDefault(page);

@@ -950,12 +950,6 @@ export const api = {
     `/api/records/${module}/export${qs({ ...query, filter: query.filter, access_token: tokenStore.get() })}`,
   exportRecords: (module: string, data: Record<string, unknown>) =>
     request<Response>(`/api/records/${module}/export`, { method: 'POST', body: data, raw: true }),
-  matchFeedback: (module: string, id: string, targetId: string, decision: 'shortlisted' | 'not_suitable' | 'follow_up') =>
-    post(`/api/records/${module}/${id}/matches/${targetId}/feedback`, { decision }),
-  clearMatchFeedback: (module: string, id: string, targetId: string) =>
-    del(`/api/records/${module}/${id}/matches/${targetId}/feedback`),
-  matchFeedbackList: (module: string, id: string) => get<{ targetId: string; decision: 'shortlisted' | 'not_suitable' | 'follow_up' }[]>(`/api/records/${module}/${id}/matches/feedback`),
-
   /*
     A matching somebody pinned, or null when it is running live.
 
@@ -963,22 +957,7 @@ export const api = {
     matching saved — so this is a 200 with a null body rather than a 404 the
     caller would have to special-case.
   */
-  matchSnapshot: (module: string, id: string) => get<{
-    entries: { targetId: string; score: number; matchedFields?: string[] }[];
-    filters: string[];
-    savedAt: string;
-    savedById: string | null;
-    savedByName: string;
-  } | null>(`/api/records/${module}/${id}/matches/snapshot`),
-  saveMatchSnapshot: (module: string, id: string, body: {
-    entries: { targetId: string; score: number; matchedFields?: string[] }[];
-    filters: string[];
-  }) => put(`/api/records/${module}/${id}/matches/snapshot`, body),
-  clearMatchSnapshot: (module: string, id: string) => del(`/api/records/${module}/${id}/matches/snapshot`),
-
   /** A public link to the matches somebody ticked. Returns the token; the page builds the URL. */
-  shareMatches: (module: string, id: string, body: { targetModule: string; ids: string[]; label?: string }) =>
-    post<{ token: string; shared: number; withheld: number }>(`/api/records/${module}/${id}/matches/share`, body),
   exportTemplates: (module: string) => get<{ id: string; name: string; columns: { fieldId: string; header?: string }[]; filter: FilterGroup | null; isDefault: boolean }[]>(`/api/records/${module}/export/templates`),
   createExportTemplate: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/records/${module}/export/templates`, data),
   updateExportTemplate: (module: string, id: string, data: Record<string, unknown>) => patch(`/api/records/${module}/export/templates/${id}`, data),
@@ -1072,8 +1051,6 @@ export const api = {
     put<PropertyShareAdminConfig>('/api/admin/sharing/property-link', data),
   settings: (category?: string) => get<Record<string, unknown>[]>(`/api/admin/settings${qs({ category })}`),
   saveSettings: (settings: Record<string, unknown>) => put('/api/admin/settings', { settings }),
-  matchingConfig: () => get<MatchingAdminConfig>('/api/admin/matching-config'),
-  saveMatchingConfig: (fieldMap: MatchingFieldPair[], priceGracePercent: number, areaGracePercent: number) => put('/api/admin/matching-config', { fieldMap, priceGracePercent, areaGracePercent }),
   auditLog: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/admin/audit${qs(params)}`),
   systemHealth: () => get<Record<string, unknown>>('/api/admin/health'),
   integrations: () => get<IntegrationSummary[]>('/api/admin/integrations'),
@@ -1189,13 +1166,8 @@ export const api = {
 
   // --- AI -----------------------------------------------------------------
   aiStatus: () => get<{ available: boolean; message: string; speechToText?: boolean }>('/api/ai/status'),
-  matchingFields: () => get<{ contactField: string; propertyField: string; contactLabel: string; propertyLabel: string }[]>('/api/ai/matching-fields'),
   scoreLead: (id: string) => post<Record<string, unknown>>(`/api/ai/score-lead/${id}`),
   analyseDeal: (id: string) => post<Record<string, unknown>>(`/api/ai/analyse-deal/${id}`),
-  matchProperties: (module: string, id: string, narrative = false, limit = 10) =>
-    get<{ matches: PropertyMatch[]; requirement: Record<string, unknown> }>(`/api/ai/match/${module}/${id}${qs({ narrative, limit })}`),
-  buyersForProperty: (propertyId: string, narrative = false, limit = 10) =>
-    get<{ buyers: BuyerMatch[] }>(`/api/ai/buyers-for/${propertyId}${qs({ narrative, limit })}`),
   draft: (data: Record<string, unknown>) => post<{ subject?: string; body: string }>('/api/ai/draft', data),
   insights: (recordId: string) => get<Record<string, unknown>[]>(`/api/ai/insights/${recordId}`),
   dismissInsight: (id: string) => post(`/api/ai/insights/${id}/dismiss`),
@@ -1340,7 +1312,6 @@ export const api = {
     del<void>(`/api/records/${module}/${id}/share-links/${linkId}`),
   /** The public read. Deliberately not authenticated — a buyer has no account. */
   sharedProperty: (token: string) => get<SharedProperty>(`/api/public/share/${token}`),
-  sharedMatches: (token: string) => get<SharedMatches>(`/api/public/matches/${token}`),
   /** `module` narrows to the tags that module offers; omit it for the whole vocabulary. */
   // --- WhatsApp Business (the official number) -----------------------------
   /** A received file, fetched from OpenWA only now, as a blob the page can show. */

@@ -11,9 +11,8 @@ import {
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { BuilderFloorTable, localityFilter, matchesForContact, unitsOfProject } from './BuilderFloorTable';
-import { MatchingTab } from './MatchingTab';
 import { TagButton, TagChips } from './TagButton';
-import { CallsTab, FilesTab } from '../pages/RecordDetail';
+import { CallsTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
 import { NoteComposer } from './RecordBlocks';
 import { ActivityFeed, FEED_LIMIT, useActivityEntries } from './ActivityFeed';
@@ -580,20 +579,6 @@ export function IpropyWorkspace({
   );
   const phoneValue = active && resolvedPhoneField ? displayOf(active, resolvedPhoneField) : '';
   const emailValue = active && emailField ? displayOf(active, emailField) : '';
-  const { data: matchingCount } = useQuery({
-    queryKey: ['workspace-matching-count', module.name, active?.id],
-    // Any module has neighbours — this is what Save & dial next walks, and
-    // naming two modules here left a third one unable to move through its own
-    // queue. The record's id is the only real condition.
-    enabled: Boolean(active?.id),
-    staleTime: 60_000,
-    queryFn: async (): Promise<number> => {
-      if (!active) return 0;
-      if (module.name === 'leads') return (await api.matchProperties(module.name, active.id, false, 50)).matches?.length ?? 0;
-      return (await api.buyersForProperty(active.id, false, 50)).buyers?.length ?? 0;
-    },
-  });
-
   /*
     The numbers on the icon tabs. Each asks the same question, on the same
     key, as the tab it labels — so opening a tab shows what was already
@@ -601,12 +586,6 @@ export function IpropyWorkspace({
     disagree. The timeline asks for its newest sixty; past that it says "60+".
   */
   const { data: feed } = useActivityEntries(module.name, active?.id ?? '', 'all');
-  const { data: fileRows } = useQuery({
-    queryKey: ['files', active?.id],
-    queryFn: () => api.files(active!.id),
-    enabled: Boolean(active?.id),
-    staleTime: 60_000,
-  });
   const { data: callRows } = useQuery({
     queryKey: ['record-calls', active?.id],
     queryFn: () => api.calls({ recordId: active!.id, limit: 50 }),
@@ -619,8 +598,6 @@ export function IpropyWorkspace({
       return count >= cap ? `${cap}+` : String(count);
     };
     if (key === 'timeline') return shown(feed?.length, FEED_LIMIT);
-    if (key === 'matching') return shown(matchingCount, 50);
-    if (key === 'files') return shown(fileRows?.length, 1000);
     if (key === 'calls') return shown(callRows?.length, 50);
     // The three stream entries count out of the same answer the tabs do, so a
     // badge and the list it labels cannot disagree and nothing is asked twice.
@@ -1251,7 +1228,6 @@ export function IpropyWorkspace({
               <NoteComposer module={module.name} recordId={active.id} look="dock" />
             </>
           )}
-          {shownKey === 'matching' && (module.name === 'leads' || module.name === 'properties') && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
           {/*
             The builder's inventory, as the table his spreadsheet already is.
             On a house it is the whole locality; on a contact it is what fits
@@ -1280,7 +1256,6 @@ export function IpropyWorkspace({
               emptyLine="No inventory carries this project's name yet. Set Project on a unit in Inventories and it appears here."
             />
           )}
-          {shownKey === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
           {shownKey === 'calls' && <CallsTab recordId={active.id} />}
         </div>
       </section>

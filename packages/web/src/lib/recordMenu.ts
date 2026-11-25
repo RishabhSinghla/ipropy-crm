@@ -20,7 +20,7 @@
 import { LEGACY_DEAL_TAB } from './splitViewLayout';
 
 /** A record tab that draws its own screen. */
-export type RecordTabKey = 'timeline' | 'matching' | 'builders' | 'units' | 'files' | 'calls'
+export type RecordTabKey = 'timeline' | 'builders' | 'units' | 'calls'
   | 'deals_availability' | 'deals_requirement';
 
 /** The stream, narrowed to one kind of thing that happened. */
@@ -53,7 +53,7 @@ export const DEFAULT_ORDER: MenuKey[] = [
     holds to and the reason the Chats page was once unreachable.
   */
   // An Associate's two deal lists sit straight after Comments — they are why the record is opened.
-  'units', 'comment', 'deals_availability', 'deals_requirement', 'matching', 'builders', 'files', 'calls', 'audit', 'timeline',
+  'units', 'comment', 'deals_availability', 'deals_requirement', 'builders', 'calls', 'audit', 'timeline',
 ];
 
 /** Which of the stream's kinds an entry shows, or `null` for a tab of its own. */

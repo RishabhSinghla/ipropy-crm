@@ -63,7 +63,7 @@ export default function MobileRecord(): JSX.Element {
   const [noteOpen, setNoteOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [tab, setTab] = useState<'notes' | 'matching' | 'files' | 'details'>('notes');
+  const [tab, setTab] = useState<'notes' | 'details'>('notes');
 
   const { data: meta } = useQuery({
     queryKey: ['module', module],
@@ -190,19 +190,6 @@ export default function MobileRecord(): JSX.Element {
     queryFn: () => api.calls({ recordId: id, limit: 50 }),
     enabled: Boolean(id),
     staleTime: 60_000,
-  });
-
-  /*
-    What would suit them. Live rather than pinned: a snapshot is what somebody
-    chose to keep, and on this screen a rep wants what matches *now*. Asked
-    only once the tab is open, so the matching is not run for every record
-    somebody merely glances at.
-  */
-  const { data: matching } = useQuery({
-    queryKey: ['record-matches', module, id],
-    queryFn: () => api.matchProperties(module, id, false, 6),
-    enabled: Boolean(id) && tab === 'matching',
-    staleTime: 2 * 60_000,
   });
 
   const [phone, phoneDisplay] = useMemo<[string | null, string | null]>(() => {
@@ -369,8 +356,6 @@ export default function MobileRecord(): JSX.Element {
         <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
           {([
             ['notes', `Notes (${notes.length})`],
-            ['matching', 'Matching'],
-            ['files', 'Files'],
             ['details', 'Details'],
           ] as const).map(([key, label]) => (
             <button
@@ -418,40 +403,6 @@ export default function MobileRecord(): JSX.Element {
             ))}
           </div>
         )}
-
-        {tab === 'matching' && (
-          <div className="mt-3 space-y-2">
-            {!matching && <p className="px-1 py-6 text-center text-sm text-muted">Looking for what would suit them…</p>}
-            {matching?.matches.length === 0 && (
-              <p className="px-1 py-6 text-center text-sm text-muted">Nothing on the books matches yet.</p>
-            )}
-            {(matching?.matches ?? []).map((match) => (
-              <button
-                key={match.propertyId}
-                type="button"
-                onClick={() => navigate(`/properties/${match.propertyId}`)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-[var(--border)] bg-white p-3 text-left shadow-2xs dark:bg-slate-900"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-bold text-slate-900 dark:text-white">
-                    {match.propertyLabel}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[12px] text-slate-500">
-                    {[match.projectName, match.bedrooms ? `${match.bedrooms} BHK` : null]
-                      .filter(Boolean).join(' · ') || match.reasons[0] || ''}
-                  </span>
-                </span>
-                {typeof match.price === 'number' && (
-                  <span className="shrink-0 text-[13px] font-bold text-[#2563eb]">
-                    {formatIndianPrice(match.price)}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {tab === 'files' && <Attachments recordId={record.id} moduleName={module} canEdit={canEdit} />}
 
         {tab === 'details' && blocks.map((block) => (
           <Group key={block.key} title={block.label}>

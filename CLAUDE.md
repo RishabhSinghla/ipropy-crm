@@ -680,6 +680,15 @@ is dropped, so a rebuild later starts from data. Only screens, routes, settings 
   mapping, the assignment screen, the Meta Conversions sender and both settings cards (migration `246`). **New Facebook leads no
   longer arrive.** Leads already captured, `ipy_lead_inbox`, `ipy_facebook_*` and `ipy_meta_conversion` stay in the database. The
   five `.github/workflows` that read Meta's API were deleted with it. Website, Google Ads, Zapier and portal capture are unchanged.
+* **Stage 7 (done, 25 November 2026): Matching, and the Files tab.** Owner: *"Keep Changes history and remove Files tab, Matching
+  Leads/Inventory Tab too, also … from backend and Admin Panel."* Gone: the Matching tab on contacts and units (web and phone),
+  the shared-matches page `/m/:token` and its public routes, `ai/matching.ts` (the scorer), `/api/ai/match*`, `buyers-for`,
+  the saved-matching and feedback routes, the `match_properties` / `match_buyers` workflow actions and the seeded buyer-alert
+  workflows, and Admin -> Matching Setup. **Kept:** `core/settings/matching.ts` and its seeded mapping, because the price field and
+  the property folder names read it; the Matching screen to edit it is gone, so it holds its last saved values. The **Files tab**
+  is removed from the screens only. **The Files backend is untouched on purpose**: the same attachment rows serve the property
+  photos on the public website, the share links, the contact photo and site capture. Removing that is the owner's call, not a tidy-up.
+  Saved layouts that still name `matching` or `files` simply drop them. Tables and rows are untouched.
 * WHATSAPP.md, docs/OPENWA.md and the long WhatsApp / Facebook / Meta sections below are history, not a description of the running CRM.
 
 ---
