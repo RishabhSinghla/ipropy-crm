@@ -388,7 +388,6 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'meta_conversions', kind: 'lead_source', label: 'Meta Conversions API (tell Meta which leads were good)' },
     { provider: 'google_ads', kind: 'lead_source', label: 'Google Ads Lead Form' },
     { provider: 'zapier', kind: 'lead_source', label: 'Zapier Lead Capture' },
-    { provider: 'typesafe_jev', kind: 'ai', label: 'Jev — TypeSafe (reads the dealer groups)' },
     /*
       The official WhatsApp Business route, one card per way of buying it.
       Four cards rather than one with a dropdown, because the credentials are

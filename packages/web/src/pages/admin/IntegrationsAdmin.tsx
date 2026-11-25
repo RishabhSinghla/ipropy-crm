@@ -189,9 +189,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   zapier: [
     { key: 'webhookKey', label: 'Zapier Webhook Secret', source: 'credentials', secret: true, placeholder: 'Generate a long random secret' },
   ],
-  typesafe_jev: [
-    { key: 'apiKey', label: 'TypeSafe API key', source: 'credentials', secret: true, placeholder: 'From console.typesafe.ai/keys — Jev is then reached directly, not through OpenRouter' },
-  ],
   s3: [
     { key: 'driver', label: 'Where files are saved — type "s3" to use the cloud, "local" for this server', source: 'config', placeholder: 'local' },
     { key: 'bucket', label: 'Bucket name', source: 'config', placeholder: 'ipropy-files' },
@@ -670,7 +667,7 @@ const JOBS: JobDef[] = [
     title: 'Turn on AI',
     blurb: 'Lead scoring, reply drafting and the assistant. Free options available.',
     icon: Sparkles,
-    providers: ['ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'anthropic', 'typesafe_jev'],
+    providers: ['ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'anthropic'],
     recommended: 'ai_gemini',
     wanted: true,
     short: 'AI',
