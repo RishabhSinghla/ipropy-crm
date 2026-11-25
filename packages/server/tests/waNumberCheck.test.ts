@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cappedDailyLimit, isWhatsAppPhotoHost, MAX_DAILY_CAP } from '../src/integrations/whatsapp/business/numberCheck.js';
+import { cappedDailyLimit, eligibleNumbers, isWhatsAppPhotoHost, MAX_DAILY_CAP } from '../src/integrations/whatsapp/business/numberCheck.js';
 
 describe('the number checker\'s safety rules', () => {
   it('fetches pictures only from WhatsApp\'s own hosts over https', () => {
@@ -17,5 +17,16 @@ describe('the number checker\'s safety rules', () => {
     expect(cappedDailyLimit(1)).toBe(10);
     expect(cappedDailyLimit(99999)).toBe(MAX_DAILY_CAP);
     expect(cappedDailyLimit(200)).toBe(200);
+  });
+});
+
+describe('which numbers share the checking', () => {
+  const n = (id: string, status: string, paused = false, sessionName = id) => ({ id, sessionName, status, paused });
+  it('uses only linked, unpaused numbers and skips any that are down', () => {
+    const all = [n('a', 'ready'), n('b', 'qr_ready'), n('c', 'disconnected'), n('d', 'ready', true), n('e', 'ready'), n('f', 'unknown'), n('g', 'ready', false, '  ')];
+    expect(eligibleNumbers(all).map((x) => x.id)).toEqual(['a', 'e']);
+  });
+  it('is empty when nothing is linked', () => {
+    expect(eligibleNumbers([n('a', 'failed')])).toEqual([]);
   });
 });

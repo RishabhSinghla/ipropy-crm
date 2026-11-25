@@ -684,7 +684,7 @@ function FullRecordPage(): JSX.Element {
               relationName={activeTab.slice(4)}
             />
           )}
-          {activeTab === 'calls' && <CallsTab recordId={id!} />}
+          {activeTab === 'calls' && <CallsTab recordId={id!} module={moduleName!} />}
           {activeTab === 'whatsapp' && (
             <WhatsAppTab
               module={moduleName!}
@@ -2731,7 +2731,16 @@ function MentionTextarea({
  * them out of this tab on 29 October 2026), because "what happened on the last call" is the question this tab exists to
  * answer.
  */
-export function CallsTab({ recordId }: { recordId: string }): JSX.Element {
+/** The record's calls: the AI agent's first (when this module has an agent), then everything the phones logged. */
+export function CallsTab({ recordId, module }: { recordId: string; module?: string }): JSX.Element {
+  return (
+    <div className="space-y-4">
+      <PhoneCallsTab recordId={recordId} />
+    </div>
+  );
+}
+
+function PhoneCallsTab({ recordId }: { recordId: string }): JSX.Element {
   const queryClient = useQueryClient();
   const currentUser = useApp((state) => state.user);
   const [editing, setEditing] = useState<CallListItem | null>(null);

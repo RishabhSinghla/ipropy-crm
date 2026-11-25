@@ -13,7 +13,7 @@ import { db } from '../../../db/pool.js';
 import { organisationTimezone } from '../../../core/settings/timezone.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../utils/errors.js';
 import {
-  describeSessionStatus, maskPhone, openWaManage, openWaSession, OpenWaError,
+  describeSessionStatus, fullPhone, maskPhone, openWaManage, openWaSession, OpenWaError,
 } from './openwa.js';
 
 export interface WaNumber {
@@ -21,7 +21,9 @@ export interface WaNumber {
   sessionName: string;
   sessionId: string | null;
   label: string | null;
+  /** The whole number. Admin-only: every route that can reach a non-admin passes the number through `forViewer`. */
   phone: string | null;
+  phoneMasked: string | null;
   userId: string | null;
   userName: string | null;
   isDefault: boolean;
@@ -68,7 +70,7 @@ async function selectSql(): Promise<string> {
 function shape(r: Row): WaNumber {
   return {
     id: r.id, sessionName: r.session_name, sessionId: r.session_id, label: r.label,
-    phone: maskPhone(r.phone), userId: r.user_id, userName: r.user_name || null,
+    phone: fullPhone(r.phone), phoneMasked: maskPhone(r.phone), userId: r.user_id, userName: r.user_name || null,
     isDefault: r.is_default, paused: r.paused, pausedAt: r.paused_at,
     status: r.status, statusText: describeSessionStatus(r.status), lastActiveAt: r.last_active_at,
     statusSince: r.status_since, alerted: r.alerted_at !== null,
@@ -108,6 +110,12 @@ export async function numberBySessionId(sessionId: string): Promise<{ id: string
     row = await find();
   }
   return row ? { id: row.id, userId: row.user_id } : null;
+}
+
+/** A number as a given viewer may see it: non-admins get the masked form in `phone`. */
+export function forViewer<T extends WaNumber | null>(n: T, isAdmin: boolean): T {
+  if (!n || isAdmin) return n;
+  return { ...n, phone: n.phoneMasked } as T;
 }
 
 export interface NumberChoice { number: WaNumber; fallbackNote: string | null }
@@ -341,4 +349,29 @@ export async function updateLabel(id: string, label: string): Promise<WaNumber> 
 async function mustExist(id: string): Promise<void> {
   const row = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_wa_number WHERE id = $1`, [id]);
   if (!row) throw new NotFoundError('That WhatsApp number was not found.');
+}
+
+/**
+ * Remove a number that is dead weight: a leftover test session, or one OpenWA no longer has.
+ * Refused for the company number, for a number that is connected right now, and for one that has carried messages
+ * (those keep their "from which number" history; stop or unassign such a number instead).
+ */
+export async function deleteNumber(id: string): Promise<void> {
+  const n = await numberById(id);
+  if (!n) throw new NotFoundError('That WhatsApp number was not found.');
+  if (n.isDefault) throw new BadRequestError('This is the company number. Make another number the company number first.');
+  if (n.status === 'ready') throw new BadRequestError('This number is connected. Press Stop first if you really want to remove it.');
+  const used = await db.queryOne<{ n: string }>(`SELECT COUNT(*) AS n FROM ipy_message WHERE number_id = $1`, [id]);
+  if (Number(used?.n ?? 0) > 0) {
+    throw new BadRequestError('This number has sent or received messages, so it is kept for the history. Unassign the agent instead.');
+  }
+  // Take the session out of OpenWA too, so it stops using a seat on the small server. A session already gone is fine.
+  if (n.sessionId && n.status !== 'missing') {
+    try {
+      await openWaManage(`/api/sessions/${n.sessionId}`, { method: 'DELETE' });
+    } catch (err) {
+      if (!(err instanceof OpenWaError && err.status === 404)) throw err;
+    }
+  }
+  await db.query(`DELETE FROM ipy_wa_number WHERE id = $1`, [id]);
 }

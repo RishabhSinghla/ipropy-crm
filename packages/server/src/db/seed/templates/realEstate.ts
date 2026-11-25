@@ -1,4 +1,4 @@
-import { F, type ModuleDef } from '../helpers.js';
+import { F, type ModuleDef, type ViewDef } from '../helpers.js';
 import type { IndustryTemplate } from './types.js';
 
 /**

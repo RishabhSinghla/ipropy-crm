@@ -68,7 +68,8 @@ beforeAll(async () => {
 describe('the built-in views', () => {
   it('are what the switcher opens with', async () => {
     const list = await views(adminToken);
-    const builtIn = list.filter((v) => v.isSystem).map((v) => v.name).sort();
+    // The five "AI: …" lists (13 Nov 2026) are built in too; they have their own test.
+    const builtIn = list.filter((v) => v.isSystem && !v.name.startsWith('AI: ')).map((v) => v.name).sort();
     // "Unread Leads" went on 3 October 2026, with the whole unread feature.
     expect(builtIn).toEqual(['All Leads', 'Favourite Leads', 'My Leads']);
   });
@@ -115,7 +116,7 @@ describe('the built-in views', () => {
 
     // Still there, and still one of the three. It was four until 3 October
     // 2026, when migration 184 took "Unread Leads" out with the feature.
-    expect((await views(adminToken)).filter((v) => v.isSystem)).toHaveLength(3);
+    expect((await views(adminToken)).filter((v) => v.isSystem && !v.name.startsWith('AI: '))).toHaveLength(3);
   });
 
   it('put a starred record into Favourite Leads and an unstarred one out', async () => {

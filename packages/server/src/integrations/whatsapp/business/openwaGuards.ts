@@ -17,6 +17,9 @@
  * There is no "send to many" endpoint anywhere: the request takes one `to`,
  * and the campaign and workflow paths send *templates*, which this provider
  * does not have, so they refuse to use it (and campaigns are refused by name).
+ * The one deliberate exception is the owner-controlled slow drip (`drip.ts`,
+ * docs/OPENWA.md): it still sends one message at a time through this same path,
+ * with its own stricter per-number cap, and only skips the per-user cap.
  *
  * The defaults are deliberately conservative and live on the integration card
  * so an admin can see and change them. They are clamped, so a typo cannot
@@ -27,6 +30,16 @@ import { organisationTimezone } from '../../../core/settings/timezone.js';
 import { db } from '../../../db/pool.js';
 import { BadRequestError } from '../../../utils/errors.js';
 import { OPENWA_PROVIDER } from './openwa.js';
+
+/**
+ * A send refused by one of the brakes above. It is a BadRequestError (so every existing caller shows it the same
+ * way); the code lets the slow drip tell "wait a bit" from "this message cannot go".
+ */
+export class SendLimitError extends BadRequestError {
+  constructor(message: string, public readonly limit: 'USER_DAILY_CAP' | 'NUMBER_DAILY_CAP' | 'TOO_SOON' | 'QUIET_HOURS') {
+    super(message);
+  }
+}
 
 export interface GuardLimits {
   perUserDaily: number;
@@ -131,7 +144,9 @@ export async function currentCounts(userId: string, handle: string, numberId: st
   const tz = await organisationTimezone();
   const row = await db.queryOne<{ user_today: string; number_today: string; since: string | null; last_ms: string | null }>(
     `WITH today AS (SELECT (date_trunc('day', now() AT TIME ZONE $1) AT TIME ZONE $1) AS start)
-     SELECT COUNT(*) FILTER (WHERE m.sent_by = $2 AND m.created_at >= today.start)         AS user_today,
+     -- The promotional drip has its own, stricter per-number cap; its messages are not one person's typing.
+     SELECT COUNT(*) FILTER (WHERE m.sent_by = $2 AND m.created_at >= today.start
+                               AND NOT EXISTS (SELECT 1 FROM ipy_wa_drip_item q WHERE q.message_id = m.id)) AS user_today,
             COUNT(*) FILTER (WHERE c.handle = $3 AND m.created_at >= today.start)          AS number_today,
             EXTRACT(EPOCH FROM (now() - MAX(m.created_at)))                                AS since,
             (EXTRACT(EPOCH FROM MAX(m.created_at)) * 1000)::bigint                         AS last_ms
@@ -173,7 +188,15 @@ export function takeSendSlot(): Promise<() => void> {
 }
 
 /** Refuse, with the reason, if this send would break a limit. */
-export async function assertWithinLimits(userId: string, handle: string, numberId: string | null = null): Promise<void> {
+export async function assertWithinLimits(
+  userId: string, handle: string, numberId: string | null = null,
+  /**
+   * `fromQueue`: the slow promotional drip is sending. It is held to its own per-number daily cap before it gets here,
+   * so the per-user cap (about what one person types by hand) does not apply to it; spacing, quiet hours and the
+   * per-customer cap still do.
+   */
+  options: { fromQueue?: boolean } = {},
+): Promise<void> {
   // The spacing and daily caps are counted per number, so one agent's busy day never slows another's.
   const limits = guardLimits();
   const counts = await currentCounts(userId, handle, numberId);
@@ -181,6 +204,9 @@ export async function assertWithinLimits(userId: string, handle: string, numberI
   const seed = counts.lastSentAtMs ?? 0;
   const tz = await organisationTimezone();
   const localHour = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: tz }).format(new Date()));
-  const verdict = decideSend(limits, { ...counts, localHour, jitter: jitterSeconds(limits.minSpacingSeconds, () => (seed % 997) / 997) });
-  if (!verdict.ok) throw new BadRequestError(verdict.message);
+  const verdict = decideSend(
+    options.fromQueue ? { ...limits, perUserDaily: Number.MAX_SAFE_INTEGER } : limits,
+    { ...counts, localHour, jitter: jitterSeconds(limits.minSpacingSeconds, () => (seed % 997) / 997) },
+  );
+  if (!verdict.ok) throw new SendLimitError(verdict.message, verdict.code);
 }

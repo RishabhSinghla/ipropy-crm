@@ -28,6 +28,7 @@ import { adminRouter } from './api/routes/admin.js';
 import { commsRouter } from './api/routes/comms.js';
 import { whatsappBusinessRouter } from './api/routes/whatsappBusiness.js';
 import { whatsappNumbersRouter } from './api/routes/whatsappNumbers.js';
+import { whatsappDripRouter } from './api/routes/whatsappDrip.js';
 import { deviceRouter } from './api/routes/device.js';
 import { telephonyRouter } from './api/routes/telephony.js';
 import { aiRouter } from './api/routes/ai.js';
@@ -37,6 +38,7 @@ import { marketRouter } from './api/routes/market.js';
 import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
 import { projectWorkspaceRouter } from './api/routes/projectWorkspace.js';
+import { isQuietHours } from './utils/quietHours.js';
 
 /**
  * The policy on the app's own HTML.
@@ -129,7 +131,7 @@ export function securityPolicy(isProd: boolean): string {
   return directives.join('; ');
 }
 
-const databaseIsReachable = makeDatabaseHealth(checkConnection);
+const databaseIsReachable = makeDatabaseHealth(checkConnection, Date.now, isQuietHours);
 
 export function createApp(): Express {
   const app = express();
@@ -321,6 +323,7 @@ export function createApp(): Express {
   // per-agent QR-linked one was removed on 19 September 2026.
   app.use('/api/whatsapp-business', whatsappBusinessRouter);
   app.use('/api/whatsapp-numbers', whatsappNumbersRouter);
+  app.use('/api/whatsapp-drip', whatsappDripRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/market', marketRouter);

@@ -8,7 +8,7 @@
  */
 import { db } from '../../../db/pool.js';
 import { getIntegrationConfig } from '../../../core/settings/integrations.js';
-import { maskPhone } from './openwa.js';
+import { phoneForViewer } from './openwa.js';
 import { CHAT_PROVIDER } from './channelRoles.js';
 
 export interface SenderLabel { numberId: string | null; numberName: string | null; numberPhone: string | null }
@@ -20,8 +20,8 @@ function apiLabel(provider: string | null): SenderLabel {
   return { numberId: provider ? `api:${provider}` : null, numberName: name, numberPhone: phone };
 }
 
-/** Adds numberId / numberName / numberPhone to each row. Needs `provider` and `number_id` on the rows. */
-export async function withSenderLabels<T extends Record<string, unknown>>(rows: T[]): Promise<Array<T & SenderLabel>> {
+/** Adds numberId / numberName / numberPhone to each row (our own number shown whole to admins, masked to everyone else). Needs `provider` and `number_id` on the rows. */
+export async function withSenderLabels<T extends Record<string, unknown>>(rows: T[], isAdmin = false): Promise<Array<T & SenderLabel>> {
   const ids = [...new Set(rows.map((r) => r.number_id).filter((v): v is string => typeof v === 'string'))];
   const known = new Map<string, SenderLabel>();
   if (ids.length > 0) {
@@ -29,7 +29,7 @@ export async function withSenderLabels<T extends Record<string, unknown>>(rows: 
       `SELECT id, session_name, label, phone FROM ipy_wa_number WHERE id = ANY($1::uuid[])`, [ids],
     );
     for (const n of numbers) {
-      known.set(n.id, { numberId: n.id, numberName: n.label?.trim() || n.session_name, numberPhone: maskPhone(n.phone) });
+      known.set(n.id, { numberId: n.id, numberName: n.label?.trim() || n.session_name, numberPhone: phoneForViewer(n.phone, isAdmin) });
     }
   }
   return rows.map((row) => {

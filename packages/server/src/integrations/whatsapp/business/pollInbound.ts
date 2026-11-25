@@ -41,6 +41,7 @@ import { applyStatus, receiveInbound, recordSentElsewhere } from './inbound.js';
 import { activeBusinessProvider } from './registry.js';
 import { WHATSMARKETING_PROVIDER } from './whatsMarketing.js';
 import { metaCloudProvider } from './metaCloud.js';
+import { isQuietHours } from '../../../utils/quietHours.js';
 
 /**
  * How many recent subscribers to look at on one visit.
@@ -707,7 +708,9 @@ let lastPollAt = 0;
 export function startWhatsAppPolling(): void {
   if (timer) return;
   timer = setInterval(() => {
-    if (visiting || !isTimeToPoll(Date.now(), lastPollAt)) return;
+    // Quiet hours: skip. The first visit after the window reads everything
+    // since the history floor, and the unique insert keeps it once-only.
+    if (isQuietHours() || visiting || !isTimeToPoll(Date.now(), lastPollAt)) return;
     visiting = true;
     lastPollAt = Date.now();
     void pollWhatsMarketingInbound()

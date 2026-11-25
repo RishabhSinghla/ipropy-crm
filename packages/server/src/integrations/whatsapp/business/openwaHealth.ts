@@ -18,6 +18,7 @@ import { organisationTimezone } from '../../../core/settings/timezone.js';
 import {
   describeSessionStatus, maskPhone, openWaSession, openWaStats, OPENWA_PROVIDER,
 } from './openwa.js';
+import { isQuietHours } from '../../../utils/quietHours.js';
 
 export type LinkState = 'ready' | 'needs-link' | 'unreachable' | 'unknown';
 
@@ -141,7 +142,7 @@ export function startOpenWaHealth(): void {
   timer = setInterval(() => {
     // Only while the card is switched on; a CRM that does not use OpenWA
     // should never talk to it.
-    if (checking || !getIntegrationConfig(OPENWA_PROVIDER)) return;
+    if (checking || isQuietHours() || !getIntegrationConfig(OPENWA_PROVIDER)) return;
     checking = true;
     void checkOpenWaNow()
       .catch((err) => logger.warn({ err }, 'OpenWA health check failed'))

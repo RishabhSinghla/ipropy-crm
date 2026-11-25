@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideNumberAlerts, decideServiceAlert, GRACE_MS, REMINDER_MS, type WatchedNumber } from '../src/integrations/whatsapp/business/numberAlerts.js';
+import { needsScan, decideNumberAlerts, decideServiceAlert, GRACE_MS, REMINDER_MS, type WatchedNumber } from '../src/integrations/whatsapp/business/numberAlerts.js';
 
 const now = new Date('2026-11-01T12:00:00Z');
 const ago = (ms: number): Date => new Date(now.getTime() - ms);
@@ -49,5 +49,15 @@ describe('service alerts', () => {
   it('says nothing when it was never down long enough to alert', () => {
     const first = decideServiceAlert(false, { downSince: null, alertedAt: null }, now);
     expect(decideServiceAlert(true, first.next, new Date(now.getTime() + 30_000)).send).toBeNull();
+  });
+});
+
+describe('needsScan', () => {
+  it('is true only for states a restart cannot fix', () => {
+    expect(needsScan('qr_ready')).toBe(true);
+    expect(needsScan('disconnected')).toBe(true);
+    expect(needsScan('ready')).toBe(false);
+    expect(needsScan('missing')).toBe(false);
+    expect(needsScan('initializing')).toBe(false);
   });
 });

@@ -30,6 +30,7 @@ import { getRecord, type ServiceContext } from '../entity/recordService.js';
 import { recordScopeSql } from '../permissions/index.js';
 import { SqlParams } from '../query/builder.js';
 import { logger } from '../../utils/logger.js';
+import { config } from '../../config.js';
 
 /** What kind of thing a row of text came from. */
 export type EmbeddingKind = 'record' | 'note' | 'message' | 'call' | 'visit' | 'document';
@@ -213,7 +214,7 @@ export interface IndexSummary { embedded: number; skipped: number }
  * every other scheduled job running.
  */
 export async function indexPending(limit = BATCH): Promise<IndexSummary> {
-  if (!isMediaAiAvailable()) return { embedded: 0, skipped: 0 };
+  if (!config.semanticIndex.enabled || !isMediaAiAvailable()) return { embedded: 0, skipped: 0 };
 
   const pending = await candidates(limit);
   if (!pending.length) return { embedded: 0, skipped: 0 };
@@ -314,7 +315,8 @@ export async function search(
   ctx: ServiceContext,
   opts: { top?: number; candidates?: number; modules?: string[] } = {},
 ): Promise<SemanticHit[]> {
-  if (!isMediaAiAvailable() || !question.trim()) return [];
+  // Off means "no hits", never an error: every caller already treats an empty list as "nothing found".
+  if (!config.semanticIndex.enabled || !isMediaAiAvailable() || !question.trim()) return [];
 
   const asked = await embed([question]);
   const vector = asked?.[0];

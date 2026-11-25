@@ -16,10 +16,15 @@ export const REMEMBER_BAD_MS = 15_000;
 export function makeDatabaseHealth(
   askTheDatabase: () => Promise<boolean>,
   now: () => number = Date.now,
+  isQuiet: () => boolean = () => false,
 ): (fresh?: boolean) => Promise<boolean> {
   let answer: { at: number; ok: boolean } | null = null;
 
   return async function isDatabaseReachable(fresh = false): Promise<boolean> {
+    // Quiet hours: a good answer is trusted however old it is, so the health
+    // check (which Render calls constantly) never wakes the database overnight.
+    // With no answer yet (a fresh start) or a bad one, it still asks for real.
+    if (!fresh && answer?.ok && isQuiet()) return true;
     if (!fresh && answer) {
       const stillGoodFor = answer.ok ? REMEMBER_GOOD_MS : REMEMBER_BAD_MS;
       if (now() - answer.at < stillGoodFor) return answer.ok;

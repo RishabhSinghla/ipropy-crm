@@ -54,6 +54,8 @@ export interface BusinessSendInput {
   numberId?: string | null;
   /** The signed-in user is an admin (decides who may pick a number). */
   isAdmin?: boolean;
+  /** Sent by the slow promotional drip (which enforces its own daily cap per number before calling this). */
+  fromQueue?: boolean;
 }
 
 export interface BusinessSendResult {
@@ -338,7 +340,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     }
     releaseSlot = await takeSendSlot();
     try {
-      await assertWithinLimits(input.userId, handle, number?.id ?? null);
+      await assertWithinLimits(input.userId, handle, number?.id ?? null, { fromQueue: input.fromQueue });
     } catch (err) {
       releaseSlot();
       throw err;

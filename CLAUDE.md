@@ -16,6 +16,7 @@ before you work in that area** — each carries traps that have already cost a d
 |---|---|
 | WhatsApp — inbox, templates, campaigns, media, reports, and the OpenWA linked-device connection | [`WHATSAPP.md`](WHATSAPP.md) (OpenWA: [`docs/OPENWA.md`](docs/OPENWA.md)) |
 | The phone app, dialling, call recording, the call console, the dialler screens | [`CALLING.md`](CALLING.md) |
+| SMS or RCS campaigns (MSG91), the `bulk-messages` routes, the SMS & RCS screen | [`MSG91.md`](MSG91.md) |
 | Lists, the split view, tags | [`SCREENS.md`](SCREENS.md) |
 | A deploy, or something misbehaving on production | [`OPERATIONS.md`](OPERATIONS.md) |
 | Anything a person clicks, before calling it done | the `prove-it` skill |
@@ -309,11 +310,65 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   record: one row per (lead, stage), so a lead bouncing between stages is not counted twice, and a
   failed or stuck send is retried the next time that stage is reached. The token goes in an
   `Authorization` header, never the URL. It is a card in Admin → Integrations → Lead capture and
-  **off until somebody fills it in**; the Test button reads the dataset's name and sends nothing.
-  The owner alone creates the Meta dataset and does the India "securities and investments"
-  declaration. **Unverified from here:** Meta's reference is blocked by this container, so the
-  exact body shape (above all `lead_id` sent as a string) is from knowledge — the card's *Test
-  code* box and Events Manager → Test events are how it is proved against the real account.
+  **off until somebody fills it in** (saving a filled card switches it on by itself); see *Testing it*
+  below for what the Test does. The owner alone creates the Meta dataset and does the India "securities and investments"
+  declaration. **Live since 2 November 2026** on the dataset **iPropy's (`515009942931918`)**, the
+  Test code box emptied at the owner's yes (*"Option 1, go live now"*). The body shape matches Meta's
+  CRM payload specification (`developers.facebook.com/documentation/ads-commerce/conversions-api/conversion-leads-integration/payload-specification`,
+  which a plain `curl` and Firecrawl both read, 2 November 2026), and Meta answered that it **took** a test event
+  carrying a real lead's id. **Still unseen:** that event never listed on Events Manager → Test events
+  (the Website channel showed only the instructions, even with the page open), and no real stage
+  change had been reported when it went live. If nothing shows in Events Manager → iPropy's →
+  Overview after a few leads reach Qualified, look first for the warning *"Meta conversion not
+  delivered"* in the server log and for `failed` rows in `ipy_meta_conversion`.
+  **Testing it (2 November 2026, found while connecting the owner's dataset):**
+  * **A sending token cannot read the dataset.** Reading `GET /{dataset}?fields=id,name` with the
+    token generated for Conversions API answered *"(#100) Missing Permission"*. That refusal says
+    nothing about whether sending works, so a read-only Test is a false alarm for a token that is
+    perfectly good for `POST /{dataset}/events`.
+  * **The Test now sends one test event.** With a *Test code* on the card, `testMetaConversions`
+    posts one test event (name `Test`) under that code, using **the newest real Facebook lead's id**
+    from `ipy_lead_inbox`; Meta shows it only under Test events, never in real reporting. **A made-up
+    lead id is refused**: the first version sent `000000000000000` and Meta answered *"Invalid
+    parameter"*, because its spec says an invalid `lead_id` rejects the event. A real id was accepted. With no test code it only reads the
+    dataset and **never sends an event to live data**. A Meta refusal comes back as `ok:false`
+    carrying Meta's own words — it used to throw and reach the admin as a 500, *"Something went
+    wrong on our end"*. `tests/metaConversionsTest.test.ts` pins all of it.
+  * **The card has no Test button on the live site.** The route exists
+    (`POST /api/admin/integrations/meta_conversions/test`) and the card has only *Save*, so the
+    Test has been run by calling that route. Do not tell the owner to press a Test button there.
+  * **Going live is emptying the Test code box and saving.** Until then every event is a test
+    event, so nothing is reported to Meta for optimisation. It is done; to go back to test-only,
+    refill the box (the owner's test code was `TEST2029`) and save.
+  * **The first stage change was a test event.** The lead moved to Qualified before going live was
+    sent under the test code, and `ipy_meta_conversion` keeps one row per (lead, stage), so that one
+    lead will not be reported again for Qualified. Not checked against the table.
+  * **"iPROPY CRM Lead Sync" (`2418676505630839`) is not a dataset.** Events Manager lists it beside
+    the dataset, but it is the Facebook **app** (its page has an App ID and a Facebook SDK tab, no
+    token button). The Conversions API sends to a dataset id, so the card keeps `515009942931918`.
+  * **The stage names must be this CRM's own** (2 November 2026). The card's default list is
+    *Qualified, Site Visit Done, Converted*, and this CRM's statuses are **Qualified, Visit Done and
+    Won** (stored values `Contacted`, `Visit Done`, `Deal Won`), so two of the three defaults matched
+    nothing and a Visit Done or Won lead would never have been reported. The *Lead stages to tell Meta
+    about* box now reads `Qualified, Visit Done, Won`. A stage is matched by stored value or by label;
+    rename a status and this box needs telling.
+  * **Leads already on a stage are sent by `send-existing`.** The live listener only hears changes made
+    after it was switched on. `POST /api/admin/integrations/meta_conversions/send-existing`
+    (`admin.integrations`) takes the Facebook lead-ad leads whose **latest status change** (from
+    `ipy_audit`) left them on a wanted stage and tells Meta once each, skipping what `ipy_meta_conversion`
+    already marks sent. With no body it only counts; it sends only when `confirm` equals that count, so
+    a list that moved between looking and approving stops rather than surprises. It refuses while a Test
+    code is on, because a test event would be recorded as sent and the real one would then never go.
+    Pinned by `tests/metaConversionsWaiting.test.ts`.
+  * **Its window is 6 days, because Meta's is 7.** Meta rejects an event older than 7 days and one old
+    event fails the whole request, so only status changes inside `WAITING_WINDOW_DAYS` (6) are sent, at
+    the time the status changed (never before the lead existed, never in the future). A lead that has
+    sat on a stage longer cannot be reported. The CRM stores no stage-change time apart from the audit
+    row, so a lead's *last edit* is not that time: 39 Facebook leads were on Qualified or Visit Done,
+    and only 2 had moved there inside the window.
+  * **Sent on 2 November 2026: 2 leads, both Qualified, 0 failed.** Meta's reply took both, and a second
+    preview showed 0 waiting. They could not be seen in Events Manager afterwards (Overview empty, no
+    errors in Diagnostics) — possibly only timing, since Meta says up to 30 minutes. Not confirmed.
 * **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
   published); the property somebody wants to send is usually this morning's draft. Every share-link
   failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come
@@ -594,6 +649,22 @@ can set a header.
 > shades `applyBrandColour` cached in `localStorage['ipropy.brandVars']` before first paint, so a refresh no
 > longer flashes the stylesheet's default violet before the saved brand loads.
 
+## Features removed on 25 November 2026 (owner's instruction)
+
+*"Only Notes, Comment and Android Call will remain same, else will be remove of Whatsapp Chat, EMAIL, SMS & AI Call History."*
+Done in stages, each pushed only after typecheck, tests and a build pass. **Every table and every saved row stays**: nothing
+is dropped, so a rebuild later starts from data. Only screens, routes, settings cards and code go.
+
+* **Stage 1 (done): Google RCS, SMS/RCS campaigns through MSG91, Sarvam AI voice calls** (queue, webhooks, settings card, daily
+  AI-calling schedule, the AI-call filter/panel/buttons and the `ai_call_*` filter fields). Old AI-call rows in `ipy_call`
+  (`source = 'sarvam'`) are hidden from the Calls page and timeline, not deleted. Migrations `240`-`242` delete the three settings
+  cards and any saved list, tile or report that named an `ai_*` filter field.
+* **Still to do, in order:** AI Summary, Email, WhatsApp (chat, API, OpenWA, drip, templates, campaigns), Dealer Groups and the
+  market feed, EMI / car-loan tools, and last Meta Lead Capture with the Conversions API (owner confirmed removal, 25 November).
+  Notes, Comments and Android calling stay.
+
+---
+
 ## WhatsApp is gone. Do not rebuild it without being asked.
 
 **Removed on 2026-09-17, on the owner's instruction:** *"whatever whatsapp thing we have
@@ -721,9 +792,11 @@ CRM's own ids, never instead of them.
 * **Meta Cloud API** — `POST /{phone-number-id}/messages`, text, media, templates, status
   webhooks, mark-read. The graph version and base URL are **settings, not constants**:
   Meta retires versions on a schedule, and a hard-coded one is a dead integration on a date
-  nobody has in their calendar. Written from knowledge and **not verified against the live
-  reference from here** — `developers.facebook.com` is blocked by this container's egress
-  proxy — so the Test Connection button is what proves it against the real account.
+  nobody has in their calendar. Written from knowledge and **not yet checked line by line against
+  Meta's live reference**. That page *was* unreachable from the remote container this was written
+  in, but **`developers.facebook.com` is reachable now** (2 November 2026: plain `curl` from the
+  developer's Mac answered 200, and Firecrawl reads it too), so the check can be done rather than
+  assumed; the Test Connection button is still what proves it against the real account.
 * **AiSensy** — `POST https://backend.aisensy.com/campaign/t1/api/v2`, which sends an
   **approved template and nothing else**. So its adapter declares `templates` and *not*
   `text`, and a rep typing a free reply is told before they press send rather than after.
@@ -1420,8 +1493,8 @@ cannot see.
 is called: 5MB an image, 16MB audio or video, 100MB a document. A file over them is
 refused with its real size named — "will not carry a video over 16MB, and this one is
 90MB" — rather than failing two minutes later as a vendor error code. The limits are from
-knowledge, not from Meta's page (blocked by this container's proxy), and being slightly
-low is the cheap direction to be wrong in.
+knowledge, not yet checked against Meta's page (reachable as of 2 November 2026, see the Meta
+Cloud API note above), and being slightly low is the cheap direction to be wrong in.
 
 **One renderer for all three screens** (`components/WhatsAppMedia.tsx`): the Chats inbox,
 the contact's WhatsApp tab and the composer. Three copies drift, and the way they drift is
@@ -3551,6 +3624,23 @@ the ORDER BY must encode relevance to *that specific decision*, and the cap must
 it bites. A silent cap is how all four of these hid.
 
 ---
+
+## Quiet hours and the meaning-search switch (2 November 2026)
+
+Neon suspends the database after five idle minutes, and the CRM's own timers kept it awake
+24 hours a day (about $42 a month). Two switches, both env flags, nothing deleted:
+
+* **`SEMANTIC_INDEX_ENABLED`** (default **off**). Off means no embedding calls: the scheduler's
+  indexer, the document reader's `indexReading` and `search()` in `core/search/semantic.ts` all
+  return empty, and every caller already reads "no hits" as "nothing found". Stored embeddings are
+  kept. Set it to `true` to bring meaning-search back (it also needs a media-AI provider with credit).
+* **Quiet hours** (`utils/quietHours.ts`; `QUIET_HOURS_ENABLED`, `QUIET_HOURS_START` 00:30,
+  `QUIET_HOURS_END` 06:30, `QUIET_HOURS_TZ` Asia/Kolkata). Inside the window the *timers* skip their
+  turn: scheduler tick, WhatsApp poll, campaign sender, OpenWA health and fleet watch,
+  waiting-for-reply watch, Sarvam queue, and `/api/health` reuses its last good answer. **Webhooks and
+  anything a person does are never gated.** A new timer that touches the database must call
+  `isQuietHours()` first. Everything the timers do asks "what is due now", so the first turn after
+  06:30 catches up (the tick is every 15 minutes, so up to 06:45 for scheduled workflows and email).
 
 ## Notifications
 

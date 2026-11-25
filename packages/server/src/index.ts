@@ -15,6 +15,7 @@ import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { startWhatsAppPolling, stopWhatsAppPolling } from './integrations/whatsapp/business/pollInbound.js';
 import { startOpenWaHealth, stopOpenWaHealth } from './integrations/whatsapp/business/openwaHealth.js';
 import { startFleetWatch, stopFleetWatch } from './integrations/whatsapp/business/waFleet.js';
+import { startDripSending, stopDripSending } from './integrations/whatsapp/business/drip.js';
 import { startCampaignSending, stopCampaignSending } from './integrations/whatsapp/business/campaigns.js';
 import { startWaitWatch, stopWaitWatch } from './integrations/whatsapp/business/waitWatch.js';
 import { initRealtime, closeRealtime } from './realtime.js';
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
   startWhatsAppPolling();
   startOpenWaHealth();
   startFleetWatch();
+  startDripSending();
   startCampaignSending();
   startWaitWatch();
 
@@ -108,6 +110,7 @@ async function main(): Promise<void> {
   stopWhatsAppPolling();
   stopOpenWaHealth();
   stopFleetWatch();
+  stopDripSending();
   stopCampaignSending();
   stopWaitWatch();
     closeRealtime();

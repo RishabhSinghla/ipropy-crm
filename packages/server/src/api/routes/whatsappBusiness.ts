@@ -489,7 +489,7 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
       LIMIT 1`,
     [handles],
   ));
-  res.json({ messages: redactAutomated(await withSenderLabels(rows), user.isAdmin), user: user.id, optedOut });
+  res.json({ messages: redactAutomated(await withSenderLabels(rows, user.isAdmin), user.isAdmin), user: user.id, optedOut });
 }));
 
 /**

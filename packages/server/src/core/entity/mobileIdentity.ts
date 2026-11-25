@@ -56,7 +56,7 @@ export async function assertMobileIdentityAvailable(
     );
     if (hit) {
       // Do not disclose a different agent's private record details.
-      throw new ConflictError('This mobile number already exists in Leads or Inventory. Use the existing record instead.',
+      throw new ConflictError('This mobile number already exists in Leads, Inventory or Associates. Use the existing record instead.',
         { field: fields.find(f => added.includes(mobileIdentity(values[f.name]) ?? ''))?.name ?? 'mobile' });
     }
   }

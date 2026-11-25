@@ -37,6 +37,10 @@ export interface FakeOpenWa {
   phone: string;
   /** When set, sends answer 429 SEND_PACING_LIMITED with this wait. */
   pacingRetryAfter: number | null;
+  /** WhatsApp's limit on this number, as the session reports it (null = none). */
+  restriction: { kind: string; code: string } | null;
+  /** True makes every send fail with a server error. */
+  failSends: boolean;
   /** Files served from the media route, by message id. */
   media: Map<string, { mimeType: string; data: Buffer }>;
   requests: { method: string; url: string }[];
@@ -77,6 +81,8 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
     status: 'ready',
     phone: '919800000001',
     pacingRetryAfter: null,
+    restriction: null,
+    failSends: false,
     media: new Map(),
     requests: [],
     groups: [], stored: [],
@@ -102,7 +108,7 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
       const rows = !wanted || wanted === fake.sessionName
         ? [{
           id: fake.sessionId, name: fake.sessionName, status: fake.status, phone: fake.phone,
-          pushName: 'Company', restriction: null, lastError: null, engineLoaded: true,
+          pushName: 'Company', restriction: fake.restriction, lastError: null, engineLoaded: true,
         }]
         : [];
       json(res, 200, rows);
@@ -137,6 +143,7 @@ export async function startFakeOpenWa(options: { port?: number; sessionName?: st
     if (req.method === 'POST' && send) {
       if (send[1] !== fake.sessionId) { json(res, 404, { statusCode: 404, message: `Session '${send[1]}' not found` }); return; }
       if (fake.status !== 'ready') { json(res, 400, { statusCode: 400, message: 'Session is not active' }); return; }
+      if (fake.failSends) { json(res, 500, { statusCode: 500, message: 'engine fell over' }); return; }
       if (fake.pacingRetryAfter !== null) {
         json(res, 429, { statusCode: 429, code: 'SEND_PACING_LIMITED', message: 'paced', retryAfterSeconds: fake.pacingRetryAfter });
         return;

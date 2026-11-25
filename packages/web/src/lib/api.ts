@@ -224,6 +224,12 @@ export interface WaFleetSummary {
 }
 
 const get = <T>(path: string): Promise<T> => request<T>(path);
+export interface BulkInput {
+  name: string; module: string;
+  audience: { view?: string; everyone?: boolean };
+  content: { channel: 'sms' | 'rcs'; templateId?: string; variables?: Record<string, string>; body?: string };
+}
+
 const post = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'POST', body });
 const patch = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'PATCH', body });
 const put = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'PUT', body });
@@ -1643,10 +1649,23 @@ export const api = {
   waCapacitySave: (maxLive: number, memoryLimitMb: number) => put<WaFleetSummary>('/api/whatsapp-numbers/capacity', { maxLive, memoryLimitMb }),
   waNumberQr: (id: string) => get<{ qrCode: string | null; status: string }>(`/api/whatsapp-numbers/${id}/qr`),
   waNumberAssign: (id: string, userId: string | null) => put<WaNumber>(`/api/whatsapp-numbers/${id}/assign`, { userId }),
+  waNumberDelete: (id: string) => del<{ ok: boolean }>(`/api/whatsapp-numbers/${id}`),
   waNumberDefault: (id: string) => put<WaNumber>(`/api/whatsapp-numbers/${id}/default`, {}),
   waNumberPause: (id: string, paused: boolean) => put<WaNumber>(`/api/whatsapp-numbers/${id}/pause`, { paused }),
   waNumberWebhook: (id: string) => post<{ ok: boolean }>(`/api/whatsapp-numbers/${id}/webhook`, {}),
-  waNumberLog: () => get<{ id: string; created_at: string; status: string; body: string; handle: string; sent_by_name: string | null; number_label: string | null }[]>('/api/whatsapp-numbers/log/sends'),
+  waNumberLog: () => get<{ id: string; created_at: string; status: string; body: string; handle: string; sent_by_name: string | null; number_label: string | null; queue_name: string | null }[]>('/api/whatsapp-numbers/log/sends'),
+  // --- the slow promotional drip ---------------------------------------------
+  dripList: () => get<{ drips: WaDrip[]; defaults: { variants: string[]; optOutLine: string; hardMaxPerNumberPerDay: number; minGapSeconds: number } }>('/api/whatsapp-drip'),
+  dripDetail: (id: string) => get<WaDripDetail>(`/api/whatsapp-drip/${id}`),
+  dripPreview: (view: string, variants: string[]) => post<WaDripPreview>('/api/whatsapp-drip/preview', { view, variants }),
+  dripCreate: (data: { name: string; view: string; variants: string[]; numberIds: string[]; maxTotal?: number | null; speed?: Record<string, number> }) =>
+    post<{ id: string }>('/api/whatsapp-drip', data),
+  dripStart: (id: string, expectedCount: number, confirmLarge?: boolean) =>
+    post<{ frozen: number; skipped: number }>(`/api/whatsapp-drip/${id}/start`, { expectedCount, confirmLarge }),
+  dripPause: (id: string) => post<{ ok: true }>(`/api/whatsapp-drip/${id}/pause`, {}),
+  dripResume: (id: string, numberIds?: string[]) => post<{ ok: true }>(`/api/whatsapp-drip/${id}/resume`, { numberIds }),
+  dripStop: (id: string) => post<{ ok: true }>(`/api/whatsapp-drip/${id}/stop`, {}),
+  dripTest: (data: { mobile: string; numberId: string; variants: string[] }) => post<{ to: string; text: string }>('/api/whatsapp-drip/test/send', data),
   waGroups: () => get<WaGroupsResponse>('/api/whatsapp-business/groups'),
   waGroupsRefresh: () => post<{ total: number; added: number }>('/api/whatsapp-business/groups/refresh', {}),
   waGroupsEnableAll: () => post<{ enabled: number }>('/api/whatsapp-business/groups/enable-all', {}),
@@ -1915,8 +1934,30 @@ export interface WaGroupsResponse {
   history: { running: boolean; done: number; total: number; current: string | null; startedAt: string | null; supported: boolean | null };
 }
 
+export interface WaDrip {
+  id: string; name: string; status: 'draft' | 'running' | 'paused' | 'stopped' | 'done'; pauseReason: string | null; pausedBySystem: boolean;
+  approvedCount: number | null; maxTotal: number | null; startedAt: string | null; nextSendAt: string | null;
+  variants: string[]; numberIds: string[];
+  speed: { capStart: number; capStep: number; capEveryDays: number; capMax: number; gapMinSeconds: number; gapMaxSeconds: number; windowFrom: number; windowTo: number };
+  counts: { pending: number; sent: number; failed: number; skipped: number };
+  capToday: number;
+  numbers: { numberId: string; label: string; status: string; paused: boolean; sentToday: number; capToday: number }[];
+  insideWindow: boolean; repliedStop: number;
+}
+export interface WaDripDetail {
+  events: { id: string; at: string; kind: string; detail: string | null; by: string | null; number: string | null }[];
+  recent: { id: string; label: string | null; status: string; skipReason: string | null; error: string | null; at: string | null; number: string | null; text: string | null }[];
+  skips: { reason: string; words: string; count: number }[];
+}
+export interface WaDripPreview {
+  total: number; reachable: number; skippedByReason: { reason: string; words: string; count: number }[];
+  sample: { label: string; to: string; text: string }[]; problem: string | null;
+}
+
 export interface WaNumberCheck {
   running: boolean; cap: number; checkedThisRun: number; note: string | null; stopRequested: boolean;
+  numbersReady: number;
+  workers: Array<{ numberId: string; label: string; checkedThisRun: number; state: 'working' | 'done' | 'stopped'; note: string | null }>;
   checkedToday: number; remaining: number; found: number; notOnWhatsApp: number;
 }
 

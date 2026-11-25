@@ -3,8 +3,8 @@ import ProfileStrengthAdmin from './ProfileStrengthAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, Blocks, Building2, Database, KeyRound, LayoutTemplate, Link2, MapPin,
-  ListTree, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
+  Activity, Bot, Blocks, Building2, Database, KeyRound, LayoutTemplate, Link2, MapPin,
+  ListTree, Megaphone, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
@@ -30,6 +30,7 @@ const TagsAdmin = lazy(() => import('./TagsAdmin'));
 const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 const ProjectMastersAdmin = lazy(() => import('./ProjectMastersAdmin'));
 const WhatsAppNumbersAdmin = lazy(() => import('./WhatsAppNumbersAdmin'));
+const WhatsAppDripAdmin = lazy(() => import('./WhatsAppDripAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -93,7 +94,9 @@ const SECTIONS = [
     group: 'Platform',
     items: [
       { path: 'integrations', capability: 'admin.integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
+      // Building a campaign is `whatsapp.send`; approving one is `whatsapp.templates` — the server enforces that split.
       { path: 'whatsapp-numbers', capability: 'admin.integrations', label: 'WhatsApp numbers', icon: MessageSquareText, element: <WhatsAppNumbersAdmin /> },
+      { path: 'whatsapp-drip', capability: 'admin.integrations', label: 'WhatsApp drip', icon: MessageSquareText, element: <WhatsAppDripAdmin /> },
       { path: 'templates', capability: 'whatsapp.templates', label: 'Email Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand', icon: Sparkles, element: <BrandAdmin /> },

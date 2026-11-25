@@ -14,6 +14,7 @@ import { db } from '../../../db/pool.js';
 import { logger } from '../../../utils/logger.js';
 import { notify, notifyMany } from '../../../core/notifications/index.js';
 import { HOLDER, OPTED_OUT } from './inbox.js';
+import { isQuietHours } from '../../../utils/quietHours.js';
 
 /** Older than this and a chat is not alerted about: first switch-on, or a long outage, must not flood anybody. */
 export const WAIT_FLOOR_MINUTES = 360;
@@ -303,7 +304,7 @@ let timer: NodeJS.Timeout | null = null;
 export function startWaitWatch(): void {
   if (timer) return;
   timer = setInterval(() => {
-    if (running) return;
+    if (running || isQuietHours()) return;
     running = true;
     runWaitWatchOnce().catch((err) => logger.error({ err }, 'waiting-for-reply tick failed')).finally(() => { running = false; });
   }, TICK_MS);

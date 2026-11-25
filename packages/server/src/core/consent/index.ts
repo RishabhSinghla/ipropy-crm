@@ -23,7 +23,7 @@
 import { toE164 } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 
-export type ConsentChannel = 'whatsapp' | 'call' | 'email';
+export type ConsentChannel = 'whatsapp' | 'call' | 'email' | 'sms' | 'rcs';
 
 /**
  * Email addresses are compared lowercased; phone numbers go through `toE164`.
