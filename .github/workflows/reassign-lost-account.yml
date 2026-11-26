@@ -1,0 +1,38 @@
+# Move every record held by "Lost Accont" (inactive user) to Yogesh Bindal.
+# Keeps the old owner of each record in ipy_reassigned_owner so it can be undone. Guarded.
+name: Reassign Lost Account records to Yogesh
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reassign
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          cat > q.sql <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN;
+          CREATE TABLE IF NOT EXISTS ipy_reassigned_owner (record_id uuid, old_owner uuid, new_owner uuid, moved_at timestamptz DEFAULT now());
+          INSERT INTO ipy_reassigned_owner (record_id, old_owner, new_owner)
+            SELECT id, owner_id, '671d65cc-1ac6-4bc9-b5fd-f4fee85261f7' FROM ipy_record
+            WHERE owner_id = 'f2189d42-2df8-41c2-9eb0-4d3ab7ef5994' AND is_deleted = false;
+          DO $$ DECLARE n int; BEGIN
+            SELECT count(*) INTO n FROM ipy_reassigned_owner WHERE moved_at > now() - interval '1 minute';
+            IF n < 1 OR n > 300 THEN RAISE EXCEPTION 'unexpected count %', n; END IF;
+          END $$;
+          UPDATE ipy_record SET owner_id = '671d65cc-1ac6-4bc9-b5fd-f4fee85261f7'
+            WHERE id IN (SELECT record_id FROM ipy_reassigned_owner WHERE moved_at > now() - interval '1 minute');
+          SELECT count(*) AS moved FROM ipy_reassigned_owner WHERE moved_at > now() - interval '1 minute';
+          SELECT count(*) AS still_with_lost_accont FROM ipy_record WHERE owner_id = 'f2189d42-2df8-41c2-9eb0-4d3ab7ef5994' AND is_deleted = false;
+          COMMIT;
+          SQL
+          sed -i 's/^ *//' q.sql
+          psql "$PROD_DATABASE_URL" -X -q -P pager=off -f q.sql 2>&1
