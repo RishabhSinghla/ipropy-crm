@@ -3714,3 +3714,6 @@ Set 16 October 2026. Read before touching ads for this business.
 * **Leads:** Facebook leads arrive at `/api/webhooks/leads/facebook`; the strict form asks a budget question that `parseBudget` reads (upper bound of a range). `.github/workflows/facebook-lead-reconcile.yml` compares Meta's count with the CRM's.
 * **Google Ads:** not connected yet. Needs the Google Ads account email and a sign-in to the Adspirer plugin by the owner. Build campaigns **paused** first.
 * **Rules:** never promise ROI; never upload the contact list to Meta without the owner's yes; the owner alone does the India "securities and investments" declaration and creates the Meta dataset.
+
+* **Ribbon chips are dark, one colour each (26 November 2026, owner kept the trial).** New indigo, Task green, Call Log blue, Lost reason rose, List violet, Agent amber, white text, one step darker plus a ring when on. All in `web/src/lib/ribbonChipShades.ts` (`ribbonChip`, `ribbonCount`); `DARK_RIBBON_CHIP_SHADES = false` restores the old white chips.
+* **Inactive agents' records moved to Yogesh Bindal (26 November 2026, owner's instruction):** Lost Accont 140, Sonam Aggarwal 97, Sahil Malik 1. Old owner of each is in `ipy_reassigned_owner`; the three users themselves are untouched.

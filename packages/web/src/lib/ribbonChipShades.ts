@@ -1,11 +1,11 @@
 /**
- * Trial: the six ribbon chips (New, Task, Call Log, Lost reason, List, Agent) each in
+ * The six ribbon chips (New, Task, Call Log, Lost reason, List, Agent) each in
  * their own dark shade, with white text.
  *
- * **25 November 2026, the owner:** asked for this "for trial purpose" and said
- * that if he does not like it, all six go back.
+ * **25 November 2026, the owner:** asked for this as a trial and, on
+ * 26 November 2026, said to keep it.
  *
- * Roll back by setting `DARK_RIBBON_CHIP_SHADES` to `false` — every chip then
+ * To go back to the plain white chips, set `DARK_RIBBON_CHIP_SHADES` to `false` — every chip then
  * wears the ordinary `toolbarButton` look again. Nothing else was changed.
  *
  * Plain Tailwind steps only, never an opacity modifier (see toolbarButton.ts).
