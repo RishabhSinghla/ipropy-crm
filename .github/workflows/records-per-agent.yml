@@ -1,0 +1,33 @@
+# How many records each agent holds, per module, and who is called "Lost Account" / Yogesh. Read-only.
+name: Records per agent
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Counts
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          cat > q.sql <<'SQL'
+          BEGIN READ ONLY;
+          SELECT u.first_name, u.last_name, u.email, u.is_active, u.id FROM ipy_user u
+            WHERE u.first_name || ' ' || u.last_name ILIKE ANY (ARRAY['%lost%','%yogesh%','%bindal%']) ORDER BY 1;
+          SELECT COALESCE(u.first_name || ' ' || u.last_name, '(nobody)') AS agent, u.is_active,
+            COUNT(*) FILTER (WHERE m.name='leads') AS contacts,
+            COUNT(*) FILTER (WHERE m.name='properties') AS inventories,
+            COUNT(*) FILTER (WHERE m.name NOT IN ('leads','properties')) AS other,
+            COUNT(*) AS total
+          FROM ipy_record r JOIN ipy_module m ON m.id=r.module_id LEFT JOIN ipy_user u ON u.id=r.owner_id
+          WHERE r.is_deleted=false GROUP BY 1,2 ORDER BY total DESC;
+          COMMIT;
+          SQL
+          sed -i 's/^ *//' q.sql
+          psql "$PROD_DATABASE_URL" -X -q -P pager=off -f q.sql 2>&1 || true
