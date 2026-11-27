@@ -16,4 +16,4 @@ jobs:
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
-          printf "BEGIN READ ONLY;\nSELECT name, is_active, trigger_event, left(conditions::text,160) AS conditions, left(tasks::text,300) AS tasks FROM ipy_workflow WHERE tasks::text ILIKE '%%status%%' OR tasks::text ILIKE '%%update_field%%' ORDER BY is_active DESC, name;\nCOMMIT;\n" | psql "$PROD_DATABASE_URL" -X -q -P pager=off 2>&1 || true
+          printf "BEGIN READ ONLY;\nSELECT w.name, w.is_active AS on_, w.trigger, left(w.conditions::text,140) AS conditions, t.type, left(t.config::text,160) AS config FROM ipy_workflow w JOIN ipy_workflow_task t ON t.workflow_id=w.id WHERE t.type IN ('update_field','set_field','update_record') OR t.config::text ILIKE '%%status%%' ORDER BY w.is_active DESC, w.name;\nCOMMIT;\n" | psql "$PROD_DATABASE_URL" -X -q -P pager=off 2>&1 || true
