@@ -95,12 +95,12 @@ describe('the Android call companion', () => {
     expect(res.body.duplicates).toBeGreaterThanOrEqual(2);
   });
 
-  it('moves the contact to Contacted — the step that was raising 42703', async () => {
+  it('leaves the contact status alone — a call never changes it', async () => {
     const res = await request(app).get(`/api/records/leads/${leadId}`)
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     const status = res.body.values?.lead_status ?? res.body.values?.status;
-    expect(status).toBe('Contacted');
+    expect(status).not.toBe('Contacted');
   });
 
   /**

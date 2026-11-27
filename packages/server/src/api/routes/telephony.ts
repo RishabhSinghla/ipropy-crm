@@ -8,8 +8,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, hasCapability } from '../../core/permissions/index.js';
-import { activeValues, assertPicklistValue } from '../../core/metadata/picklists.js';
-import { columnsOf } from '../../core/entity/payloadColumns.js';
+import { assertPicklistValue } from '../../core/metadata/picklists.js';
 import { logManualCall } from '../../integrations/telephony/manualCall.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { emitToUser } from '../../realtime.js';
@@ -651,32 +650,6 @@ telephonyRouter.post('/calls/:id/disposition', asyncHandler(async (req, res) => 
   }
 
   if (call.record_id) {
-    if (input.disposition === 'Wrong Number') {
-      /*
-        Junk the lead — if there is still a status to set, and if Junk is
-        still one of its options.
-
-        Two literals in one statement, and an admin owns both. The column can
-        be deleted, which makes this a 42703 on the whole statement and a 500
-        for a rep who did nothing but say the number was wrong; and the option
-        can be deleted, which would store a value the dropdown no longer
-        offers and no filter matches. Neither is worth failing the
-        disposition over: the outcome is already recorded by here, and a CRM
-        that records less because a field was removed is what was asked for.
-
-        Restored 27 October 2026: a polish commit (fba48312) dropped this by
-        accident — the docs and `dispositionsThatChangeTheLead` still say a
-        Wrong Number junks the lead, and the check went red on main.
-      */
-      const present = await columnsOf('ipy_e_leads');
-      const statuses = await activeValues('lead_status');
-      if (present.has('status') && (!statuses.length || statuses.includes('Junk'))) {
-        await db.query(
-          `UPDATE ipy_e_leads SET status = 'Junk' WHERE record_id = $1 AND status <> 'Junk'`,
-          [call.record_id],
-        );
-      }
-    }
     if (input.followUpAt) {
       const { scheduleFollowUp } = await import('../../core/workflow/followUp.js');
       await scheduleFollowUp({

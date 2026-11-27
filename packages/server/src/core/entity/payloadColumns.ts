@@ -74,7 +74,7 @@ export async function markContacted(
   const params: unknown[] = [recordId];
   const at = options.at ?? null;
   // Rang and nobody answered: an attempt was made and no contact happened, so
-  // neither the date nor the pipeline status moves. Only `contact_attempts`
+  // the date does not move either. Only `contact_attempts`
   // does — which is the distinction the original statements drew, and the one
   // worth keeping.
   const reached = options.reached !== false;
@@ -92,9 +92,8 @@ export async function markContacted(
   if (options.attempt && present.has('contact_attempts')) {
     sets.push('contact_attempts = COALESCE(contact_attempts, 0) + 1');
   }
-  if (reached && present.has('status')) {
-    sets.push(`status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END`);
-  }
+  // No status change here, on purpose (27 November 2026, owner): a call never
+  // moves a record's status. A person changes it, or nobody does.
 
   if (sets.length === 0) {
     logger.debug({ recordId }, 'markContacted: the model has none of these fields any more');

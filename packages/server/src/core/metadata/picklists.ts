@@ -72,9 +72,8 @@ export const PICKLISTS_USED_IN_CODE: Record<string, string> = {
  */
 export const VALUES_USED_IN_CODE: Record<string, string> = {
   'property_status.Available': 'the public website catalogue, share links, and buyer-match alerts — all of which look for this exact word',
-  'lead_status.New': 'the “needs attention” highlight on lists, and the rule that moves a lead to Contacted the first time anyone reaches them',
-  'lead_status.Contacted': 'what a lead becomes on first contact, from a call, a WhatsApp send or an inbound reply',
-  'lead_status.Junk': 'the −60 lead-score penalty, and what a Wrong Number call disposition sets',
+  'lead_status.New': 'the “needs attention” highlight on lists',
+    'lead_status.Junk': 'the −60 lead-score penalty, and what a Wrong Number call disposition sets',
   'lead_status.Lost': 'the −50 lead-score penalty, and the lost-lead revival that watches for a price drop',
   'lead_status.Won': 'excluded from open-lead counts in Ask iPropy and the dashboard',
   'lead_status.Converted': 'excluded from the nurture sequence and open-lead counts',

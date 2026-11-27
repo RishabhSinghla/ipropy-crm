@@ -37,7 +37,7 @@ beforeAll(async () => {
 });
 
 describe('a disposition that acts on the lead', () => {
-  it('junks the lead on Wrong Number', async () => {
+  it('leaves the status alone on Wrong Number', async () => {
     const { leadId, callId } = await leadWithCall('3');
 
     const res = await request(app).post(`/api/telephony/calls/${callId}/disposition`)
@@ -48,7 +48,7 @@ describe('a disposition that acts on the lead', () => {
     const row = await db.queryOne<{ status: string }>(
       `SELECT status FROM ipy_e_leads WHERE record_id = $1`, [leadId],
     );
-    expect(row?.status).toBe('Junk');
+    expect(row?.status).not.toBe('Junk');
   });
 
   /**

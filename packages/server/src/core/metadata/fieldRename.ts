@@ -65,7 +65,7 @@ export const FIELDS_USED_IN_CODE: Record<string, string> = {
   'leads.mobile': 'every call, WhatsApp send, duplicate check and lead-capture import',
   'leads.whatsapp_number': 'a second number the phone app matches an incoming call against',
   'leads.email': 'inbound email threading, and what lead capture writes',
-  'leads.status': 'lead scoring, the rule that moves a lead to Contacted, and open-lead counts',
+  'leads.status': 'lead scoring and open-lead counts',
   'leads.lead_source': 'source attribution on every captured lead and every source report',
   'leads.next_followup_at': 'follow-ups — the one definition of “chase them on this date”',
   'leads.last_contacted_at': 'the neglected-lead rules and first-response timing',

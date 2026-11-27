@@ -95,10 +95,10 @@ describe('a call from an agent handset', () => {
     expect(calls.every((c) => c.record_id === leadId)).toBe(true);
   });
 
-  it('moves the lead along: last contacted, attempts, and New becomes Contacted', async () => {
+  it('moves the lead along: last contacted and attempts, never the status', async () => {
     // This is the whole point of syncing calls at all.
     const after = await leadRow();
-    expect(after.status).toBe('Contacted');
+    expect(after.status).not.toBe('Contacted');
     expect(after.contact_attempts).toBeGreaterThanOrEqual(3);
     expect(after.last_contacted_at).not.toBeNull();
   });
