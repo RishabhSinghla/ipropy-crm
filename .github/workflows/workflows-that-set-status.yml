@@ -1,0 +1,19 @@
+# Which live workflow rules change a status, and on what trigger? Read-only.
+name: Workflows that set status
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Rules
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          printf "BEGIN READ ONLY;\nSELECT name, is_active, trigger_event, left(conditions::text,160) AS conditions, left(tasks::text,300) AS tasks FROM ipy_workflow WHERE tasks::text ILIKE '%%status%%' OR tasks::text ILIKE '%%update_field%%' ORDER BY is_active DESC, name;\nCOMMIT;\n" | psql "$PROD_DATABASE_URL" -X -q -P pager=off 2>&1 || true
