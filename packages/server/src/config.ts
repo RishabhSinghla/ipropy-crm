@@ -271,7 +271,8 @@ export const config = {
   scheduler: {
     enabled: bool('ENABLE_SCHEDULER', true),
     /*
-      Fifteen minutes, not one.
+      One hour. It was one minute, then fifteen. Do not go above an hour: the
+      morning brief is only sent by a tick that lands between 9:00 and 9:59.
 
       Neon powers the database down after five minutes with no queries, so a
       tick every sixty seconds meant it never powered down and the bill ran 24
@@ -279,9 +280,10 @@ export const config = {
       16 September 2026, about $24 a month. Nothing here needed that cadence:
       a task due now is drained the moment it is queued (`nudgeQueue`), and
       everything else on the tick is time-based work that is perfectly happy to
-      land within a quarter of an hour of its slot.
+      land within an hour of its slot. Uploaded photos do not wait for the tick
+      either (`nudgeMediaQueue`).
     */
-    tickSeconds: num('SCHEDULER_TICK_SECONDS', 900),
+    tickSeconds: num('SCHEDULER_TICK_SECONDS', 3600),
   },
 
   /*

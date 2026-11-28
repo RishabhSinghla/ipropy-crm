@@ -220,7 +220,7 @@ Vercel also builds a unique preview URL for every pull request — useful for
 
 ---
 
-### Backups: nightly to R2, verified
+### Backups: weekly to R2, verified
 
 **Changed 2026-08-18.** This repo previously carried a dump job, it was removed,
 and the standing decision was to buy Neon's Launch plan instead — on the
@@ -228,9 +228,9 @@ reasoning that a backup job you maintain yourself is a backup job that quietly
 stops working.
 
 That reasoning is right and is why the job that replaced it does something the
-old one did not: **every night it restores the dump it just took into a throwaway
+old one did not: **every run restores the dump it just took into a throwaway
 Postgres and counts the tables and records.** A backup nobody has ever restored
-is not a backup, and this one is restored every single night before it is kept.
+is not a backup, and this one is restored on every run before it is kept.
 
 It runs in GitHub Actions (`.github/workflows/backup.yml`), not on the server and
 not on a laptop. Render restarts the container whenever it likes, so a job living
@@ -238,7 +238,8 @@ inside it has no schedule you can trust, and a Mac is asleep at 1am. GitHub runs
 it whether or not the site is up — which is precisely when you want a backup to
 have happened.
 
-What you get: last night. What you do not get: point-in-time restore to 4:07pm
+What you get: the last weekly run (run it by hand before big data changes). What
+you do not get: point-in-time restore to 4:07pm
 yesterday. That is the difference Neon's paid plan sells, and it is a deliberate
 trade at this size rather than an oversight.
 

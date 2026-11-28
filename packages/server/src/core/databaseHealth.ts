@@ -5,12 +5,15 @@
   Answering that with a real `SELECT 1` each time meant Neon never had five
   quiet minutes to power down, so the database was billed for 24 hours a day
   whether or not anybody was using the CRM. A good answer is now remembered for
-  ten minutes, so the database gets a real visit at most six times an hour.
+  an hour, so the health check visits the database at most once an hour.
+  (Ten minutes was still enough, with the scheduler, to keep it awake most of
+  the day with nobody using the CRM. The cost: an outage can take up to an hour
+  to show on this endpoint.)
 
   A bad answer is remembered for only fifteen seconds, so recovery shows quickly,
   and `fresh` skips the memory for anyone who really wants to know right now.
 */
-export const REMEMBER_GOOD_MS = 10 * 60_000;
+export const REMEMBER_GOOD_MS = 60 * 60_000;
 export const REMEMBER_BAD_MS = 15_000;
 
 export function makeDatabaseHealth(

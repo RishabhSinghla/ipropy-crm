@@ -261,7 +261,7 @@ connectivity probe (SMTP/Anthropic).
 | `SMTP_*` / `IMAP_*` | Email | Empty → logged with open tracking. Editable in-UI. |
 | `FACEBOOK_*`, `GOOGLE_ADS_WEBHOOK_KEY`, `WEBFORM_PUBLIC_KEY` | Lead capture | Endpoints live, no traffic. Editable in-UI (migration 005 added the `webform` provider row). |
 | `STORAGE_DRIVER` + `S3_*` | Files | `local` → `./storage`. Moved into the DB-backed settings — `local` is the fallback, S3 is editable in Admin → Integrations. |
-| `ENABLE_SCHEDULER`, `SCHEDULER_TICK_SECONDS` | Background jobs | `true`, 60s |
+| `ENABLE_SCHEDULER`, `SCHEDULER_TICK_SECONDS` | Background jobs | `true`, 3600s |
 | `SEED_DEMO_DATA` | Demo records on seed | `true` — **set `false` for production** |
 
 **Every integration degrades gracefully.** With nothing configured (env or UI) the whole product is

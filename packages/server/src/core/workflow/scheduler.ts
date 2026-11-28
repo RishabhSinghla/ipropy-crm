@@ -74,6 +74,24 @@ export function nudgeQueue(): void {
   nudgeTimer.unref?.();
 }
 
+let mediaWork: Promise<void> = Promise.resolve();
+
+/**
+ * Every media batch goes through this one line, so two never run together:
+ * resizing several batches at once is how a 512 MB server runs out of memory.
+ */
+function drainMediaInTurn(): Promise<void> {
+  mediaWork = mediaWork
+    .then(() => drainMediaQueue())
+    .catch((err) => logger.error({ err }, 'media queue drain failed'));
+  return mediaWork;
+}
+
+/** A file was just uploaded: process it now rather than at the next hourly tick. */
+export function nudgeMediaQueue(): Promise<void> {
+  return config.scheduler.enabled ? drainMediaInTurn() : Promise.resolve();
+}
+
 export function stopScheduler(): void {
   if (timer) clearInterval(timer);
   timer = null;
@@ -88,7 +106,7 @@ async function tick(): Promise<void> {
   try {
     await Promise.allSettled([
       drainQueue(),
-      drainMediaQueue(),
+      drainMediaInTurn(),
       runScheduledWorkflows(),
       runSequences(),
       housekeeping(),

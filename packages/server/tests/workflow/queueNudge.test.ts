@@ -68,6 +68,35 @@ describe('nudging the queue', () => {
   });
 });
 
+describe('nudging the media queue', () => {
+  beforeEach(() => { vi.resetModules(); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('processes an upload straight away, never two batches at once', async () => {
+    let running = 0;
+    let most = 0;
+    let batches = 0;
+    vi.doMock('../../src/db/pool.js', () => ({
+      db: { query: async () => ({ rows: [], rowCount: 0 }), queryOne: async () => null },
+      transaction: async () => {
+        batches += 1;
+        running += 1;
+        most = Math.max(most, running);
+        await new Promise((done) => setTimeout(done, 5));
+        running -= 1;
+        return [];
+      },
+      onCommit: (_c: unknown, fn: () => void) => fn(),
+    }));
+    const { nudgeMediaQueue } = await import('../../src/core/workflow/scheduler.js');
+
+    await Promise.all([nudgeMediaQueue(), nudgeMediaQueue(), nudgeMediaQueue()]);
+
+    expect(batches).toBe(3);
+    expect(most).toBe(1);
+  });
+});
+
 describe('the tick', () => {
   it('is slow enough for the database to power down between visits', async () => {
     // Neon powers down after five minutes idle. Any tick at or under that keeps
@@ -75,5 +104,7 @@ describe('the tick', () => {
     // if somebody lowers it back under five minutes, they should have to mean it.
     const { config } = await import('../../src/config.js');
     expect(config.scheduler.tickSeconds).toBeGreaterThan(300);
+    // The morning brief is only sent by a tick that lands in the 9 o'clock hour.
+    expect(config.scheduler.tickSeconds).toBeLessThanOrEqual(3600);
   });
 });

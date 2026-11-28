@@ -78,8 +78,8 @@ means the site works, not just that it responds.
 ## 2. Something is wrong with the data
 
 **STOP — do not restore a backup to fix one broken record.** A restore replaces
-*everything* and throws away every change made since last night, including all
-the work the team did today. It is almost never the right answer.
+*everything* and throws away every change made since the last backup, which can
+be up to a week old, including all the work the team did since then. It is almost never the right answer.
 
 | Situation | Do this |
 |---|---|
@@ -95,13 +95,14 @@ including whether it came from a person, the phone app, or an AI assistant.
 
 ## 3. Restoring from backup — read before you do it
 
-**What you have:** a full database backup taken every night, uploaded to
+**What you have:** a full database backup taken every week (Sunday about 1am
+India time, often later), plus any run by hand from Actions -> Backup, uploaded to
 Cloudflare R2. The backup job **restores each dump into a scratch database to
 prove it works** before uploading it, so these are tested backups, not hopeful
 ones. Four consecutive nights succeeded as of 13 September 2026.
 
-**What you do not have:** point-in-time restore. A restore gets you back to *last
-night*, not to *ten minutes ago*. Everything the team did today would be lost.
+**What a dump cannot do:** point-in-time restore. It gets you back to the *last
+backup*, not to *ten minutes ago*. Everything since then would be lost.
 (Neon's paid plan adds proper point-in-time restore. That is the upgrade that
 makes this section much less frightening, and it is not bought yet.)
 
@@ -176,5 +177,5 @@ night worse.
 | Errors | Sentry |
 | Host | Render — status.render.com |
 | Database | Neon — neonstatus.com |
-| Backups | Cloudflare R2, nightly, restore-tested |
+| Backups | Cloudflare R2, weekly, restore-tested |
 | Deploy gate | tests must pass before `main` moves or anything reaches the site |

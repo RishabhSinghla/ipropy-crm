@@ -1,4 +1,9 @@
-# Nightly backup of the deployed database into Cloudflare R2.
+# Weekly backup of the deployed database into Cloudflare R2.
+#
+# Weekly, not nightly, because every run downloads the whole database and the
+# database host's free plan only allows a few GB of that a month. So up to a
+# week of work can be lost in a restore: run this by hand (Actions -> Backup ->
+# Run workflow) before any big change to the data. Each run counts too.
 #
 # Runs here rather than on the server or a laptop, and that is the point. The
 # CRM's own container is restarted by Render whenever it likes, so a job living
@@ -6,15 +11,15 @@
 # this whether or not the site is up, which is exactly when you most want a
 # backup to have happened.
 #
-# What it is not: point-in-time restore. This gets you back to last night, not
+# What it is not: point-in-time restore. This gets you back to the last run, not
 # to 4:07pm yesterday. That difference is what Neon's paid plan sells, and it is
 # a fair trade at this size — but it is a trade, not a free lunch.
 name: Backup
 
 on:
   schedule:
-    # 19:30 UTC = 01:00 IST. After the working day, before anyone starts.
-    - cron: '30 19 * * *'
+    # Saturday 19:30 UTC = Sunday 01:00 IST.
+    - cron: '30 19 * * 6'
   workflow_dispatch:
 
 # Least privilege, stated rather than inherited. The repository default is
@@ -112,8 +117,8 @@ jobs:
             --endpoint-url "$R2_ENDPOINT"
           echo "uploaded db/ipropy-$STAMP.dump"
 
-      # Thirty nights is about a month of mistakes you can still walk back from,
-      # and a month of dumps is small enough to stay inside R2's free tier.
+      # Thirty weekly dumps is about seven months to walk back through. Only db/
+      # is pruned: a dump that must be kept for ever goes under another folder.
       - name: Keep the last 30
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

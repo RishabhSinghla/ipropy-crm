@@ -22,7 +22,7 @@ describe('the health check and the database', () => {
     expect(t.asked()).toBe(1);
   });
 
-  it('asks again once the good answer is ten minutes old', async () => {
+  it('asks again once the good answer is an hour old', async () => {
     const t = setup([true]);
     await t.check();
     t.advance(REMEMBER_GOOD_MS);

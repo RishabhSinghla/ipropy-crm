@@ -492,6 +492,7 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
   // core/media/pipeline.ts, picked up by scheduler.ts's drainMediaQueue.
   if (row?.id && MEDIA_MIME_PREFIXES.some((p) => file.mimetype.startsWith(p))) {
     await db.query(`INSERT INTO ipy_media_job (attachment_id) VALUES ($1)`, [row.id]);
+    void import('../../core/workflow/scheduler.js').then(({ nudgeMediaQueue }) => nudgeMediaQueue());
   }
 
   // A document is read once, on the way in, so it is searchable by what is
