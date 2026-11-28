@@ -17,9 +17,6 @@
 name: Backup
 
 on:
-  schedule:
-    # Saturday 19:30 UTC = Sunday 01:00 IST.
-    - cron: '30 19 * * 6'
   workflow_dispatch:
 
 # Least privilege, stated rather than inherited. The repository default is
@@ -105,6 +102,15 @@ jobs:
             test "$got" -ge "$floor" || { echo "::error::$table restored $got rows, expected at least $floor."; exit 1; }
           done
 
+      - name: Prove the search entries are in it
+        run: |
+          q() { PGPASSWORD=verify psql -h localhost -p 5433 -U postgres -d postgres -tAc "$1"; }
+          for t in ipy_embedding ipy_record ipy_comment ipy_call ipy_attachment; do
+            echo "restored $t: $(q "SELECT count(*) FROM $t;")"
+          done
+          GOT=$(q "SELECT count(*) FROM ipy_embedding;")
+          test "$GOT" -ge 128187 || { echo "::error::restored only $GOT search entries, expected 128187"; exit 1; }
+
       - name: Upload to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -113,23 +119,12 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
         run: |
-          aws s3 cp "ipropy-$STAMP.dump" "s3://$R2_BUCKET/db/ipropy-$STAMP.dump" \
-            --endpoint-url "$R2_ENDPOINT"
-          echo "uploaded db/ipropy-$STAMP.dump"
-
-      # Thirty weekly dumps is about seven months to walk back through. Only db/
-      # is pruned: a dump that must be kept for ever goes under another folder.
-      - name: Keep the last 30
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
-        run: |
-          aws s3 ls "s3://$R2_BUCKET/db/" --endpoint-url "$R2_ENDPOINT" \
-            | awk '{print $4}' | sort | head -n -30 | while read -r old; do
-              [ -n "$old" ] || continue
-              echo "pruning $old"
-              aws s3 rm "s3://$R2_BUCKET/db/$old" --endpoint-url "$R2_ENDPOINT"
-            done
+          KEY="keep/ipropy-before-search-cleanup-$STAMP.dump"
+          aws s3 cp "ipropy-$STAMP.dump" "s3://$R2_BUCKET/$KEY" --endpoint-url "$R2_ENDPOINT"
+          echo "uploaded $KEY"
+          # Read it back and compare, so the kept copy is the one that was restored above.
+          aws s3 cp "s3://$R2_BUCKET/$KEY" read-back.dump --endpoint-url "$R2_ENDPOINT" --only-show-errors
+          A=$(sha256sum "ipropy-$STAMP.dump" | cut -d' ' -f1); B=$(sha256sum read-back.dump | cut -d' ' -f1)
+          echo "size $(stat -c %s read-back.dump) bytes, sha256 $B"
+          test "$A" = "$B" || { echo "::error::the stored copy differs from the verified dump"; exit 1; }
+          echo "stored copy matches the verified dump"
