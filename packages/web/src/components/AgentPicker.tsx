@@ -13,8 +13,10 @@ import { Avatar } from './ui';
  * and the task counts together. Two copies would drift, and the way they drift
  * is that one panel says Vijay while the list shows everybody.
  */
-export function AgentPicker({ agent, onPickAgent, moduleName }: {
+export function AgentPicker({ agent, onPickAgent, moduleName, counts }: {
   moduleName?: string;
+  /** Records each agent holds, by user id. Left out where nobody has asked for numbers. */
+  counts?: Map<string, number>;
   agent: string | null;
   onPickAgent: (userId: string | null) => void;
 }): JSX.Element | null {
@@ -48,7 +50,7 @@ export function AgentPicker({ agent, onPickAgent, moduleName }: {
       </div>
       {/* Two rows of agents, then it scrolls — every agent is reachable, but
           nine people as three rows of chips pushed the list below off screen. */}
-      <div className="grid max-h-[3.4rem] grid-cols-3 gap-1 overflow-y-auto">
+      <div className="grid max-h-[3.4rem] grid-cols-2 gap-1 overflow-y-auto">
         {users.map((user) => {
           const mine = agent === user.id;
           return (
@@ -67,6 +69,11 @@ export function AgentPicker({ agent, onPickAgent, moduleName }: {
             >
               <Avatar name={user.name} size={14} className="text-[8px]" />
               <span className="truncate">{user.name.split(/\s+/)[0]}</span>
+              {counts && (
+                <span className={cn('rounded-full px-1 text-[9px] font-semibold tabular-nums', mine ? 'bg-white text-brand-900' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100')}>
+                  {(counts.get(user.id) ?? 0).toLocaleString('en-IN')}
+                </span>
+              )}
             </button>
           );
         })}

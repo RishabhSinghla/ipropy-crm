@@ -938,6 +938,29 @@ export default function ListView(): JSX.Element {
   const ribbonAgentLabel = agentPick
     ? String(selectedRibbonAgent?.fullName ?? '').trim().split(/\s+/)[0] || 'Agent'
     : 'Agent';
+  // Every agent's count, narrowed by the list's other choices but not by the agent choice itself,
+  // or picking one agent would zero everybody else.
+  const agentCountFilter: FilterGroup = {
+    logic: 'AND',
+    conditions: [
+      ...(filter.logic === 'OR' && filter.conditions.length ? [filter] : filter.conditions),
+      ...(taskQueue ? taskFilters[taskQueue].conditions : []),
+      ...(stagePick.length && stageField ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }] : []),
+      ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
+      ...(lostPick && lostReasonField ? [{ field: lostReasonField.name, operator: 'in' as const, value: [lostPick] }] : []),
+    ],
+  };
+  const { data: agentFacet } = useQuery({
+    queryKey: ['facet', moduleName, ownerField?.name, 'agent-counts', activeView?.id, search, agentCountFilter],
+    queryFn: () => api.facet(moduleName, ownerField!.name, undefined, 50, {
+      view: activeView?.id,
+      search: search || undefined,
+      filter: countConditions(agentCountFilter) ? canonicalFilter(agentCountFilter) : undefined,
+    }),
+    enabled: Boolean(ownerField),
+    staleTime: 60_000,
+  });
+  const agentCounts = new Map((agentFacet?.values ?? []).map((row) => [row.value, row.count]));
   const ribbonAgentControl = ownerField && (ribbonAgents as unknown[]).length > 1 ? (
     <Dropdown
       align="left"
@@ -961,6 +984,7 @@ export default function ListView(): JSX.Element {
           <AgentPicker
             moduleName={moduleName}
             agent={agentPick}
+            counts={agentCounts}
             onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
           />
         </div>
